@@ -1,79 +1,61 @@
 <!DOCTYPE html>
 <html lang="es-MX">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CobraPro · Acceso</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>
   :root{--bg:#0a0c10;--surf:#11141a;--surf-2:#171b22;--surf-3:#1e232c;--line:#262c36;--line-2:#333b48;
-    --txt:#eef1f5;--dim:#97a1b0;--faint:#5a6470;--acc:#f0b429;--acc-d:#b3851f;--grn:#3ecf8e;--blu:#5aa0e8;--vio:#b07ce0;}
+    --txt:#eef1f5;--dim:#97a1b0;--faint:#5a6470;--acc:#f0b429;--acc-d:#b3851f;--grn:#3ecf8e;--red:#f0654d;}
   *{box-sizing:border-box;margin:0;padding:0}
   body{min-height:100vh;background:
     radial-gradient(1100px 560px at 82% -8%,rgba(240,180,41,.08),transparent 60%),
     radial-gradient(820px 460px at -8% 108%,rgba(90,160,232,.06),transparent 55%),var(--bg);
-    color:var(--txt);font-family:"Sora",sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px 18px}
+    color:var(--txt);font-family:"Sora",sans-serif;display:flex;align-items:center;justify-content:center;padding:24px}
   .mono{font-family:"IBM Plex Mono",monospace}
-  .brand{display:flex;align-items:center;gap:14px;margin-bottom:6px}
-  .mk{width:52px;height:52px;border-radius:14px;background:linear-gradient(140deg,var(--acc),var(--acc-d));display:grid;place-items:center;font-weight:800;color:#1a1408;font-size:26px;box-shadow:0 8px 26px rgba(240,180,41,.3)}
-  .brand h1{font-size:1.7rem;font-weight:800;letter-spacing:-.02em}
-  .tag{color:var(--faint);font-size:.86rem;margin-bottom:30px}
-  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;max-width:760px;width:100%}
-  @media(max-width:680px){.grid{grid-template-columns:1fr}}
-  .card{background:linear-gradient(160deg,var(--surf-2),var(--surf));border:1px solid var(--line);border-radius:16px;padding:22px;cursor:pointer;transition:.18s;position:relative;overflow:hidden;text-decoration:none;color:inherit;display:block}
-  .card::before{content:"";position:absolute;top:0;left:0;width:100%;height:3px;background:var(--accent,var(--acc))}
-  .card:hover{transform:translateY(-3px);border-color:var(--line-2);box-shadow:0 14px 34px rgba(0,0,0,.4)}
-  .card .ic{width:48px;height:48px;border-radius:12px;display:grid;place-items:center;font-size:24px;margin-bottom:14px;background:var(--surf-3)}
-  .card h3{font-size:1.08rem;font-weight:600;margin-bottom:5px}
-  .card p{font-size:.8rem;color:var(--dim);line-height:1.45}
-  .card .role{font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);margin-top:12px;display:flex;align-items:center;gap:6px}
-  .dot{width:7px;height:7px;border-radius:50%;background:var(--grn)}
-  .foot{margin-top:30px;font-size:.76rem;color:var(--faint);text-align:center;max-width:620px;line-height:1.6}
-  .pinbar{display:flex;align-items:center;gap:10px;margin-bottom:24px;background:var(--surf-2);border:1px solid var(--line);border-radius:11px;padding:7px 7px 7px 16px}
-  .pinbar label{font-size:.8rem;color:var(--dim)}
-  .pinbar input{background:var(--surf);border:1px solid var(--line-2);color:var(--acc);font-family:"IBM Plex Mono";font-size:1.1rem;letter-spacing:.3em;width:120px;text-align:center;padding:9px;border-radius:8px;outline:none}
-  .pinbar input:focus{border-color:var(--acc)}
-  .pinbar .st{font-size:.74rem;margin-left:6px}
-  .locked{opacity:.45;pointer-events:none;filter:grayscale(.5)}
+  .card{width:360px;max-width:100%;background:linear-gradient(160deg,var(--surf-2),var(--surf));border:1px solid var(--line);border-radius:18px;padding:30px 26px;box-shadow:0 20px 60px rgba(0,0,0,.45)}
+  .brand{display:flex;flex-direction:column;align-items:center;gap:10px;margin-bottom:6px}
+  .mk{width:54px;height:54px;border-radius:15px;background:linear-gradient(140deg,var(--acc),var(--acc-d));display:grid;place-items:center;font-weight:800;color:#1a1408;font-size:27px;box-shadow:0 8px 26px rgba(240,180,41,.3)}
+  .brand h1{font-size:1.55rem;font-weight:800;letter-spacing:-.02em}
+  .tag{color:var(--faint);font-size:.82rem;text-align:center;margin-bottom:24px}
+  .field{margin-bottom:14px}
+  .field label{display:block;font-size:.74rem;color:var(--dim);margin-bottom:6px}
+  .field input{width:100%;background:var(--surf);border:1px solid var(--line-2);color:var(--txt);font-family:"Sora";font-size:.95rem;padding:12px 13px;border-radius:9px;outline:none}
+  .field input:focus{border-color:var(--acc)}
+  .enter{width:100%;background:linear-gradient(140deg,var(--acc),var(--acc-d));color:#1a1408;border:none;border-radius:10px;font-family:"Sora";font-weight:700;font-size:.98rem;padding:13px;cursor:pointer;margin-top:4px;transition:.13s}
+  .enter:hover{filter:brightness(1.06)}
+  .enter:disabled{opacity:.6;cursor:default}
+  .err{color:var(--red);font-size:.82rem;margin-top:12px;text-align:center;min-height:18px}
+  .hint{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);font-size:.74rem;color:var(--faint);text-align:center;line-height:1.6}
+  .hint b{color:var(--dim)}
 </style>
 </head>
 <body>
-  <div class="brand"><div class="mk">₵</div><h1>CobraPro</h1></div>
-  <div class="tag">Plataforma de crédito y cobranza · selecciona tu acceso</div>
-
-  <div class="pinbar">
-    <label>PIN de acceso</label>
-    <input id="pin" type="password" maxlength="6" inputmode="numeric" placeholder="••••" oninput="checkPin()">
-    <span class="st" id="pinSt" style="color:var(--faint)">demo: 1234</span>
+  <div class="card">
+    <div class="brand"><div class="mk">₵</div><h1>CobraPro</h1></div>
+    <div class="tag">Crédito y cobranza · inicia sesión</div>
+    <div class="field"><label>Usuario</label><input id="u" autocomplete="username" autofocus></div>
+    <div class="field"><label>Contraseña</label><input id="p" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')entrar()"></div>
+    <button class="enter" id="btn" onclick="entrar()">Entrar</button>
+    <div class="err" id="err"></div>
+    <div class="hint">Primer acceso: <b>admin</b> / <b>admin123</b><br>Cada usuario entra a su panel según su rol.</div>
   </div>
-
-  <div class="grid" id="grid">
-    <a class="card locked" id="c-admin" style="--accent:var(--acc)" href="cobrapro.html">
-      <div class="ic">▣</div><h3>Administración</h3>
-      <p>Resumen, cartera, comisiones, conciliación, estado de cuenta y reportes.</p>
-      <div class="role"><span class="dot"></span> Admin / Supervisor</div>
-    </a>
-    <a class="card locked" id="c-suc" style="--accent:var(--blu)" href="cobrapro_sucursal.html">
-      <div class="ic">🏪</div><h3>Sucursal</h3>
-      <p>Recibir pagos, capturar créditos, corte de caja y cuentas por entregar.</p>
-      <div class="role"><span class="dot"></span> Encargada de caja</div>
-    </a>
-    <a class="card locked" id="c-campo" style="--accent:var(--grn)" href="cobrapro_campo.html">
-      <div class="ic">📱</div><h3>Cobrador (campo)</h3>
-      <p>Ruta del día, cobros con forma de pago, gestión sin pago y corte. Funciona offline.</p>
-      <div class="role"><span class="dot"></span> Cobrador en ruta</div>
-    </a>
-  </div>
-
-  <div class="foot">Para uso real, cada acceso valida con el backend (un solo origen de datos). El PIN aquí es solo para la demo del portal.</div>
-
 <script>
-  function checkPin(){
-    const ok=document.getElementById('pin').value==='1234';
-    document.querySelectorAll('.card').forEach(c=>c.classList.toggle('locked',!ok));
-    document.getElementById('pinSt').textContent= ok? '✓ acceso abierto' : 'demo: 1234';
-    document.getElementById('pinSt').style.color= ok? 'var(--grn)':'var(--faint)';
+  const dest = { admin:'cobrapro.html', supervisor:'cobrapro.html', sucursal:'cobrapro_sucursal.html', cobrador:'cobrapro_campo.html' };
+  async function entrar(){
+    const err = document.getElementById('err'); const btn = document.getElementById('btn');
+    err.textContent = ''; btn.disabled = true; btn.textContent = 'Entrando…';
+    try{
+      const r = await fetch('/api/auth/login', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ usuario: document.getElementById('u').value.trim(), password: document.getElementById('p').value }) });
+      const d = await r.json();
+      if(!r.ok) throw new Error(d.error || 'No se pudo iniciar sesión');
+      try{ localStorage.setItem('cobrapro_token', d.token); localStorage.setItem('cobrapro_user', JSON.stringify(d.user)); }catch(e){}
+      location.href = dest[d.user.rol] || 'cobrapro.html';
+    }catch(e){
+      err.textContent = e.message; btn.disabled = false; btn.textContent = 'Entrar';
+    }
   }
 </script>
 </body>
