@@ -18,7 +18,8 @@ const DB_FILE = path.join(__dirname, 'db.json');
 
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+const PUBLIC_DIR = path.join(__dirname, 'public');
+app.use(express.static(PUBLIC_DIR));
 
 /* ---------- Almacén: PostgreSQL si hay DATABASE_URL (Render), si no archivo JSON (local) ---------- */
 const USE_PG = !!process.env.DATABASE_URL;
@@ -231,8 +232,17 @@ app.get('/api/reports/pagos', auth, rol('admin', 'supervisor'), (req, res) => {
 
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
 
+// Sirve el portal (index.html) en "/" y en cualquier ruta que NO sea /api
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api')) return next();
+  res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
+});
+
 /* ---------- Arranque ---------- */
 (async () => {
+  const hayIndex = fs.existsSync(path.join(PUBLIC_DIR, 'index.html'));
+  console.log('📁 Carpeta public:', PUBLIC_DIR);
+  console.log('📄 index.html encontrado:', hayIndex ? 'SÍ' : 'NO  ← revisa que public/ esté en el repo junto a server.js');
   db = await loadDB();
   if (!db) { seed(); console.log('🌱 Base sembrada (admin / admin123).'); }
   app.listen(PORT, () => console.log('🚀 CobraPro backend en puerto ' + PORT + (USE_PG ? ' (PostgreSQL)' : ' (archivo local)') + '  ·  login admin / admin123'));
