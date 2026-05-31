@@ -127,8 +127,8 @@
 <div class="phone">
   <header>
     <div class="hrow">
-      <div class="ava">AR</div>
-      <div><h1>Ana Reyes</h1><div class="sub">Ruta Amecameca · <span id="hdate"></span></div></div>
+      <div class="ava" id="cobAva">AR</div>
+      <div><h1 id="cobName">Ana Reyes</h1><div class="sub">Ruta Amecameca · <span id="hdate"></span> · <a onclick="salir()" style="color:var(--acc);cursor:pointer">Salir</a></div></div>
       <div class="sync" id="syncBtn">
         <div class="badge on" id="syncBadge"><span class="dot"></span> En línea</div>
         <div class="pend" id="pend"></div>
@@ -182,6 +182,13 @@
 <div class="toast" id="toast"></div>
 
 <script>
+/* ===== Sesión ===== */
+const TOKEN=(()=>{try{return localStorage.getItem('cobrapro_token')}catch(e){return null}})();
+const ME=(()=>{try{return JSON.parse(localStorage.getItem('cobrapro_user')||'null')}catch(e){return null}})();
+if(!TOKEN){ location.replace('index.html'); }
+function salir(){ try{localStorage.removeItem('cobrapro_token');localStorage.removeItem('cobrapro_user');}catch(e){} location.replace('index.html'); }
+if(ME&&ME.nombre){ var _cn=document.getElementById('cobName'); if(_cn)_cn.textContent=ME.nombre;
+  var _ca=document.getElementById('cobAva'); if(_ca)_ca.textContent=ME.nombre.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
 let online=true, syncTimer=null;
 const META=5200;
 // cartera asignada a Ana Reyes (en producción: GET /api/sales?collector=me&route=today)
