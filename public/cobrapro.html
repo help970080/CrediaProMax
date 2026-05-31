@@ -194,11 +194,8 @@
     <div class="panel">
       <div class="ph"><h3>Estado de cuenta del cliente</h3><span class="hint" id="ec-rol">Rol: Supervisor · puede condonar y ajustar</span></div>
       <div class="filters">
-        <select id="ec-sel" onchange="ecSelect()"></select>
-        <label style="display:flex;align-items:center;gap:7px;font-size:.82rem;color:var(--dim);margin-left:auto">
-          <input type="checkbox" id="ec-auto" checked onchange="ecRender()" style="width:auto"> Moratorio automático del sistema
-        </label>
-        <div style="display:flex;align-items:center;gap:6px;font-size:.82rem;color:var(--dim)">Cargo mora/periodo <input type="number" id="ec-mora" value="25" step="5" style="width:78px;background:var(--surf-2);border:1px solid var(--line-2);color:var(--acc);font-family:'IBM Plex Mono';padding:6px 8px;border-radius:7px" oninput="ecRender()"></div>
+        <select id="ec-sel" onchange="ecSelect()" style="flex:1;min-width:240px"></select>
+        <div style="display:flex;align-items:center;gap:6px;font-size:.82rem;color:var(--dim);margin-left:auto">Monto de moratorio <input type="number" id="ec-mora" value="25" step="5" style="width:78px;background:var(--surf-2);border:1px solid var(--line-2);color:var(--acc);font-family:'IBM Plex Mono';padding:6px 8px;border-radius:7px"></div>
       </div>
     </div>
 
@@ -226,6 +223,7 @@
           <button class="btn" onclick="ecMov('cargo')">＋ Cargo</button>
           <button class="btn" onclick="ecMov('abono')">＋ Abono</button>
           <button class="btn" onclick="ecMov('condonar')">⊘ Condonar</button>
+          <button class="btn" onclick="ecMora()">＋ Moratorio</button>
           <button class="btn gold" onclick="ecImprimir()">🖨 Estado de cuenta</button>
         </div>
       </div>
@@ -505,23 +503,37 @@ function render(){
     <div class="mono ${cls}" style="font-weight:600;text-align:right">${dif>=1?'−':''}${fmt(Math.abs(dif))}<div style="font-size:.68rem;font-weight:400">${lbl}</div></div></div>`;}).join('');
 
   drawDaily(); drawDonut(D);
-  renderCartera();
   renderReportes(proms);
 }
 
-/* CARTERA con filtros */
+/* CARTERA conectada al backend */
+let _cartera=[], _sucMap={};
+const _tipoLbl={diario:'Diario',semanal:'Semanal',unico:'Pago único',p17:'Celulares 17'};
+const _tipoCls={diario:'dia',semanal:'sem',unico:'uni',p17:'uni'};
+function _plazoTxt(c){ return c.tipo==='semanal'? c.plazo+' sem' : c.tipo==='p17'? '17 pagos' : c.plazo+' días'; }
+async function cargarCartera(){
+  try{
+    if(!Object.keys(_sucMap).length){ const s=await apiU('GET','/api/sucursales'); s.forEach(x=>_sucMap[x.id]=x.nombre);
+      f_suc.innerHTML='<option value="">Todas las sucursales</option>'+s.map(x=>`<option value="${x.id}">${x.nombre}</option>`).join(''); }
+    _cartera = await apiU('GET','/api/sales');
+    renderCartera();
+  }catch(e){ tb_cart.innerHTML=`<tr><td colspan="11" style="color:var(--red);padding:18px">${e.message}</td></tr>`; }
+}
 function renderCartera(){
-  const D=CRED.map(deriva);
-  const q=(f_q.value||'').toLowerCase(), fs=f_suc.value, ft=f_tipo.value, fsem=f_sem.value;
-  const rows=D.filter(c=> (!fs||c.suc===fs) && (!ft||c.tipo===ft) && (!fsem||c.sem===fsem) && (!q||c.cliente.toLowerCase().includes(q)));
-  tb_cart.innerHTML=rows.map(c=>`<tr>
-    <td class="nm">${c.cliente}</td><td>${c.sucNom}</td>
-    <td><div class="who"><div class="ava" style="background:${c.promColor};width:24px;height:24px;font-size:.62rem">${c.prom}</div><span class="sn">${c.promNom.split(' ')[0]}</span></div></td>
-    <td><span class="tipo ${tipoCls[c.tipo]}">${tipoLbl[c.tipo]}</span></td>
-    <td class="n">${fmt(c.monto)}</td><td class="n">${fmt(c.cuota)}</td><td>${plazoLbl(c)}</td><td class="n">${fmt(c.saldo)}</td>
-    <td><div style="display:flex;align-items:center;gap:7px"><div class="bar" style="min-width:46px"><i style="width:${c.avance*100}%;background:var(--grn)"></i></div><span class="mono" style="font-size:.72rem">${(c.avance*100).toFixed(0)}%</span></div></td>
-    <td class="sn">${proxPago(c)}</td>
-    <td><span class="pill ${c.sem}">${c.sem==='ok'?'Al corriente':c.sem==='w'?'Atrasado':'Vencido'}</span></td></tr>`).join('') || `<tr><td colspan="11" style="text-align:center;color:var(--faint);padding:24px">Sin resultados</td></tr>`;
+  const q=(f_q.value||'').toLowerCase(), fs=f_suc.value, ft=f_tipo.value;
+  const rows=_cartera.filter(c=> (!fs||String(c.sucursalId)===String(fs)) && (!ft||c.tipo===ft) && (!q||(c.cliente||'').toLowerCase().includes(q)));
+  tb_cart.innerHTML=rows.map(c=>{
+    const av=c.total>0?(c.total-c.saldo)/c.total:0; const liq=c.saldo<=0;
+    const ini=(c.prom||'·').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+    return `<tr>
+      <td class="nm">${c.cliente||'—'}</td><td>${_sucMap[c.sucursalId]||'—'}</td>
+      <td><div class="who"><div class="ava" style="background:var(--surf-3);width:24px;height:24px;font-size:.62rem;color:var(--dim)">${ini}</div><span class="sn">${(c.prom||'').split(' ')[0]}</span></div></td>
+      <td><span class="tipo ${_tipoCls[c.tipo]||'sem'}">${_tipoLbl[c.tipo]||c.tipo}</span></td>
+      <td class="n">${fmt(c.monto)}</td><td class="n">${fmt(c.cuota)}</td><td>${_plazoTxt(c)}</td><td class="n">${fmt(c.saldo)}</td>
+      <td><div style="display:flex;align-items:center;gap:7px"><div class="bar" style="min-width:46px"><i style="width:${(av*100).toFixed(0)}%;background:var(--grn)"></i></div><span class="mono" style="font-size:.72rem">${(av*100).toFixed(0)}%</span></div></td>
+      <td class="sn">${liq?'—':'Pendiente'}</td>
+      <td><span class="pill ok">${liq?'Liquidado':'Activo'}</span></td></tr>`;
+  }).join('') || `<tr><td colspan="11" style="text-align:center;color:var(--faint);padding:24px">Sin créditos en la base.</td></tr>`;
 }
 
 /* REPORTES: forma de pago, efectivo en tránsito, quién pagó */
@@ -566,94 +578,66 @@ function renderReportes(proms){
 }
 
 /* ===== ESTADO DE CUENTA: cargos, abonos y moratorio automático ===== */
-const clientesEC=[
-  {id:'ec1',nombre:'Rosa Maldonado',folio:'F-1051',tipo:'Semanal 20',cuota:488,prom:'Raúl Cárdenas',sem:'bad',
-   dom:'Priv. Morelos 7, Sacromonte, Amecameca',vencidos:3,
-   movs:[
-     {fecha:'02/03/2026',concepto:'Disposición de crédito',origen:'Sucursal Amecameca',cargo:9760,abono:0},
-     {fecha:'09/03/2026',concepto:'Abono semana 1',origen:'Ruta · R. Cárdenas',cargo:0,abono:488},
-     {fecha:'16/03/2026',concepto:'Abono semana 2',origen:'Ruta · R. Cárdenas',cargo:0,abono:488},
-     {fecha:'23/03/2026',concepto:'Abono semana 3',origen:'Ventanilla',cargo:0,abono:488},
-   ]},
-  {id:'ec2',nombre:'María González',folio:'F-1042',tipo:'Semanal 12',cuota:600,prom:'Ana Reyes',sem:'ok',
-   dom:'Calle Hidalgo 24, Centro, Amecameca',vencidos:0,
-   movs:[
-     {fecha:'05/03/2026',concepto:'Disposición de crédito',origen:'Sucursal Amecameca',cargo:7200,abono:0},
-     {fecha:'12/03/2026',concepto:'Abono semana 1',origen:'Ruta · A. Reyes',cargo:0,abono:600},
-     {fecha:'19/03/2026',concepto:'Abono semana 2',origen:'Ruta · A. Reyes',cargo:0,abono:600},
-     {fecha:'26/03/2026',concepto:'Abono semana 3 (transferencia)',origen:'Ventanilla',cargo:0,abono:600},
-   ]},
-  {id:'ec3',nombre:'Luis Treviño',folio:'F-1077',tipo:'Pago único',cuota:4600,prom:'Ana Reyes',sem:'w',
-   dom:'Calle 5 de Mayo 88, Centro, Amecameca',vencidos:2,
-   movs:[
-     {fecha:'10/03/2026',concepto:'Disposición pago único (15 días)',origen:'Sucursal Amecameca',cargo:4600,abono:0},
-   ]},
-];
-let ecActual=null;
-function ecInit(){
-  document.getElementById('ec-sel').innerHTML=clientesEC.map(c=>`<option value="${c.id}">${c.nombre} · ${c.folio} · ${c.tipo}</option>`).join('');
-  ecActual=clientesEC[0]; ecRender();
+let _ecSales=[], ecActual=null, _ecLib=null;
+async function ecInit(){
+  try{
+    _ecSales = await apiU('GET','/api/sales');
+    document.getElementById('ec-sel').innerHTML = _ecSales.map(s=>`<option value="${s.id}">${s.cliente||'—'} · ${s.folio} · ${_tipoLbl[s.tipo]||s.tipo}</option>`).join('');
+    if(_ecSales.length){ ecActual=_ecSales[0]; await ecCargar(); }
+    else { document.getElementById('ec-empty').style.display='block'; document.getElementById('ec-empty').innerHTML='<div style="color:var(--faint);text-align:center;padding:20px">No hay créditos en la base todavía.</div>'; }
+  }catch(e){ document.getElementById('ec-empty').innerHTML='<div style="color:var(--red);padding:18px">'+e.message+'</div>'; }
 }
-function ecSelect(){ecActual=clientesEC.find(c=>c.id===document.getElementById('ec-sel').value);ecRender();}
-function ecLibro(c){
-  const auto=document.getElementById('ec-auto').checked;
-  const moraMonto=+document.getElementById('ec-mora').value||0;
-  let movs=c.movs.slice();
-  let moraN=0,moraTotal=0;
-  if(auto && c.vencidos>0){
-    for(let i=1;i<=c.vencidos;i++){movs.push({fecha:'auto',concepto:`Moratorio · periodo ${i} vencido`,origen:'Sistema · automático',cargo:moraMonto,abono:0,auto:true});moraN++;moraTotal+=moraMonto;}
-  }
-  let saldo=0;const rows=movs.map(m=>{saldo+=(m.cargo||0)-(m.abono||0);return {...m,saldo};});
-  const tcar=movs.reduce((a,m)=>a+(m.cargo||0),0), tabo=movs.reduce((a,m)=>a+(m.abono||0),0);
-  return {rows,saldo,tcar,tabo,moraN,moraTotal};
+function ecSelect(){ ecActual=_ecSales.find(s=>String(s.id)===document.getElementById('ec-sel').value); ecCargar(); }
+async function ecCargar(){
+  if(!ecActual) return;
+  try{ const d = await apiU('GET','/api/sales/'+ecActual.id+'/movimientos'); ecPinta(d); }
+  catch(e){ alert(e.message); }
 }
-function ecRender(){
-  if(!ecActual)return;
-  const c=ecActual, L=ecLibro(c);
+function ecPinta(d){
   ['ec-card','ec-saldo-card','ec-ledger-card'].forEach(id=>document.getElementById(id).style.display='block');
   document.getElementById('ec-empty').style.display='none';
-  document.getElementById('ec-nom').textContent=c.nombre;
-  const semCls=c.sem, semTxt=c.sem==='ok'?'Al corriente':c.sem==='w'?'Atrasado':'Vencido';
-  document.getElementById('ec-sem').className='pill '+semCls; document.getElementById('ec-sem').textContent=semTxt;
+  const c=ecActual;
+  document.getElementById('ec-nom').textContent=c.cliente||'—';
+  const liq=d.saldo<=0;
+  document.getElementById('ec-sem').className='pill '+(liq?'ok':'w'); document.getElementById('ec-sem').textContent=(liq?'Liquidado':'Activo');
   document.getElementById('ec-folio').textContent=c.folio;
-  document.getElementById('ec-mod').textContent=c.tipo+' · '+fmt(c.cuota);
-  document.getElementById('ec-dom').textContent=c.dom;
-  document.getElementById('ec-venc').textContent=c.vencidos;
-  document.getElementById('ec-prom').textContent=c.prom;
-  const auto=document.getElementById('ec-auto').checked;
-  document.getElementById('ec-mora-alert').innerHTML= c.vencidos>0 ? (auto
-    ? `<div class="note" style="background:rgba(240,101,77,.07);border:1px solid rgba(240,101,77,.2);color:var(--txt)">⚙ El sistema aplicó <b>${L.moraN} moratorio(s)</b> por <b>${fmt(L.moraTotal)}</b> automáticamente al saldo. La promotora ya no tiene que acordarse de registrarlos.</div>`
-    : `<div class="note" style="background:rgba(240,180,41,.07);border:1px solid rgba(240,180,41,.25);color:var(--txt)">⚠ Moratorio automático <b>desactivado</b>: ${c.vencidos} periodo(s) vencido(s) sin cargo. Este es justo el dinero que se pierde cuando la promotora "olvida" cargarlo.</div>`) : '';
-  document.getElementById('ec-tcar').textContent=fmt(L.tcar);
-  document.getElementById('ec-tabo').textContent=fmt(L.tabo);
-  document.getElementById('ec-tmor').textContent=fmt(L.moraTotal);
-  document.getElementById('ec-saldo').textContent=fmt(L.saldo);
-  document.getElementById('ec-ledger').innerHTML=L.rows.map(m=>`<tr ${m.auto?'style="background:rgba(240,101,77,.05)"':''}>
-    <td class="mono" style="font-size:.78rem">${m.fecha==='auto'?'<span class="pill bad" style="font-size:.62rem">AUTO</span>':m.fecha}</td>
-    <td>${m.concepto}</td><td class="sn">${m.origen}</td>
+  document.getElementById('ec-mod').textContent=(_tipoLbl[c.tipo]||c.tipo)+' · '+fmt(c.cuota);
+  document.getElementById('ec-dom').textContent='—';
+  document.getElementById('ec-venc').textContent='—';
+  document.getElementById('ec-prom').textContent=c.prom||'—';
+  document.getElementById('ec-mora-alert').innerHTML='';
+  const rows=d.movimientos||[];
+  const tcar=rows.reduce((a,m)=>a+(m.cargo||0),0), tabo=rows.reduce((a,m)=>a+(m.abono||0),0);
+  const tmor=rows.filter(m=>/morator/i.test(m.concepto||'')).reduce((a,m)=>a+(m.cargo||0),0);
+  document.getElementById('ec-tcar').textContent=fmt(tcar);
+  document.getElementById('ec-tabo').textContent=fmt(tabo);
+  document.getElementById('ec-tmor').textContent=fmt(tmor);
+  document.getElementById('ec-saldo').textContent=fmt(d.saldo);
+  document.getElementById('ec-ledger').innerHTML=rows.map(m=>{const mora=/morator/i.test(m.concepto||'')||m.auto;return `<tr ${mora?'style="background:rgba(240,101,77,.05)"':''}>
+    <td class="mono" style="font-size:.78rem">${m.fecha}</td><td>${m.concepto}${mora?' <span class="pill bad" style="font-size:.6rem">MORA</span>':''}</td><td class="sn">${m.origen||''}</td>
     <td class="n" style="color:${m.cargo?'var(--red)':'var(--faint)'}">${m.cargo?fmt(m.cargo):'—'}</td>
     <td class="n" style="color:${m.abono?'var(--grn)':'var(--faint)'}">${m.abono?fmt(m.abono):'—'}</td>
-    <td class="n" style="font-weight:600">${fmt(m.saldo)}</td></tr>`).join('');
+    <td class="n" style="font-weight:600">${fmt(m.saldo)}</td></tr>`;}).join('') || '<tr><td colspan="6" style="color:var(--faint);padding:14px">Sin movimientos.</td></tr>';
+  _ecLib={rows,saldo:d.saldo,tcar,tabo,tmor};
 }
-function ecMov(tipo){
-  const c=ecActual;if(!c)return;
-  if(tipo==='cargo'){
-    const m=parseFloat(prompt('Monto del cargo manual:'));if(!m||m<=0)return;
-    const con=prompt('Concepto del cargo:','Cargo manual')||'Cargo manual';
-    c.movs.push({fecha:new Date().toLocaleDateString('es-MX'),concepto:con,origen:'Supervisor',cargo:m,abono:0});
-  } else if(tipo==='abono'){
-    const m=parseFloat(prompt('Monto del abono:'));if(!m||m<=0)return;
-    c.movs.push({fecha:new Date().toLocaleDateString('es-MX'),concepto:'Abono manual',origen:'Supervisor',cargo:0,abono:m});
-  } else if(tipo==='condonar'){
-    const m=parseFloat(prompt('Monto a condonar:'));if(!m||m<=0)return;
-    const mot=prompt('Motivo de la condonación (moratorios / ajuste / acuerdo):','Condonación de moratorios')||'Condonación';
-    c.movs.push({fecha:new Date().toLocaleDateString('es-MX'),concepto:'Condonación: '+mot,origen:'Supervisor',cargo:0,abono:m});
-  }
-  ecRender();
+async function ecMov(tipo){
+  if(!ecActual) return;
+  try{
+    if(tipo==='cargo'){ const m=parseFloat(prompt('Monto del cargo manual:')); if(!m||m<=0)return; const con=prompt('Concepto del cargo:','Cargo manual')||'Cargo manual'; await apiU('POST','/api/sales/'+ecActual.id+'/cargo',{monto:m,concepto:con}); }
+    else if(tipo==='abono'){ const m=parseFloat(prompt('Monto del abono:')); if(!m||m<=0)return; await apiU('POST','/api/sales/'+ecActual.id+'/abono',{monto:m}); }
+    else if(tipo==='condonar'){ const m=parseFloat(prompt('Monto a condonar:')); if(!m||m<=0)return; const mot=prompt('Motivo (moratorios / ajuste / acuerdo):','Condonación de moratorios')||'Condonación'; await apiU('POST','/api/sales/'+ecActual.id+'/condonar',{monto:m,motivo:mot}); }
+    await ecCargar();
+  }catch(e){ alert(e.message); }
+}
+async function ecMora(){
+  if(!ecActual) return;
+  const m=+document.getElementById('ec-mora').value||25;
+  try{ await apiU('POST','/api/sales/'+ecActual.id+'/aplicar-mora',{monto:m}); await ecCargar(); }
+  catch(e){ alert(e.message); }
 }
 function ecImprimir(){
-  const c=ecActual;if(!c)return;const L=ecLibro(c);
-  const filas=L.rows.map(m=>`<tr><td>${m.fecha==='auto'?'(auto)':m.fecha}</td><td>${m.concepto}</td><td style="text-align:right">${m.cargo?fmt(m.cargo):''}</td><td style="text-align:right">${m.abono?fmt(m.abono):''}</td><td style="text-align:right">${fmt(m.saldo)}</td></tr>`).join('');
+  if(!ecActual||!_ecLib) return; const c=ecActual, L=_ecLib;
+  const filas=L.rows.map(m=>`<tr><td>${m.fecha}</td><td>${m.concepto}</td><td style="text-align:right">${m.cargo?fmt(m.cargo):''}</td><td style="text-align:right">${m.abono?fmt(m.abono):''}</td><td style="text-align:right">${fmt(m.saldo)}</td></tr>`).join('');
   const html=`<html><head><title>Estado de cuenta ${c.folio}</title><style>
     body{font-family:Arial,sans-serif;color:#111;padding:30px;font-size:13px}
     h1{font-size:20px;margin:0 0 2px}.sub{color:#666;font-size:12px;margin-bottom:18px}
@@ -662,21 +646,17 @@ function ecImprimir(){
     table{width:100%;border-collapse:collapse;margin-top:8px}th,td{border-bottom:1px solid #e3e3e3;padding:7px;text-align:left;font-size:12px}
     th{background:#f4f4f4}tfoot td{font-weight:bold;border-top:2px solid #999}
     .tot{text-align:right;margin-top:14px;font-size:16px}</style></head><body>
-    <h1>CobraPro · Estado de cuenta</h1><div class="sub">Emitido ${new Date().toLocaleString('es-MX')} · Sucursal Amecameca</div>
+    <h1>CobraPro · Estado de cuenta</h1><div class="sub">Emitido ${new Date().toLocaleString('es-MX')}</div>
     <div class="box"><div class="g">
-      <div><span>Cliente:</span> <b>${c.nombre}</b></div><div><span>Folio:</span> <b>${c.folio}</b></div>
-      <div><span>Producto:</span> ${c.tipo} · cuota ${fmt(c.cuota)}</div><div><span>Cobrador:</span> ${c.prom}</div>
-      <div style="flex-basis:100%"><span>Domicilio:</span> ${c.dom}</div></div></div>
+      <div><span>Cliente:</span> <b>${c.cliente||'—'}</b></div><div><span>Folio:</span> <b>${c.folio}</b></div>
+      <div><span>Producto:</span> ${_tipoLbl[c.tipo]||c.tipo} · cuota ${fmt(c.cuota)}</div><div><span>Cobrador:</span> ${c.prom||'—'}</div></div></div>
     <table><thead><tr><th>Fecha</th><th>Concepto</th><th style="text-align:right">Cargo</th><th style="text-align:right">Abono</th><th style="text-align:right">Saldo</th></tr></thead>
     <tbody>${filas}</tbody>
     <tfoot><tr><td colspan="2">Totales</td><td style="text-align:right">${fmt(L.tcar)}</td><td style="text-align:right">${fmt(L.tabo)}</td><td></td></tr></tfoot></table>
-    <div class="tot">Saldo actual: <b>${fmt(L.saldo)}</b></div>
-    <p style="color:#888;font-size:11px;margin-top:24px">Incluye ${L.moraN} moratorio(s) por ${fmt(L.moraTotal)} aplicados por el sistema. Documento informativo.</p>
-    </body></html>`;
+    <div class="tot">Saldo actual: <b>${fmt(L.saldo)}</b></div></body></html>`;
   try{const w=window.open('','_blank');w.document.write(html);w.document.close();w.focus();setTimeout(()=>w.print(),350);}
-  catch(e){alert('Permite ventanas emergentes para imprimir el estado de cuenta.');}
+  catch(e){alert('Permite ventanas emergentes para imprimir.');}
 }
-ecInit();
 
 const daily=[{d:'Lun',p:38,s:52},{d:'Mar',p:46,s:58},{d:'Mié',p:43,s:50},{d:'Jue',p:51,s:64},{d:'Vie',p:62,s:79},{d:'Sáb',p:68,s:44}];
 function drawDaily(){
@@ -731,6 +711,8 @@ document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
   document.getElementById('title').textContent=titles[n.dataset.v][0];
   document.getElementById('subtitle').textContent=titles[n.dataset.v][1];
   if(n.dataset.v==='usuarios') cargarUsuarios();
+  if(n.dataset.v==='cartera') cargarCartera();
+  if(n.dataset.v==='estado') ecInit();
 });
 document.querySelectorAll('#period button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#period button').forEach(x=>x.classList.remove('on'));b.classList.add('on');period=b.dataset.p;render();});
 ['c-cob','c-meta','c-bono','c-mora','c-coloc'].forEach(id=>document.getElementById(id).oninput=render);
