@@ -132,11 +132,16 @@
     <button class="navitem" data-v="comisiones"><span class="ic">%</span> Comisiones</button>
     <button class="navitem" data-v="conciliacion"><span class="ic">⇄</span> Conciliación</button>
     <button class="navitem" data-v="reportes"><span class="ic">📑</span> Reportes</button>
+    <button class="navitem" data-v="usuarios"><span class="ic">👤</span> Usuarios</button>
     <button class="navitem" data-v="simulador"><span class="ic">🖩</span> Simulador de crédito</button>
   </nav>
   <div class="side-foot">
     <div class="live"><span class="dot"></span> Sincronizado en vivo</div>
     <div class="mono" id="clock" style="margin-top:6px;font-size:.72rem"></div>
+    <div id="meBox" style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;gap:8px">
+      <span id="meName" style="color:var(--dim);font-size:.74rem"></span>
+      <button onclick="salir()" style="background:none;border:1px solid var(--line-2);color:var(--faint);font-family:'Sora';font-size:.72rem;padding:4px 9px;border-radius:7px;cursor:pointer">Salir</button>
+    </div>
   </div>
 </aside>
 
@@ -299,6 +304,29 @@
     </div>
   </section>
 
+  <section class="view" id="usuarios">
+    <div class="panel">
+      <div class="ph"><h3>Crear usuario</h3><span class="hint">Solo el administrador puede dar de alta</span></div>
+      <div id="u-passbox" style="display:none;align-items:center;gap:14px;background:linear-gradient(140deg,rgba(240,180,41,.12),rgba(240,180,41,.04));border:1px solid var(--acc);border-radius:10px;padding:14px;margin-bottom:14px">
+        <div style="flex:1"><div style="font-size:.74rem;color:var(--dim)">Contraseña generada para <b id="u-pbname"></b> — entrégala una sola vez:</div></div>
+        <div class="mono" id="u-pbpw" style="font-size:1.4rem;font-weight:600;color:var(--acc);letter-spacing:.1em"></div>
+        <button class="btn" onclick="copyPw()">Copiar</button>
+      </div>
+      <div class="filters">
+        <input id="u-nombre" placeholder="Nombre completo" style="flex:1;min-width:150px">
+        <input id="u-usuario" placeholder="Usuario (ej. areyes)" style="flex:1;min-width:130px">
+        <select id="u-rol"><option value="cobrador">Cobrador</option><option value="sucursal">Sucursal</option><option value="supervisor">Supervisor</option><option value="admin">Administrador</option></select>
+        <select id="u-suc"></select>
+        <input id="u-pass" placeholder="Clave (vacío = automática)" style="min-width:150px">
+        <button class="btn gold" onclick="crearUsuario()">Crear</button>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="ph"><h3>Usuarios registrados</h3></div>
+      <table><thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Sucursal</th><th>Estado</th><th></th></tr></thead><tbody id="u-list"></tbody></table>
+    </div>
+  </section>
+
   <section class="view" id="simulador">
     <div class="panel"><div class="ph"><h3>Simulador de crédito</h3><span class="hint">maneja las tres modalidades</span></div>
       <div class="sim-grid">
@@ -314,6 +342,19 @@
 </main>
 
 <script>
+/* ===== Sesión: exige token del login ===== */
+const TOKEN = (()=>{ try{ return localStorage.getItem('cobrapro_token'); }catch(e){ return null; } })();
+const ME = (()=>{ try{ return JSON.parse(localStorage.getItem('cobrapro_user')||'null'); }catch(e){ return null; } })();
+if(!TOKEN){ location.replace('index.html'); }
+async function apiU(method, path, body){
+  const r = await fetch(path, { method, headers:{'Content-Type':'application/json', Authorization:'Bearer '+TOKEN}, body: body?JSON.stringify(body):undefined });
+  if(r.status===401){ try{localStorage.removeItem('cobrapro_token');}catch(e){} location.replace('index.html'); throw new Error('Sesión expirada'); }
+  const d = await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(d.error || d.message || ('Error '+r.status));
+  return d;
+}
+function salir(){ try{localStorage.removeItem('cobrapro_token');localStorage.removeItem('cobrapro_user');}catch(e){} location.replace('index.html'); }
+
 /* ===== FUENTE ÚNICA DE VERDAD: créditos ===== */
 const SUC = [
   {id:'AME',nombre:'Amecameca', enc:'Brenda Solís',   color:'#f0b429'},
@@ -682,13 +723,14 @@ function sim(){const t=s_tipo.value,monto=+s_monto.value||0,plazo=+s_plazo.value
 }
 
 /* NAV + EVENTOS */
-const titles={resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],simulador:['Simulador de crédito','Cuota por modalidad y plazo']};
+const titles={resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo']};
 document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
   document.querySelectorAll('.navitem').forEach(x=>x.classList.remove('on'));
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
   n.classList.add('on');document.getElementById(n.dataset.v).classList.add('on');
   document.getElementById('title').textContent=titles[n.dataset.v][0];
   document.getElementById('subtitle').textContent=titles[n.dataset.v][1];
+  if(n.dataset.v==='usuarios') cargarUsuarios();
 });
 document.querySelectorAll('#period button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#period button').forEach(x=>x.classList.remove('on'));b.classList.add('on');period=b.dataset.p;render();});
 ['c-cob','c-meta','c-bono','c-mora','c-coloc'].forEach(id=>document.getElementById(id).oninput=render);
@@ -704,6 +746,41 @@ function exportCSV(t){let rows=[],name=t;const D=CRED.map(deriva);
 
 setInterval(()=>document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'}),1000);
 document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'});
+/* ===== USUARIOS (conectado al backend) ===== */
+const rolLbl = {admin:'Administrador',supervisor:'Supervisor',sucursal:'Sucursal',cobrador:'Cobrador'};
+let _sucursales = [];
+if(ME) document.getElementById('meName').textContent = ME.nombre + ' · ' + (rolLbl[ME.rol]||ME.rol);
+async function cargarUsuarios(){
+  try{
+    if(!_sucursales.length){ _sucursales = await apiU('GET','/api/sucursales');
+      document.getElementById('u-suc').innerHTML = '<option value="">— sin sucursal —</option>' + _sucursales.map(s=>`<option value="${s.id}">${s.nombre}</option>`).join(''); }
+    const us = await apiU('GET','/api/users');
+    document.getElementById('u-list').innerHTML = us.map(u=>{
+      const s=_sucursales.find(x=>x.id===u.sucursalId);
+      return `<tr><td class="nm">${u.nombre}</td><td class="mono" style="font-size:.8rem">${u.usuario}</td>
+        <td><span class="pill ${u.rol==='admin'?'w':u.rol==='cobrador'?'ok':''}">${rolLbl[u.rol]||u.rol}</span></td>
+        <td>${s?s.nombre:'—'}</td>
+        <td><span class="pill ${u.activo?'ok':'bad'}">${u.activo?'Activo':'Inactivo'}</span></td>
+        <td style="text-align:right;white-space:nowrap">
+          <button class="btn" style="padding:5px 9px;font-size:.74rem" onclick="toggleU(${u.id},${!u.activo})">${u.activo?'Desactivar':'Activar'}</button>
+          <button class="btn" style="padding:5px 9px;font-size:.74rem" onclick="resetU(${u.id})">Reset clave</button></td></tr>`;
+    }).join('') || '<tr><td colspan="6" style="color:var(--faint);padding:14px">Sin usuarios.</td></tr>';
+  }catch(e){ document.getElementById('u-list').innerHTML = `<tr><td colspan="6" style="color:var(--red);padding:14px">${e.message}</td></tr>`; }
+}
+async function crearUsuario(){
+  const body={ nombre:document.getElementById('u-nombre').value.trim(), usuario:document.getElementById('u-usuario').value.trim(),
+    rol:document.getElementById('u-rol').value, sucursalId:+document.getElementById('u-suc').value||null,
+    password:document.getElementById('u-pass').value.trim()||undefined };
+  if(!body.nombre||!body.usuario){ alert('Nombre y usuario son obligatorios'); return; }
+  try{ const d=await apiU('POST','/api/users',body); mostrarPw(d.nombre,d.passwordGenerada);
+    ['u-nombre','u-usuario','u-pass'].forEach(id=>document.getElementById(id).value=''); cargarUsuarios();
+  }catch(e){ alert(e.message); }
+}
+async function toggleU(id,activo){ try{ await apiU('PATCH','/api/users/'+id,{activo}); cargarUsuarios(); }catch(e){ alert(e.message); } }
+async function resetU(id){ try{ const d=await apiU('PATCH','/api/users/'+id,{resetPassword:true}); mostrarPw('(clave reseteada)',d.passwordGenerada); }catch(e){ alert(e.message); } }
+function mostrarPw(n,pw){ document.getElementById('u-pbname').textContent=n; document.getElementById('u-pbpw').textContent=pw; document.getElementById('u-passbox').style.display='flex'; }
+function copyPw(){ navigator.clipboard.writeText(document.getElementById('u-pbpw').textContent); }
+
 fillPlazos();sim();render();
 </script>
 </body>
