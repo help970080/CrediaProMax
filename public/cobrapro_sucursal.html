@@ -121,10 +121,11 @@
 <body>
 <header>
   <div class="mk">🏪</div>
-  <div><h1>Sucursal Amecameca</h1><div class="sub">Caja · Brenda Solís</div></div>
+  <div><h1>Sucursal Amecameca</h1><div class="sub" id="encName">Caja · Brenda Solís</div></div>
   <div class="hmeta">
     <div class="live"><span class="dot"></span> Sincronizado en vivo</div>
     <div class="clock mono" id="clock"></div>
+    <button onclick="salir()" style="background:var(--surf-3);border:1px solid var(--line-2);color:var(--dim);font-family:'Sora';font-size:.78rem;padding:7px 12px;border-radius:8px;cursor:pointer">Salir</button>
   </div>
 </header>
 <div class="wrap">
@@ -193,6 +194,12 @@
 <div class="overlay" id="overlay"></div>
 <div class="toast" id="toast"></div>
 <script>
+/* ===== Sesión ===== */
+const TOKEN=(()=>{try{return localStorage.getItem('cobrapro_token')}catch(e){return null}})();
+const ME=(()=>{try{return JSON.parse(localStorage.getItem('cobrapro_user')||'null')}catch(e){return null}})();
+if(!TOKEN){ location.replace('index.html'); }
+function salir(){ try{localStorage.removeItem('cobrapro_token');localStorage.removeItem('cobrapro_user');}catch(e){} location.replace('index.html'); }
+if(ME&&ME.nombre){ var _en=document.getElementById('encName'); if(_en)_en.textContent='Caja · '+ME.nombre; }
 // ===== Motor de cálculo REAL (factores Credia) =====
 const PROD={
   diario:[{p:10,f:1.17,fijo:30},{p:20,f:1.23,fijo:60},{p:30,f:1.33,fijo:90}],
