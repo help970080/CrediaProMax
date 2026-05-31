@@ -213,59 +213,55 @@ function calcCredito(tipo,plazo,monto){
   const total=monto*it.f+it.fijo;return {total,pagos:it.p,cuota:total/it.p,com:(total-monto)/it.p};
 }
 // ===== Cartera de la sucursal =====
-let clientes=[
-  {id:101,nombre:'María González',tel:'5544120098',prom:'Ana Reyes',color:'#f0b429',calle:'Calle Hidalgo 24',col:'Centro',creditos:[{id:'F-1042',tipo:'semanal',cuota:600,saldo:1800,sem:'ok'}]},
-  {id:102,nombre:'Pedro Jiménez',tel:'5544120134',prom:'Ana Reyes',color:'#5aa0e8',calle:'Av. Juárez 110',col:'San Miguel',creditos:[{id:'F-1043',tipo:'diario',cuota:150,saldo:900,sem:'ok'},{id:'F-1099',tipo:'semanal',cuota:400,saldo:1200,sem:'w'}]},
-  {id:103,nombre:'Rosa Maldonado',tel:'5544120201',prom:'Raúl Cárdenas',color:'#3ecf8e',calle:'Priv. Morelos 7',col:'Sacromonte',creditos:[{id:'F-1051',tipo:'semanal',cuota:488,saldo:6832,sem:'bad'}]},
-  {id:104,nombre:'Joel Ramírez',tel:'5544120377',prom:'Ana Reyes',color:'#b07ce0',calle:'Calle Allende 41',col:'La Loma',creditos:[{id:'F-1063',tipo:'diario',cuota:125,saldo:625,sem:'w'}]},
-  {id:105,nombre:'Norma Beltrán',tel:'5544120401',prom:'Raúl Cárdenas',color:'#f0654d',calle:'Av. Reforma 9',col:'Centro',creditos:[{id:'F-1071',tipo:'semanal',cuota:750,saldo:1500,sem:'ok'}]},
-];
-// ===== Caja: el dinero de cobradores va a "por entregar", NO a caja =====
-let caja={inicial:2000,efectivo:0,banco:0,enganches:0,entregasConfirmadas:0,ncob:0,ncred:0,coloc:0};
-let porEntregar=[
-  {id:'pe1',prom:'Ana Reyes',color:'#f0b429',monto:8400,visitas:12},
-  {id:'pe2',prom:'Raúl Cárdenas',color:'#f0654d',monto:5100,visitas:8},
-];
+let _clientes=[];
+let caja={inicial:0,efectivo:0,banco:0,enganches:0,entregasConfirmadas:0,ncob:0,ncred:0,coloc:0};
+let porEntregar=[];
 let movs=[];
 const tipoLbl={diario:'Diario',semanal:'Semanal',unico:'Pago único',p17:'Celulares 17'};
 const tipoCls={diario:'dia',semanal:'sem',unico:'uni',p17:'p17'};
 const semLbl={ok:'Al corriente',w:'Atrasado',bad:'Vencido'};
 const fmt=n=>'$'+Math.round(n).toLocaleString('es-MX');
-let sel=null, formaPay='efectivo';
-
-// ===== BÚSQUEDA por todos lados =====
-function buscar(){
-  const q=(document.getElementById('q').value||'').toLowerCase().trim();
-  const res=clientes.filter(c=>{
-    if(!q)return true;
-    const hay=[c.nombre,c.tel,c.prom,c.calle,c.col,...c.creditos.map(cr=>cr.id),...c.creditos.map(cr=>tipoLbl[cr.tipo])].join(' ').toLowerCase();
-    return hay.includes(q);
-  });
-  document.getElementById('cliRes').innerHTML=res.map(c=>{
-    const tot=c.creditos.reduce((a,cr)=>a+cr.saldo,0);
-    const ini=c.nombre.split(' ').map(w=>w[0]).slice(0,2).join('');
+const _colors=['#f0b429','#5aa0e8','#3ecf8e','#b07ce0','#f0654d','#d6a35a'];
+let sel=null, formaPay='efectivo', payCtx=null;
+function uuid(){return 'cp-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);}
+async function api(method,path,body){
+  const r=await fetch(path,{method,headers:{'Content-Type':'application/json',Authorization:'Bearer '+TOKEN},body:body?JSON.stringify(body):undefined});
+  if(r.status===401){ salir(); throw new Error('Sesión expirada'); }
+  const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||('Error '+r.status)); return d;
+}
+let _bt=null;
+function buscar(){ clearTimeout(_bt); _bt=setTimeout(_buscar,250); }
+async function _buscar(){
+  const q=(document.getElementById('q').value||'').trim();
+  try{ _clientes=await api('GET','/api/clients?search='+encodeURIComponent(q)); pintar(); }
+  catch(e){ document.getElementById('cliRes').innerHTML='<div style="color:var(--red);padding:14px">'+e.message+'</div>'; }
+}
+function pintar(){
+  document.getElementById('cliRes').innerHTML=_clientes.map((c,i)=>{
+    const color=_colors[i%_colors.length]; const creds=c.creditos||[];
+    const tot=creds.reduce((a,cr)=>a+(cr.saldo||0),0);
+    const ini=(c.nombre||'').split(' ').map(w=>w[0]).slice(0,2).join('');
     return `<div class="cli ${sel===c.id?'sel':''}" onclick="selCli(${c.id})">
-      <div class="cli-top"><div class="cli-ava" style="background:${c.color}">${ini}</div>
-        <div style="flex:1;min-width:0"><div class="cli-nm">${c.nombre}</div><div class="cli-sub">${c.tel} · ${c.prom}</div>
-          <div class="cli-addr">📍 ${c.calle}, ${c.col}</div></div>
+      <div class="cli-top"><div class="cli-ava" style="background:${color}">${ini}</div>
+        <div style="flex:1;min-width:0"><div class="cli-nm">${c.nombre||'—'}</div><div class="cli-sub">${c.tel||''} · ${c.prom||''}</div>
+          <div class="cli-addr">📍 ${[c.calle,c.col].filter(Boolean).join(', ')}</div></div>
         <div class="cli-saldo"><div class="k">Saldo total</div><div class="v">${fmt(tot)}</div></div></div>
-      <div class="credits">${c.creditos.map(cr=>`<div class="crow">
-        <span class="tipo ${tipoCls[cr.tipo]}">${tipoLbl[cr.tipo]}</span>
-        <div class="cdata"><div class="l1">${cr.id} · cuota ${fmt(cr.cuota)}</div><div class="l2">saldo ${fmt(cr.saldo)}</div></div>
-        <span class="pill ${cr.sem}">${semLbl[cr.sem]}</span>
-        <button class="pay" onclick="event.stopPropagation();abrirPago(${c.id},'${cr.id}')">Cobrar</button></div>`).join('')}</div>
+      <div class="credits">${creds.map(cr=>`<div class="crow">
+        <span class="tipo ${tipoCls[cr.tipo]||'sem'}">${tipoLbl[cr.tipo]||cr.tipo}</span>
+        <div class="cdata"><div class="l1">${cr.folio} · cuota ${fmt(cr.cuota)}</div><div class="l2">saldo ${fmt(cr.saldo)}</div></div>
+        <span class="pill ${cr.saldo<=0?'ok':'w'}">${cr.saldo<=0?'Liquidado':'Activo'}</span>
+        <button class="pay" onclick="event.stopPropagation();abrirPago(${c.id},${cr.id})">Cobrar</button></div>`).join('')}</div>
     </div>`;
   }).join('') || '<div style="color:var(--faint);font-size:.85rem;padding:14px">Sin coincidencias.</div>';
 }
-function selCli(id){sel=sel===id?null:id;buscar();}
-
-let payCtx=null;
-function abrirPago(cid,fid){
-  const c=clientes.find(x=>x.id===cid);const cr=c.creditos.find(x=>x.id===fid);payCtx={cid,fid};formaPay='efectivo';
+function selCli(id){sel=sel===id?null:id;pintar();}
+function abrirPago(cid,saleId){
+  const c=_clientes.find(x=>x.id===cid); const cr=(c.creditos||[]).find(x=>x.id===saleId);
+  payCtx={saleId, cliente:c.nombre, folio:cr.folio}; formaPay='efectivo';
   document.getElementById('overlay').innerHTML=`<div class="modal">
     <h3>Pago — ${c.nombre}</h3>
-    <div style="font-size:.78rem;color:var(--faint);margin-bottom:12px">${fid} · ${tipoLbl[cr.tipo]} · saldo ${fmt(cr.saldo)}</div>
-    <div class="amt-box"><div class="l">Monto recibido</div><input class="amt-input" id="payamt" value="${Math.min(cr.cuota,cr.saldo)}" inputmode="numeric"></div>
+    <div style="font-size:.78rem;color:var(--faint);margin-bottom:12px">${cr.folio} · ${tipoLbl[cr.tipo]||cr.tipo} · saldo ${fmt(cr.saldo)}</div>
+    <div class="amt-box"><div class="l">Monto recibido</div><input class="amt-input" id="payamt" value="${Math.round(Math.min(cr.cuota,cr.saldo))}" inputmode="numeric"></div>
     <div style="font-size:.72rem;color:var(--dim);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Forma de pago</div>
     <div class="forma" id="forma">
       <button class="on" onclick="setForma('efectivo',this)">💵 Efectivo</button>
@@ -279,41 +275,43 @@ function abrirPago(cid,fid){
 }
 function setForma(f,el){formaPay=f;document.querySelectorAll('#forma button').forEach(b=>b.classList.remove('on'));el.classList.add('on');}
 const formaLbl={efectivo:'Efectivo',transferencia:'Transferencia',deposito:'Depósito',ajuste:'Ajuste'};
-function confirmPago(){
+async function confirmPago(){
   const monto=parseFloat(document.getElementById('payamt').value)||0;
-  const c=clientes.find(x=>x.id===payCtx.cid);const cr=c.creditos.find(x=>x.id===payCtx.fid);
-  cr.saldo=Math.max(0,cr.saldo-monto);
-  if(formaPay==='efectivo')caja.efectivo+=monto;
-  else if(formaPay==='transferencia'||formaPay==='deposito')caja.banco+=monto;
-  caja.ncob++;
-  const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
-  movs.unshift({hora,txt:`Pago ${cr.id} · ${formaLbl[formaPay]} — ${c.nombre}`,monto});
-  document.getElementById('overlay').innerHTML=`<div class="modal">
-    <h3>✓ Pago registrado</h3>
-    <div class="recibo">
-      <div class="rr"><span>Folio crédito</span><span class="v">${cr.id}</span></div>
-      <div class="rr"><span>Cliente</span><span class="v">${c.nombre}</span></div>
-      <div class="rr"><span>Forma de pago</span><span class="v" style="color:var(--acc)">${formaLbl[formaPay]}</span></div>
-      <div class="rr"><span>Monto pagado</span><span class="v" style="color:var(--grn)">${fmt(monto)}</span></div>
-      <div class="rr"><span>Saldo restante</span><span class="v">${fmt(cr.saldo)}</span></div>
-      <div class="rr"><span>Fecha · hora</span><span class="v">${new Date().toLocaleDateString('es-MX')} ${hora}</span></div>
-      <div class="rr"><span>Atendió</span><span class="v">Brenda S.</span></div>
-    </div>
-    <div class="modal-actions"><button class="ma ok" onclick="cerrar()">📲 Enviar recibo por WhatsApp</button></div>
-  </div>`;
+  if(monto<=0){toast('Monto inválido');return;}
+  try{
+    const d=await api('POST','/api/sales/'+payCtx.saleId+'/pago',{monto,forma:formaPay,idempotencyKey:uuid()});
+    const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+    movs.unshift({hora,txt:`Pago ${payCtx.folio} · ${formaLbl[formaPay]} — ${payCtx.cliente}`,monto});
+    document.getElementById('overlay').innerHTML=`<div class="modal">
+      <h3>✓ Pago registrado</h3>
+      <div class="recibo">
+        <div class="rr"><span>Folio crédito</span><span class="v">${payCtx.folio}</span></div>
+        <div class="rr"><span>Cliente</span><span class="v">${payCtx.cliente}</span></div>
+        <div class="rr"><span>Forma de pago</span><span class="v" style="color:var(--acc)">${formaLbl[formaPay]}</span></div>
+        <div class="rr"><span>Monto pagado</span><span class="v" style="color:var(--grn)">${fmt(monto)}</span></div>
+        <div class="rr"><span>Saldo restante</span><span class="v">${fmt(d.saldo)}</span></div>
+        <div class="rr"><span>Fecha · hora</span><span class="v">${new Date().toLocaleDateString('es-MX')} ${hora}</span></div>
+      </div>
+      <div class="modal-actions"><button class="ma ok" onclick="cerrar()">Cerrar</button></div>
+    </div>`;
+    caja.ncob++; await cargarCaja();
+  }catch(e){ toast(e.message); }
+}
+function cerrar(){document.getElementById('overlay').classList.remove('on');_buscar();}
+document.getElementById('overlay').onclick=e=>{if(e.target.id==='overlay')cerrar();};
+async function cargarCaja(){
+  try{ const d=await api('GET','/api/caja/hoy'); const cj=d.caja||{};
+    caja.inicial=cj.inicial||0; caja.efectivo=cj.efectivo||0; caja.banco=cj.banco||0; caja.entregasConfirmadas=cj.entregas||0;
+    porEntregar=(d.porEntregar||[]).map((p,i)=>({id:p.id,prom:p.prom,monto:p.monto,color:_colors[i%_colors.length]}));
+  }catch(e){}
   render();
 }
-function cerrar(){document.getElementById('overlay').classList.remove('on');buscar();}
-document.getElementById('overlay').onclick=e=>{if(e.target.id==='overlay')cerrar();};
-
-// ===== Confirmar entrega de cobrador (por entregar -> caja) =====
-function confirmarEntrega(id){
-  const pe=porEntregar.find(x=>x.id===id);if(!pe)return;
-  caja.entregasConfirmadas+=pe.monto;
-  const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
-  movs.unshift({hora,txt:`Entrega confirmada — ${pe.prom}`,monto:pe.monto});
-  porEntregar=porEntregar.filter(x=>x.id!==id);
-  render();toast(`✓ ${fmt(pe.monto)} de ${pe.prom.split(' ')[0]} ahora en caja`);
+async function confirmarEntrega(id){
+  try{ await api('POST','/api/caja/entrega',{porEntregarId:id});
+    const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+    movs.unshift({hora,txt:'Entrega de cobrador confirmada',monto:0});
+    await cargarCaja(); toast('✓ Entrega confirmada · ya en caja');
+  }catch(e){ toast(e.message); }
 }
 
 // ===== Nuevo crédito =====
@@ -341,25 +339,24 @@ function calc(){
     ${extra}
     <div class="calc-row big"><span>Cuota ${freq}</span><span class="v">${fmt(r.cuota)}</span></div>`;
 }
-function crearCredito(){
+async function crearCredito(){
   const nombre=document.getElementById('n-cli').value.trim();
   const calle=document.getElementById('n-calle').value.trim();
   const col=document.getElementById('n-col').value.trim();
   if(!nombre){toast('Captura el nombre del cliente');return;}
   if(!calle||!col){toast('El domicilio es obligatorio para la venta a crédito');return;}
-  const t=document.getElementById('n-tipo').value;const monto=+document.getElementById('n-monto').value||0;
-  const plazo=+(document.getElementById('n-plazo')?.value||0);const r=calcCredito(t,plazo,monto);
-  const tel=document.getElementById('n-tel').value||'—';const prom=document.getElementById('n-prom').value;
-  const folio='F-'+Math.floor(1100+Math.random()*800);
-  const color=['#f0b429','#5aa0e8','#3ecf8e','#b07ce0','#f0654d'][clientes.length%5];
-  clientes.unshift({id:Date.now(),nombre,tel,prom,color,calle,col,creditos:[{id:folio,tipo:t,cuota:r.cuota,saldo:r.total,sem:'ok'}]});
-  caja.ncred++;caja.coloc+=monto;
-  const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
-  movs.unshift({hora,txt:`Crédito ${folio} — ${nombre} (${prom})`,monto:0});
-  document.getElementById('n-cli').value='';document.getElementById('n-tel').value='';
-  document.getElementById('n-calle').value='';document.getElementById('n-col').value='';document.getElementById('n-ref').value='';
-  render();buscar();
-  toast(`✓ ${folio} capturado · cuota ${fmt(r.cuota)} · en ruta de ${prom.split(' ')[0]}`);
+  const t=document.getElementById('n-tipo').value; const monto=+document.getElementById('n-monto').value||0;
+  const plazo=+(document.getElementById('n-plazo')?.value||0);
+  const tel=document.getElementById('n-tel').value||''; const prom=document.getElementById('n-prom').value;
+  try{
+    const d=await api('POST','/api/sales',{nombre,tel,calle,col,prom,tipo:t,plazo,monto,dias:plazo});
+    caja.ncred++; caja.coloc+=monto;
+    const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+    movs.unshift({hora,txt:`Crédito ${d.folio} — ${nombre} (${prom})`,monto:0});
+    ['n-cli','n-tel','n-calle','n-col','n-ref'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    render(); _buscar();
+    toast(`✓ ${d.folio} capturado · cuota ${fmt(d.cuota)} · en ruta de ${prom.split(' ')[0]}`);
+  }catch(e){ toast(e.message); }
 }
 function render(){
   document.getElementById('k-cob').textContent=fmt(caja.efectivo+caja.banco);
@@ -368,27 +365,31 @@ function render(){
   document.getElementById('k-coloc').textContent=fmt(caja.coloc)+' colocado';
   const pe=porEntregar.reduce((a,x)=>a+x.monto,0);
   document.getElementById('k-pe').textContent=fmt(pe);
-  const efectivoReal=caja.inicial+caja.efectivo+caja.enganches+caja.entregasConfirmadas;
+  const efectivoReal=caja.inicial+caja.efectivo+caja.entregasConfirmadas;
   document.getElementById('k-caja').textContent=fmt(efectivoReal);
   document.getElementById('cut-tot').textContent=fmt(efectivoReal);
   document.getElementById('ct-ini').textContent=fmt(caja.inicial);
   document.getElementById('ct-efe').textContent=fmt(caja.efectivo);
-  document.getElementById('ct-eng').textContent=fmt(caja.enganches);
+  document.getElementById('ct-eng').textContent=fmt(0);
   document.getElementById('ct-ent').textContent=fmt(caja.entregasConfirmadas);
   document.getElementById('ct-banco').textContent=fmt(caja.banco);
   document.getElementById('peList').innerHTML= porEntregar.length? porEntregar.map(p=>`<div class="pe-card">
-    <div class="pe-ava" style="background:${p.color}">${p.prom.split(' ').map(w=>w[0]).slice(0,2).join('')}</div>
-    <div><div class="pe-nm">${p.prom}</div><div class="pe-sub">${p.visitas} cobros en ruta · por entregar</div></div>
+    <div class="pe-ava" style="background:${p.color}">${(p.prom||'').split(' ').map(w=>w[0]).slice(0,2).join('')}</div>
+    <div><div class="pe-nm">${p.prom}</div><div class="pe-sub">cobros en ruta · por entregar</div></div>
     <div class="pe-monto">${fmt(p.monto)}</div>
-    <button class="pe-btn" onclick="confirmarEntrega('${p.id}')">✓ Confirmar entrega</button></div>`).join('')
-    : '<div style="color:var(--grn);font-size:.84rem;padding:6px 2px">Todos los cobradores entregaron. Nada en tránsito.</div>';
+    <button class="pe-btn" onclick="confirmarEntrega(${p.id})">✓ Confirmar entrega</button></div>`).join('')
+    : '<div style="color:var(--grn);font-size:.84rem;padding:6px 2px">Nada en tránsito.</div>';
   document.getElementById('movs').innerHTML= movs.length? movs.map(m=>`<tr><td class="mono" style="color:var(--faint);font-size:.78rem">${m.hora}</td><td>${m.txt}</td><td class="n">${m.monto>0?fmt(m.monto):'—'}</td></tr>`).join('') : '<tr><td colspan="3" style="color:var(--faint);font-size:.82rem;text-align:center;padding:16px">Sin movimientos aún.</td></tr>';
 }
 function toast(t){const el=document.getElementById('toast');el.textContent=t;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2800);}
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));t.classList.add('on');document.getElementById(t.dataset.v).classList.add('on');});
 setInterval(()=>document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'}),1000);
 document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'});
-fillPlazos();calc();buscar();render();
+async function _init(){
+  try{ const cob=await api('GET','/api/cobradores'); if(cob.length) document.getElementById('n-prom').innerHTML=cob.map(c=>`<option>${c.nombre}</option>`).join(''); }catch(e){}
+  fillPlazos(); calc(); _buscar(); cargarCaja();
+}
+_init();
 </script>
 </body>
 </html>
