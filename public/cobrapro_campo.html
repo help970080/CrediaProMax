@@ -192,21 +192,37 @@ if(ME&&ME.nombre){ var _cn=document.getElementById('cobName'); if(_cn)_cn.textCo
 let online=true, syncTimer=null;
 const META=5200;
 // cartera asignada a Ana Reyes (en producción: GET /api/sales?collector=me&route=today)
-const clientes=[
-  {id:1,nombre:'María González',  dir:'Calle Hidalgo 24, Centro',     tel:'5544120098', tipo:'semanal',cuota:600, saldo:1800, sem:'ok'},
-  {id:2,nombre:'Pedro Jiménez',   dir:'Av. Juárez 110, San Miguel',    tel:'5544120134', tipo:'diario', cuota:150, saldo:900,  sem:'ok'},
-  {id:3,nombre:'Rosa Maldonado',  dir:'Priv. Morelos 7, Sacromonte',   tel:'5544120201', tipo:'semanal',cuota:488, saldo:6832, sem:'bad'},
-  {id:4,nombre:'Luis Treviño',    dir:'Calle 5 de Mayo 88',            tel:'5544120222', tipo:'unico',  cuota:4600,saldo:4600, sem:'w'},
-  {id:5,nombre:'Carmen Ibáñez',   dir:'Camino Real 15, La Loma',       tel:'5544120319', tipo:'semanal',cuota:720, saldo:2160, sem:'ok'},
-  {id:6,nombre:'Joel Ramírez',    dir:'Calle Allende 41',              tel:'5544120377', tipo:'diario', cuota:125, saldo:625,  sem:'w'},
-  {id:7,nombre:'Norma Beltrán',   dir:'Av. Reforma 9, Centro',         tel:'5544120401', tipo:'semanal',cuota:750, saldo:1500, sem:'ok'},
-];
+let clientes=[];
 let estado={}; // id -> {cobrado, status, monto}
 let logs=[], queue=0;
 const tipoLbl={diario:'Diario',semanal:'Semanal',unico:'Pago único'};
 const tipoCls={diario:'dia',semanal:'sem',unico:'uni'};
 const semLbl={ok:'Al corriente',w:'Atrasado',bad:'Vencido'};
 const fmt=n=>'$'+Math.round(n).toLocaleString('es-MX');
+function uuid(){return 'cp-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);}
+async function api(method,path,body){
+  const r=await fetch(path,{method,headers:{'Content-Type':'application/json',Authorization:'Bearer '+TOKEN},body:body?JSON.stringify(body):undefined});
+  if(r.status===401){ salir(); throw new Error('Sesión'); }
+  const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||('Error '+r.status)); return d;
+}
+let cola=(()=>{try{return JSON.parse(localStorage.getItem('cobrapro_cola')||'[]')}catch(e){return []}})();
+queue=cola.length;
+let forceOffline=false, _flushing=false;
+function saveCola(){ try{localStorage.setItem('cobrapro_cola',JSON.stringify(cola));}catch(e){} queue=cola.length; }
+function efectivamenteOnline(){ return navigator.onLine && !forceOffline; }
+async function cargarRuta(){ try{ clientes=await api('GET','/api/mi-ruta'); }catch(e){ toast('No se pudo cargar la ruta: '+e.message); } render(); }
+function enqueue(item){ item.idem=item.idem||uuid(); cola.push(item); saveCola(); render(); flush(); }
+async function flush(){
+  if(!efectivamenteOnline()||_flushing) return; _flushing=true;
+  try{ while(cola.length){ const it=cola[0];
+    try{
+      if(it.kind==='pago') await api('POST','/api/sales/'+it.saleId+'/pago',{monto:it.monto,forma:it.forma,idempotencyKey:it.idem});
+      else await api('POST','/api/sales/'+it.saleId+'/gestion',{tipo:it.tipo,detalle:it.detalle,idempotencyKey:it.idem});
+      cola.shift(); saveCola();
+    }catch(e){ break; }
+  } } finally { _flushing=false; queue=cola.length; render(); }
+}
+window.addEventListener('online', flush);
 
 document.getElementById('hdate').textContent=new Date().toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'short'});
 
@@ -290,10 +306,12 @@ function abrirCobro(id){cobroId=id;formaPay='efectivo';const c=clientes.find(x=>
 function setAmt(v,el){document.getElementById('amt').value=v;document.querySelectorAll('#quick button').forEach(b=>b.classList.remove('on'));el.classList.add('on');}
 function confirmarCobro(){
   const monto=parseFloat(document.getElementById('amt').value)||0;
-  const c=clientes.find(x=>x.id===cobroId);const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+  if(monto<=0){toast('Monto inválido');return;}
+  const c=clientes.find(x=>x.id===cobroId); const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
   estado[cobroId]={status:'pagado',monto,forma:formaPay,hora};
   logs.unshift({hora,txt:`Cobro ${fmt(monto)} · ${formaLbl[formaPay]} — ${c.nombre}`});
-  enqueue(); cerrar(); render(); toast(`✓ ${fmt(monto)} (${formaLbl[formaPay]}) registrado`);
+  enqueue({kind:'pago',saleId:cobroId,monto,forma:formaPay});
+  cerrar(); render(); toast(efectivamenteOnline()?`✓ ${fmt(monto)} registrado`:'✓ Guardado offline · sincroniza al volver la red');
 }
 function abrirNoPago(id){cobroId=id;const c=clientes.find(x=>x.id===id);
   document.getElementById('overlay').innerHTML=`<div class="sheet">
@@ -308,23 +326,22 @@ function abrirNoPago(id){cobroId=id;const c=clientes.find(x=>x.id===id);
   </div>`;
   document.getElementById('overlay').classList.add('on');
 }
-function noPago(status,lbl){const c=clientes.find(x=>x.id===cobroId);const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+function noPago(status,lbl){
+  const c=clientes.find(x=>x.id===cobroId); const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
   estado[cobroId]={status,statusLbl:lbl,hora};
   logs.unshift({hora,txt:`${lbl} — ${c.nombre}`});
-  enqueue(); cerrar(); render(); toast('Gestión registrada');
+  enqueue({kind:'gestion',saleId:cobroId,tipo:status,detalle:lbl});
+  cerrar(); render(); toast('Gestión registrada');
 }
 function whatsapp(id){const c=clientes.find(x=>x.id===id);toast('Abriendo WhatsApp a '+c.nombre);}
 function cerrar(){document.getElementById('overlay').classList.remove('on');}
 document.getElementById('overlay').onclick=e=>{if(e.target.id==='overlay')cerrar();};
 
-function enqueue(){ // offline-first: encola y sincroniza si hay red
-  queue++;render();
-  if(online){clearTimeout(syncTimer);syncTimer=setTimeout(()=>{queue=0;render();},1400);}
-}
+
 document.getElementById('syncBtn').onclick=()=>{
-  online=!online;const b=document.getElementById('syncBadge');
-  if(online){b.className='badge on';b.innerHTML='<span class="dot"></span> En línea';if(queue>0){syncTimer=setTimeout(()=>{queue=0;render();},1400);toast('Sincronizando '+queue+' movimientos…');}}
-  else{b.className='badge off';b.innerHTML='<span class="dot"></span> Sin conexión';clearTimeout(syncTimer);}
+  forceOffline=!forceOffline; const b=document.getElementById('syncBadge');
+  if(!forceOffline){ b.className='badge on'; b.innerHTML='<span class="dot"></span> En línea'; if(cola.length) toast('Sincronizando '+cola.length+' movimientos…'); flush(); }
+  else{ b.className='badge off'; b.innerHTML='<span class="dot"></span> Sin conexión'; }
   render();
 };
 function entregar(){const efectivo=Object.values(estado).filter(e=>e.status==='pagado'&&e.forma==='efectivo').reduce((a,e)=>a+e.monto,0);
@@ -337,7 +354,7 @@ document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
   t.classList.add('on');document.getElementById(t.dataset.v).classList.add('on');
 });
-render();
+cargarRuta(); flush();
 </script>
 </body>
 </html>
