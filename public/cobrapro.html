@@ -183,7 +183,7 @@
         <button class="btn" onclick="exportCSV('cartera')">⬇ CSV</button>
       </div>
       <table><thead><tr>
-        <th>Cliente</th><th>Sucursal</th><th>Cobrador</th><th>Modalidad</th><th class="n">Monto</th><th class="n">Cuota</th><th>Plazo</th><th class="n">Saldo</th><th>Avance</th><th>Próx. pago</th><th>Estado</th>
+        <th>Cliente</th><th>Sucursal</th><th>Cobrador</th><th>Modalidad</th><th class="n">Monto</th><th class="n">Cuota</th><th>Plazo</th><th class="n">Saldo</th><th>Avance</th><th>Próx. pago</th><th>Estado</th><th></th>
       </tr></thead><tbody id="tb-cart"></tbody></table>
       <div class="note">Cada pago —en ruta o en caja— actualiza el saldo y el semáforo al instante contra una sola base de datos. La cuota se calcula según modalidad: diario (capital÷días), semanal (4/8/12/16/20 sem.) o pago único a n días.</div>
     </div>
@@ -248,7 +248,7 @@
   <section class="view" id="sucursales">
     <div class="kpis" id="suc-kpis"></div>
     <div class="panel"><div class="ph"><h3>Sucursales</h3><button class="btn" onclick="exportCSV('suc')">⬇ CSV</button></div>
-      <table><thead><tr><th>Sucursal</th><th>Encargada</th><th class="n">Pagos recibidos</th><th class="n"># Pagos</th><th class="n">Créditos captados</th><th class="n">Colocado $</th><th class="n">Efectivo en caja</th><th>Conciliación</th></tr></thead><tbody id="tb-suc"></tbody></table>
+      <table><thead><tr><th>Sucursal</th><th>Encargada</th><th class="n">Pagos recibidos</th><th class="n"># Pagos</th><th class="n">Créditos captados</th><th class="n">Cartera total</th><th class="n">Atraso</th><th class="n">Efectivo en caja</th><th>Conciliación</th></tr></thead><tbody id="tb-suc"></tbody></table>
       <div class="note">La encargada captura los créditos nuevos; ese movimiento aparece de inmediato en la cartera del cobrador asignado, sin listas ni esperas al día siguiente.</div>
     </div>
   </section>
@@ -458,10 +458,10 @@ function pintaResumen(d){
   $('k-ncred').textContent=t.nuevos_creditos_periodo+' créditos nuevos';
   $('k-cart').textContent=fmt(t.saldo_pendiente);
   $('k-ncli').textContent=t.creditos_activos+' créditos vigentes';
-  // vencido: aprox = pagos no recibidos (no aging exacto; muestra cartera total como referencia 0 por ahora)
-  $('k-ven').textContent=fmt(0); $('k-ven-p').textContent='0.0%';
+  $('k-ven').textContent=fmt(t.atraso_total||0);
+  const pct = t.saldo_pendiente>0 ? ((t.atraso_total||0)/t.saldo_pendiente*100) : 0;
+  $('k-ven-p').textContent=pct.toFixed(1)+'% · '+(t.clientes_atrasados||0)+' clientes';
   $('k-ef').textContent=fmt(t.por_entregar+t.en_caja_efectivo);
-  // tabla por cobrador (top recuperación)
   const rows=[...d.por_cobrador].sort((a,b)=>b.pagos_recibidos-a.pagos_recibidos);
   const k=cfg();
   $('tb-res').innerHTML= rows.length? rows.map((p,i)=>{
@@ -473,22 +473,24 @@ function pintaResumen(d){
       <td><div style="display:flex;align-items:center;gap:8px"><div class="bar"><i style="width:${meta}%;background:${meta>=85?'var(--grn)':meta>=70?'var(--acc)':'var(--red)'}"></i></div><span class="mono" style="font-size:.78rem">${meta.toFixed(0)}%</span></div></td>
       <td class="n cm">${fmt(com)}</td></tr>`;
   }).join('') : '<tr><td colspan="6" style="color:var(--faint);padding:18px;text-align:center">Aún sin cobradores con actividad en el periodo.</td></tr>';
-  // donut por forma de pago
   drawDonutForma(d.pagos_recientes||[]);
   drawDailyPagos(d.pagos_recientes||[]);
 }
 
 function pintaSucursales(d){
   const sucs=d.por_sucursal;
-  $('suc-kpis').innerHTML=sucs.map((s,i)=>`<div class="kpi b"><div class="l">${s.nombre}</div><div class="v">${fmtK(s.pagos_recibidos)}</div><div class="s">${s.creditos_captados} créditos · ${fmt(s.efectivo_caja)} en caja</div></div>`).join('') || '<div style="color:var(--faint);padding:10px">Sin sucursales.</div>';
+  $('suc-kpis').innerHTML=sucs.map(s=>`<div class="kpi b"><div class="l">${s.nombre}</div><div class="v">${fmtK(s.pagos_recibidos)}</div><div class="s">${s.creditos} créditos · cartera ${fmtK(s.cartera)} · atraso ${fmtK(s.atraso_monto||0)}</div></div>`).join('') || '<div style="color:var(--faint);padding:10px">Sin sucursales.</div>';
   $('tb-suc').innerHTML=sucs.map((s,i)=>{
     const color=_sucColor[i%_sucColor.length];
     const est = s.por_entregar>0
       ? `<span class="pill w">${fmt(s.por_entregar)} por entregar</span>`
       : '<span class="pill ok">Cuadrada</span>';
     return `<tr><td><div class="who"><div class="ava" style="background:${color}">🏪</div><div class="nm">${s.nombre}</div></div></td>
-      <td>${s.encargada}</td><td class="n">${fmt(s.pagos_recibidos)}</td><td class="n">${s.npagos}</td><td class="n">${s.creditos_captados}</td><td class="n">${fmt(s.colocado)}</td><td class="n">${fmt(s.efectivo_caja)}</td><td>${est}</td></tr>`;
-  }).join('') || '<tr><td colspan="8" style="color:var(--faint);padding:18px;text-align:center">Sin actividad por sucursal en el periodo.</td></tr>';
+      <td>${s.encargada}</td><td class="n">${fmt(s.pagos_recibidos)}</td><td class="n">${s.npagos}</td><td class="n">${s.creditos_captados}</td>
+      <td class="n">${fmt(s.cartera)}</td>
+      <td class="n" style="color:${(s.atraso_monto||0)>0?'var(--red)':'var(--faint)'}">${(s.atraso_monto||0)>0?fmt(s.atraso_monto)+' <span style="font-size:.65rem">('+s.atraso_clientes+')</span>':'—'}</td>
+      <td class="n">${fmt(s.efectivo_caja)}</td><td>${est}</td></tr>`;
+  }).join('') || '<tr><td colspan="9" style="color:var(--faint);padding:18px;text-align:center">Sin actividad por sucursal en el periodo.</td></tr>';
 }
 
 function pintaCobradores(d){
@@ -497,7 +499,8 @@ function pintaCobradores(d){
     const meta=p.clientes>0? Math.min(100,(p.npagos/p.clientes)*100):0;
     const k=cfg(); const com=p.pagos_recibidos*k.cob/100;
     return `<tr><td><div class="who"><div class="ava" style="background:${color}">${ini}</div><div><div class="nm">${p.nombre}</div><div class="sn">${p.sucursal}</div></div></div></td>
-      <td class="n">${p.clientes}</td><td class="n">${fmt(p.cartera)}</td><td class="n" style="color:var(--red)">${fmt(0)}</td>
+      <td class="n">${p.clientes}</td><td class="n">${fmt(p.cartera)}</td>
+      <td class="n" style="color:${p.atraso_monto>0?'var(--red)':'var(--faint)'}">${p.atraso_monto>0?fmt(p.atraso_monto)+'<div style="font-size:.65rem">'+p.atraso_clientes+' clientes</div>':'—'}</td>
       <td class="n">${fmt(p.pagos_recibidos)}</td><td class="n">${p.npagos}</td><td class="n">${fmt(p.por_entregar)}</td>
       <td><span class="pill ${meta>=85?'ok':meta>=70?'w':'bad'}">${meta.toFixed(0)}%</span></td><td class="n cm">${fmt(com)}</td></tr>`;
   }).join('') : '<tr><td colspan="9" style="color:var(--faint);padding:18px;text-align:center">No hay cobradores dados de alta todavía. Crea uno en Usuarios.</td></tr>';
@@ -583,6 +586,7 @@ async function cargarCartera(){
 function renderCartera(){
   const q=($('f-q').value||'').toLowerCase(), fs=$('f-suc').value, ft=$('f-tipo').value;
   const rows=_cartera.filter(c=> (!fs||String(c.sucursalId)===String(fs)) && (!ft||c.tipo===ft) && (!q||(c.cliente||'').toLowerCase().includes(q)));
+  const puedeBorrar = ME && (ME.rol==='admin'||ME.rol==='supervisor');
   $('tb-cart').innerHTML=rows.map(c=>{
     const av=c.total>0?(c.total-c.saldo)/c.total:0; const liq=c.saldo<=0;
     const ini=(c.prom||'·').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
@@ -593,8 +597,14 @@ function renderCartera(){
       <td class="n">${fmt(c.monto)}</td><td class="n">${fmt(c.cuota)}</td><td>${_plazoTxt(c)}</td><td class="n">${fmt(c.saldo)}</td>
       <td><div style="display:flex;align-items:center;gap:7px"><div class="bar" style="min-width:46px"><i style="width:${(av*100).toFixed(0)}%;background:var(--grn)"></i></div><span class="mono" style="font-size:.72rem">${(av*100).toFixed(0)}%</span></div></td>
       <td class="sn">${liq?'—':'Pendiente'}</td>
-      <td><span class="pill ok">${liq?'Liquidado':'Activo'}</span></td></tr>`;
-  }).join('') || `<tr><td colspan="11" style="text-align:center;color:var(--faint);padding:24px">Sin créditos en la base.</td></tr>`;
+      <td><span class="pill ok">${liq?'Liquidado':'Activo'}</span></td>
+      <td style="text-align:right">${puedeBorrar?`<button class="btn" style="padding:4px 8px;font-size:.72rem;color:var(--red);border-color:var(--red)" onclick="borrarCliente(${c.clientId},'${(c.cliente||'').replace(/'/g,'')}')">🗑</button>`:''}</td></tr>`;
+  }).join('') || `<tr><td colspan="12" style="text-align:center;color:var(--faint);padding:24px">Sin créditos en la base.</td></tr>`;
+}
+async function borrarCliente(clientId, nombre){
+  if(!confirm(`¿Eliminar al cliente "${nombre}"?\n\nQuedará fuera de la cartera y de la ruta del cobrador, pero su historial de pagos se conserva para auditoría. Esta acción se puede deshacer reactivándolo en la base.`)) return;
+  try{ await apiU('DELETE','/api/clients/'+clientId); await cargarCartera(); }
+  catch(e){ alert(e.message); }
 }
 
 /* REPORTES: forma de pago, efectivo en tránsito, quién pagó */
