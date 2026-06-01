@@ -170,9 +170,31 @@ app.get('/api/sales/:id/movimientos', auth, (req, res) => {
 });
 
 /* ---------- Pago (idempotente, con forma de pago) ---------- */
+function calcAtraso(sale, totalAbonado){
+  const cuota = sale.cuota || 0;
+  const created = sale.createdAt ? new Date(sale.createdAt) : new Date();
+  const dias = Math.max(0, Math.floor((Date.now() - created.getTime())/86400000));
+  let cuotasDebidas = 0;
+  if (sale.tipo === 'diario') cuotasDebidas = Math.min(sale.plazo || 0, dias);
+  else if (sale.tipo === 'semanal') cuotasDebidas = Math.min(sale.plazo || 0, Math.floor(dias/7));
+  else if (sale.tipo === 'unico') cuotasDebidas = dias >= (sale.plazo || 0) ? 1 : 0;
+  else if (sale.tipo === 'p17') cuotasDebidas = Math.min(17, Math.floor(dias / ((sale.plazo || 270)/17)));
+  const cuotasPagadas = cuota > 0 ? Math.floor(totalAbonado/cuota) : 0;
+  const cuotasAtraso = Math.max(0, cuotasDebidas - cuotasPagadas);
+  const montoAtraso = cuotasAtraso * cuota;
+  const diasAtraso = sale.tipo === 'diario' ? cuotasAtraso
+                   : sale.tipo === 'semanal' ? cuotasAtraso*7
+                   : sale.tipo === 'unico' ? Math.max(0, dias - (sale.plazo||0))
+                   : cuotasAtraso * Math.round((sale.plazo||270)/17);
+  return { cuotasDebidas, cuotasPagadas, cuotasAtraso, montoAtraso, diasAtraso };
+}
+
 app.post('/api/sales/:id/pago', auth, idem, (req, res) => {
   const id = +req.params.id; const { monto, forma } = req.body;
   if (!(monto > 0)) return res.status(400).json({ error: 'Monto inválido' });
+  if (forma === 'ajuste' && req.user.rol !== 'admin' && req.user.rol !== 'supervisor') {
+    return res.status(403).json({ error: 'Solo administrador o supervisor pueden registrar ajustes' });
+  }
   const sale = db.sales.find(s => s.id === id); if (!sale) return res.status(404).json({ error: 'Crédito no encontrado' });
   db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: new Date().toLocaleDateString('es-MX'), concepto: 'Abono', origen: req.user.nombre, cargo: 0, abono: +monto, forma: forma || 'efectivo' });
   const sid = String(sale.sucursalId || 1); const f = forma || 'efectivo';
@@ -234,7 +256,10 @@ app.get('/api/mi-ruta', auth, (req, res) => {
   const ventas = db.sales.filter(s => s.prom === req.user.nombre);
   res.json(ventas.map(s => {
     const c = db.clients.find(x => x.id === s.clientId) || {};
-    return { id: s.id, folio: s.folio, nombre: c.nombre || '—', dir: [c.calle, c.col].filter(Boolean).join(', '), tel: c.tel || '', tipo: s.tipo, cuota: s.cuota, saldo: saldoDe(s.id) };
+    const totalAbonado = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0).reduce((a,m)=>a+m.abono,0);
+    const at = calcAtraso(s, totalAbonado);
+    return { id: s.id, folio: s.folio, nombre: c.nombre || '—', dir: [c.calle, c.col].filter(Boolean).join(', '), tel: c.tel || '', tipo: s.tipo, cuota: s.cuota, saldo: saldoDe(s.id),
+      atraso: at.montoAtraso, diasAtraso: at.diasAtraso, cuotasAtraso: at.cuotasAtraso, cuotasDebidas: at.cuotasDebidas, cuotasPagadas: at.cuotasPagadas };
   }));
 });
 app.get('/api/cobradores', auth, (req, res) => res.json(db.users.filter(u => u.rol === 'cobrador' && u.activo).map(u => ({ id: u.id, nombre: u.nombre }))));
