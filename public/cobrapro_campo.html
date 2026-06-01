@@ -152,7 +152,17 @@
 
   <div class="scroll">
     <section class="view on" id="ruta">
-      <div class="route-hint">📍 Ordenada por cercanía a tu ubicación</div>
+      <div style="display:flex;gap:6px;margin-bottom:8px">
+        <input id="q-ruta" placeholder="🔍 Buscar cliente o dirección…" oninput="renderRuta()" style="flex:1;background:var(--surf-2);border:1px solid var(--line-2);color:var(--txt);font-family:'Sora';font-size:.92rem;padding:10px 12px;border-radius:9px;outline:none">
+        <select id="ord-ruta" onchange="renderRuta()" style="background:var(--surf-2);border:1px solid var(--line-2);color:var(--txt);font-family:'Sora';font-size:.85rem;padding:0 10px;border-radius:9px">
+          <option value="orden">Orden de ruta</option>
+          <option value="atraso-d">Mayor atraso</option>
+          <option value="atraso-a">Menor atraso</option>
+          <option value="dir">Dirección A-Z</option>
+          <option value="nom">Nombre A-Z</option>
+        </select>
+      </div>
+      <div class="route-hint" id="route-hint">Tu ruta del día</div>
       <div id="list"></div>
     </section>
 
@@ -226,22 +236,37 @@ window.addEventListener('online', flush);
 
 document.getElementById('hdate').textContent=new Date().toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'short'});
 
+function renderRuta(){ render(); }
 function render(){
   const list=document.getElementById('list');
-  list.innerHTML=clientes.map((c,i)=>{
+  // filtrado y ordenamiento
+  const q=(document.getElementById('q-ruta')?.value||'').toLowerCase();
+  const ord=(document.getElementById('ord-ruta')?.value)||'orden';
+  let visibles=clientes.filter(c=>!q || (c.nombre||'').toLowerCase().includes(q) || (c.dir||'').toLowerCase().includes(q));
+  if(ord==='atraso-d') visibles=visibles.slice().sort((a,b)=>(b.atraso||0)-(a.atraso||0));
+  else if(ord==='atraso-a') visibles=visibles.slice().sort((a,b)=>(a.atraso||0)-(b.atraso||0));
+  else if(ord==='dir') visibles=visibles.slice().sort((a,b)=>(a.dir||'').localeCompare(b.dir||''));
+  else if(ord==='nom') visibles=visibles.slice().sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
+  const hint=document.getElementById('route-hint'); if(hint){
+    hint.textContent = visibles.length+' de '+clientes.length+' clientes' + (q?` · filtro "${q}"`:'') + (ord!=='orden'?` · ordenado por ${ord==='atraso-d'?'mayor atraso':ord==='atraso-a'?'menor atraso':ord==='dir'?'dirección':'nombre'}`:'');
+  }
+  list.innerHTML=visibles.map((c,i)=>{
     const e=estado[c.id];
     const done=e&&e.status==='pagado';
     const visited=e&&e.status;
+    const sem = c.atraso>0 ? (c.diasAtraso>14?'bad':'w') : 'ok';
+    const semL = sem==='bad'?'Vencido':sem==='w'?'Atrasado':'Al corriente';
     return `<div class="card ${done?'done':''}">
       <div class="ctop">
         <div class="cnum">${i+1}</div>
         <div style="flex:1;min-width:0"><div class="cname">${c.nombre}</div><div class="caddr">${c.dir}</div></div>
-        <div class="csem"><span class="pill ${c.sem}">${semLbl[c.sem]}</span></div>
+        <div class="csem"><span class="pill ${sem}">${semL}</span></div>
       </div>
       <div class="cinfo">
-        <div><div class="k">Modalidad</div><div class="v"><span class="tipo ${tipoCls[c.tipo]}">${tipoLbl[c.tipo]}</span></div></div>
+        <div><div class="k">Modalidad</div><div class="v"><span class="tipo ${tipoCls[c.tipo]||'sem'}">${tipoLbl[c.tipo]||c.tipo}</span></div></div>
         <div><div class="k">Cuota</div><div class="v acc">${fmt(c.cuota)}</div></div>
         <div><div class="k">Saldo</div><div class="v">${fmt(e&&e.status==='pagado'?Math.max(0,c.saldo-e.monto):c.saldo)}</div></div>
+        ${c.atraso>0?`<div><div class="k">Atraso</div><div class="v" style="color:var(--red)">${fmt(c.atraso)} · ${c.diasAtraso}d</div></div>`:''}
       </div>
       ${done?`<div class="done-tag">✓ Cobrado ${fmt(e.monto)} · ${formaLbl[e.forma]||''} · ${e.hora}</div>`
        : visited?`<div class="done-tag" style="color:var(--acc)">● ${e.statusLbl} · ${e.hora}</div>`
@@ -251,8 +276,8 @@ function render(){
           <button class="b ghost" onclick="abrirNoPago(${c.id})" title="Sin pago">⊘</button>
         </div>`}
     </div>`;
-  }).join('');
-  // stats
+  }).join('') || '<div style="text-align:center;color:var(--faint);padding:30px;font-size:.85rem">Sin resultados.</div>';
+  // stats (siempre sobre el total, no sobre filtrados)
   const cob=Object.values(estado).filter(e=>e.status==='pagado');
   const totCob=cob.reduce((a,e)=>a+e.monto,0);
   const efectivo=cob.filter(e=>e.forma==='efectivo').reduce((a,e)=>a+e.monto,0);
@@ -297,7 +322,6 @@ function abrirCobro(id){cobroId=id;formaPay='efectivo';const c=clientes.find(x=>
       <button class="on" onclick="setForma('efectivo',this)">💵 Efectivo</button>
       <button onclick="setForma('transferencia',this)">🏦 Transferencia</button>
       <button onclick="setForma('deposito',this)">🧾 Depósito</button>
-      <button onclick="setForma('ajuste',this)">⚖ Ajuste</button>
     </div>
     <div class="sheet-actions"><button class="sa cancel" onclick="cerrar()">Cancelar</button><button class="sa ok" onclick="confirmarCobro()">Registrar cobro</button></div>
   </div>`;
@@ -307,11 +331,42 @@ function setAmt(v,el){document.getElementById('amt').value=v;document.querySelec
 function confirmarCobro(){
   const monto=parseFloat(document.getElementById('amt').value)||0;
   if(monto<=0){toast('Monto inválido');return;}
-  const c=clientes.find(x=>x.id===cobroId); const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+  const c=clientes.find(x=>x.id===cobroId);
+  const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+  const fecha=new Date().toLocaleDateString('es-MX');
   estado[cobroId]={status:'pagado',monto,forma:formaPay,hora};
   logs.unshift({hora,txt:`Cobro ${fmt(monto)} · ${formaLbl[formaPay]} — ${c.nombre}`});
   enqueue({kind:'pago',saleId:cobroId,monto,forma:formaPay});
-  cerrar(); render(); toast(efectivamenteOnline()?`✓ ${fmt(monto)} registrado`:'✓ Guardado offline · sincroniza al volver la red');
+  const saldoRest=Math.max(0,c.saldo-monto);
+  window._lastRecibo={cliente:c.nombre,folio:c.folio||'',forma:formaLbl[formaPay],monto:fmt(monto),saldo:fmt(saldoRest),fecha,hora,tel:c.tel||''};
+  document.getElementById('overlay').innerHTML=`<div class="sheet">
+    <h3>✓ Pago registrado</h3>
+    <div style="background:var(--surf-2);border:1px solid var(--line);border-radius:10px;padding:12px;margin:10px 0">
+      <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:.85rem"><span style="color:var(--dim)">Cliente</span><span>${c.nombre}</span></div>
+      <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:.85rem"><span style="color:var(--dim)">Forma</span><span style="color:var(--acc)">${formaLbl[formaPay]}</span></div>
+      <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:.85rem"><span style="color:var(--dim)">Monto</span><span style="color:var(--grn)">${fmt(monto)}</span></div>
+      <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:.85rem"><span style="color:var(--dim)">Saldo</span><span>${fmt(saldoRest)}</span></div>
+      <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:.78rem;color:var(--faint)"><span>${fecha}</span><span>${hora}</span></div>
+    </div>
+    ${efectivamenteOnline()?'':'<div style="color:var(--acc);font-size:.78rem;text-align:center;margin-bottom:8px">Guardado offline · sincroniza al volver la red</div>'}
+    <div class="sheet-actions">
+      <button class="sa cancel" onclick="enviarWA()" ${c.tel?'':'disabled style="opacity:.45"'}>📱 WhatsApp</button>
+      <button class="sa ok" onclick="cerrar()">Listo</button>
+    </div>
+  </div>`;
+  document.getElementById('overlay').classList.add('on');
+  render();
+}
+function enviarWA(){
+  const r=window._lastRecibo; if(!r||!r.tel){toast('Cliente sin teléfono');return;}
+  const num=String(r.tel).replace(/\D/g,''); const full=num.startsWith('52')?num:'52'+num;
+  const msg=`*Comprobante de pago — LeGaXi*\n\nCliente: ${r.cliente}\nFolio: ${r.folio}\nMonto recibido: ${r.monto}\nForma: ${r.forma}\nSaldo restante: ${r.saldo}\nFecha: ${r.fecha} ${r.hora}\n\nGracias por su pago.`;
+  window.open(`https://wa.me/${full}?text=${encodeURIComponent(msg)}`,'_blank');
+}
+function whatsapp(id){
+  const c=clientes.find(x=>x.id===id); if(!c||!c.tel){toast('Cliente sin teléfono');return;}
+  const num=String(c.tel).replace(/\D/g,''); const full=num.startsWith('52')?num:'52'+num;
+  window.open('https://wa.me/'+full,'_blank');
 }
 function abrirNoPago(id){cobroId=id;const c=clientes.find(x=>x.id===id);
   document.getElementById('overlay').innerHTML=`<div class="sheet">
@@ -333,7 +388,6 @@ function noPago(status,lbl){
   enqueue({kind:'gestion',saleId:cobroId,tipo:status,detalle:lbl});
   cerrar(); render(); toast('Gestión registrada');
 }
-function whatsapp(id){const c=clientes.find(x=>x.id===id);toast('Abriendo WhatsApp a '+c.nombre);}
 function cerrar(){document.getElementById('overlay').classList.remove('on');}
 document.getElementById('overlay').onclick=e=>{if(e.target.id==='overlay')cerrar();};
 

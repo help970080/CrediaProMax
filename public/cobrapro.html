@@ -224,6 +224,7 @@
           <button class="btn" onclick="ecMov('abono')">＋ Abono</button>
           <button class="btn" onclick="ecMov('condonar')">⊘ Condonar</button>
           <button class="btn" onclick="ecMora()">＋ Moratorio</button>
+          <button class="btn" onclick="ecAjuste()">⚖ Ajuste</button>
           <button class="btn gold" onclick="ecImprimir()">🖨 Estado de cuenta</button>
         </div>
       </div>
@@ -678,6 +679,13 @@ async function ecMora(){
   if(!ecActual) return;
   const m=+document.getElementById('ec-mora').value||25;
   try{ await apiU('POST','/api/sales/'+ecActual.id+'/aplicar-mora',{monto:m}); await ecCargar(); }
+  catch(e){ alert(e.message); }
+}
+async function ecAjuste(){
+  if(!ecActual) return;
+  const m=parseFloat(prompt('Monto del ajuste (entrará como abono con forma "Ajuste"):'));
+  if(!m||m<=0) return;
+  try{ await apiU('POST','/api/sales/'+ecActual.id+'/pago',{monto:m,forma:'ajuste',idempotencyKey:'aj-'+Date.now()}); await ecCargar(); }
   catch(e){ alert(e.message); }
 }
 function ecImprimir(){

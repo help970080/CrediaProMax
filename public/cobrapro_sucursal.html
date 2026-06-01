@@ -257,7 +257,7 @@ function pintar(){
 function selCli(id){sel=sel===id?null:id;pintar();}
 function abrirPago(cid,saleId){
   const c=_clientes.find(x=>x.id===cid); const cr=(c.creditos||[]).find(x=>x.id===saleId);
-  payCtx={saleId, cliente:c.nombre, folio:cr.folio}; formaPay='efectivo';
+  payCtx={saleId, cliente:c.nombre, folio:cr.folio, tel:c.tel||''}; formaPay='efectivo';
   document.getElementById('overlay').innerHTML=`<div class="modal">
     <h3>Pago — ${c.nombre}</h3>
     <div style="font-size:.78rem;color:var(--faint);margin-bottom:12px">${cr.folio} · ${tipoLbl[cr.tipo]||cr.tipo} · saldo ${fmt(cr.saldo)}</div>
@@ -267,7 +267,6 @@ function abrirPago(cid,saleId){
       <button class="on" onclick="setForma('efectivo',this)">💵 Efectivo</button>
       <button onclick="setForma('transferencia',this)">🏦 Transferencia</button>
       <button onclick="setForma('deposito',this)">🧾 Depósito</button>
-      <button onclick="setForma('ajuste',this)">⚖ Ajuste</button>
     </div>
     <div class="modal-actions"><button class="ma cancel" onclick="cerrar()">Cancelar</button><button class="ma ok" onclick="confirmPago()">Registrar y dar recibo</button></div>
   </div>`;
@@ -281,7 +280,9 @@ async function confirmPago(){
   try{
     const d=await api('POST','/api/sales/'+payCtx.saleId+'/pago',{monto,forma:formaPay,idempotencyKey:uuid()});
     const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+    const fecha=new Date().toLocaleDateString('es-MX');
     movs.unshift({hora,txt:`Pago ${payCtx.folio} · ${formaLbl[formaPay]} — ${payCtx.cliente}`,monto});
+    window._lastRecibo={cliente:payCtx.cliente,folio:payCtx.folio,forma:formaLbl[formaPay],monto:fmt(monto),saldo:fmt(d.saldo),fecha,hora,tel:payCtx.tel};
     document.getElementById('overlay').innerHTML=`<div class="modal">
       <h3>✓ Pago registrado</h3>
       <div class="recibo">
@@ -290,12 +291,22 @@ async function confirmPago(){
         <div class="rr"><span>Forma de pago</span><span class="v" style="color:var(--acc)">${formaLbl[formaPay]}</span></div>
         <div class="rr"><span>Monto pagado</span><span class="v" style="color:var(--grn)">${fmt(monto)}</span></div>
         <div class="rr"><span>Saldo restante</span><span class="v">${fmt(d.saldo)}</span></div>
-        <div class="rr"><span>Fecha · hora</span><span class="v">${new Date().toLocaleDateString('es-MX')} ${hora}</span></div>
+        <div class="rr"><span>Fecha · hora</span><span class="v">${fecha} ${hora}</span></div>
       </div>
-      <div class="modal-actions"><button class="ma ok" onclick="cerrar()">Cerrar</button></div>
+      <div class="modal-actions">
+        <button class="ma cancel" onclick="enviarWA()" ${payCtx.tel?'':'disabled style="opacity:.45"'}>📱 Enviar por WhatsApp</button>
+        <button class="ma ok" onclick="cerrar()">Cerrar</button>
+      </div>
     </div>`;
     caja.ncob++; await cargarCaja();
   }catch(e){ toast(e.message); }
+}
+function enviarWA(){
+  const r=window._lastRecibo; if(!r) return;
+  if(!r.tel){ toast('El cliente no tiene teléfono'); return; }
+  const num=String(r.tel).replace(/\D/g,''); const full=num.startsWith('52')?num:'52'+num;
+  const msg=`*Comprobante de pago — LeGaXi*\n\nCliente: ${r.cliente}\nFolio: ${r.folio}\nMonto recibido: ${r.monto}\nForma: ${r.forma}\nSaldo restante: ${r.saldo}\nFecha: ${r.fecha} ${r.hora}\n\nGracias por su pago.`;
+  window.open(`https://wa.me/${full}?text=${encodeURIComponent(msg)}`,'_blank');
 }
 function cerrar(){document.getElementById('overlay').classList.remove('on');_buscar();}
 document.getElementById('overlay').onclick=e=>{if(e.target.id==='overlay')cerrar();};
