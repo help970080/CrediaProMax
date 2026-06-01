@@ -1,771 +1,275 @@
-<!DOCTYPE html>
-<html lang="es-MX">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CobraPro · Plataforma de Crédito y Cobranza</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<style>
-  :root{
-    --bg:#0a0c10; --surf:#11141a; --surf-2:#171b22; --surf-3:#1e232c;
-    --line:#262c36; --line-2:#333b48;
-    --txt:#eef1f5; --dim:#97a1b0; --faint:#5a6470;
-    --acc:#f0b429; --acc-d:#b3851f;
-    --grn:#3ecf8e; --grn-d:#1d7a55; --red:#f0654d; --red-d:#a13a2b;
-    --blu:#5aa0e8; --vio:#b07ce0;
-    --r:11px; font-size:14.5px;
+/* ============================================================
+   CobraPro · Backend (Express + JWT + almacén JSON)
+   Sistema NUEVO e independiente. No tiene relación con CelExpress.
+   Arranque local:  npm install && node server.js
+   Sirve el front desde ./public y expone la API en /api/*
+   ============================================================ */
+const express = require('express');
+const cors = require('cors');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const fs = require('fs');
+const path = require('path');
+
+const app = express();
+const PORT = process.env.PORT || 5000;
+const JWT_SECRET = process.env.JWT_SECRET || 'cobrapro_dev_secret_cambiame';
+const DB_FILE = path.join(__dirname, 'db.json');
+
+app.use(cors({ origin: true, credentials: true }));
+app.use(express.json());
+const PUBLIC_DIR = path.join(__dirname, 'public');
+app.use(express.static(PUBLIC_DIR));
+
+/* ---------- Almacén: PostgreSQL si hay DATABASE_URL (Render), si no archivo JSON (local) ---------- */
+const USE_PG = !!process.env.DATABASE_URL;
+let pool = null;
+if (USE_PG) { const { Pool } = require('pg'); pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { require: true, rejectUnauthorized: false } }); }
+
+async function loadDB() {
+  if (USE_PG) {
+    await pool.query('CREATE TABLE IF NOT EXISTS cobrapro_state (id INT PRIMARY KEY, data JSONB)');
+    const r = await pool.query('SELECT data FROM cobrapro_state WHERE id = 1');
+    return r.rows[0] ? r.rows[0].data : null;
   }
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{background:var(--bg);color:var(--txt);font-family:"Sora",sans-serif;line-height:1.45;display:flex;min-height:100vh}
-  .mono{font-family:"IBM Plex Mono",monospace;font-feature-settings:"tnum"}
-  ::-webkit-scrollbar{width:9px;height:9px}::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:8px}::-webkit-scrollbar-track{background:transparent}
-
-  /* SIDEBAR */
-  aside{width:236px;flex-shrink:0;background:linear-gradient(180deg,var(--surf),var(--bg));border-right:1px solid var(--line);padding:20px 14px;display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
-  .logo{display:flex;align-items:center;gap:11px;padding:4px 8px 20px;border-bottom:1px solid var(--line);margin-bottom:14px}
-  .logo .mk{width:38px;height:38px;border-radius:10px;background:linear-gradient(140deg,var(--acc),var(--acc-d));display:grid;place-items:center;font-weight:700;color:#1a1408;font-size:19px;box-shadow:0 4px 16px rgba(240,180,41,.28)}
-  .logo h1{font-size:1.08rem;font-weight:700;line-height:1}
-  .logo span{font-size:.66rem;color:var(--faint);letter-spacing:.08em;text-transform:uppercase}
-  nav{display:flex;flex-direction:column;gap:2px;flex:1}
-  .nav-lbl{font-size:.64rem;color:var(--faint);text-transform:uppercase;letter-spacing:.1em;padding:14px 12px 6px}
-  .navitem{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:9px;color:var(--dim);font-size:.88rem;font-weight:500;cursor:pointer;border:none;background:none;text-align:left;width:100%;transition:.13s}
-  .navitem:hover{background:var(--surf-2);color:var(--txt)}
-  .navitem.on{background:var(--acc);color:#1a1408;font-weight:600}
-  .navitem .ic{width:18px;text-align:center;font-size:1rem}
-  .side-foot{border-top:1px solid var(--line);padding-top:12px;font-size:.74rem;color:var(--faint)}
-  .live{display:flex;align-items:center;gap:7px;color:var(--dim)}
-  .dot{width:8px;height:8px;border-radius:50%;background:var(--grn);animation:pulse 2s infinite}
-  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(62,207,142,.5)}70%{box-shadow:0 0 0 7px rgba(62,207,142,0)}100%{box-shadow:0 0 0 0 rgba(62,207,142,0)}}
-
-  /* MAIN */
-  main{flex:1;min-width:0;padding:24px 30px 60px}
-  .top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:22px;flex-wrap:wrap}
-  .top h2{font-size:1.5rem;font-weight:700;letter-spacing:-.02em}
-  .top p{font-size:.84rem;color:var(--dim);margin-top:2px}
-  .seg{display:inline-flex;background:var(--surf-2);border:1px solid var(--line);border-radius:9px;padding:3px}
-  .seg button{background:none;border:none;color:var(--dim);font-family:"Sora";font-size:.8rem;padding:7px 15px;border-radius:7px;cursor:pointer;font-weight:500}
-  .seg button.on{background:var(--surf-3);color:var(--acc)}
-
-  .view{display:none;animation:fade .3s ease}.view.on{display:block}
-  @keyframes fade{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
-
-  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(195px,1fr));gap:13px;margin-bottom:22px}
-  .kpi{background:linear-gradient(160deg,var(--surf-2),var(--surf));border:1px solid var(--line);border-radius:var(--r);padding:16px 17px;position:relative;overflow:hidden}
-  .kpi::before{content:"";position:absolute;top:0;left:0;width:3px;height:100%;background:var(--acc);opacity:.55}
-  .kpi.g::before{background:var(--grn)}.kpi.r::before{background:var(--red)}.kpi.b::before{background:var(--blu)}.kpi.v::before{background:var(--vio)}
-  .kpi .l{font-size:.71rem;color:var(--dim);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
-  .kpi .v{font-size:1.62rem;font-weight:600;font-family:"IBM Plex Mono";letter-spacing:-.02em}
-  .kpi .s{font-size:.74rem;color:var(--faint);margin-top:4px}
-  .kpi .s b{color:var(--grn)}.kpi .s b.n{color:var(--red)}
-
-  .panel{background:var(--surf);border:1px solid var(--line);border-radius:var(--r);padding:19px;margin-bottom:18px}
-  .ph{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:15px;flex-wrap:wrap}
-  .ph h3{font-size:1rem;font-weight:600}.ph .hint{font-size:.76rem;color:var(--faint)}
-  .g2{display:grid;grid-template-columns:1.45fr 1fr;gap:18px}@media(max-width:980px){.g2{grid-template-columns:1fr}}
-
-  table{width:100%;border-collapse:collapse;font-size:.85rem}
-  th{text-align:left;font-weight:500;color:var(--dim);font-size:.69rem;text-transform:uppercase;letter-spacing:.04em;padding:8px 11px;border-bottom:1px solid var(--line-2);white-space:nowrap}
-  th.n,td.n{text-align:right;font-family:"IBM Plex Mono"}
-  td{padding:10px 11px;border-bottom:1px solid var(--line);vertical-align:middle}
-  tr:last-child td{border-bottom:none}
-  tbody tr{transition:.1s}tbody tr:hover{background:rgba(255,255,255,.015)}
-  .who{display:flex;align-items:center;gap:10px}
-  .ava{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;font-size:.7rem;font-weight:600;font-family:"IBM Plex Mono";color:#0a0c10;flex-shrink:0}
-  .nm{font-weight:500}.sn{font-size:.71rem;color:var(--faint)}
-  .pill{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:20px;font-size:.71rem;font-weight:500;white-space:nowrap}
-  .pill.ok{background:rgba(62,207,142,.13);color:var(--grn)}.pill.w{background:rgba(240,180,41,.14);color:var(--acc)}.pill.bad{background:rgba(240,101,77,.13);color:var(--red)}
-  .tipo{font-size:.68rem;font-weight:600;text-transform:uppercase;letter-spacing:.03em;padding:2px 7px;border-radius:5px}
-  .tipo.dia{background:rgba(90,160,232,.14);color:var(--blu)}.tipo.sem{background:rgba(176,124,224,.14);color:var(--vio)}.tipo.uni{background:rgba(240,180,41,.14);color:var(--acc)}
-  .bar{height:5px;border-radius:5px;background:var(--line-2);overflow:hidden;min-width:54px}.bar>i{display:block;height:100%;border-radius:5px}
-  .cm{font-weight:600;color:var(--acc)}
-  .note{font-size:.77rem;color:var(--faint);margin-top:13px;line-height:1.5}
-
-  .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
-  .filters select,.filters input{background:var(--surf-2);border:1px solid var(--line-2);color:var(--txt);font-family:"Sora";font-size:.82rem;padding:8px 11px;border-radius:8px;outline:none}
-  .filters select:focus,.filters input:focus{border-color:var(--acc)}
-
-  .cfg-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:13px}
-  .cfg{background:var(--surf-2);border:1px solid var(--line);border-radius:9px;padding:13px}
-  .cfg label{display:block;font-size:.71rem;color:var(--dim);text-transform:uppercase;letter-spacing:.04em;margin-bottom:7px}
-  .cfg .inp{display:flex;align-items:center;gap:7px;background:var(--surf);border:1px solid var(--line-2);border-radius:7px;padding:0 11px}
-  .cfg .inp span{color:var(--faint);font-family:"IBM Plex Mono"}
-  .cfg input{background:none;border:none;color:var(--acc);font-family:"IBM Plex Mono";font-size:1.1rem;font-weight:600;width:100%;padding:9px 0;outline:none}
-  .cfg .d{font-size:.7rem;color:var(--faint);margin-top:7px;line-height:1.4}
-  .formula{background:var(--surf-2);border:1px dashed var(--line-2);border-radius:9px;padding:13px 15px;font-family:"IBM Plex Mono";font-size:.8rem;color:var(--dim);margin-top:15px;line-height:1.7}
-  .formula b{color:var(--acc)}.formula .g{color:var(--grn)}.formula .r{color:var(--red)}
-
-  .recon{display:flex;align-items:center;justify-content:space-between;padding:13px 15px;background:var(--surf-2);border:1px solid var(--line);border-radius:9px;margin-bottom:9px}
-  .recon .lf{display:flex;align-items:center;gap:12px}
-  .doc{color:var(--grn)}.dbad{color:var(--red)}.dwarn{color:var(--acc)}
-
-  .btn{background:var(--surf-3);border:1px solid var(--line-2);color:var(--txt);font-family:"Sora";font-size:.81rem;font-weight:500;padding:8px 14px;border-radius:8px;cursor:pointer;transition:.13s;display:inline-flex;align-items:center;gap:7px}
-  .btn:hover{border-color:var(--acc);color:var(--acc)}
-  .btn.gold{background:linear-gradient(140deg,var(--acc),var(--acc-d));color:#1a1408;border:none;font-weight:600}.btn.gold:hover{filter:brightness(1.07);color:#1a1408}
-  .legend{display:flex;gap:15px;flex-wrap:wrap;margin-top:11px;font-size:.77rem;color:var(--dim)}
-  .legend span{display:flex;align-items:center;gap:6px}.legend i{width:10px;height:10px;border-radius:3px}
-
-  /* SIMULADOR */
-  .sim-grid{display:grid;grid-template-columns:300px 1fr;gap:18px}@media(max-width:840px){.sim-grid{grid-template-columns:1fr}}
-  .sim-field{margin-bottom:13px}.sim-field label{display:block;font-size:.76rem;color:var(--dim);margin-bottom:6px}
-  .sim-field select,.sim-field input{width:100%;background:var(--surf-2);border:1px solid var(--line-2);color:var(--txt);font-family:"Sora";font-size:.9rem;padding:10px 12px;border-radius:8px;outline:none}
-  .sim-out{display:flex;flex-direction:column;gap:11px}
-  .sim-row{display:flex;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--line)}
-  .sim-row .k{color:var(--dim);font-size:.85rem}.sim-row .v{font-family:"IBM Plex Mono";font-weight:600;font-size:1.05rem}
-  .sim-big{background:linear-gradient(140deg,var(--acc),var(--acc-d));border-radius:10px;padding:18px;color:#1a1408;text-align:center}
-  .sim-big .l{font-size:.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;opacity:.8}
-  .sim-big .v{font-size:2rem;font-weight:700;font-family:"IBM Plex Mono"}
-</style>
-</head>
-<body>
-<aside>
-  <div class="logo"><div class="mk">₵</div><div><h1>CobraPro</h1><span>Crédito · Cobranza</span></div></div>
-  <nav id="nav">
-    <div class="nav-lbl">Operación</div>
-    <button class="navitem on" data-v="resumen"><span class="ic">▣</span> Resumen</button>
-    <button class="navitem" data-v="cartera"><span class="ic">≣</span> Cartera de crédito</button>
-    <button class="navitem" data-v="estado"><span class="ic">🧾</span> Estado de cuenta</button>
-    <button class="navitem" data-v="promotores"><span class="ic">⛬</span> Cobradores</button>
-    <button class="navitem" data-v="sucursales"><span class="ic">🏪</span> Sucursales</button>
-    <div class="nav-lbl">Finanzas</div>
-    <button class="navitem" data-v="comisiones"><span class="ic">%</span> Comisiones</button>
-    <button class="navitem" data-v="conciliacion"><span class="ic">⇄</span> Conciliación</button>
-    <button class="navitem" data-v="reportes"><span class="ic">📑</span> Reportes</button>
-    <button class="navitem" data-v="usuarios"><span class="ic">👤</span> Usuarios</button>
-    <button class="navitem" data-v="simulador"><span class="ic">🖩</span> Simulador de crédito</button>
-  </nav>
-  <div class="side-foot">
-    <div class="live"><span class="dot"></span> Sincronizado en vivo</div>
-    <div class="mono" id="clock" style="margin-top:6px;font-size:.72rem"></div>
-    <div id="meBox" style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;gap:8px">
-      <span id="meName" style="color:var(--dim);font-size:.74rem"></span>
-      <button onclick="salir()" style="background:none;border:1px solid var(--line-2);color:var(--faint);font-family:'Sora';font-size:.72rem;padding:4px 9px;border-radius:7px;cursor:pointer">Salir</button>
-    </div>
-  </div>
-</aside>
-
-<main>
-  <div class="top">
-    <div><h2 id="title">Resumen operativo</h2><p id="subtitle">6 sucursales · cobranza diaria, semanal y pago único</p></div>
-    <div class="seg" id="period">
-      <button data-p="dia">Hoy</button><button class="on" data-p="semana">Semana</button><button data-p="mes">Mes</button>
-    </div>
-  </div>
-
-  <!-- RESUMEN -->
-  <section class="view on" id="resumen">
-    <div class="kpis">
-      <div class="kpi g"><div class="l">Cobrado</div><div class="v" id="k-cob">$0</div><div class="s"><b>+11%</b> vs periodo previo</div></div>
-      <div class="kpi b"><div class="l">Colocado (sucursales)</div><div class="v" id="k-col">$0</div><div class="s" id="k-ncred">0 créditos nuevos</div></div>
-      <div class="kpi v"><div class="l">Cartera activa</div><div class="v" id="k-cart">$0</div><div class="s" id="k-ncli">0 créditos vigentes</div></div>
-      <div class="kpi r"><div class="l">Cartera vencida</div><div class="v" id="k-ven">$0</div><div class="s"><b class="n" id="k-ven-p">0%</b> de la cartera</div></div>
-      <div class="kpi"><div class="l">Efectivo por entregar</div><div class="v" id="k-ef">$0</div><div class="s">cobradores + cajas</div></div>
-    </div>
-    <div class="g2">
-      <div class="panel"><div class="ph"><h3>Cobranza por día</h3><span class="hint">campo vs sucursal</span></div><div id="ch-daily"></div>
-        <div class="legend"><span><i style="background:var(--acc)"></i>Cobradores en ruta</span><span><i style="background:var(--blu)"></i>Pagos en sucursal</span></div></div>
-      <div class="panel"><div class="ph"><h3>Cartera por modalidad</h3></div><div id="ch-donut" style="display:flex;justify-content:center;padding:6px 0"></div><div class="legend" id="donut-leg"></div></div>
-    </div>
-    <div class="panel"><div class="ph"><h3>Desempeño de cobradores</h3><span class="hint">recuperación = cobrado ÷ exigible del periodo</span></div>
-      <table><thead><tr><th>Cobrador</th><th>Sucursal</th><th class="n">Clientes</th><th class="n">Cobrado</th><th>Recuperación</th><th class="n">Comisión</th></tr></thead><tbody id="tb-res"></tbody></table>
-    </div>
-  </section>
-
-  <!-- CARTERA -->
-  <section class="view" id="cartera">
-    <div class="panel">
-      <div class="filters">
-        <select id="f-suc"><option value="">Todas las sucursales</option></select>
-        <select id="f-tipo"><option value="">Toda modalidad</option><option value="diario">Diario</option><option value="semanal">Semanal</option><option value="unico">Pago único</option></select>
-        <select id="f-sem"><option value="">Todo estado</option><option value="ok">Al corriente</option><option value="w">Atrasado</option><option value="bad">Vencido</option></select>
-        <input id="f-q" placeholder="Buscar cliente…" style="flex:1;min-width:140px">
-        <button class="btn" onclick="exportCSV('cartera')">⬇ CSV</button>
-      </div>
-      <table><thead><tr>
-        <th>Cliente</th><th>Sucursal</th><th>Cobrador</th><th>Modalidad</th><th class="n">Monto</th><th class="n">Cuota</th><th>Plazo</th><th class="n">Saldo</th><th>Avance</th><th>Próx. pago</th><th>Estado</th>
-      </tr></thead><tbody id="tb-cart"></tbody></table>
-      <div class="note">Cada pago —en ruta o en caja— actualiza el saldo y el semáforo al instante contra una sola base de datos. La cuota se calcula según modalidad: diario (capital÷días), semanal (4/8/12/16/20 sem.) o pago único a n días.</div>
-    </div>
-  </section>
-
-  <!-- ESTADO DE CUENTA -->
-  <section class="view" id="estado">
-    <div class="panel">
-      <div class="ph"><h3>Estado de cuenta del cliente</h3><span class="hint" id="ec-rol">Rol: Supervisor · puede condonar y ajustar</span></div>
-      <div class="filters">
-        <select id="ec-sel" onchange="ecSelect()" style="flex:1;min-width:240px"></select>
-        <div style="display:flex;align-items:center;gap:6px;font-size:.82rem;color:var(--dim);margin-left:auto">Monto de moratorio <input type="number" id="ec-mora" value="25" step="5" style="width:78px;background:var(--surf-2);border:1px solid var(--line-2);color:var(--acc);font-family:'IBM Plex Mono';padding:6px 8px;border-radius:7px"></div>
-      </div>
-    </div>
-
-    <div class="g2">
-      <div class="panel" id="ec-card" style="display:none">
-        <div class="ph"><h3 id="ec-nom">—</h3><span class="pill" id="ec-sem"></span></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:.83rem;margin-bottom:6px">
-          <div><div style="color:var(--dim);font-size:.72rem;text-transform:uppercase">Folio</div><div class="mono" id="ec-folio">—</div></div>
-          <div><div style="color:var(--dim);font-size:.72rem;text-transform:uppercase">Modalidad · cuota</div><div id="ec-mod">—</div></div>
-          <div style="grid-column:1/3"><div style="color:var(--dim);font-size:.72rem;text-transform:uppercase">Domicilio</div><div id="ec-dom">—</div></div>
-          <div><div style="color:var(--dim);font-size:.72rem;text-transform:uppercase">Periodos vencidos</div><div class="mono" id="ec-venc" style="color:var(--red)">—</div></div>
-          <div><div style="color:var(--dim);font-size:.72rem;text-transform:uppercase">Cobrador</div><div id="ec-prom">—</div></div>
-        </div>
-        <div id="ec-mora-alert"></div>
-      </div>
-      <div class="panel" id="ec-saldo-card" style="display:none">
-        <div class="ph"><h3>Resumen</h3></div>
-        <div style="display:flex;flex-direction:column;gap:9px">
-          <div style="display:flex;justify-content:space-between;font-size:.86rem;padding:8px 0;border-bottom:1px solid var(--line)"><span style="color:var(--dim)">Total cargos</span><span class="mono" id="ec-tcar">$0</span></div>
-          <div style="display:flex;justify-content:space-between;font-size:.86rem;padding:8px 0;border-bottom:1px solid var(--line)"><span style="color:var(--dim)">Total abonos</span><span class="mono" style="color:var(--grn)" id="ec-tabo">$0</span></div>
-          <div style="display:flex;justify-content:space-between;font-size:.86rem;padding:8px 0;border-bottom:1px solid var(--line)"><span style="color:var(--dim)">Moratorios aplicados</span><span class="mono" style="color:var(--red)" id="ec-tmor">$0</span></div>
-          <div style="display:flex;justify-content:space-between;align-items:center;padding-top:6px"><span style="font-weight:600">Saldo actual</span><span class="mono" id="ec-saldo" style="font-size:1.5rem;font-weight:700;color:var(--acc)">$0</span></div>
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
-          <button class="btn" onclick="ecMov('cargo')">＋ Cargo</button>
-          <button class="btn" onclick="ecMov('abono')">＋ Abono</button>
-          <button class="btn" onclick="ecMov('condonar')">⊘ Condonar</button>
-          <button class="btn" onclick="ecMora()">＋ Moratorio</button>
-          <button class="btn gold" onclick="ecImprimir()">🖨 Estado de cuenta</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="panel" id="ec-ledger-card" style="display:none">
-      <div class="ph"><h3>Movimientos — cargos y abonos</h3><span class="hint">saldo corriente tras cada movimiento</span></div>
-      <table><thead><tr><th>Fecha</th><th>Concepto</th><th>Origen</th><th class="n">Cargo</th><th class="n">Abono</th><th class="n">Saldo</th></tr></thead><tbody id="ec-ledger"></tbody></table>
-    </div>
-    <div class="panel" id="ec-empty"><div style="color:var(--faint);text-align:center;padding:20px">Selecciona un cliente para ver su estado de cuenta.</div></div>
-  </section>
-
-  <section class="view" id="promotores">
-    <div class="panel"><div class="ph"><h3>Cobradores en ruta</h3><button class="btn" onclick="exportCSV('prom')">⬇ CSV</button></div>
-      <table><thead><tr><th>Cobrador</th><th class="n">Clientes</th><th class="n">Cartera asignada</th><th class="n">Vencida</th><th class="n">Cob. diario</th><th class="n">Cob. semanal</th><th class="n">Cob. único</th><th>Recup.</th><th class="n">Comisión</th></tr></thead><tbody id="tb-prom"></tbody></table>
-      <div class="note">Los cobradores solo cobran; no colocan crédito. Su comisión depende de cuánto recuperan y de mantener baja la mora — no de colocar más.</div>
-    </div>
-  </section>
-
-  <!-- SUCURSALES -->
-  <section class="view" id="sucursales">
-    <div class="kpis" id="suc-kpis"></div>
-    <div class="panel"><div class="ph"><h3>Sucursales</h3><button class="btn" onclick="exportCSV('suc')">⬇ CSV</button></div>
-      <table><thead><tr><th>Sucursal</th><th>Encargada</th><th class="n">Pagos recibidos</th><th class="n"># Pagos</th><th class="n">Créditos captados</th><th class="n">Colocado $</th><th class="n">Efectivo en caja</th><th>Conciliación</th></tr></thead><tbody id="tb-suc"></tbody></table>
-      <div class="note">La encargada captura los créditos nuevos; ese movimiento aparece de inmediato en la cartera del cobrador asignado, sin listas ni esperas al día siguiente.</div>
-    </div>
-  </section>
-
-  <!-- COMISIONES -->
-  <section class="view" id="comisiones">
-    <div class="panel"><div class="ph"><h3>Reglas — cobradores</h3><span class="hint">edita y todo recalcula al instante</span></div>
-      <div class="cfg-grid">
-        <div class="cfg"><label>% sobre cobranza</label><div class="inp"><input type="number" id="c-cob" value="5" step="0.5"><span>%</span></div><div class="d">Del monto cobrado en ruta.</div></div>
-        <div class="cfg"><label>Meta recuperación</label><div class="inp"><input type="number" id="c-meta" value="85" step="1"><span>%</span></div><div class="d">Umbral para el bono.</div></div>
-        <div class="cfg"><label>Bono por meta</label><div class="inp"><span>$</span><input type="number" id="c-bono" value="600" step="50"></div><div class="d">Fijo si recuperación ≥ meta.</div></div>
-        <div class="cfg"><label>Castigo por mora</label><div class="inp"><input type="number" id="c-mora" value="1.5" step="0.5"><span>%</span></div><div class="d">Se descuenta sobre la cartera vencida que arrastra.</div></div>
-      </div>
-      <div class="formula" id="formula"></div>
-      <div class="cfg-grid" style="margin-top:16px">
-        <div class="cfg"><label>Encargada — por crédito captado</label><div class="inp"><span>$</span><input type="number" id="c-coloc" value="80" step="10"></div><div class="d">Incentivo de colocación separado del cobrador. Idealmente diferido contra recuperación para no premiar colocar mal.</div></div>
-      </div>
-    </div>
-    <div class="panel"><div class="ph"><h3>Desglose de comisiones — periodo</h3><button class="btn gold" onclick="exportCSV('com')">⬇ Exportar nómina</button></div>
-      <table><thead><tr><th>Cobrador</th><th class="n">+ Cobranza</th><th class="n">+ Bono</th><th class="n">− Mora</th><th class="n">Comisión neta</th></tr></thead><tbody id="tb-com"></tbody><tfoot id="tf-com"></tfoot></table>
-    </div>
-  </section>
-
-  <!-- CONCILIACIÓN -->
-  <section class="view" id="conciliacion">
-    <div class="kpis">
-      <div class="kpi g"><div class="l">Efectivo esperado</div><div class="v" id="r-esp">$0</div><div class="s">cobrado en el periodo</div></div>
-      <div class="kpi"><div class="l">Efectivo entregado</div><div class="v" id="r-ent">$0</div><div class="s">depositado / recibido</div></div>
-      <div class="kpi r"><div class="l">Diferencia</div><div class="v" id="r-dif">$0</div><div class="s">faltantes por aclarar</div></div>
-    </div>
-    <div class="panel"><div class="ph"><h3>Corte por cobrador</h3><span class="hint">esperado − entregado</span></div><div id="rc-prom"></div></div>
-    <div class="panel"><div class="ph"><h3>Corte por sucursal</h3></div><div id="rc-suc"></div></div>
-    <div class="note" style="margin-top:-6px">El corte deja de ser un Excel nocturno: el sistema ya sabe cuánto cobró cada quien, entonces sabe cuánto debe entregar. El admin solo revisa las diferencias marcadas.</div>
-  </section>
-
-  <!-- REPORTES -->
-  <section class="view" id="reportes">
-    <div class="kpis">
-      <div class="kpi g"><div class="l">💵 Efectivo</div><div class="v" id="rp-efe">$0</div><div class="s">cobrado en efectivo</div></div>
-      <div class="kpi b"><div class="l">🏦 Transferencia</div><div class="v" id="rp-tra">$0</div><div class="s">a banco</div></div>
-      <div class="kpi v"><div class="l">🧾 Depósito</div><div class="v" id="rp-dep">$0</div><div class="s">a banco</div></div>
-      <div class="kpi"><div class="l">⚖ Ajustes</div><div class="v" id="rp-aju">$0</div><div class="s">sin movimiento de caja</div></div>
-    </div>
-    <div class="panel">
-      <div class="ph"><h3>Efectivo en tránsito — por entregar por promotora</h3><span class="hint">cobrado en ruta que aún NO está en caja</span></div>
-      <table><thead><tr><th>Promotora / cobrador</th><th>Sucursal</th><th class="n">Cobrado efectivo</th><th class="n">Entregado</th><th class="n">Por entregar</th><th>Estado</th></tr></thead><tbody id="rp-transito"></tbody><tfoot id="rp-transito-tf"></tfoot></table>
-      <div class="note">Mientras la promotora no entregue físicamente, ese efectivo se contabiliza como <b>cuenta por cobrar a su nombre</b>, no como entrada de caja de la sucursal. Aquí el admin ve quién trae dinero en tránsito.</div>
-    </div>
-    <div class="panel">
-      <div class="ph"><h3>Quién pagó — movimientos del periodo</h3><button class="btn" onclick="exportCSV('pagos')">⬇ CSV</button></div>
-      <table><thead><tr><th>Hora</th><th>Cliente</th><th>Folio</th><th>Cobrado por</th><th>Forma de pago</th><th class="n">Monto</th></tr></thead><tbody id="rp-pagos"></tbody></table>
-    </div>
-  </section>
-
-  <section class="view" id="usuarios">
-    <div class="panel">
-      <div class="ph"><h3>Crear usuario</h3><span class="hint">Solo el administrador puede dar de alta</span></div>
-      <div id="u-passbox" style="display:none;align-items:center;gap:14px;background:linear-gradient(140deg,rgba(240,180,41,.12),rgba(240,180,41,.04));border:1px solid var(--acc);border-radius:10px;padding:14px;margin-bottom:14px">
-        <div style="flex:1"><div style="font-size:.74rem;color:var(--dim)">Contraseña generada para <b id="u-pbname"></b> — entrégala una sola vez:</div></div>
-        <div class="mono" id="u-pbpw" style="font-size:1.4rem;font-weight:600;color:var(--acc);letter-spacing:.1em"></div>
-        <button class="btn" onclick="copyPw()">Copiar</button>
-      </div>
-      <div class="filters">
-        <input id="u-nombre" placeholder="Nombre completo" style="flex:1;min-width:150px">
-        <input id="u-usuario" placeholder="Usuario (ej. areyes)" style="flex:1;min-width:130px">
-        <select id="u-rol"><option value="cobrador">Cobrador</option><option value="sucursal">Sucursal</option><option value="supervisor">Supervisor</option><option value="admin">Administrador</option></select>
-        <select id="u-suc"></select>
-        <input id="u-pass" placeholder="Clave (vacío = automática)" style="min-width:150px">
-        <button class="btn gold" onclick="crearUsuario()">Crear</button>
-      </div>
-    </div>
-    <div class="panel">
-      <div class="ph"><h3>Usuarios registrados</h3></div>
-      <table><thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Sucursal</th><th>Estado</th><th></th></tr></thead><tbody id="u-list"></tbody></table>
-    </div>
-  </section>
-
-  <section class="view" id="simulador">
-    <div class="panel"><div class="ph"><h3>Simulador de crédito</h3><span class="hint">maneja las tres modalidades</span></div>
-      <div class="sim-grid">
-        <div>
-          <div class="sim-field"><label>Modalidad</label><select id="s-tipo"><option value="diario">Diario</option><option value="semanal" selected>Semanal</option><option value="unico">Pago único</option><option value="p17">Celulares 17 pagos</option></select></div>
-          <div class="sim-field"><label>Monto del crédito</label><input type="number" id="s-monto" value="5000" step="500"></div>
-          <div class="sim-field"><label>Plazo</label><select id="s-plazo"></select></div>
-        </div>
-        <div class="sim-out" id="sim-out"></div>
-      </div>
-    </div>
-  </section>
-</main>
-
-<script>
-/* ===== Sesión: exige token del login ===== */
-const TOKEN = (()=>{ try{ return localStorage.getItem('cobrapro_token'); }catch(e){ return null; } })();
-const ME = (()=>{ try{ return JSON.parse(localStorage.getItem('cobrapro_user')||'null'); }catch(e){ return null; } })();
-if(!TOKEN){ location.replace('index.html'); }
-async function apiU(method, path, body){
-  const r = await fetch(path, { method, headers:{'Content-Type':'application/json', Authorization:'Bearer '+TOKEN}, body: body?JSON.stringify(body):undefined });
-  if(r.status===401){ try{localStorage.removeItem('cobrapro_token');}catch(e){} location.replace('index.html'); throw new Error('Sesión expirada'); }
-  const d = await r.json().catch(()=>({}));
-  if(!r.ok) throw new Error(d.error || d.message || ('Error '+r.status));
-  return d;
+  try { return JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch { return null; }
 }
-function salir(){ try{localStorage.removeItem('cobrapro_token');localStorage.removeItem('cobrapro_user');}catch(e){} location.replace('index.html'); }
-
-/* ===== FUENTE ÚNICA DE VERDAD: créditos ===== */
-const SUC = [
-  {id:'AME',nombre:'Amecameca', enc:'Brenda Solís',   color:'#f0b429'},
-  {id:'CHA',nombre:'Chalco',    enc:'Karina Ruiz',    color:'#5aa0e8'},
-  {id:'OZU',nombre:'Ozumba',    enc:'Patricia Lemus', color:'#3ecf8e'},
-  {id:'TLA',nombre:'Tláhuac',   enc:'Mónica Frías',   color:'#b07ce0'},
-  {id:'TEP',nombre:'Tepetlixpa',enc:'Lucía Andrade',  color:'#f0654d'},
-  {id:'JUC',nombre:'Juchitepec',enc:'Daniela Ponce',  color:'#d6a35a'},
-];
-const PROM = [
-  {id:'AR',nombre:'Ana Reyes',     suc:'AME',color:'#f0b429'},
-  {id:'RC',nombre:'Raúl Cárdenas', suc:'AME',color:'#d6a35a'},
-  {id:'JM',nombre:'Jorge Medina',  suc:'CHA',color:'#5aa0e8'},
-  {id:'SP',nombre:'Sofía Pacheco', suc:'CHA',color:'#3ecf8e'},
-  {id:'DM',nombre:'Diego Maldonado',suc:'OZU',color:'#b07ce0'},
-  {id:'LO',nombre:'Laura Ortega',  suc:'TLA',color:'#f0654d'},
-  {id:'MV',nombre:'Marisol Vega',  suc:'TEP',color:'#5aa0e8'},
-  {id:'HS',nombre:'Hugo Salas',    suc:'JUC',color:'#3ecf8e'},
-];
-// credito: cliente, suc, prom, tipo, monto, tasa, plazo(periodos), hechos, esperados, cobHoy, cobSem
-const CRED = [
-  ['María González','AME','AR','semanal',6000,.20,12,9,9,0,600],
-  ['Pedro Jiménez','AME','AR','diario',3000,.20,24,18,20,150,900],
-  ['Rosa Maldonado','AME','RC','semanal',8000,.22,20,6,9,0,488],
-  ['Luis Treviño','AME','RC','unico',4000,.15,10,0,1,0,0],
-  ['Carmen Díaz','CHA','JM','semanal',10000,.20,16,11,12,0,750],
-  ['Joel Ramírez','CHA','JM','diario',2500,.20,20,14,16,125,750],
-  ['Norma Beltrán','CHA','SP','semanal',5000,.20,8,7,7,0,750],
-  ['Iván Cortés','CHA','SP','semanal',7000,.22,12,4,8,0,711],
-  ['Teresa Aguilar','OZU','DM','diario',4000,.20,30,22,26,160,960],
-  ['Mario Ledesma','OZU','DM','unico',6000,.15,15,0,1,0,0],
-  ['Sandra Vélez','OZU','DM','semanal',4500,.20,8,6,6,0,675],
-  ['Ángel Rosas','TLA','LO','semanal',9000,.20,20,17,18,0,540],
-  ['Gloria Méndez','TLA','LO','diario',3500,.20,24,19,20,146,875],
-  ['Hugo Paredes','TLA','LO','semanal',5500,.22,12,9,9,0,559],
-  ['Verónica Lara','TEP','MV','semanal',6500,.20,16,10,11,0,488],
-  ['Esteban Nava','TEP','MV','diario',3000,.20,20,11,16,0,900],
-  ['Rocío Sandoval','TEP','MV','unico',5000,.15,10,1,1,0,5750],
-  ['Fernando Gil','JUC','HS','semanal',7500,.20,12,8,9,0,750],
-  ['Adriana Cano','JUC','HS','semanal',4000,.20,8,8,8,0,0],
-  ['Óscar Bravo','JUC','HS','diario',2800,.20,24,15,21,0,840],
-];
-let period='semana';
-const PF={dia:.16,semana:1,mes:4.1};
-
-function deriva(c){
-  const [cliente,suc,prom,tipo,monto,tasa,plazo,hechos,esperados,cobHoy,cobSem]=c;
-  const total=monto*(1+tasa);
-  const nPagos=tipo==='unico'?1:plazo;
-  const cuota=total/nPagos;
-  const pagado=Math.min(total,hechos*cuota);
-  const saldo=total-pagado;
-  const avance=pagado/total;
-  const atraso=esperados-hechos;
-  let sem= atraso<=0?'ok':atraso<=2?'w':'bad';
-  if(tipo==='unico'&&hechos>=1) sem='ok';
-  const sn=SUC.find(s=>s.id===suc), pr=PROM.find(p=>p.id===prom);
-  return {cliente,suc,prom,tipo,monto,tasa,plazo,hechos,esperados,cobHoy,cobSem,total,cuota,pagado,saldo,avance,atraso,sem,sucNom:sn.nombre,promNom:pr.nombre,promColor:pr.color};
+function saveDB() {
+  if (USE_PG) {
+    pool.query('INSERT INTO cobrapro_state (id, data) VALUES (1, $1) ON CONFLICT (id) DO UPDATE SET data = $1', [db])
+      .catch(e => console.error('❌ Error al guardar en Postgres:', e.message));
+  } else {
+    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+  }
 }
-const fmt=n=>'$'+Math.round(n).toLocaleString('es-MX');
-const fmtK=n=>n>=1000?'$'+(n/1000).toFixed(0)+'k':'$'+Math.round(n);
-const cob=(c)=> period==='dia'? c.cobHoy : period==='mes'? c.cobSem*PF.mes : c.cobSem;
-function cfg(){return{cob:+c_cob.value||0,meta:+c_meta.value||0,bono:+c_bono.value||0,mora:+c_mora.value||0,coloc:+c_coloc.value||0};}
-const tipoLbl={diario:'Diario',semanal:'Semanal',unico:'Único'};
-const tipoCls={diario:'dia',semanal:'sem',unico:'uni'};
-const plazoLbl=c=> c.tipo==='unico'? c.plazo+' días' : c.tipo==='diario'? c.plazo+' días' : c.plazo+' sem';
-const proxPago=c=> c.sem==='bad'?'Vencido': c.tipo==='diario'?'Mañana':c.tipo==='unico'?'Al término':'Esta semana';
+function nextId(coll) { return (db[coll] || []).reduce((m, x) => Math.max(m, x.id), 0) + 1; }
 
-function render(){
-  const D=CRED.map(deriva);
-  // agregados por cobrador
-  const proms=PROM.map(p=>{
-    const cs=D.filter(c=>c.prom===p.id);
-    const cartera=cs.reduce((a,c)=>a+c.saldo,0);
-    const vencida=cs.filter(c=>c.sem==='bad').reduce((a,c)=>a+c.saldo,0);
-    const cDia=cs.filter(c=>c.tipo==='diario').reduce((a,c)=>a+cob(c),0);
-    const cSem=cs.filter(c=>c.tipo==='semanal').reduce((a,c)=>a+cob(c),0);
-    const cUni=cs.filter(c=>c.tipo==='unico').reduce((a,c)=>a+cob(c),0);
-    const cobrado=cDia+cSem+cUni;
-    const exigible=cs.reduce((a,c)=> a + (c.tipo==='unico'? (period==='dia'?0:c.cuota*0.0): c.cuota*(period==='dia'?(c.tipo==='diario'?1:0):(c.tipo==='diario'?6:1))),0)+vencida*0.1;
-    const rec= exigible>0? Math.min(100,(cobrado/exigible)*100): (cobrado>0?100:0);
-    const k=cfg();
-    const cCob=cobrado*k.cob/100, cBono= rec>=k.meta?k.bono:0, cMora=vencida*k.mora/100;
-    const neta=cCob+cBono-cMora;
-    return {...p,clientes:cs.length,cartera,vencida,cDia,cSem,cUni,cobrado,rec,cCob,cBono,cMora,neta,entregado:cobrado*(p.id==='RC'||p.id==='DM'?0.9:p.id==='MV'?0.96:1)};
-  });
-  // agregados por sucursal
-  const sucs=SUC.map(s=>{
-    const cs=D.filter(c=>c.suc===s.id);
-    const pagos=cs.reduce((a,c)=>a+cob(c),0);
-    const npagos=cs.filter(c=>cob(c)>0).length*(period==='mes'?18:period==='dia'?1:6);
-    const captados=cs.length, colocado=cs.reduce((a,c)=>a+c.monto,0)*PF[period]/4;
-    const caja=pagos*0.55;
-    const entregado= s.id==='CHA'?caja*0.95: s.id==='TEP'?caja*0.98: caja;
-    return {...s,captados,colocado,caja,entregado,pagos,npagos:Math.round(npagos)};
-  });
-
-  const totCob=proms.reduce((a,p)=>a+p.cobrado,0);
-  const totCart=D.reduce((a,c)=>a+c.saldo,0);
-  const totVen=D.filter(c=>c.sem==='bad').reduce((a,c)=>a+c.saldo,0);
-  const totCom=proms.reduce((a,p)=>a+p.neta,0);
-  const totColoc=sucs.reduce((a,s)=>a+s.colocado,0);
-  const nCred=Math.round(D.length*PF[period]/4)+ (period==='mes'?22:period==='dia'?2:6);
-  const efPend=proms.reduce((a,p)=>a+(p.cobrado-p.entregado),0)+sucs.reduce((a,s)=>a+(s.caja-s.entregado),0);
-
-  k_cob.textContent=fmt(totCob); k_col.textContent=fmt(totColoc); k_ncred.textContent=nCred+' créditos nuevos';
-  k_cart.textContent=fmt(totCart); k_ncli.textContent=D.length+' créditos vigentes';
-  k_ven.textContent=fmt(totVen); k_ven_p.textContent=((totVen/(totCart||1))*100).toFixed(1)+'%';
-  k_ef.textContent=fmt(Math.max(0,efPend));
-
-  tb_res.innerHTML=[...proms].sort((a,b)=>b.cobrado-a.cobrado).map(p=>`<tr>
-    <td><div class="who"><div class="ava" style="background:${p.color}">${p.id}</div><div class="nm">${p.nombre}</div></div></td>
-    <td>${SUC.find(s=>s.id===p.suc).nombre}</td><td class="n">${p.clientes}</td><td class="n">${fmt(p.cobrado)}</td>
-    <td><div style="display:flex;align-items:center;gap:8px"><div class="bar"><i style="width:${p.rec}%;background:${p.rec>=85?'var(--grn)':p.rec>=70?'var(--acc)':'var(--red)'}"></i></div><span class="mono" style="font-size:.78rem">${p.rec.toFixed(0)}%</span></div></td>
-    <td class="n cm">${fmt(p.neta)}</td></tr>`).join('');
-
-  tb_prom.innerHTML=proms.map(p=>`<tr>
-    <td><div class="who"><div class="ava" style="background:${p.color}">${p.id}</div><div><div class="nm">${p.nombre}</div><div class="sn">${SUC.find(s=>s.id===p.suc).nombre}</div></div></div></td>
-    <td class="n">${p.clientes}</td><td class="n">${fmt(p.cartera)}</td><td class="n" style="color:var(--red)">${fmt(p.vencida)}</td>
-    <td class="n">${fmt(p.cDia)}</td><td class="n">${fmt(p.cSem)}</td><td class="n">${fmt(p.cUni)}</td>
-    <td><span class="pill ${p.rec>=85?'ok':p.rec>=70?'w':'bad'}">${p.rec.toFixed(0)}%</span></td><td class="n cm">${fmt(p.neta)}</td></tr>`).join('');
-
-  suc_kpis.innerHTML=sucs.map(s=>`<div class="kpi b"><div class="l">${s.nombre}</div><div class="v">${fmtK(s.pagos)}</div><div class="s">${s.captados} créditos · ${fmt(s.caja)} en caja</div></div>`).join('');
-  tb_suc.innerHTML=sucs.map(s=>{const dif=s.caja-s.entregado;const est=dif<1?'<span class="pill ok">Cuadrada</span>':'<span class="pill bad">Faltante '+fmt(dif)+'</span>';
-    return `<tr><td><div class="who"><div class="ava" style="background:${s.color}">🏪</div><div class="nm">${s.nombre}</div></div></td>
-    <td>${s.enc}</td><td class="n">${fmt(s.pagos)}</td><td class="n">${s.npagos}</td><td class="n">${s.captados}</td><td class="n">${fmt(s.colocado)}</td><td class="n">${fmt(s.caja)}</td><td>${est}</td></tr>`;}).join('');
-
-  // comisiones
-  const k=cfg();
-  formula.innerHTML=`Comisión cobrador = (cobrado × <b>${k.cob}%</b>) + <span class="g">bono ${fmt(k.bono)}</span> si recup. ≥ <b>${k.meta}%</b> − <span class="r">(vencida × ${k.mora}%)</span>`;
-  tb_com.innerHTML=proms.map(p=>`<tr><td><div class="who"><div class="ava" style="background:${p.color}">${p.id}</div><div class="nm">${p.nombre}</div></div></td>
-    <td class="n" style="color:var(--grn)">+${fmt(p.cCob)}</td><td class="n" style="color:${p.cBono>0?'var(--grn)':'var(--faint)'}">${p.cBono>0?'+'+fmt(p.cBono):'—'}</td>
-    <td class="n" style="color:var(--red)">−${fmt(p.cMora)}</td><td class="n cm" style="font-size:.95rem">${fmt(p.neta)}</td></tr>`).join('');
-  const sm=proms.reduce((a,p)=>({c:a.c+p.cCob,b:a.b+p.cBono,m:a.m+p.cMora,n:a.n+p.neta}),{c:0,b:0,m:0,n:0});
-  tf_com.innerHTML=`<tr style="border-top:2px solid var(--line-2)"><td style="font-weight:600;padding-top:13px">TOTAL NÓMINA</td>
-    <td class="n" style="color:var(--grn);padding-top:13px">+${fmt(sm.c)}</td><td class="n" style="color:var(--grn);padding-top:13px">+${fmt(sm.b)}</td>
-    <td class="n" style="color:var(--red);padding-top:13px">−${fmt(sm.m)}</td><td class="n cm" style="font-size:1.05rem;padding-top:13px">${fmt(sm.n)}</td></tr>`;
-
-  // conciliación
-  const espP=proms.reduce((a,p)=>a+p.cobrado,0), entP=proms.reduce((a,p)=>a+p.entregado,0);
-  const espS=sucs.reduce((a,s)=>a+s.caja,0), entS=sucs.reduce((a,s)=>a+s.entregado,0);
-  r_esp.textContent=fmt(espP+espS); r_ent.textContent=fmt(entP+entS); r_dif.textContent=fmt((espP+espS)-(entP+entS));
-  rc_prom.innerHTML=proms.map(p=>{const dif=p.cobrado-p.entregado;const cls=dif<1?'doc':'dbad';const lbl=dif<1?'Cuadra':'Faltante';
-    return `<div class="recon"><div class="lf"><div class="ava" style="background:${p.color}">${p.id}</div><div><div class="nm">${p.nombre}</div><div class="sn">Esperado ${fmt(p.cobrado)} · Entregado ${fmt(p.entregado)}</div></div></div>
-    <div class="mono ${cls}" style="font-weight:600;text-align:right">${dif>=1?'−':''}${fmt(Math.abs(dif))}<div style="font-size:.68rem;font-weight:400">${lbl}</div></div></div>`;}).join('');
-  rc_suc.innerHTML=sucs.map(s=>{const dif=s.caja-s.entregado;const cls=dif<1?'doc':'dbad';const lbl=dif<1?'Cuadra':'Faltante';
-    return `<div class="recon"><div class="lf"><div class="ava" style="background:${s.color}">🏪</div><div><div class="nm">${s.nombre}</div><div class="sn">Caja ${fmt(s.caja)} · Entregado ${fmt(s.entregado)}</div></div></div>
-    <div class="mono ${cls}" style="font-weight:600;text-align:right">${dif>=1?'−':''}${fmt(Math.abs(dif))}<div style="font-size:.68rem;font-weight:400">${lbl}</div></div></div>`;}).join('');
-
-  drawDaily(); drawDonut(D);
-  renderReportes(proms);
+/* ---------- Motor de cálculo real (factores Credia) ---------- */
+const PROD = {
+  diario:  [{ p: 10, f: 1.17, fijo: 30 }, { p: 20, f: 1.23, fijo: 60 }, { p: 30, f: 1.33, fijo: 90 }],
+  semanal: [{ p: 4, f: 1.35, fijo: 60 }, { p: 8, f: 1.43, fijo: 120 }, { p: 12, f: 1.53, fijo: 180 }, { p: 16, f: 1.63, fijo: 240 }, { p: 20, f: 1.83, fijo: 300 }],
+  p17:     [{ p: 17, f: 1.73, fijo: 270 }],
+};
+function calcCredito(tipo, plazo, monto, dias) {
+  if (tipo === 'unico') { const tap = monto + (dias || 15) * (2 + monto * 0.0183); return { total: tap, pagos: 1, cuota: tap }; }
+  const arr = PROD[tipo] || PROD.semanal; const it = arr.find(x => x.p === plazo) || arr[0];
+  const total = monto * it.f + it.fijo; return { total, pagos: it.p, cuota: total / it.p };
 }
+function genPassword() { const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let p = ''; for (let i = 0; i < 8; i++) p += c[Math.floor(Math.random() * c.length)]; return p; }
+function saldoDe(saleId) { return db.movimientos.filter(m => m.saleId === saleId).reduce((s, m) => s + (m.cargo || 0) - (m.abono || 0), 0); }
 
-/* CARTERA conectada al backend */
-let _cartera=[], _sucMap={};
-const _tipoLbl={diario:'Diario',semanal:'Semanal',unico:'Pago único',p17:'Celulares 17'};
-const _tipoCls={diario:'dia',semanal:'sem',unico:'uni',p17:'uni'};
-const _plazoTxt=c=>c.tipo==='semanal'? c.plazo+' sem' : c.tipo==='p17'? '17 pagos' : c.plazo+' días';
-const $=id=>document.getElementById(id);
-async function cargarCartera(){
-  const tb=$('tb-cart');
-  try{
-    if(!Object.keys(_sucMap).length){ const s=await apiU('GET','/api/sucursales'); s.forEach(x=>_sucMap[x.id]=x.nombre);
-      $('f-suc').innerHTML='<option value="">Todas las sucursales</option>'+s.map(x=>`<option value="${x.id}">${x.nombre}</option>`).join(''); }
-    _cartera = await apiU('GET','/api/sales');
-    renderCartera();
-  }catch(e){ tb.innerHTML=`<tr><td colspan="11" style="color:var(--red);padding:18px">${e.message}</td></tr>`; }
+/* ---------- Semilla inicial ---------- */
+function seed() {
+  db = { users: [], sucursales: [], clients: [], sales: [], movimientos: [], caja: {}, porEntregar: [], gestiones: [], _idem: {} };
+  db.sucursales = ['Amecameca', 'Chalco', 'Ozumba', 'Tláhuac', 'Tepetlixpa', 'Juchitepec'].map((n, i) => ({ id: i + 1, nombre: n }));
+  db.users = [
+    { id: 1, nombre: 'Administrador', usuario: 'admin', rol: 'admin', sucursalId: null, passwordHash: bcrypt.hashSync('admin123', 8), activo: true, createdAt: new Date().toISOString() },
+  ];
+  // 2 clientes demo con su crédito
+  const c1 = calcCredito('semanal', 12, 6000);
+  const c2 = calcCredito('diario', 20, 3000);
+  db.clients = [
+    { id: 1, nombre: 'María González', tel: '5544120098', calle: 'Calle Hidalgo 24', col: 'Centro', sucursalId: 1, prom: 'Ana Reyes' },
+    { id: 2, nombre: 'Pedro Jiménez', tel: '5544120134', calle: 'Av. Juárez 110', col: 'San Miguel', sucursalId: 1, prom: 'Ana Reyes' },
+  ];
+  db.sales = [
+    { id: 1, folio: 'F-1042', clientId: 1, tipo: 'semanal', plazo: 12, monto: 6000, cuota: c1.cuota, total: c1.total, prom: 'Ana Reyes', sucursalId: 1, createdAt: new Date().toISOString() },
+    { id: 2, folio: 'F-1043', clientId: 2, tipo: 'diario', plazo: 20, monto: 3000, cuota: c2.cuota, total: c2.total, prom: 'Ana Reyes', sucursalId: 1, createdAt: new Date().toISOString() },
+  ];
+  db.movimientos = [
+    { id: 1, saleId: 1, fecha: '05/03/2026', concepto: 'Disposición de crédito', origen: 'Sucursal Amecameca', cargo: c1.total, abono: 0 },
+    { id: 2, saleId: 1, fecha: '12/03/2026', concepto: 'Abono semana 1', origen: 'Ruta · A. Reyes', cargo: 0, abono: c1.cuota, forma: 'efectivo' },
+    { id: 3, saleId: 2, fecha: '06/03/2026', concepto: 'Disposición de crédito', origen: 'Sucursal Amecameca', cargo: c2.total, abono: 0 },
+  ];
+  db.caja = { '1': { inicial: 2000, efectivo: 0, banco: 0, entregas: 0 } };
+  db.porEntregar = [{ id: 1, sucursalId: 1, prom: 'Ana Reyes', monto: 8400 }];
+  saveDB();
 }
-function renderCartera(){
-  const q=($('f-q').value||'').toLowerCase(), fs=$('f-suc').value, ft=$('f-tipo').value;
-  const rows=_cartera.filter(c=> (!fs||String(c.sucursalId)===String(fs)) && (!ft||c.tipo===ft) && (!q||(c.cliente||'').toLowerCase().includes(q)));
-  $('tb-cart').innerHTML=rows.map(c=>{
-    const av=c.total>0?(c.total-c.saldo)/c.total:0; const liq=c.saldo<=0;
-    const ini=(c.prom||'·').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
-    return `<tr>
-      <td class="nm">${c.cliente||'—'}</td><td>${_sucMap[c.sucursalId]||'—'}</td>
-      <td><div class="who"><div class="ava" style="background:var(--surf-3);width:24px;height:24px;font-size:.62rem;color:var(--dim)">${ini}</div><span class="sn">${(c.prom||'').split(' ')[0]}</span></div></td>
-      <td><span class="tipo ${_tipoCls[c.tipo]||'sem'}">${_tipoLbl[c.tipo]||c.tipo}</span></td>
-      <td class="n">${fmt(c.monto)}</td><td class="n">${fmt(c.cuota)}</td><td>${_plazoTxt(c)}</td><td class="n">${fmt(c.saldo)}</td>
-      <td><div style="display:flex;align-items:center;gap:7px"><div class="bar" style="min-width:46px"><i style="width:${(av*100).toFixed(0)}%;background:var(--grn)"></i></div><span class="mono" style="font-size:.72rem">${(av*100).toFixed(0)}%</span></div></td>
-      <td class="sn">${liq?'—':'Pendiente'}</td>
-      <td><span class="pill ok">${liq?'Liquidado':'Activo'}</span></td></tr>`;
-  }).join('') || `<tr><td colspan="11" style="text-align:center;color:var(--faint);padding:24px">Sin créditos en la base.</td></tr>`;
-}
+let db = null;
 
-/* REPORTES: forma de pago, efectivo en tránsito, quién pagó */
-const formaLbl={efectivo:'💵 Efectivo',transferencia:'🏦 Transferencia',deposito:'🧾 Depósito',ajuste:'⚖ Ajuste'};
-const PAGOS=[
-  {hora:'08:14',cliente:'María González',folio:'F-1042',por:'Ana Reyes',forma:'efectivo',monto:600},
-  {hora:'08:32',cliente:'Joel Ramírez',folio:'F-1063',por:'Ana Reyes',forma:'efectivo',monto:125},
-  {hora:'09:05',cliente:'Carmen Díaz',folio:'F-1055',por:'Ventanilla Chalco',forma:'transferencia',monto:750},
-  {hora:'09:21',cliente:'Pedro Jiménez',folio:'F-1043',por:'Ana Reyes',forma:'efectivo',monto:300},
-  {hora:'09:48',cliente:'Rosa Maldonado',folio:'F-1051',por:'Raúl Cárdenas',forma:'efectivo',monto:488},
-  {hora:'10:12',cliente:'Sandra Vélez',folio:'F-1080',por:'Ventanilla Ozumba',forma:'deposito',monto:675},
-  {hora:'10:39',cliente:'Ángel Rosas',folio:'F-1090',por:'Laura Ortega',forma:'efectivo',monto:540},
-  {hora:'11:02',cliente:'Norma Beltrán',folio:'F-1071',por:'Ventanilla Amecameca',forma:'efectivo',monto:750},
-  {hora:'11:30',cliente:'Iván Cortés',folio:'F-1058',por:'Sofía Pacheco',forma:'efectivo',monto:711},
-  {hora:'12:05',cliente:'Verónica Lara',folio:'F-1101',por:'Marisol Vega',forma:'ajuste',monto:200},
-  {hora:'12:44',cliente:'Gloria Méndez',folio:'F-1066',por:'Laura Ortega',forma:'efectivo',monto:146},
-  {hora:'13:18',cliente:'Fernando Gil',folio:'F-1112',por:'Ventanilla Juchitepec',forma:'transferencia',monto:750},
-];
-function renderReportes(proms){
-  const by={efectivo:0,transferencia:0,deposito:0,ajuste:0};
-  PAGOS.forEach(p=>by[p.forma]+=p.monto);
-  const f=PF[period];
-  document.getElementById('rp-efe').textContent=fmt(by.efectivo*f*3);
-  document.getElementById('rp-tra').textContent=fmt(by.transferencia*f*3);
-  document.getElementById('rp-dep').textContent=fmt(by.deposito*f*3);
-  document.getElementById('rp-aju').textContent=fmt(by.ajuste*f*3);
-  // efectivo en tránsito = cobrado − entregado por promotora
-  let totPE=0;
-  document.getElementById('rp-transito').innerHTML=proms.map(p=>{
-    const ent=p.entregado||0, pe=Math.max(0,p.cobrado-ent); totPE+=pe;
-    const est= pe<1?'<span class="pill ok">Entregado</span>':'<span class="pill w">En tránsito</span>';
-    return `<tr><td><div class="who"><div class="ava" style="background:${p.color}">${p.id}</div><div class="nm">${p.nombre}</div></div></td>
-      <td>${SUC.find(s=>s.id===p.suc).nombre}</td><td class="n">${fmt(p.cobrado)}</td><td class="n">${fmt(ent)}</td>
-      <td class="n" style="color:${pe>=1?'var(--acc)':'var(--faint)'}">${fmt(pe)}</td><td>${est}</td></tr>`;
-  }).join('');
-  document.getElementById('rp-transito-tf').innerHTML=`<tr style="border-top:2px solid var(--line-2)"><td colspan="4" style="font-weight:600;padding-top:13px">TOTAL EN TRÁNSITO</td><td class="n cm" style="padding-top:13px">${fmt(totPE)}</td><td></td></tr>`;
-  // quién pagó
-  document.getElementById('rp-pagos').innerHTML=PAGOS.map(p=>`<tr>
-    <td class="mono" style="color:var(--faint);font-size:.78rem">${p.hora}</td><td class="nm">${p.cliente}</td>
-    <td class="mono" style="font-size:.78rem">${p.folio}</td><td class="sn">${p.por}</td>
-    <td>${formaLbl[p.forma]}</td><td class="n">${fmt(p.monto)}</td></tr>`).join('');
+/* ---------- Auth ---------- */
+function auth(req, res, next) {
+  const t = (req.headers.authorization || '').replace('Bearer ', '');
+  try { req.user = jwt.verify(t, JWT_SECRET); next(); }
+  catch { res.status(401).json({ error: 'No autorizado' }); }
 }
+function rol(...roles) { return (req, res, next) => roles.includes(req.user.rol) ? next() : res.status(403).json({ error: 'Permiso insuficiente' }); }
+function idem(req, res, next) {
+  const k = req.body && req.body.idempotencyKey;
+  if (k && db._idem[k]) return res.json({ ok: true, duplicado: true });
+  req._idemKey = k; next();
+}
+function markIdem(req) { if (req._idemKey) { db._idem[req._idemKey] = true; } }
 
-/* ===== ESTADO DE CUENTA: cargos, abonos y moratorio automático ===== */
-let _ecSales=[], ecActual=null, _ecLib=null;
-async function ecInit(){
-  try{
-    _ecSales = await apiU('GET','/api/sales');
-    document.getElementById('ec-sel').innerHTML = _ecSales.map(s=>`<option value="${s.id}">${s.cliente||'—'} · ${s.folio} · ${_tipoLbl[s.tipo]||s.tipo}</option>`).join('');
-    if(_ecSales.length){ ecActual=_ecSales[0]; await ecCargar(); }
-    else { document.getElementById('ec-empty').style.display='block'; document.getElementById('ec-empty').innerHTML='<div style="color:var(--faint);text-align:center;padding:20px">No hay créditos en la base todavía.</div>'; }
-  }catch(e){ document.getElementById('ec-empty').innerHTML='<div style="color:var(--red);padding:18px">'+e.message+'</div>'; }
-}
-function ecSelect(){ ecActual=_ecSales.find(s=>String(s.id)===document.getElementById('ec-sel').value); ecCargar(); }
-async function ecCargar(){
-  if(!ecActual) return;
-  try{ const d = await apiU('GET','/api/sales/'+ecActual.id+'/movimientos'); ecPinta(d); }
-  catch(e){ alert(e.message); }
-}
-function ecPinta(d){
-  ['ec-card','ec-saldo-card','ec-ledger-card'].forEach(id=>document.getElementById(id).style.display='block');
-  document.getElementById('ec-empty').style.display='none';
-  const c=ecActual;
-  document.getElementById('ec-nom').textContent=c.cliente||'—';
-  const liq=d.saldo<=0;
-  document.getElementById('ec-sem').className='pill '+(liq?'ok':'w'); document.getElementById('ec-sem').textContent=(liq?'Liquidado':'Activo');
-  document.getElementById('ec-folio').textContent=c.folio;
-  document.getElementById('ec-mod').textContent=(_tipoLbl[c.tipo]||c.tipo)+' · '+fmt(c.cuota);
-  document.getElementById('ec-dom').textContent='—';
-  document.getElementById('ec-venc').textContent='—';
-  document.getElementById('ec-prom').textContent=c.prom||'—';
-  document.getElementById('ec-mora-alert').innerHTML='';
-  const rows=d.movimientos||[];
-  const tcar=rows.reduce((a,m)=>a+(m.cargo||0),0), tabo=rows.reduce((a,m)=>a+(m.abono||0),0);
-  const tmor=rows.filter(m=>/morator/i.test(m.concepto||'')).reduce((a,m)=>a+(m.cargo||0),0);
-  document.getElementById('ec-tcar').textContent=fmt(tcar);
-  document.getElementById('ec-tabo').textContent=fmt(tabo);
-  document.getElementById('ec-tmor').textContent=fmt(tmor);
-  document.getElementById('ec-saldo').textContent=fmt(d.saldo);
-  document.getElementById('ec-ledger').innerHTML=rows.map(m=>{const mora=/morator/i.test(m.concepto||'')||m.auto;return `<tr ${mora?'style="background:rgba(240,101,77,.05)"':''}>
-    <td class="mono" style="font-size:.78rem">${m.fecha}</td><td>${m.concepto}${mora?' <span class="pill bad" style="font-size:.6rem">MORA</span>':''}</td><td class="sn">${m.origen||''}</td>
-    <td class="n" style="color:${m.cargo?'var(--red)':'var(--faint)'}">${m.cargo?fmt(m.cargo):'—'}</td>
-    <td class="n" style="color:${m.abono?'var(--grn)':'var(--faint)'}">${m.abono?fmt(m.abono):'—'}</td>
-    <td class="n" style="font-weight:600">${fmt(m.saldo)}</td></tr>`;}).join('') || '<tr><td colspan="6" style="color:var(--faint);padding:14px">Sin movimientos.</td></tr>';
-  _ecLib={rows,saldo:d.saldo,tcar,tabo,tmor};
-}
-async function ecMov(tipo){
-  if(!ecActual) return;
-  try{
-    if(tipo==='cargo'){ const m=parseFloat(prompt('Monto del cargo manual:')); if(!m||m<=0)return; const con=prompt('Concepto del cargo:','Cargo manual')||'Cargo manual'; await apiU('POST','/api/sales/'+ecActual.id+'/cargo',{monto:m,concepto:con}); }
-    else if(tipo==='abono'){ const m=parseFloat(prompt('Monto del abono:')); if(!m||m<=0)return; await apiU('POST','/api/sales/'+ecActual.id+'/abono',{monto:m}); }
-    else if(tipo==='condonar'){ const m=parseFloat(prompt('Monto a condonar:')); if(!m||m<=0)return; const mot=prompt('Motivo (moratorios / ajuste / acuerdo):','Condonación de moratorios')||'Condonación'; await apiU('POST','/api/sales/'+ecActual.id+'/condonar',{monto:m,motivo:mot}); }
-    await ecCargar();
-  }catch(e){ alert(e.message); }
-}
-async function ecMora(){
-  if(!ecActual) return;
-  const m=+document.getElementById('ec-mora').value||25;
-  try{ await apiU('POST','/api/sales/'+ecActual.id+'/aplicar-mora',{monto:m}); await ecCargar(); }
-  catch(e){ alert(e.message); }
-}
-function ecImprimir(){
-  if(!ecActual||!_ecLib) return; const c=ecActual, L=_ecLib;
-  const filas=L.rows.map(m=>`<tr><td>${m.fecha}</td><td>${m.concepto}</td><td style="text-align:right">${m.cargo?fmt(m.cargo):''}</td><td style="text-align:right">${m.abono?fmt(m.abono):''}</td><td style="text-align:right">${fmt(m.saldo)}</td></tr>`).join('');
-  const html=`<html><head><title>Estado de cuenta ${c.folio}</title><style>
-    body{font-family:Arial,sans-serif;color:#111;padding:30px;font-size:13px}
-    h1{font-size:20px;margin:0 0 2px}.sub{color:#666;font-size:12px;margin-bottom:18px}
-    .box{border:1px solid #ccc;border-radius:8px;padding:12px;margin-bottom:14px}
-    .g{display:flex;flex-wrap:wrap;gap:6px 30px}.g div span{color:#666}
-    table{width:100%;border-collapse:collapse;margin-top:8px}th,td{border-bottom:1px solid #e3e3e3;padding:7px;text-align:left;font-size:12px}
-    th{background:#f4f4f4}tfoot td{font-weight:bold;border-top:2px solid #999}
-    .tot{text-align:right;margin-top:14px;font-size:16px}</style></head><body>
-    <h1>CobraPro · Estado de cuenta</h1><div class="sub">Emitido ${new Date().toLocaleString('es-MX')}</div>
-    <div class="box"><div class="g">
-      <div><span>Cliente:</span> <b>${c.cliente||'—'}</b></div><div><span>Folio:</span> <b>${c.folio}</b></div>
-      <div><span>Producto:</span> ${_tipoLbl[c.tipo]||c.tipo} · cuota ${fmt(c.cuota)}</div><div><span>Cobrador:</span> ${c.prom||'—'}</div></div></div>
-    <table><thead><tr><th>Fecha</th><th>Concepto</th><th style="text-align:right">Cargo</th><th style="text-align:right">Abono</th><th style="text-align:right">Saldo</th></tr></thead>
-    <tbody>${filas}</tbody>
-    <tfoot><tr><td colspan="2">Totales</td><td style="text-align:right">${fmt(L.tcar)}</td><td style="text-align:right">${fmt(L.tabo)}</td><td></td></tr></tfoot></table>
-    <div class="tot">Saldo actual: <b>${fmt(L.saldo)}</b></div></body></html>`;
-  try{const w=window.open('','_blank');w.document.write(html);w.document.close();w.focus();setTimeout(()=>w.print(),350);}
-  catch(e){alert('Permite ventanas emergentes para imprimir.');}
-}
-
-const daily=[{d:'Lun',p:38,s:52},{d:'Mar',p:46,s:58},{d:'Mié',p:43,s:50},{d:'Jue',p:51,s:64},{d:'Vie',p:62,s:79},{d:'Sáb',p:68,s:44}];
-function drawDaily(){
-  const W=520,H=210,pad=34,bw=22;const f=PF[period]*1000;
-  const max=Math.max(...daily.map(d=>(d.p+d.s)))*f;const step=(W-pad*2)/daily.length;
-  let g='';for(let i=0;i<=3;i++){const y=pad+(H-pad*2)*i/3;g+=`<line x1="${pad}" y1="${y}" x2="${W-pad}" y2="${y}" stroke="var(--line)"/><text x="${pad-6}" y="${y+4}" fill="var(--faint)" font-size="10" text-anchor="end" font-family="IBM Plex Mono">${fmtK(max*(3-i)/3)}</text>`;}
-  let b='';daily.forEach((d,i)=>{const x=pad+i*step+step/2;const ph=(d.p*f/max)*(H-pad*2),sh=(d.s*f/max)*(H-pad*2);const yp=H-pad-ph,ys=yp-sh;
-    b+=`<rect x="${x-bw/2}" y="${yp}" width="${bw}" height="${ph}" rx="3" fill="var(--acc)"><animate attributeName="height" from="0" to="${ph}" dur=".5s" fill="freeze"/><animate attributeName="y" from="${H-pad}" to="${yp}" dur=".5s" fill="freeze"/></rect>
-    <rect x="${x-bw/2}" y="${ys}" width="${bw}" height="${sh}" rx="3" fill="var(--blu)" opacity=".85"/>
-    <text x="${x}" y="${H-pad+15}" fill="var(--faint)" font-size="11" text-anchor="middle" font-family="IBM Plex Mono">${d.d}</text>`;});
-  document.getElementById('ch-daily').innerHTML=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">${g}${b}</svg>`;
-}
-function drawDonut(D){
-  const by={diario:0,semanal:0,unico:0};D.forEach(c=>by[c.tipo]+=c.saldo);const tot=by.diario+by.semanal+by.unico;
-  const cols={diario:'var(--blu)',semanal:'var(--vio)',unico:'var(--acc)'};const r=64,c=2*Math.PI*r,cx=90,cy=90;let off=0,seg='';
-  ['diario','semanal','unico'].forEach(t=>{const len=c*by[t]/tot;seg+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${cols[t]}" stroke-width="20" stroke-dasharray="${len} ${c}" stroke-dashoffset="${-off}" transform="rotate(-90 ${cx} ${cy})"/>`;off+=len;});
-  document.getElementById('ch-donut').innerHTML=`<svg viewBox="0 0 180 180" style="width:170px;height:170px">${seg}<text x="${cx}" y="${cy-2}" fill="var(--txt)" font-size="15" font-weight="600" text-anchor="middle" font-family="IBM Plex Mono">${fmtK(tot)}</text><text x="${cx}" y="${cy+15}" fill="var(--faint)" font-size="10" text-anchor="middle">cartera</text></svg>`;
-  document.getElementById('donut-leg').innerHTML=`<span><i style="background:var(--blu)"></i>Diario ${fmt(by.diario)}</span><span><i style="background:var(--vio)"></i>Semanal ${fmt(by.semanal)}</span><span><i style="background:var(--acc)"></i>Único ${fmt(by.unico)}</span>`;
-}
-
-/* SIMULADOR */
-const PROD={diario:[{p:10,f:1.17,fijo:30},{p:20,f:1.23,fijo:60},{p:30,f:1.33,fijo:90}],semanal:[{p:4,f:1.35,fijo:60},{p:8,f:1.43,fijo:120},{p:12,f:1.53,fijo:180},{p:16,f:1.63,fijo:240},{p:20,f:1.83,fijo:300}],p17:[{p:17,f:1.73,fijo:270}]};
-const plazosUnico=[10,15,20,30];
-function fillPlazos(){const t=s_tipo.value;
-  if(t==='unico'){s_plazo.innerHTML=plazosUnico.map(p=>`<option value="${p}">${p} días</option>`).join('');s_plazo.value=15;return;}
-  s_plazo.innerHTML=PROD[t].map(x=>`<option value="${x.p}">${x.p} ${t==='semanal'?'semanas':t==='p17'?'pagos':'días'}</option>`).join('');
-  if(t==='semanal')s_plazo.value=12;}
-function calcReal(t,plazo,monto){
-  if(t==='unico'){const tap=monto+plazo*(2+monto*0.0183);const mor=4+tap*0.0183;return {total:tap,pagos:1,cuota:tap,mor};}
-  const it=PROD[t].find(x=>x.p===plazo)||PROD[t][0];const total=monto*it.f+it.fijo;return {total,pagos:it.p,cuota:total/it.p,com:(total-monto)/it.p};}
-function sim(){const t=s_tipo.value,monto=+s_monto.value||0,plazo=+s_plazo.value;
-  const r=calcReal(t,plazo,monto);const interes=r.total-monto;
-  const freq=t==='diario'?'diaria':t==='semanal'?'semanal':t==='p17'?'(17 pagos)':'única';
-  const extra= t==='unico'? `<div class="sim-row"><span class="k">Moratorio por día</span><span class="v" style="color:var(--red)">${fmt(r.mor)}</span></div>`
-             : `<div class="sim-row"><span class="k">Comisión por no pago</span><span class="v">${fmt(r.com)}</span></div>`;
-  document.getElementById('sim-out').innerHTML=`
-    <div class="sim-big"><div class="l">Cuota ${freq}</div><div class="v">${fmt(r.cuota)}</div></div>
-    <div class="sim-row"><span class="k">Capital prestado</span><span class="v">${fmt(monto)}</span></div>
-    <div class="sim-row"><span class="k">Interés / cargo</span><span class="v" style="color:var(--acc)">${fmt(interes)}</span></div>
-    <div class="sim-row"><span class="k">Total a pagar</span><span class="v">${fmt(r.total)}</span></div>
-    ${extra}
-    <div class="sim-row"><span class="k">Número de pagos</span><span class="v">${r.pagos} ${t==='unico'?'(al término)':''}</span></div>
-    <div class="sim-row" style="border:none"><span class="k">Plazo</span><span class="v">${plazo} ${t==='semanal'?'semanas':t==='p17'?'pagos':'días'}</span></div>`;
-}
-
-/* NAV + EVENTOS */
-const titles={resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo']};
-document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
-  document.querySelectorAll('.navitem').forEach(x=>x.classList.remove('on'));
-  document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
-  n.classList.add('on');document.getElementById(n.dataset.v).classList.add('on');
-  document.getElementById('title').textContent=titles[n.dataset.v][0];
-  document.getElementById('subtitle').textContent=titles[n.dataset.v][1];
-  if(n.dataset.v==='usuarios') cargarUsuarios();
-  if(n.dataset.v==='cartera') cargarCartera();
-  if(n.dataset.v==='estado') ecInit();
+app.post('/api/auth/login', (req, res) => {
+  const { usuario, password } = req.body;
+  const u = db.users.find(x => x.usuario === (usuario || '').toLowerCase().trim() && x.activo);
+  if (!u || !bcrypt.compareSync(password || '', u.passwordHash)) return res.status(401).json({ error: 'Usuario o contraseña inválidos' });
+  const token = jwt.sign({ id: u.id, rol: u.rol, nombre: u.nombre, sucursalId: u.sucursalId }, JWT_SECRET, { expiresIn: '12h' });
+  res.json({ token, user: { id: u.id, nombre: u.nombre, rol: u.rol, sucursalId: u.sucursalId, usuario: u.usuario } });
 });
-document.querySelectorAll('#period button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#period button').forEach(x=>x.classList.remove('on'));b.classList.add('on');period=b.dataset.p;render();});
-['c-cob','c-meta','c-bono','c-mora','c-coloc'].forEach(id=>document.getElementById(id).oninput=render);
-['f-suc','f-tipo','f-sem','f-q'].forEach(id=>document.getElementById(id).oninput=renderCartera);
-['s-tipo','s-monto','s-plazo'].forEach(id=>document.getElementById(id).oninput=()=>{if(event.target.id==='s-tipo')fillPlazos();sim();});
-// f-suc se llena con sucursales reales al abrir Cartera (ver cargarCartera)
+app.get('/api/auth/me', auth, (req, res) => res.json(req.user));
 
-function exportCSV(t){let rows=[],name=t;const D=CRED.map(deriva);
-  if(t==='pagos'){rows.push(['Hora','Cliente','Folio','CobradoPor','FormaPago','Monto']);PAGOS.forEach(p=>rows.push([p.hora,p.cliente,p.folio,p.por,p.forma,p.monto]));}
-  else if(t==='cartera'){rows.push(['Cliente','Sucursal','Cobrador','Modalidad','Monto','Cuota','Plazo','Saldo','Avance%','Estado']);D.forEach(c=>rows.push([c.cliente,c.sucNom,c.promNom,c.tipo,c.monto,Math.round(c.cuota),c.plazo,Math.round(c.saldo),(c.avance*100).toFixed(0),c.sem]));}
-  else{rows.push(['(exporta desde la vista correspondiente)']);}
-  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([rows.map(r=>r.join(',')).join('\n')],{type:'text/csv'}));a.download=name+'_'+period+'.csv';a.click();}
+/* ---------- Usuarios (panel de alta de usuarios y contraseñas) ---------- */
+app.get('/api/users', auth, rol('admin', 'supervisor'), (req, res) => {
+  res.json(db.users.map(u => ({ id: u.id, nombre: u.nombre, usuario: u.usuario, rol: u.rol, sucursalId: u.sucursalId, activo: u.activo, createdAt: u.createdAt })));
+});
+app.post('/api/users', auth, rol('admin'), (req, res) => {
+  const { nombre, usuario, rol: r, sucursalId, password } = req.body;
+  if (!nombre || !usuario || !r) return res.status(400).json({ error: 'nombre, usuario y rol son obligatorios' });
+  const uname = usuario.toLowerCase().trim();
+  if (db.users.some(u => u.usuario === uname)) return res.status(409).json({ error: 'Ese usuario ya existe' });
+  const plain = (password && password.length >= 4) ? password : genPassword();
+  const u = { id: nextId('users'), nombre, usuario: uname, rol: r, sucursalId: sucursalId || null, passwordHash: bcrypt.hashSync(plain, 8), activo: true, createdAt: new Date().toISOString() };
+  db.users.push(u); saveDB();
+  res.status(201).json({ id: u.id, nombre: u.nombre, usuario: u.usuario, rol: u.rol, sucursalId: u.sucursalId, passwordGenerada: plain });
+});
+app.patch('/api/users/:id', auth, rol('admin'), (req, res) => {
+  const u = db.users.find(x => x.id == req.params.id);
+  if (!u) return res.status(404).json({ error: 'Usuario no encontrado' });
+  if (typeof req.body.activo === 'boolean') u.activo = req.body.activo;
+  let nueva = null;
+  if (req.body.resetPassword) { nueva = genPassword(); u.passwordHash = bcrypt.hashSync(nueva, 8); }
+  saveDB();
+  res.json({ ok: true, passwordGenerada: nueva });
+});
 
-setInterval(()=>document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'}),1000);
-document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'});
-/* ===== USUARIOS (conectado al backend) ===== */
-const rolLbl = {admin:'Administrador',supervisor:'Supervisor',sucursal:'Sucursal',cobrador:'Cobrador'};
-let _sucursales = [];
-if(ME) document.getElementById('meName').textContent = ME.nombre + ' · ' + (rolLbl[ME.rol]||ME.rol);
-async function cargarUsuarios(){
-  try{
-    if(!_sucursales.length){ _sucursales = await apiU('GET','/api/sucursales');
-      document.getElementById('u-suc').innerHTML = '<option value="">— sin sucursal —</option>' + _sucursales.map(s=>`<option value="${s.id}">${s.nombre}</option>`).join(''); }
-    const us = await apiU('GET','/api/users');
-    document.getElementById('u-list').innerHTML = us.map(u=>{
-      const s=_sucursales.find(x=>x.id===u.sucursalId);
-      return `<tr><td class="nm">${u.nombre}</td><td class="mono" style="font-size:.8rem">${u.usuario}</td>
-        <td><span class="pill ${u.rol==='admin'?'w':u.rol==='cobrador'?'ok':''}">${rolLbl[u.rol]||u.rol}</span></td>
-        <td>${s?s.nombre:'—'}</td>
-        <td><span class="pill ${u.activo?'ok':'bad'}">${u.activo?'Activo':'Inactivo'}</span></td>
-        <td style="text-align:right;white-space:nowrap">
-          <button class="btn" style="padding:5px 9px;font-size:.74rem" onclick="toggleU(${u.id},${!u.activo})">${u.activo?'Desactivar':'Activar'}</button>
-          <button class="btn" style="padding:5px 9px;font-size:.74rem" onclick="resetU(${u.id})">Reset clave</button></td></tr>`;
-    }).join('') || '<tr><td colspan="6" style="color:var(--faint);padding:14px">Sin usuarios.</td></tr>';
-  }catch(e){ document.getElementById('u-list').innerHTML = `<tr><td colspan="6" style="color:var(--red);padding:14px">${e.message}</td></tr>`; }
-}
-async function crearUsuario(){
-  const body={ nombre:document.getElementById('u-nombre').value.trim(), usuario:document.getElementById('u-usuario').value.trim(),
-    rol:document.getElementById('u-rol').value, sucursalId:+document.getElementById('u-suc').value||null,
-    password:document.getElementById('u-pass').value.trim()||undefined };
-  if(!body.nombre||!body.usuario){ alert('Nombre y usuario son obligatorios'); return; }
-  try{ const d=await apiU('POST','/api/users',body); mostrarPw(d.nombre,d.passwordGenerada);
-    ['u-nombre','u-usuario','u-pass'].forEach(id=>document.getElementById(id).value=''); cargarUsuarios();
-  }catch(e){ alert(e.message); }
-}
-async function toggleU(id,activo){ try{ await apiU('PATCH','/api/users/'+id,{activo}); cargarUsuarios(); }catch(e){ alert(e.message); } }
-async function resetU(id){ try{ const d=await apiU('PATCH','/api/users/'+id,{resetPassword:true}); mostrarPw('(clave reseteada)',d.passwordGenerada); }catch(e){ alert(e.message); } }
-function mostrarPw(n,pw){ document.getElementById('u-pbname').textContent=n; document.getElementById('u-pbpw').textContent=pw; document.getElementById('u-passbox').style.display='flex'; }
-function copyPw(){ navigator.clipboard.writeText(document.getElementById('u-pbpw').textContent); }
+/* ---------- Catálogos ---------- */
+app.get('/api/sucursales', auth, (req, res) => res.json(db.sucursales));
 
-fillPlazos();sim();render();
-</script>
-</body>
-</html>
+/* ---------- Clientes / cartera ---------- */
+app.get('/api/clients', auth, (req, res) => {
+  const q = (req.query.search || '').toLowerCase();
+  const out = db.clients.filter(c => !q || [c.nombre, c.tel, c.calle, c.col, c.prom].join(' ').toLowerCase().includes(q))
+    .map(c => ({ ...c, creditos: db.sales.filter(s => s.clientId === c.id).map(s => ({ ...s, saldo: saldoDe(s.id) })) }));
+  res.json(out);
+});
+app.get('/api/sales', auth, (req, res) => {
+  res.json(db.sales.map(s => ({ ...s, saldo: saldoDe(s.id), cliente: (db.clients.find(c => c.id === s.clientId) || {}).nombre })));
+});
+app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
+  const { nombre, tel, calle, col, sucursalId, prom, tipo, plazo, monto, dias } = req.body;
+  if (!nombre || !calle || !col) return res.status(400).json({ error: 'Domicilio (calle y colonia) obligatorio en la venta' });
+  const r = calcCredito(tipo, +plazo, +monto, +dias);
+  const client = { id: nextId('clients'), nombre, tel: tel || '', calle, col, sucursalId: sucursalId || req.user.sucursalId || 1, prom: prom || '' };
+  db.clients.push(client);
+  const folio = 'F-' + (1100 + nextId('sales'));
+  const sale = { id: nextId('sales'), folio, clientId: client.id, tipo, plazo: +plazo, monto: +monto, cuota: r.cuota, total: r.total, prom: client.prom, sucursalId: client.sucursalId, createdAt: new Date().toISOString() };
+  db.sales.push(sale);
+  db.movimientos.push({ id: nextId('movimientos'), saleId: sale.id, fecha: new Date().toLocaleDateString('es-MX'), concepto: 'Disposición de crédito', origen: 'Sucursal', cargo: r.total, abono: 0 });
+  saveDB();
+  res.status(201).json({ ...sale, saldo: saldoDe(sale.id) });
+});
+
+/* ---------- Estado de cuenta (libro de cargos y abonos) ---------- */
+app.get('/api/sales/:id/movimientos', auth, (req, res) => {
+  const id = +req.params.id;
+  let saldo = 0;
+  const rows = db.movimientos.filter(m => m.saleId === id).map(m => { saldo += (m.cargo || 0) - (m.abono || 0); return { ...m, saldo }; });
+  res.json({ movimientos: rows, saldo });
+});
+
+/* ---------- Pago (idempotente, con forma de pago) ---------- */
+app.post('/api/sales/:id/pago', auth, idem, (req, res) => {
+  const id = +req.params.id; const { monto, forma } = req.body;
+  if (!(monto > 0)) return res.status(400).json({ error: 'Monto inválido' });
+  const sale = db.sales.find(s => s.id === id); if (!sale) return res.status(404).json({ error: 'Crédito no encontrado' });
+  db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: new Date().toLocaleDateString('es-MX'), concepto: 'Abono', origen: req.user.nombre, cargo: 0, abono: +monto, forma: forma || 'efectivo' });
+  const sid = String(sale.sucursalId || 1); const f = forma || 'efectivo';
+  db.caja[sid] = db.caja[sid] || { inicial: 0, efectivo: 0, banco: 0, entregas: 0 };
+  if (req.user.rol === 'cobrador') {
+    // cobro en ruta: el efectivo NO entra a caja, va a "por entregar" a nombre del cobrador
+    if (f === 'efectivo') {
+      let pe = db.porEntregar.find(p => p.prom === req.user.nombre && String(p.sucursalId) === sid);
+      if (pe) pe.monto += +monto; else db.porEntregar.push({ id: nextId('porEntregar'), sucursalId: +sid, prom: req.user.nombre, monto: +monto });
+    } else if (f === 'transferencia' || f === 'deposito') { db.caja[sid].banco += +monto; }
+  } else {
+    if (f === 'efectivo') db.caja[sid].efectivo += +monto;
+    else if (f === 'transferencia' || f === 'deposito') db.caja[sid].banco += +monto;
+  }
+  markIdem(req); saveDB();
+  res.status(201).json({ ok: true, saldo: saldoDe(id) });
+});
+
+/* ---------- Supervisor: cargo / abono / condonación ---------- */
+app.post('/api/sales/:id/cargo', auth, rol('admin', 'supervisor'), idem, (req, res) => {
+  const id = +req.params.id; const { monto, concepto } = req.body;
+  db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: new Date().toLocaleDateString('es-MX'), concepto: concepto || 'Cargo manual', origen: 'Supervisor: ' + req.user.nombre, cargo: +monto, abono: 0 });
+  markIdem(req); saveDB(); res.json({ ok: true, saldo: saldoDe(id) });
+});
+app.post('/api/sales/:id/abono', auth, rol('admin', 'supervisor'), idem, (req, res) => {
+  const id = +req.params.id;
+  db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: new Date().toLocaleDateString('es-MX'), concepto: 'Abono manual', origen: 'Supervisor: ' + req.user.nombre, cargo: 0, abono: +req.body.monto });
+  markIdem(req); saveDB(); res.json({ ok: true, saldo: saldoDe(id) });
+});
+app.post('/api/sales/:id/condonar', auth, rol('admin', 'supervisor'), idem, (req, res) => {
+  const id = +req.params.id;
+  db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: new Date().toLocaleDateString('es-MX'), concepto: 'Condonación: ' + (req.body.motivo || 'ajuste'), origen: 'Supervisor: ' + req.user.nombre, cargo: 0, abono: +req.body.monto });
+  markIdem(req); saveDB(); res.json({ ok: true, saldo: saldoDe(id) });
+});
+app.post('/api/sales/:id/aplicar-mora', auth, (req, res) => {
+  const id = +req.params.id; const monto = +req.body.monto || 25;
+  db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: new Date().toLocaleDateString('es-MX'), concepto: 'Moratorio automático', origen: 'Sistema', cargo: monto, abono: 0, auto: true });
+  saveDB(); res.json({ ok: true, saldo: saldoDe(id) });
+});
+
+/* ---------- Caja de sucursal ---------- */
+app.get('/api/caja/hoy', auth, (req, res) => {
+  const sid = String(req.user.sucursalId || req.query.sucursalId || 1);
+  const c = db.caja[sid] || { inicial: 0, efectivo: 0, banco: 0, entregas: 0 };
+  const pe = db.porEntregar.filter(p => String(p.sucursalId) === sid);
+  res.json({ caja: c, efectivoReal: c.inicial + c.efectivo + c.entregas, porEntregar: pe });
+});
+app.post('/api/caja/entrega', auth, (req, res) => {
+  const pe = db.porEntregar.find(p => p.id == req.body.porEntregarId);
+  if (!pe) return res.status(404).json({ error: 'No encontrado' });
+  const sid = String(pe.sucursalId); db.caja[sid] = db.caja[sid] || { inicial: 0, efectivo: 0, banco: 0, entregas: 0 };
+  db.caja[sid].entregas += pe.monto;
+  db.porEntregar = db.porEntregar.filter(p => p.id !== pe.id);
+  saveDB(); res.json({ ok: true });
+});
+
+/* ---------- Dashboard / reportes ---------- */
+app.get('/api/dashboard', auth, (req, res) => {
+  const cartera = db.sales.reduce((s, x) => s + saldoDe(x.id), 0);
+  const abonos = db.movimientos.filter(m => m.abono > 0).reduce((s, m) => s + m.abono, 0);
+  res.json({ creditosActivos: db.sales.length, cartera, cobradoTotal: abonos, sucursales: db.sucursales.length, usuarios: db.users.length });
+});
+app.get('/api/reports/pagos', auth, rol('admin', 'supervisor'), (req, res) => {
+  res.json(db.movimientos.filter(m => m.abono > 0).map(m => {
+    const s = db.sales.find(x => x.id === m.saleId) || {}; const c = db.clients.find(x => x.id === s.clientId) || {};
+    return { fecha: m.fecha, cliente: c.nombre, folio: s.folio, por: m.origen, forma: m.forma || 'efectivo', monto: m.abono };
+  }));
+});
+
+/* ---------- Cobrador en ruta ---------- */
+app.get('/api/mi-ruta', auth, (req, res) => {
+  const ventas = db.sales.filter(s => s.prom === req.user.nombre);
+  res.json(ventas.map(s => {
+    const c = db.clients.find(x => x.id === s.clientId) || {};
+    return { id: s.id, folio: s.folio, nombre: c.nombre || '—', dir: [c.calle, c.col].filter(Boolean).join(', '), tel: c.tel || '', tipo: s.tipo, cuota: s.cuota, saldo: saldoDe(s.id) };
+  }));
+});
+app.get('/api/cobradores', auth, (req, res) => res.json(db.users.filter(u => u.rol === 'cobrador' && u.activo).map(u => ({ id: u.id, nombre: u.nombre }))));
+app.post('/api/sales/:id/gestion', auth, idem, (req, res) => {
+  db.gestiones.push({ id: nextId('gestiones'), saleId: +req.params.id, fecha: new Date().toISOString(), tipo: req.body.tipo || 'nopago', detalle: req.body.detalle || '', por: req.user.nombre });
+  markIdem(req); saveDB(); res.json({ ok: true });
+});
+
+app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
+
+// Sirve el portal (index.html) en "/" y en cualquier ruta que NO sea /api
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api')) return next();
+  res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
+});
+
+/* ---------- Arranque ---------- */
+(async () => {
+  const hayIndex = fs.existsSync(path.join(PUBLIC_DIR, 'index.html'));
+  console.log('📁 Carpeta public:', PUBLIC_DIR);
+  console.log('📄 index.html encontrado:', hayIndex ? 'SÍ' : 'NO  ← revisa que public/ esté en el repo junto a server.js');
+  db = await loadDB();
+  if (!db) { seed(); console.log('🌱 Base sembrada (admin / admin123).'); }
+  app.listen(PORT, () => console.log('🚀 CobraPro backend en puerto ' + PORT + (USE_PG ? ' (PostgreSQL)' : ' (archivo local)') + '  ·  login admin / admin123'));
+})().catch(e => { console.error('❌ Error fatal al iniciar:', e); process.exit(1); });
