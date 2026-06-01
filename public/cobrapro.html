@@ -510,19 +510,21 @@ function render(){
 let _cartera=[], _sucMap={};
 const _tipoLbl={diario:'Diario',semanal:'Semanal',unico:'Pago único',p17:'Celulares 17'};
 const _tipoCls={diario:'dia',semanal:'sem',unico:'uni',p17:'uni'};
-function _plazoTxt(c){ return c.tipo==='semanal'? c.plazo+' sem' : c.tipo==='p17'? '17 pagos' : c.plazo+' días'; }
+const _plazoTxt=c=>c.tipo==='semanal'? c.plazo+' sem' : c.tipo==='p17'? '17 pagos' : c.plazo+' días';
+const $=id=>document.getElementById(id);
 async function cargarCartera(){
+  const tb=$('tb-cart');
   try{
     if(!Object.keys(_sucMap).length){ const s=await apiU('GET','/api/sucursales'); s.forEach(x=>_sucMap[x.id]=x.nombre);
-      f_suc.innerHTML='<option value="">Todas las sucursales</option>'+s.map(x=>`<option value="${x.id}">${x.nombre}</option>`).join(''); }
+      $('f-suc').innerHTML='<option value="">Todas las sucursales</option>'+s.map(x=>`<option value="${x.id}">${x.nombre}</option>`).join(''); }
     _cartera = await apiU('GET','/api/sales');
     renderCartera();
-  }catch(e){ tb_cart.innerHTML=`<tr><td colspan="11" style="color:var(--red);padding:18px">${e.message}</td></tr>`; }
+  }catch(e){ tb.innerHTML=`<tr><td colspan="11" style="color:var(--red);padding:18px">${e.message}</td></tr>`; }
 }
 function renderCartera(){
-  const q=(f_q.value||'').toLowerCase(), fs=f_suc.value, ft=f_tipo.value;
+  const q=($('f-q').value||'').toLowerCase(), fs=$('f-suc').value, ft=$('f-tipo').value;
   const rows=_cartera.filter(c=> (!fs||String(c.sucursalId)===String(fs)) && (!ft||c.tipo===ft) && (!q||(c.cliente||'').toLowerCase().includes(q)));
-  tb_cart.innerHTML=rows.map(c=>{
+  $('tb-cart').innerHTML=rows.map(c=>{
     const av=c.total>0?(c.total-c.saldo)/c.total:0; const liq=c.saldo<=0;
     const ini=(c.prom||'·').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
     return `<tr>
@@ -718,7 +720,7 @@ document.querySelectorAll('#period button').forEach(b=>b.onclick=()=>{document.q
 ['c-cob','c-meta','c-bono','c-mora','c-coloc'].forEach(id=>document.getElementById(id).oninput=render);
 ['f-suc','f-tipo','f-sem','f-q'].forEach(id=>document.getElementById(id).oninput=renderCartera);
 ['s-tipo','s-monto','s-plazo'].forEach(id=>document.getElementById(id).oninput=()=>{if(event.target.id==='s-tipo')fillPlazos();sim();});
-f_suc.innerHTML='<option value="">Todas las sucursales</option>'+SUC.map(s=>`<option value="${s.id}">${s.nombre}</option>`).join('');
+// f-suc se llena con sucursales reales al abrir Cartera (ver cargarCartera)
 
 function exportCSV(t){let rows=[],name=t;const D=CRED.map(deriva);
   if(t==='pagos'){rows.push(['Hora','Cliente','Folio','CobradoPor','FormaPago','Monto']);PAGOS.forEach(p=>rows.push([p.hora,p.cliente,p.folio,p.por,p.forma,p.monto]));}
