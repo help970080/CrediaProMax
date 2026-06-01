@@ -398,9 +398,36 @@ document.getElementById('syncBtn').onclick=()=>{
   else{ b.className='badge off'; b.innerHTML='<span class="dot"></span> Sin conexión'; }
   render();
 };
-function entregar(){const efectivo=Object.values(estado).filter(e=>e.status==='pagado'&&e.forma==='efectivo').reduce((a,e)=>a+e.monto,0);
-  if(efectivo<=0){toast('Aún no hay efectivo que entregar');return;}
-  toast('Corte de '+fmt(efectivo)+' en efectivo enviado a sucursal');}
+let _miCorte=null; // si ya tengo corte hoy, queda aquí
+async function checkMiCorte(){
+  try{ const d=await api('GET','/api/mi-corte'); _miCorte=d.corte; pintarBtnCorte(); }catch(e){}
+}
+function pintarBtnCorte(){
+  const btn=document.querySelector('.corte'); if(!btn) return;
+  if(_miCorte){
+    btn.disabled=true; btn.style.opacity='.55'; btn.style.cursor='default';
+    btn.innerHTML='✓ Corte entregado · '+_miCorte.horaEntrega+(_miCorte.auto?' (auto)':'');
+  } else {
+    btn.disabled=false; btn.style.opacity=''; btn.style.cursor='';
+    btn.innerHTML='⇄ Entregar corte';
+  }
+}
+async function entregar(){
+  if(_miCorte){ toast('Ya entregaste tu corte hoy a las '+_miCorte.horaEntrega); return; }
+  // espera a que la cola haya sincronizado para que el corte refleje todo
+  if(cola.length && efectivamenteOnline()){ toast('Sincronizando '+cola.length+' antes del corte…'); await flush(); }
+  if(cola.length){ toast('Quedan pagos sin sincronizar. Conéctate para entregar el corte.'); return; }
+  try{
+    const d=await api('POST','/api/corte');
+    _miCorte=d.corte; pintarBtnCorte();
+    toast('✓ Corte entregado · efectivo '+fmt(d.corte.totalEfectivo)+' · '+d.corte.npagos+' pago(s)');
+  }catch(e){
+    if((e.message||'').toLowerCase().includes('ya hay')){
+      await checkMiCorte();
+      toast('Ya hay un corte registrado hoy.');
+    } else { toast(e.message); }
+  }
+}
 function toast(t){const el=document.getElementById('toast');el.textContent=t;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2200);}
 
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
@@ -408,7 +435,8 @@ document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
   t.classList.add('on');document.getElementById(t.dataset.v).classList.add('on');
 });
-cargarRuta(); flush();
+cargarRuta(); flush(); checkMiCorte();
+setInterval(checkMiCorte, 60_000);
 </script>
 </body>
 </html>

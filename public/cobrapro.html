@@ -281,6 +281,21 @@
     </div>
     <div class="panel"><div class="ph"><h3>Corte por cobrador</h3><span class="hint">esperado − entregado</span></div><div id="rc-prom"></div></div>
     <div class="panel"><div class="ph"><h3>Corte por sucursal</h3></div><div id="rc-suc"></div></div>
+    <div class="panel">
+      <div class="ph"><h3>Cortes de cobrador · hoy</h3><span class="hint">qué entregó cada quien y cuándo</span></div>
+      <div id="cortes-list"></div>
+    </div>
+    <div class="panel">
+      <div class="ph"><h3>Configuración del corte automático</h3><span class="hint">si el cobrador no entrega antes, el sistema corta solo</span></div>
+      <div class="filters">
+        <div style="display:flex;align-items:center;gap:8px;font-size:.84rem;color:var(--dim)">Hora de corte automático
+          <input id="cfg-hora" type="time" value="19:00" style="background:var(--surf-2);border:1px solid var(--line-2);color:var(--txt);font-family:'IBM Plex Mono';padding:7px 9px;border-radius:7px">
+        </div>
+        <div id="cfg-dias" style="display:flex;gap:5px;flex-wrap:wrap;font-size:.78rem;color:var(--dim)"></div>
+        <button class="btn gold" onclick="guardarConfigCorte()">Guardar</button>
+        <button class="btn" onclick="forzarCorte()">Forzar corte de un cobrador</button>
+      </div>
+    </div>
     <div class="note" style="margin-top:-6px">El corte deja de ser un Excel nocturno: el sistema ya sabe cuánto cobró cada quien, entonces sabe cuánto debe entregar. El admin solo revisa las diferencias marcadas.</div>
   </section>
 
@@ -688,6 +703,47 @@ async function ecAjuste(){
   try{ await apiU('POST','/api/sales/'+ecActual.id+'/pago',{monto:m,forma:'ajuste',idempotencyKey:'aj-'+Date.now()}); await ecCargar(); }
   catch(e){ alert(e.message); }
 }
+
+/* ===== Cortes (admin) ===== */
+const _diasLbl=['D','L','M','M','J','V','S']; // 0..6
+async function cargarCortes(){
+  try{
+    const cfg=await apiU('GET','/api/config');
+    $('cfg-hora').value=cfg.corteAutoHora||'19:00';
+    const dias=cfg.corteAutoDias||[1,2,3,4,5,6];
+    $('cfg-dias').innerHTML=[1,2,3,4,5,6,0].map(d=>`<label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" class="cfg-d" value="${d}" ${dias.includes(d)?'checked':''} style="width:auto"> ${_diasLbl[d]}</label>`).join('');
+    const fecha=new Date().toISOString().slice(0,10);
+    const cortes=await apiU('GET','/api/cortes?fecha='+fecha);
+    $('cortes-list').innerHTML= cortes.length? cortes.map(c=>`<div class="recon">
+      <div class="lf"><div class="ava" style="background:var(--surf-3)">${(c.prom||'·').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase()}</div>
+        <div><div class="nm">${c.prom} ${c.auto?'<span class="pill w" style="font-size:.6rem">AUTO</span>':'<span class="pill ok" style="font-size:.6rem">MANUAL</span>'}</div>
+          <div class="sn">${c.npagos} pagos · ${c.horaEntrega} · efectivo ${fmt(c.totalEfectivo)} · banco ${fmt(c.totalBanco)}</div></div></div>
+      <div style="text-align:right"><div class="mono doc" style="font-weight:600">${fmt(c.totalEfectivo+c.totalBanco)}</div>
+        <button class="btn" style="padding:4px 9px;font-size:.72rem;margin-top:4px" onclick="borrarCorte(${c.id})">Borrar</button></div></div>`).join('') : '<div style="color:var(--faint);padding:12px;font-size:.85rem">Sin cortes registrados hoy.</div>';
+  }catch(e){ $('cortes-list').innerHTML='<div style="color:var(--red);padding:12px">'+e.message+'</div>'; }
+}
+async function guardarConfigCorte(){
+  const corteAutoHora=$('cfg-hora').value||'19:00';
+  const corteAutoDias=Array.from(document.querySelectorAll('.cfg-d:checked')).map(x=>+x.value).sort();
+  try{ await apiU('PATCH','/api/config',{corteAutoHora,corteAutoDias}); alert('✓ Configuración guardada. Auto-corte: '+corteAutoHora+' · '+corteAutoDias.map(d=>_diasLbl[d]).join(',')); }
+  catch(e){ alert(e.message); }
+}
+async function forzarCorte(){
+  try{
+    const cobs=await apiU('GET','/api/cobradores');
+    if(!cobs.length){ alert('No hay cobradores activos.'); return; }
+    const nombres=cobs.map((c,i)=>`${i+1}. ${c.nombre}`).join('\n');
+    const sel=prompt('¿De quién forzar el corte de hoy?\n\n'+nombres+'\n\nEscribe el número:');
+    const idx=parseInt(sel,10)-1;
+    if(isNaN(idx)||!cobs[idx]) return;
+    await apiU('POST','/api/corte',{prom:cobs[idx].nombre});
+    await cargarCortes(); alert('✓ Corte forzado de '+cobs[idx].nombre);
+  }catch(e){ alert(e.message); }
+}
+async function borrarCorte(id){
+  if(!confirm('¿Borrar este corte? El cobrador podrá hacer uno nuevo hoy.')) return;
+  try{ await apiU('DELETE','/api/cortes/'+id); await cargarCortes(); }catch(e){ alert(e.message); }
+}
 function ecImprimir(){
   if(!ecActual||!_ecLib) return; const c=ecActual, L=_ecLib;
   const filas=L.rows.map(m=>`<tr><td>${m.fecha}</td><td>${m.concepto}</td><td style="text-align:right">${m.cargo?fmt(m.cargo):''}</td><td style="text-align:right">${m.abono?fmt(m.abono):''}</td><td style="text-align:right">${fmt(m.saldo)}</td></tr>`).join('');
@@ -780,6 +836,7 @@ document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
   if(n.dataset.v==='usuarios') cargarUsuarios();
   if(n.dataset.v==='cartera') cargarCartera();
   if(n.dataset.v==='estado') ecInit();
+  if(n.dataset.v==='conciliacion') cargarCortes();
   if(n.dataset.v==='reportes') cargarReportes();
 });
 document.querySelectorAll('#period button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#period button').forEach(x=>x.classList.remove('on'));b.classList.add('on');period=b.dataset.p;render();});
