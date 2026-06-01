@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CobraPro Sucursal · Caja</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#0a0c10;--surf:#11141a;--surf-2:#171b22;--surf-3:#1e232c;--line:#262c36;--line-2:#333b48;
+    --txt:#eef1f5;--dim:#97a1b0;--faint:#5a6470;--acc:#f0b429;--acc-d:#b3851f;
+    --grn:#3ecf8e;--grn-d:#1d7a55;--red:#f0654d;--blu:#5aa0e8;--vio:#b07ce0;--r:12px;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font-family:"Sora",sans-serif;line-height:1.45}
+  .mono{font-family:"IBM Plex Mono",monospace;font-feature-settings:"tnum"}
+  ::-webkit-scrollbar{width:9px;height:9px}::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:8px}
+  header{display:flex;align-items:center;gap:14px;padding:15px 26px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,var(--surf),var(--bg));position:sticky;top:0;z-index:20}
+  .mk{width:38px;height:38px;border-radius:10px;background:linear-gradient(140deg,var(--acc),var(--acc-d));display:grid;place-items:center;font-weight:700;color:#1a1408;font-size:18px}
+  header h1{font-size:1.05rem;font-weight:600;line-height:1}
+  header .sub{font-size:.72rem;color:var(--faint)}
+  .hmeta{margin-left:auto;display:flex;align-items:center;gap:18px}
+  .live{display:flex;align-items:center;gap:7px;font-size:.78rem;color:var(--dim)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--grn);animation:pulse 2s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(62,207,142,.5)}70%{box-shadow:0 0 0 7px rgba(62,207,142,0)}100%{box-shadow:0 0 0 0 rgba(62,207,142,0)}}
+  .clock{font-size:.8rem;color:var(--dim)}
+  .wrap{max-width:1180px;margin:0 auto;padding:22px 26px 60px}
+  .grid{display:grid;grid-template-columns:1.15fr 1fr;gap:20px;align-items:start}
+  @media(max-width:900px){.grid{grid-template-columns:1fr}}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:20px}
+  @media(max-width:680px){.kpis{grid-template-columns:1fr 1fr}}
+  .kpi{background:linear-gradient(160deg,var(--surf-2),var(--surf));border:1px solid var(--line);border-radius:var(--r);padding:15px 16px;position:relative;overflow:hidden}
+  .kpi::before{content:"";position:absolute;top:0;left:0;width:3px;height:100%;background:var(--acc);opacity:.55}
+  .kpi.g::before{background:var(--grn)}.kpi.b::before{background:var(--blu)}.kpi.v::before{background:var(--vio)}.kpi.r::before{background:var(--red)}
+  .kpi .l{font-size:.68rem;color:var(--dim);text-transform:uppercase;letter-spacing:.04em}
+  .kpi .v{font-size:1.5rem;font-weight:600;font-family:"IBM Plex Mono";margin-top:6px}
+  .kpi .s{font-size:.72rem;color:var(--faint);margin-top:3px}
+  .panel{background:var(--surf);border:1px solid var(--line);border-radius:var(--r);padding:19px;margin-bottom:20px}
+  .panel h2{font-size:1.02rem;font-weight:600;margin-bottom:4px}
+  .panel .ph-sub{font-size:.78rem;color:var(--faint);margin-bottom:16px}
+  .search{display:flex;gap:9px;margin-bottom:6px}
+  .search input{flex:1;background:var(--surf-2);border:1px solid var(--line-2);color:var(--txt);font-family:"Sora";font-size:.92rem;padding:11px 14px;border-radius:9px;outline:none}
+  .search input:focus{border-color:var(--acc)}
+  .search-hint{font-size:.71rem;color:var(--faint);margin-bottom:13px}
+  .cli-res{display:flex;flex-direction:column;gap:9px;max-height:380px;overflow-y:auto}
+  .cli{background:var(--surf-2);border:1px solid var(--line);border-radius:10px;padding:13px;cursor:pointer;transition:.13s}
+  .cli:hover{border-color:var(--line-2)}
+  .cli.sel{border-color:var(--acc);background:rgba(240,180,41,.05)}
+  .cli-top{display:flex;align-items:center;gap:11px}
+  .cli-ava{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;font-size:.74rem;font-weight:600;color:#0a0c10}
+  .cli-nm{font-weight:600;font-size:.92rem}.cli-sub{font-size:.73rem;color:var(--faint)}
+  .cli-addr{font-size:.71rem;color:var(--faint);margin-top:2px;display:flex;align-items:center;gap:5px}
+  .cli-saldo{margin-left:auto;text-align:right}
+  .cli-saldo .v{font-family:"IBM Plex Mono";font-weight:600}
+  .cli-saldo .k{font-size:.66rem;color:var(--dim)}
+  .credits{margin-top:11px;padding-top:11px;border-top:1px solid var(--line);display:none}
+  .cli.sel .credits{display:block}
+  .crow{display:flex;align-items:center;gap:10px;padding:9px 10px;background:var(--surf);border:1px solid var(--line);border-radius:9px;margin-bottom:8px}
+  .crow:last-child{margin-bottom:0}
+  .tipo{font-size:.62rem;font-weight:600;text-transform:uppercase;padding:2px 7px;border-radius:5px;white-space:nowrap}
+  .tipo.dia{background:rgba(90,160,232,.14);color:var(--blu)}.tipo.sem{background:rgba(176,124,224,.14);color:var(--vio)}.tipo.uni{background:rgba(240,180,41,.14);color:var(--acc)}.tipo.p17{background:rgba(62,207,142,.14);color:var(--grn)}
+  .pill{display:inline-flex;padding:2px 9px;border-radius:20px;font-size:.69rem;font-weight:500}
+  .pill.ok{background:rgba(62,207,142,.13);color:var(--grn)}.pill.w{background:rgba(240,180,41,.14);color:var(--acc)}.pill.bad{background:rgba(240,101,77,.13);color:var(--red)}
+  .crow .cdata{flex:1;min-width:0}
+  .crow .cdata .l1{font-size:.82rem;font-weight:500}
+  .crow .cdata .l2{font-size:.72rem;color:var(--faint)}
+  .crow .pay{background:linear-gradient(140deg,var(--acc),var(--acc-d));color:#1a1408;border:none;border-radius:8px;font-family:"Sora";font-weight:600;font-size:.8rem;padding:8px 13px;cursor:pointer;white-space:nowrap}
+  .crow .pay:active{transform:scale(.97)}
+  .field{margin-bottom:13px}
+  .field label{display:block;font-size:.74rem;color:var(--dim);margin-bottom:6px}
+  .field .req{color:var(--acc)}
+  .field input,.field select{width:100%;background:var(--surf-2);border:1px solid var(--line-2);color:var(--txt);font-family:"Sora";font-size:.9rem;padding:10px 12px;border-radius:8px;outline:none}
+  .field input:focus,.field select:focus{border-color:var(--acc)}
+  .frow{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+  .frow3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:11px}
+  .sect-lbl{font-size:.68rem;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;margin:18px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+  .calc{background:var(--surf-2);border:1px dashed var(--line-2);border-radius:10px;padding:14px;margin:6px 0 14px}
+  .calc-row{display:flex;justify-content:space-between;padding:6px 0;font-size:.85rem;border-bottom:1px solid var(--line)}
+  .calc-row:last-child{border:none}.calc-row .v{font-family:"IBM Plex Mono";font-weight:600}
+  .calc-row.big .v{font-size:1.25rem;color:var(--acc)}
+  .btn-full{width:100%;background:linear-gradient(140deg,var(--acc),var(--acc-d));color:#1a1408;border:none;border-radius:10px;font-family:"Sora";font-weight:600;font-size:.95rem;padding:13px;cursor:pointer}
+  .btn-full:active{transform:scale(.99)}
+  table{width:100%;border-collapse:collapse;font-size:.85rem}
+  th{text-align:left;font-weight:500;color:var(--dim);font-size:.69rem;text-transform:uppercase;letter-spacing:.04em;padding:8px 10px;border-bottom:1px solid var(--line-2)}
+  th.n,td.n{text-align:right;font-family:"IBM Plex Mono"}
+  td{padding:10px;border-bottom:1px solid var(--line)}tr:last-child td{border-bottom:none}
+  .big-cut{background:linear-gradient(140deg,var(--acc),var(--acc-d));border-radius:12px;padding:18px;color:#1a1408;text-align:center;margin-bottom:14px}
+  .big-cut .l{font-size:.74rem;font-weight:600;text-transform:uppercase;opacity:.8}
+  .big-cut .v{font-size:2.1rem;font-weight:700;font-family:"IBM Plex Mono"}
+  .pe-card{background:var(--surf-2);border:1px solid var(--line);border-left:3px solid var(--acc);border-radius:9px;padding:13px;margin-bottom:9px;display:flex;align-items:center;gap:12px}
+  .pe-card .pe-ava{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;font-size:.72rem;font-weight:600;color:#0a0c10}
+  .pe-card .pe-nm{font-weight:600;font-size:.88rem}.pe-card .pe-sub{font-size:.72rem;color:var(--faint)}
+  .pe-card .pe-monto{margin-left:auto;font-family:"IBM Plex Mono";font-weight:600;color:var(--acc)}
+  .pe-card .pe-btn{background:var(--surf-3);border:1px solid var(--grn-d);color:var(--grn);font-family:"Sora";font-weight:600;font-size:.76rem;padding:8px 11px;border-radius:8px;cursor:pointer;white-space:nowrap}
+  .pe-card .pe-btn:active{transform:scale(.97)}
+  .pe-note{font-size:.74rem;color:var(--faint);line-height:1.5;background:rgba(240,180,41,.06);border:1px solid rgba(240,180,41,.18);border-radius:8px;padding:11px 13px;margin-bottom:13px}
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+  .overlay.on{display:flex;animation:fade .2s}@keyframes fade{from{opacity:0}to{opacity:1}}
+  .modal{background:var(--surf);border:1px solid var(--line-2);border-radius:16px;max-width:390px;width:100%;padding:22px;animation:pop .25s}
+  @keyframes pop{from{transform:scale(.94);opacity:0}to{transform:none;opacity:1}}
+  .modal h3{font-size:1.05rem;margin-bottom:14px}
+  .amt-box{background:var(--surf-2);border:1px solid var(--line-2);border-radius:11px;padding:14px;text-align:center;margin-bottom:14px}
+  .amt-box .l{font-size:.7rem;color:var(--dim);text-transform:uppercase}
+  .amt-input{background:none;border:none;color:var(--acc);font-family:"IBM Plex Mono";font-size:2rem;font-weight:600;text-align:center;width:100%;outline:none;margin-top:4px}
+  .forma{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+  .forma button{background:var(--surf-2);border:1px solid var(--line);color:var(--dim);border-radius:9px;padding:11px;font-family:"Sora";font-size:.82rem;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px}
+  .forma button.on{border-color:var(--acc);color:var(--acc);background:rgba(240,180,41,.06)}
+  .recibo{background:var(--surf-2);border-radius:10px;padding:16px;font-size:.86rem}
+  .recibo .rr{display:flex;justify-content:space-between;padding:5px 0}
+  .recibo .rr .v{font-family:"IBM Plex Mono"}
+  .modal-actions{display:flex;gap:10px;margin-top:16px}
+  .ma{flex:1;border:none;border-radius:10px;font-family:"Sora";font-weight:600;font-size:.9rem;padding:12px;cursor:pointer}
+  .ma.cancel{background:var(--surf-3);color:var(--dim)}.ma.ok{background:linear-gradient(140deg,var(--acc),var(--acc-d));color:#1a1408}
+  .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--grn);color:#04130c;padding:13px 22px;border-radius:30px;font-weight:600;opacity:0;transition:.3s;z-index:100;max-width:90%;text-align:center}
+  .toast.show{opacity:1;transform:translateX(-50%)}
+  .tabs{display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid var(--line)}
+  .tab{background:none;border:none;color:var(--dim);font-family:"Sora";font-size:.9rem;font-weight:500;padding:10px 15px;cursor:pointer;position:relative}
+  .tab.on{color:var(--acc)}.tab.on::after{content:"";position:absolute;left:10px;right:10px;bottom:-1px;height:2px;background:var(--acc)}
+  .view{display:none}.view.on{display:block}
+</style>
+</head>
+<body>
+<header>
+  <div class="mk">🏪</div>
+  <div><h1>Sucursal Amecameca</h1><div class="sub" id="encName">Caja · Brenda Solís</div></div>
+  <div class="hmeta">
+    <div class="live"><span class="dot"></span> Sincronizado en vivo</div>
+    <div class="clock mono" id="clock"></div>
+    <button onclick="salir()" style="background:var(--surf-3);border:1px solid var(--line-2);color:var(--dim);font-family:'Sora';font-size:.78rem;padding:7px 12px;border-radius:8px;cursor:pointer">Salir</button>
+  </div>
+</header>
+<div class="wrap">
+  <div class="kpis">
+    <div class="kpi g"><div class="l">Cobrado en ventanilla</div><div class="v" id="k-cob">$0</div><div class="s" id="k-ncob">0 pagos</div></div>
+    <div class="kpi b"><div class="l">Créditos captados hoy</div><div class="v" id="k-cred">0</div><div class="s" id="k-coloc">$0 colocado</div></div>
+    <div class="kpi r"><div class="l">Por entregar (en tránsito)</div><div class="v" id="k-pe">$0</div><div class="s">cobradores · aún NO en caja</div></div>
+    <div class="kpi"><div class="l">Efectivo real en caja</div><div class="v" id="k-caja">$0</div><div class="s">disponible para conciliar</div></div>
+  </div>
+  <div class="grid">
+    <div class="panel">
+      <h2>Recibir pago</h2>
+      <div class="ph-sub">Busca al cliente —de cualquier cobrador— y registra su abono con su forma de pago. El saldo se actualiza al instante.</div>
+      <div class="search"><input id="q" placeholder="Buscar por nombre, teléfono, folio, domicilio o cobrador…" oninput="buscar()"></div>
+      <div class="search-hint">🔎 Busca por todos los campos a la vez</div>
+      <div class="cli-res" id="cliRes"></div>
+    </div>
+    <div class="panel">
+      <div class="tabs">
+        <button class="tab on" data-v="nuevo">Nuevo crédito</button>
+        <button class="tab" data-v="corte">Corte de caja</button>
+      </div>
+      <section class="view on" id="nuevo">
+        <div class="ph-sub" style="margin-top:-6px">El crédito que el cliente firma en sucursal. Se asigna a un cobrador y entra a su ruta de inmediato.</div>
+        <div class="sect-lbl">Datos del cliente</div>
+        <div class="field"><label>Nombre completo <span class="req">*</span></label><input id="n-cli" placeholder="Nombre del acreditado"></div>
+        <div class="frow">
+          <div class="field"><label>Teléfono</label><input id="n-tel" placeholder="10 dígitos" inputmode="numeric"></div>
+          <div class="field"><label>Cobrador / ruta <span class="req">*</span></label><select id="n-prom"><option>Ana Reyes</option><option>Raúl Cárdenas</option></select></div>
+        </div>
+        <div class="field"><label>Domicilio (calle y número) <span class="req">*</span></label><input id="n-calle" placeholder="Calle, número ext/int"></div>
+        <div class="frow">
+          <div class="field"><label>Colonia / localidad <span class="req">*</span></label><input id="n-col" placeholder="Colonia"></div>
+          <div class="field"><label>Referencias</label><input id="n-ref" placeholder="Entre calles, seña"></div>
+        </div>
+        <div class="sect-lbl">Producto de crédito</div>
+        <div class="frow">
+          <div class="field"><label>Modalidad</label><select id="n-tipo" onchange="fillPlazos();calc()"><option value="diario">Diario</option><option value="semanal" selected>Semanal</option><option value="unico">Pago único</option><option value="p17">Celulares 17 pagos</option></select></div>
+          <div class="field" id="plazoWrap"><label>Plazo</label><select id="n-plazo" onchange="calc()"></select></div>
+        </div>
+        <div class="field"><label>Monto del crédito</label><input id="n-monto" type="number" value="5000" step="500" oninput="calc()"></div>
+        <div class="calc" id="calc"></div>
+        <button class="btn-full" onclick="crearCredito()">Capturar crédito</button>
+      </section>
+      <section class="view" id="corte">
+        <div class="big-cut"><div class="l">Efectivo real en caja</div><div class="v" id="cut-tot">$0</div></div>
+        <table><thead><tr><th>Concepto</th><th class="n">Monto</th></tr></thead><tbody>
+          <tr><td>Saldo inicial de caja</td><td class="n" id="ct-ini">$0</td></tr>
+          <tr><td>Pagos en efectivo (ventanilla)</td><td class="n" id="ct-efe">$0</td></tr>
+          <tr><td>Enganches recibidos</td><td class="n" id="ct-eng">$0</td></tr>
+          <tr><td>Entregas de cobradores confirmadas</td><td class="n" id="ct-ent">$0</td></tr>
+          <tr><td style="color:var(--dim)">Pagos por banco (transf./depósito)*</td><td class="n" id="ct-banco" style="color:var(--dim)">$0</td></tr>
+        </tbody></table>
+        <div style="font-size:.72rem;color:var(--faint);margin-top:8px">*No es efectivo en caja: entró directo a banco.</div>
+
+        <div class="sect-lbl">Por entregar de cobradores</div>
+        <div class="pe-note">⚠ El efectivo que reportan los cobradores en ruta <b>NO entra a caja</b> hasta que lo entregan físicamente. Aparece aquí como <b>cuenta por entregar</b> a su nombre. Al confirmar la entrega, pasa a efectivo real.</div>
+        <div id="peList"></div>
+
+        <div class="sect-lbl">Movimientos de hoy</div>
+        <table><thead><tr><th>Hora</th><th>Concepto</th><th class="n">Monto</th></tr></thead><tbody id="movs"></tbody></table>
+      </section>
+    </div>
+  </div>
+</div>
+<div class="overlay" id="overlay"></div>
+<div class="toast" id="toast"></div>
+<script>
+/* ===== Sesión ===== */
+const TOKEN=(()=>{try{return localStorage.getItem('cobrapro_token')}catch(e){return null}})();
+const ME=(()=>{try{return JSON.parse(localStorage.getItem('cobrapro_user')||'null')}catch(e){return null}})();
+if(!TOKEN){ location.replace('index.html'); }
+function salir(){ try{localStorage.removeItem('cobrapro_token');localStorage.removeItem('cobrapro_user');}catch(e){} location.replace('index.html'); }
+if(ME&&ME.nombre){ var _en=document.getElementById('encName'); if(_en)_en.textContent='Caja · '+ME.nombre; }
+// ===== Motor de cálculo REAL (factores Credia) =====
+const PROD={
+  diario:[{p:10,f:1.17,fijo:30},{p:20,f:1.23,fijo:60},{p:30,f:1.33,fijo:90}],
+  semanal:[{p:4,f:1.35,fijo:60},{p:8,f:1.43,fijo:120},{p:12,f:1.53,fijo:180},{p:16,f:1.63,fijo:240},{p:20,f:1.83,fijo:300}],
+  p17:[{p:17,f:1.73,fijo:270}]
+};
+let diasUnico=15;
+function calcCredito(tipo,plazo,monto){
+  if(tipo==='unico'){const tap=monto+diasUnico*(2+monto*0.0183);const mor=4+tap*0.0183;return {total:tap,pagos:1,cuota:tap,com:0,mor,dias:diasUnico};}
+  const arr=PROD[tipo];const it=arr.find(x=>x.p===plazo)||arr[0];
+  const total=monto*it.f+it.fijo;return {total,pagos:it.p,cuota:total/it.p,com:(total-monto)/it.p};
+}
+// ===== Cartera de la sucursal =====
+let _clientes=[];
+let caja={inicial:0,efectivo:0,banco:0,enganches:0,entregasConfirmadas:0,ncob:0,ncred:0,coloc:0};
+let porEntregar=[];
+let movs=[];
+const tipoLbl={diario:'Diario',semanal:'Semanal',unico:'Pago único',p17:'Celulares 17'};
+const tipoCls={diario:'dia',semanal:'sem',unico:'uni',p17:'p17'};
+const semLbl={ok:'Al corriente',w:'Atrasado',bad:'Vencido'};
+const fmt=n=>'$'+Math.round(n).toLocaleString('es-MX');
+const _colors=['#f0b429','#5aa0e8','#3ecf8e','#b07ce0','#f0654d','#d6a35a'];
+let sel=null, formaPay='efectivo', payCtx=null;
+function uuid(){return 'cp-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);}
+async function api(method,path,body){
+  const r=await fetch(path,{method,headers:{'Content-Type':'application/json',Authorization:'Bearer '+TOKEN},body:body?JSON.stringify(body):undefined});
+  if(r.status===401){ salir(); throw new Error('Sesión expirada'); }
+  const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||('Error '+r.status)); return d;
+}
+let _bt=null;
+function buscar(){ clearTimeout(_bt); _bt=setTimeout(_buscar,250); }
+async function _buscar(){
+  const q=(document.getElementById('q').value||'').trim();
+  try{ _clientes=await api('GET','/api/clients?search='+encodeURIComponent(q)); pintar(); }
+  catch(e){ document.getElementById('cliRes').innerHTML='<div style="color:var(--red);padding:14px">'+e.message+'</div>'; }
+}
+function pintar(){
+  document.getElementById('cliRes').innerHTML=_clientes.map((c,i)=>{
+    const color=_colors[i%_colors.length]; const creds=c.creditos||[];
+    const tot=creds.reduce((a,cr)=>a+(cr.saldo||0),0);
+    const ini=(c.nombre||'').split(' ').map(w=>w[0]).slice(0,2).join('');
+    return `<div class="cli ${sel===c.id?'sel':''}" onclick="selCli(${c.id})">
+      <div class="cli-top"><div class="cli-ava" style="background:${color}">${ini}</div>
+        <div style="flex:1;min-width:0"><div class="cli-nm">${c.nombre||'—'}</div><div class="cli-sub">${c.tel||''} · ${c.prom||''}</div>
+          <div class="cli-addr">📍 ${[c.calle,c.col].filter(Boolean).join(', ')}</div></div>
+        <div class="cli-saldo"><div class="k">Saldo total</div><div class="v">${fmt(tot)}</div></div></div>
+      <div class="credits">${creds.map(cr=>`<div class="crow">
+        <span class="tipo ${tipoCls[cr.tipo]||'sem'}">${tipoLbl[cr.tipo]||cr.tipo}</span>
+        <div class="cdata"><div class="l1">${cr.folio} · cuota ${fmt(cr.cuota)}</div><div class="l2">saldo ${fmt(cr.saldo)}</div></div>
+        <span class="pill ${cr.saldo<=0?'ok':'w'}">${cr.saldo<=0?'Liquidado':'Activo'}</span>
+        <button class="pay" onclick="event.stopPropagation();abrirPago(${c.id},${cr.id})">Cobrar</button></div>`).join('')}</div>
+    </div>`;
+  }).join('') || '<div style="color:var(--faint);font-size:.85rem;padding:14px">Sin coincidencias.</div>';
+}
+function selCli(id){sel=sel===id?null:id;pintar();}
+function abrirPago(cid,saleId){
+  const c=_clientes.find(x=>x.id===cid); const cr=(c.creditos||[]).find(x=>x.id===saleId);
+  payCtx={saleId, cliente:c.nombre, folio:cr.folio, tel:c.tel||''}; formaPay='efectivo';
+  document.getElementById('overlay').innerHTML=`<div class="modal">
+    <h3>Pago — ${c.nombre}</h3>
+    <div style="font-size:.78rem;color:var(--faint);margin-bottom:12px">${cr.folio} · ${tipoLbl[cr.tipo]||cr.tipo} · saldo ${fmt(cr.saldo)}</div>
+    <div class="amt-box"><div class="l">Monto recibido</div><input class="amt-input" id="payamt" value="${Math.round(Math.min(cr.cuota,cr.saldo))}" inputmode="numeric"></div>
+    <div style="font-size:.72rem;color:var(--dim);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Forma de pago</div>
+    <div class="forma" id="forma">
+      <button class="on" onclick="setForma('efectivo',this)">💵 Efectivo</button>
+      <button onclick="setForma('transferencia',this)">🏦 Transferencia</button>
+      <button onclick="setForma('deposito',this)">🧾 Depósito</button>
+    </div>
+    <div class="modal-actions"><button class="ma cancel" onclick="cerrar()">Cancelar</button><button class="ma ok" onclick="confirmPago()">Registrar y dar recibo</button></div>
+  </div>`;
+  document.getElementById('overlay').classList.add('on');
+}
+function setForma(f,el){formaPay=f;document.querySelectorAll('#forma button').forEach(b=>b.classList.remove('on'));el.classList.add('on');}
+const formaLbl={efectivo:'Efectivo',transferencia:'Transferencia',deposito:'Depósito',ajuste:'Ajuste'};
+async function confirmPago(){
+  const monto=parseFloat(document.getElementById('payamt').value)||0;
+  if(monto<=0){toast('Monto inválido');return;}
+  try{
+    const d=await api('POST','/api/sales/'+payCtx.saleId+'/pago',{monto,forma:formaPay,idempotencyKey:uuid()});
+    const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+    const fecha=new Date().toLocaleDateString('es-MX');
+    movs.unshift({hora,txt:`Pago ${payCtx.folio} · ${formaLbl[formaPay]} — ${payCtx.cliente}`,monto});
+    window._lastRecibo={cliente:payCtx.cliente,folio:payCtx.folio,forma:formaLbl[formaPay],monto:fmt(monto),saldo:fmt(d.saldo),fecha,hora,tel:payCtx.tel};
+    document.getElementById('overlay').innerHTML=`<div class="modal">
+      <h3>✓ Pago registrado</h3>
+      <div class="recibo">
+        <div class="rr"><span>Folio crédito</span><span class="v">${payCtx.folio}</span></div>
+        <div class="rr"><span>Cliente</span><span class="v">${payCtx.cliente}</span></div>
+        <div class="rr"><span>Forma de pago</span><span class="v" style="color:var(--acc)">${formaLbl[formaPay]}</span></div>
+        <div class="rr"><span>Monto pagado</span><span class="v" style="color:var(--grn)">${fmt(monto)}</span></div>
+        <div class="rr"><span>Saldo restante</span><span class="v">${fmt(d.saldo)}</span></div>
+        <div class="rr"><span>Fecha · hora</span><span class="v">${fecha} ${hora}</span></div>
+      </div>
+      <div class="modal-actions">
+        <button class="ma cancel" onclick="enviarWA()" ${payCtx.tel?'':'disabled style="opacity:.45"'}>📱 Enviar por WhatsApp</button>
+        <button class="ma ok" onclick="cerrar()">Cerrar</button>
+      </div>
+    </div>`;
+    caja.ncob++; await cargarCaja();
+  }catch(e){ toast(e.message); }
+}
+function enviarWA(){
+  const r=window._lastRecibo; if(!r) return;
+  if(!r.tel){ toast('El cliente no tiene teléfono'); return; }
+  const num=String(r.tel).replace(/\D/g,''); const full=num.startsWith('52')?num:'52'+num;
+  const msg=`*Comprobante de pago — LeGaXi*\n\nCliente: ${r.cliente}\nFolio: ${r.folio}\nMonto recibido: ${r.monto}\nForma: ${r.forma}\nSaldo restante: ${r.saldo}\nFecha: ${r.fecha} ${r.hora}\n\nGracias por su pago.`;
+  window.open(`https://wa.me/${full}?text=${encodeURIComponent(msg)}`,'_blank');
+}
+function cerrar(){document.getElementById('overlay').classList.remove('on');_buscar();}
+document.getElementById('overlay').onclick=e=>{if(e.target.id==='overlay')cerrar();};
+async function cargarCaja(){
+  try{ const d=await api('GET','/api/caja/hoy'); const cj=d.caja||{};
+    caja.inicial=cj.inicial||0; caja.efectivo=cj.efectivo||0; caja.banco=cj.banco||0; caja.entregasConfirmadas=cj.entregas||0;
+    porEntregar=(d.porEntregar||[]).map((p,i)=>({id:p.id,prom:p.prom,monto:p.monto,color:_colors[i%_colors.length]}));
+  }catch(e){}
+  render();
+}
+async function confirmarEntrega(id){
+  try{ await api('POST','/api/caja/entrega',{porEntregarId:id});
+    const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+    movs.unshift({hora,txt:'Entrega de cobrador confirmada',monto:0});
+    await cargarCaja(); toast('✓ Entrega confirmada · ya en caja');
+  }catch(e){ toast(e.message); }
+}
+
+// ===== Nuevo crédito =====
+function fillPlazos(){
+  const t=document.getElementById('n-tipo').value;const w=document.getElementById('plazoWrap');const s=document.getElementById('n-plazo');
+  if(t==='unico'){w.innerHTML=`<label>Días de plazo</label><input id="n-plazo" type="number" value="15" min="1" step="1" oninput="diasUnico=+this.value||0;calc()">`;diasUnico=15;return;}
+  if(t==='p17'){w.innerHTML=`<label>Plazo</label><select id="n-plazo" onchange="calc()"><option value="17">17 pagos fijos</option></select>`;return;}
+  w.innerHTML=`<label>Plazo</label><select id="n-plazo" onchange="calc()"></select>`;
+  const sel2=document.getElementById('n-plazo');
+  sel2.innerHTML=PROD[t].map(x=>`<option value="${x.p}">${x.p} ${t==='semanal'?'semanas':'días'}</option>`).join('');
+  if(t==='semanal')sel2.value=12;
+}
+function calc(){
+  const t=document.getElementById('n-tipo').value;
+  const monto=+document.getElementById('n-monto').value||0;
+  const plazo=+(document.getElementById('n-plazo')?.value||0);
+  const r=calcCredito(t,plazo,monto);
+  const freq=t==='diario'?'diaria':t==='semanal'?'semanal':t==='p17'?'(17 pagos)':'única';
+  let extra= t==='unico'? `<div class="calc-row"><span>Moratorio por día</span><span class="v" style="color:var(--red)">${fmt(r.mor)}</span></div>` :
+             `<div class="calc-row"><span>Comisión por no pago</span><span class="v">${fmt(r.com)}</span></div>`;
+  document.getElementById('calc').innerHTML=`
+    <div class="calc-row"><span>Interés / cargo</span><span class="v" style="color:var(--acc)">${fmt(r.total-monto)}</span></div>
+    <div class="calc-row"><span>Total a pagar</span><span class="v">${fmt(r.total)}</span></div>
+    <div class="calc-row"><span>Número de pagos</span><span class="v">${r.pagos}${t==='unico'?' (al término)':''}</span></div>
+    ${extra}
+    <div class="calc-row big"><span>Cuota ${freq}</span><span class="v">${fmt(r.cuota)}</span></div>`;
+}
+async function crearCredito(){
+  const nombre=document.getElementById('n-cli').value.trim();
+  const calle=document.getElementById('n-calle').value.trim();
+  const col=document.getElementById('n-col').value.trim();
+  if(!nombre){toast('Captura el nombre del cliente');return;}
+  if(!calle||!col){toast('El domicilio es obligatorio para la venta a crédito');return;}
+  const t=document.getElementById('n-tipo').value; const monto=+document.getElementById('n-monto').value||0;
+  const plazo=+(document.getElementById('n-plazo')?.value||0);
+  const tel=document.getElementById('n-tel').value||''; const prom=document.getElementById('n-prom').value;
+  try{
+    const d=await api('POST','/api/sales',{nombre,tel,calle,col,prom,tipo:t,plazo,monto,dias:plazo});
+    caja.ncred++; caja.coloc+=monto;
+    const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+    movs.unshift({hora,txt:`Crédito ${d.folio} — ${nombre} (${prom})`,monto:0});
+    ['n-cli','n-tel','n-calle','n-col','n-ref'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    render(); _buscar();
+    toast(`✓ ${d.folio} capturado · cuota ${fmt(d.cuota)} · en ruta de ${prom.split(' ')[0]}`);
+  }catch(e){ toast(e.message); }
+}
+function render(){
+  document.getElementById('k-cob').textContent=fmt(caja.efectivo+caja.banco);
+  document.getElementById('k-ncob').textContent=caja.ncob+' pagos';
+  document.getElementById('k-cred').textContent=caja.ncred;
+  document.getElementById('k-coloc').textContent=fmt(caja.coloc)+' colocado';
+  const pe=porEntregar.reduce((a,x)=>a+x.monto,0);
+  document.getElementById('k-pe').textContent=fmt(pe);
+  const efectivoReal=caja.inicial+caja.efectivo+caja.entregasConfirmadas;
+  document.getElementById('k-caja').textContent=fmt(efectivoReal);
+  document.getElementById('cut-tot').textContent=fmt(efectivoReal);
+  document.getElementById('ct-ini').textContent=fmt(caja.inicial);
+  document.getElementById('ct-efe').textContent=fmt(caja.efectivo);
+  document.getElementById('ct-eng').textContent=fmt(0);
+  document.getElementById('ct-ent').textContent=fmt(caja.entregasConfirmadas);
+  document.getElementById('ct-banco').textContent=fmt(caja.banco);
+  document.getElementById('peList').innerHTML= porEntregar.length? porEntregar.map(p=>`<div class="pe-card">
+    <div class="pe-ava" style="background:${p.color}">${(p.prom||'').split(' ').map(w=>w[0]).slice(0,2).join('')}</div>
+    <div><div class="pe-nm">${p.prom}</div><div class="pe-sub">cobros en ruta · por entregar</div></div>
+    <div class="pe-monto">${fmt(p.monto)}</div>
+    <button class="pe-btn" onclick="confirmarEntrega(${p.id})">✓ Confirmar entrega</button></div>`).join('')
+    : '<div style="color:var(--grn);font-size:.84rem;padding:6px 2px">Nada en tránsito.</div>';
+  document.getElementById('movs').innerHTML= movs.length? movs.map(m=>`<tr><td class="mono" style="color:var(--faint);font-size:.78rem">${m.hora}</td><td>${m.txt}</td><td class="n">${m.monto>0?fmt(m.monto):'—'}</td></tr>`).join('') : '<tr><td colspan="3" style="color:var(--faint);font-size:.82rem;text-align:center;padding:16px">Sin movimientos aún.</td></tr>';
+}
+function toast(t){const el=document.getElementById('toast');el.textContent=t;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2800);}
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));t.classList.add('on');document.getElementById(t.dataset.v).classList.add('on');});
+setInterval(()=>document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'}),1000);
+document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'});
+async function _init(){
+  try{ const cob=await api('GET','/api/cobradores'); if(cob.length) document.getElementById('n-prom').innerHTML=cob.map(c=>`<option>${c.nombre}</option>`).join(''); }catch(e){}
+  fillPlazos(); calc(); _buscar(); cargarCaja();
+}
+_init();
+</script>
+</body>
+</html>
