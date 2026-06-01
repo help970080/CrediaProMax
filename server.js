@@ -60,7 +60,7 @@ function saldoDe(saleId) { return db.movimientos.filter(m => m.saleId === saleId
 
 /* ---------- Semilla inicial ---------- */
 function seed() {
-  db = { users: [], sucursales: [], clients: [], sales: [], movimientos: [], caja: {}, porEntregar: [], gestiones: [], _idem: {} };
+  db = { users: [], sucursales: [], clients: [], sales: [], movimientos: [], caja: {}, porEntregar: [], gestiones: [], cortes: [], config: { corteAutoHora: '19:00', corteAutoDias: [1,2,3,4,5,6] }, _idem: {} };
   db.sucursales = ['Amecameca', 'Chalco', 'Ozumba', 'Tláhuac', 'Tepetlixpa', 'Juchitepec'].map((n, i) => ({ id: i + 1, nombre: n }));
   db.users = [
     { id: 1, nombre: 'Administrador', usuario: 'admin', rol: 'admin', sucursalId: null, passwordHash: bcrypt.hashSync('admin123', 8), activo: true, createdAt: new Date().toISOString() },
@@ -347,6 +347,79 @@ app.get('/api/reports/pagos', auth, (req,res)=>{
   res.json(out);
 });
 
+/* ---------- Cortes de cobrador ---------- */
+function fechaMxHoyDDMM(){ const d=new Date(); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`; }
+function fechaMxHoyISO(){ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+function generarCorte(user, isAuto){
+  if (!user || !user.nombre) return { error: 'Usuario inválido' };
+  const fecha = fechaMxHoyISO();
+  if (db.cortes.find(c => c.prom === user.nombre && c.fecha === fecha)) return { duplicate: true };
+  const hoy = fechaMxHoyDDMM();
+  const pagos = db.movimientos.filter(m => m.abono > 0 && m.origen === user.nombre && m.fecha === hoy);
+  const efectivo = pagos.filter(m => (m.forma||'efectivo') === 'efectivo').reduce((a,m)=>a+m.abono,0);
+  const banco = pagos.filter(m => m.forma === 'transferencia' || m.forma === 'deposito').reduce((a,m)=>a+m.abono,0);
+  const corte = {
+    id: nextId('cortes'), prom: user.nombre, sucursalId: user.sucursalId || null,
+    fecha, totalEfectivo: efectivo, totalBanco: banco, npagos: pagos.length,
+    items: pagos.map(m => ({ saleId: m.saleId, monto: m.abono, forma: m.forma||'efectivo' })),
+    horaEntrega: new Date().toLocaleTimeString('es-MX', { hour:'2-digit', minute:'2-digit' }),
+    auto: !!isAuto, by: isAuto ? 'sistema' : 'cobrador', estado: 'pendiente', createdAt: new Date().toISOString()
+  };
+  db.cortes.push(corte); saveDB();
+  return { corte };
+}
+function checkAutoCorte(){
+  if (!db || !db.config) return;
+  const now = new Date();
+  const [hh, mm] = (db.config.corteAutoHora || '19:00').split(':').map(Number);
+  const dow = now.getDay();
+  const dayList = db.config.corteAutoDias || [1,2,3,4,5,6];
+  if (!dayList.includes(dow)) return;
+  if (now.getHours() < hh || (now.getHours() === hh && now.getMinutes() < mm)) return;
+  db.users.filter(u => u.rol === 'cobrador' && u.activo).forEach(u => generarCorte(u, true));
+}
+setInterval(checkAutoCorte, 60_000);
+
+app.post('/api/corte', auth, (req, res) => {
+  let user = req.user;
+  if (req.body.prom && (req.user.rol === 'admin' || req.user.rol === 'supervisor')) {
+    const u = db.users.find(x => x.nombre === req.body.prom);
+    if (!u) return res.status(404).json({ error: 'Cobrador no encontrado' });
+    user = u;
+  }
+  if (user.rol !== 'cobrador') return res.status(400).json({ error: 'El usuario no es cobrador' });
+  const r = generarCorte(user, false);
+  if (r.duplicate) return res.status(409).json({ error: 'Ya hay un corte registrado hoy para ' + user.nombre });
+  res.json({ ok: true, corte: r.corte });
+});
+app.get('/api/mi-corte', auth, (req, res) => {
+  const fecha = fechaMxHoyISO();
+  const corte = db.cortes.find(c => c.prom === req.user.nombre && c.fecha === fecha);
+  res.json({ corte: corte || null });
+});
+app.get('/api/cortes', auth, (req, res) => {
+  const { fecha, prom } = req.query;
+  let out = db.cortes;
+  if (fecha) out = out.filter(c => c.fecha === fecha);
+  if (prom) out = out.filter(c => c.prom === prom);
+  if (req.user.rol === 'cobrador') out = out.filter(c => c.prom === req.user.nombre);
+  res.json(out.sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||'')));
+});
+app.delete('/api/cortes/:id', auth, rol('admin','supervisor'), (req, res) => {
+  const id = +req.params.id;
+  const i = db.cortes.findIndex(c => c.id === id);
+  if (i < 0) return res.status(404).json({ error: 'Corte no encontrado' });
+  db.cortes.splice(i, 1); saveDB();
+  res.json({ ok: true });
+});
+app.get('/api/config', auth, (req, res) => res.json(db.config || {}));
+app.patch('/api/config', auth, rol('admin','supervisor'), (req, res) => {
+  db.config = db.config || {};
+  if (req.body.corteAutoHora) db.config.corteAutoHora = req.body.corteAutoHora;
+  if (Array.isArray(req.body.corteAutoDias)) db.config.corteAutoDias = req.body.corteAutoDias;
+  saveDB(); res.json(db.config);
+});
+
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
 
 // Sirve el portal (index.html) en "/" y en cualquier ruta que NO sea /api
@@ -362,5 +435,12 @@ app.get('*', (req, res, next) => {
   console.log('📄 index.html encontrado:', hayIndex ? 'SÍ' : 'NO  ← revisa que public/ esté en el repo junto a server.js');
   db = await loadDB();
   if (!db) { seed(); console.log('🌱 Base sembrada (admin / admin123).'); }
+  else {
+    // normalización para DBs ya existentes con esquema previo
+    db.cortes = db.cortes || [];
+    db.gestiones = db.gestiones || [];
+    db.config = db.config || { corteAutoHora: '19:00', corteAutoDias: [1,2,3,4,5,6] };
+    db._idem = db._idem || {};
+  }
   app.listen(PORT, () => console.log('🚀 CobraPro backend en puerto ' + PORT + (USE_PG ? ' (PostgreSQL)' : ' (archivo local)') + '  ·  login admin / admin123'));
 })().catch(e => { console.error('❌ Error fatal al iniciar:', e); process.exit(1); });
