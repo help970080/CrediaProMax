@@ -229,19 +229,6 @@ app.post('/api/caja/entrega', auth, (req, res) => {
   saveDB(); res.json({ ok: true });
 });
 
-/* ---------- Dashboard / reportes ---------- */
-app.get('/api/dashboard', auth, (req, res) => {
-  const cartera = db.sales.reduce((s, x) => s + saldoDe(x.id), 0);
-  const abonos = db.movimientos.filter(m => m.abono > 0).reduce((s, m) => s + m.abono, 0);
-  res.json({ creditosActivos: db.sales.length, cartera, cobradoTotal: abonos, sucursales: db.sucursales.length, usuarios: db.users.length });
-});
-app.get('/api/reports/pagos', auth, rol('admin', 'supervisor'), (req, res) => {
-  res.json(db.movimientos.filter(m => m.abono > 0).map(m => {
-    const s = db.sales.find(x => x.id === m.saleId) || {}; const c = db.clients.find(x => x.id === s.clientId) || {};
-    return { fecha: m.fecha, cliente: c.nombre, folio: s.folio, por: m.origen, forma: m.forma || 'efectivo', monto: m.abono };
-  }));
-});
-
 /* ---------- Cobrador en ruta ---------- */
 app.get('/api/mi-ruta', auth, (req, res) => {
   const ventas = db.sales.filter(s => s.prom === req.user.nombre);
@@ -254,6 +241,85 @@ app.get('/api/cobradores', auth, (req, res) => res.json(db.users.filter(u => u.r
 app.post('/api/sales/:id/gestion', auth, idem, (req, res) => {
   db.gestiones.push({ id: nextId('gestiones'), saleId: +req.params.id, fecha: new Date().toISOString(), tipo: req.body.tipo || 'nopago', detalle: req.body.detalle || '', por: req.user.nombre });
   markIdem(req); saveDB(); res.json({ ok: true });
+});
+
+/* ---------- Dashboard agregado ---------- */
+function _parseFechaMx(s){ if(!s) return 0; const [d,m,y]=s.split('/'); return new Date(+y,+m-1,+d).getTime(); }
+function _desdePeriodo(periodo){
+  const now=new Date();
+  if(periodo==='hoy') return new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
+  if(periodo==='mes') return new Date(now.getFullYear(),now.getMonth(),1).getTime();
+  // semana (lunes)
+  const day=now.getDay(); const diff=(day===0?6:day-1);
+  return new Date(now.getFullYear(),now.getMonth(),now.getDate()-diff).getTime();
+}
+app.get('/api/dashboard', auth, (req,res)=>{
+  const periodo=req.query.periodo||'semana';
+  const desde=_desdePeriodo(periodo);
+  const sales=db.sales, clients=db.clients, sucursales=db.sucursales;
+  const abonos=db.movimientos.filter(m=>m.abono>0 && _parseFechaMx(m.fecha)>=desde);
+  const nuevos=sales.filter(s=>s.createdAt && new Date(s.createdAt).getTime()>=desde);
+  const por_sucursal=sucursales.map(suc=>{
+    const ventas_suc=sales.filter(s=>s.sucursalId===suc.id);
+    const abonos_suc=abonos.filter(m=>{ const s=sales.find(x=>x.id===m.saleId); return s && s.sucursalId===suc.id; });
+    const recuperado=abonos_suc.reduce((a,m)=>a+m.abono,0);
+    const nuevos_suc=nuevos.filter(s=>s.sucursalId===suc.id);
+    const caja=db.caja[String(suc.id)]||{inicial:0,efectivo:0,banco:0,entregas:0};
+    const enc=db.users.find(u=>u.rol==='sucursal' && u.sucursalId===suc.id);
+    return {id:suc.id, nombre:suc.nombre, encargada:enc?enc.nombre:'—',
+      pagos_recibidos:recuperado, npagos:abonos_suc.length,
+      creditos_captados:nuevos_suc.length, colocado:nuevos_suc.reduce((a,s)=>a+s.monto,0),
+      efectivo_caja:(caja.inicial||0)+(caja.efectivo||0)+(caja.entregas||0), banco:caja.banco||0,
+      por_entregar:db.porEntregar.filter(p=>p.sucursalId===suc.id).reduce((a,p)=>a+p.monto,0),
+      cartera:ventas_suc.reduce((a,s)=>a+saldoDe(s.id),0), creditos:ventas_suc.length };
+  });
+  const cobradores=db.users.filter(u=>u.rol==='cobrador'&&u.activo);
+  const por_cobrador=cobradores.map(c=>{
+    const sus_sales=sales.filter(s=>s.prom===c.nombre);
+    const sus_abonos=abonos.filter(m=>{ const s=sales.find(x=>x.id===m.saleId); return s && s.prom===c.nombre; });
+    const recuperado=sus_abonos.reduce((a,m)=>a+m.abono,0);
+    const cartera=sus_sales.reduce((a,s)=>a+saldoDe(s.id),0);
+    const por_entregar=db.porEntregar.filter(p=>p.prom===c.nombre).reduce((a,p)=>a+p.monto,0);
+    const suc=sucursales.find(s=>s.id===c.sucursalId);
+    return {id:c.id, nombre:c.nombre, sucursal:suc?suc.nombre:'—', sucursalId:c.sucursalId,
+      clientes:sus_sales.length, cartera, pagos_recibidos:recuperado, npagos:sus_abonos.length, por_entregar };
+  });
+  const pagos_recientes=abonos.slice(-40).reverse().map(m=>{
+    const s=sales.find(x=>x.id===m.saleId)||{}; const c=clients.find(x=>x.id===s.clientId)||{};
+    const suc=sucursales.find(x=>x.id===s.sucursalId);
+    return {fecha:m.fecha, cliente:c.nombre||'—', folio:s.folio, prom:s.prom||'—', forma:m.forma||'efectivo', monto:m.abono, sucursal:suc?suc.nombre:'—'};
+  });
+  const totales={
+    creditos_activos: sales.filter(s=>saldoDe(s.id)>0).length,
+    creditos_totales: sales.length,
+    monto_colocado_total: sales.reduce((a,s)=>a+s.monto,0),
+    saldo_pendiente: sales.reduce((a,s)=>a+saldoDe(s.id),0),
+    recuperado_periodo: abonos.reduce((a,m)=>a+m.abono,0),
+    npagos_periodo: abonos.length,
+    nuevos_creditos_periodo: nuevos.length,
+    monto_colocado_periodo: nuevos.reduce((a,s)=>a+s.monto,0),
+    en_caja_efectivo: Object.values(db.caja).reduce((a,c)=>a+((c.inicial||0)+(c.efectivo||0)+(c.entregas||0)),0),
+    en_caja_banco: Object.values(db.caja).reduce((a,c)=>a+(c.banco||0),0),
+    por_entregar: db.porEntregar.reduce((a,p)=>a+p.monto,0),
+  };
+  res.json({periodo, desde:new Date(desde).toISOString(), totales, por_sucursal, por_cobrador, pagos_recientes});
+});
+app.get('/api/reports/pagos', auth, (req,res)=>{
+  const {desde,hasta,forma,prom,sucursalId}=req.query;
+  const t1=desde?new Date(desde).getTime():0, t2=hasta?new Date(hasta).getTime():Number.MAX_SAFE_INTEGER;
+  const out=db.movimientos.filter(m=>m.abono>0).filter(m=>{
+    const t=_parseFechaMx(m.fecha); if(!(t>=t1&&t<=t2)) return false;
+    const s=db.sales.find(x=>x.id===m.saleId)||{};
+    if(forma && (m.forma||'efectivo')!==forma) return false;
+    if(prom && s.prom!==prom) return false;
+    if(sucursalId && String(s.sucursalId)!==String(sucursalId)) return false;
+    return true;
+  }).map(m=>{
+    const s=db.sales.find(x=>x.id===m.saleId)||{}; const c=db.clients.find(x=>x.id===s.clientId)||{};
+    const suc=db.sucursales.find(x=>x.id===s.sucursalId);
+    return {fecha:m.fecha, cliente:c.nombre||'—', folio:s.folio, prom:s.prom||'—', forma:m.forma||'efectivo', monto:m.abono, sucursal:suc?suc.nombre:'—', sucursalId:s.sucursalId};
+  });
+  res.json(out);
 });
 
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
