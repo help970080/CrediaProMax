@@ -140,12 +140,21 @@ app.get('/api/sucursales', auth, (req, res) => res.json(db.sucursales));
 /* ---------- Clientes / cartera ---------- */
 app.get('/api/clients', auth, (req, res) => {
   const q = (req.query.search || '').toLowerCase();
-  const out = db.clients.filter(c => !q || [c.nombre, c.tel, c.calle, c.col, c.prom].join(' ').toLowerCase().includes(q))
+  const out = db.clients.filter(c => c.activo !== false).filter(c => !q || [c.nombre, c.tel, c.calle, c.col, c.prom].join(' ').toLowerCase().includes(q))
     .map(c => ({ ...c, creditos: db.sales.filter(s => s.clientId === c.id).map(s => ({ ...s, saldo: saldoDe(s.id) })) }));
   res.json(out);
 });
 app.get('/api/sales', auth, (req, res) => {
-  res.json(db.sales.map(s => ({ ...s, saldo: saldoDe(s.id), cliente: (db.clients.find(c => c.id === s.clientId) || {}).nombre })));
+  const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
+  res.json(db.sales.filter(s => activos.has(s.clientId)).map(s => ({ ...s, saldo: saldoDe(s.id), cliente: (db.clients.find(c => c.id === s.clientId) || {}).nombre })));
+});
+app.delete('/api/clients/:id', auth, rol('admin', 'supervisor'), (req, res) => {
+  const id = +req.params.id;
+  const c = db.clients.find(x => x.id === id);
+  if (!c) return res.status(404).json({ error: 'Cliente no encontrado' });
+  c.activo = false; c.bajaAt = new Date().toISOString(); c.bajaBy = req.user.nombre;
+  saveDB();
+  res.json({ ok: true });
 });
 app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
   const { nombre, tel, calle, col, sucursalId, prom, tipo, plazo, monto, dias } = req.body;
@@ -256,11 +265,12 @@ app.get('/api/mi-ruta', auth, (req, res) => {
   const ventas = db.sales.filter(s => s.prom === req.user.nombre);
   res.json(ventas.map(s => {
     const c = db.clients.find(x => x.id === s.clientId) || {};
+    if (c.activo === false) return null;
     const totalAbonado = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0).reduce((a,m)=>a+m.abono,0);
     const at = calcAtraso(s, totalAbonado);
     return { id: s.id, folio: s.folio, nombre: c.nombre || '—', dir: [c.calle, c.col].filter(Boolean).join(', '), tel: c.tel || '', tipo: s.tipo, cuota: s.cuota, saldo: saldoDe(s.id),
       atraso: at.montoAtraso, diasAtraso: at.diasAtraso, cuotasAtraso: at.cuotasAtraso, cuotasDebidas: at.cuotasDebidas, cuotasPagadas: at.cuotasPagadas };
-  }));
+  }).filter(Boolean));
 });
 app.get('/api/cobradores', auth, (req, res) => res.json(db.users.filter(u => u.rol === 'cobrador' && u.activo).map(u => ({ id: u.id, nombre: u.nombre }))));
 app.post('/api/sales/:id/gestion', auth, idem, (req, res) => {
@@ -281,9 +291,16 @@ function _desdePeriodo(periodo){
 app.get('/api/dashboard', auth, (req,res)=>{
   const periodo=req.query.periodo||'semana';
   const desde=_desdePeriodo(periodo);
-  const sales=db.sales, clients=db.clients, sucursales=db.sucursales;
+  const activeClients=db.clients.filter(c=>c.activo!==false);
+  const activeClientIds=new Set(activeClients.map(c=>c.id));
+  const sales=db.sales.filter(s=>activeClientIds.has(s.clientId)), clients=activeClients, sucursales=db.sucursales;
   const abonos=db.movimientos.filter(m=>m.abono>0 && _parseFechaMx(m.fecha)>=desde);
   const nuevos=sales.filter(s=>s.createdAt && new Date(s.createdAt).getTime()>=desde);
+  // atraso acumulado por sale
+  function atrasoDe(s){
+    const totAb=db.movimientos.filter(m=>m.saleId===s.id && m.abono>0).reduce((a,m)=>a+m.abono,0);
+    return calcAtraso(s,totAb);
+  }
   const por_sucursal=sucursales.map(suc=>{
     const ventas_suc=sales.filter(s=>s.sucursalId===suc.id);
     const abonos_suc=abonos.filter(m=>{ const s=sales.find(x=>x.id===m.saleId); return s && s.sucursalId===suc.id; });
@@ -291,12 +308,15 @@ app.get('/api/dashboard', auth, (req,res)=>{
     const nuevos_suc=nuevos.filter(s=>s.sucursalId===suc.id);
     const caja=db.caja[String(suc.id)]||{inicial:0,efectivo:0,banco:0,entregas:0};
     const enc=db.users.find(u=>u.rol==='sucursal' && u.sucursalId===suc.id);
+    let atraso_monto=0, atraso_clientes=0, esperado_acum=0;
+    ventas_suc.forEach(s=>{ if(saldoDe(s.id)<=0)return; const at=atrasoDe(s); esperado_acum+=at.cuotasDebidas*s.cuota; if(at.montoAtraso>0){ atraso_monto+=at.montoAtraso; atraso_clientes++; } });
     return {id:suc.id, nombre:suc.nombre, encargada:enc?enc.nombre:'—',
       pagos_recibidos:recuperado, npagos:abonos_suc.length,
       creditos_captados:nuevos_suc.length, colocado:nuevos_suc.reduce((a,s)=>a+s.monto,0),
       efectivo_caja:(caja.inicial||0)+(caja.efectivo||0)+(caja.entregas||0), banco:caja.banco||0,
       por_entregar:db.porEntregar.filter(p=>p.sucursalId===suc.id).reduce((a,p)=>a+p.monto,0),
-      cartera:ventas_suc.reduce((a,s)=>a+saldoDe(s.id),0), creditos:ventas_suc.length };
+      cartera:ventas_suc.reduce((a,s)=>a+saldoDe(s.id),0), creditos:ventas_suc.length,
+      atraso_monto, atraso_clientes, esperado_acum };
   });
   const cobradores=db.users.filter(u=>u.rol==='cobrador'&&u.activo);
   const por_cobrador=cobradores.map(c=>{
@@ -306,8 +326,11 @@ app.get('/api/dashboard', auth, (req,res)=>{
     const cartera=sus_sales.reduce((a,s)=>a+saldoDe(s.id),0);
     const por_entregar=db.porEntregar.filter(p=>p.prom===c.nombre).reduce((a,p)=>a+p.monto,0);
     const suc=sucursales.find(s=>s.id===c.sucursalId);
+    let atraso_monto=0, atraso_clientes=0, esperado_acum=0;
+    sus_sales.forEach(s=>{ if(saldoDe(s.id)<=0)return; const at=atrasoDe(s); esperado_acum+=at.cuotasDebidas*s.cuota; if(at.montoAtraso>0){ atraso_monto+=at.montoAtraso; atraso_clientes++; } });
     return {id:c.id, nombre:c.nombre, sucursal:suc?suc.nombre:'—', sucursalId:c.sucursalId,
-      clientes:sus_sales.length, cartera, pagos_recibidos:recuperado, npagos:sus_abonos.length, por_entregar };
+      clientes:sus_sales.length, cartera, pagos_recibidos:recuperado, npagos:sus_abonos.length, por_entregar,
+      atraso_monto, atraso_clientes, esperado_acum };
   });
   const pagos_recientes=abonos.slice(-40).reverse().map(m=>{
     const s=sales.find(x=>x.id===m.saleId)||{}; const c=clients.find(x=>x.id===s.clientId)||{};
@@ -326,6 +349,8 @@ app.get('/api/dashboard', auth, (req,res)=>{
     en_caja_efectivo: Object.values(db.caja).reduce((a,c)=>a+((c.inicial||0)+(c.efectivo||0)+(c.entregas||0)),0),
     en_caja_banco: Object.values(db.caja).reduce((a,c)=>a+(c.banco||0),0),
     por_entregar: db.porEntregar.reduce((a,p)=>a+p.monto,0),
+    atraso_total: por_cobrador.reduce((a,c)=>a+c.atraso_monto,0),
+    clientes_atrasados: por_cobrador.reduce((a,c)=>a+c.atraso_clientes,0),
   };
   res.json({periodo, desde:new Date(desde).toISOString(), totales, por_sucursal, por_cobrador, pagos_recientes});
 });
