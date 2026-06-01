@@ -445,6 +445,66 @@ app.patch('/api/config', auth, rol('admin','supervisor'), (req, res) => {
   saveDB(); res.json(db.config);
 });
 
+/* ---------- Reporte de cartera por cobrador ---------- */
+function _tipoLblSrv(t){ return ({diario:'Diario',semanal:'Semanal',unico:'Pago único',p17:'Celulares 17'})[t] || t; }
+function _ultimas16Cuotas(sale, abonos){
+  const created = sale.createdAt ? new Date(sale.createdAt) : new Date();
+  const ahora = new Date();
+  const cuota = sale.cuota || 0;
+  let fechas = [];
+  if (sale.tipo === 'diario')    for (let i=1; i<=(sale.plazo||0); i++) { const d=new Date(created); d.setDate(d.getDate()+i); fechas.push(d); }
+  else if (sale.tipo === 'semanal') for (let i=1; i<=(sale.plazo||0); i++) { const d=new Date(created); d.setDate(d.getDate()+i*7); fechas.push(d); }
+  else if (sale.tipo === 'unico') { const d=new Date(created); d.setDate(d.getDate()+(sale.plazo||0)); fechas.push(d); }
+  else if (sale.tipo === 'p17') { const iv=Math.max(1, Math.round((sale.plazo||270)/17)); for (let i=1; i<=17; i++) { const d=new Date(created); d.setDate(d.getDate()+i*iv); fechas.push(d); } }
+  const estados = fechas.map((fecha, i) => {
+    if (fecha > ahora) return 'x';
+    const cutoff = new Date(fecha); cutoff.setDate(cutoff.getDate()+1);
+    const acumPagado = abonos.filter(m => _parseFechaMx(m.fecha) <= cutoff.getTime()).reduce((a,m)=>a+m.abono, 0);
+    return acumPagado >= (i+1)*cuota ? 'p' : 'n';
+  });
+  let u = estados.slice(-16); while (u.length < 16) u.unshift('x');
+  return u;
+}
+app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, res) => {
+  const promFilter = req.query.prom;
+  const cobradores = db.users.filter(u => u.rol === 'cobrador' && u.activo);
+  const sel = (promFilter && promFilter !== 'all') ? cobradores.filter(c => c.nombre === promFilter) : cobradores;
+  const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
+  const reportes = sel.map(cob => {
+    const suc = db.sucursales.find(s => s.id === cob.sucursalId);
+    const enc = db.users.find(u => u.rol === 'sucursal' && u.sucursalId === cob.sucursalId);
+    const sus_sales = db.sales.filter(s => s.prom === cob.nombre && activos.has(s.clientId));
+    const clientes = sus_sales.map(s => {
+      const c = db.clients.find(x => x.id === s.clientId) || {};
+      const abonos = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0);
+      return {
+        nombre: c.nombre || '—',
+        dir: [c.calle, c.col].filter(Boolean).join(', ') || '—',
+        tel: c.tel || '',
+        folio: s.folio,
+        modalidad: _tipoLblSrv(s.tipo),
+        saldo: saldoDe(s.id), cuota: s.cuota,
+        estados: _ultimas16Cuotas(s, abonos),
+      };
+    });
+    const totalP = clientes.reduce((a,c)=>a+c.estados.filter(e=>e==='p').length, 0);
+    const totalN = clientes.reduce((a,c)=>a+c.estados.filter(e=>e==='n').length, 0);
+    return {
+      cobrador: cob.nombre, sucursal: suc ? suc.nombre : '—', encargada: enc ? enc.nombre : '—',
+      kpis: {
+        clientes: clientes.length,
+        cartera: clientes.reduce((a,x)=>a+x.saldo, 0),
+        atrasoMonto: clientes.filter(c=>c.estados.includes('n')).reduce((a,c)=>a+c.saldo, 0),
+        atrasoClientes: clientes.filter(c=>c.estados.includes('n')).length,
+        eficiencia: (totalP+totalN)>0 ? (totalP/(totalP+totalN)*100) : 0,
+        totalP, totalN
+      },
+      clientes
+    };
+  });
+  res.json({ generadoEn: new Date().toISOString(), reportes });
+});
+
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
 
 // Sirve el portal (index.html) en "/" y en cualquier ruta que NO sea /api
