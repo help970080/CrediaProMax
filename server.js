@@ -222,6 +222,61 @@ app.post('/api/sales/:id/pago', auth, idem, (req, res) => {
   res.status(201).json({ ok: true, saldo: saldoDe(id) });
 });
 
+/* ---------- REFIN: liquida el saldo del crédito viejo y genera uno nuevo ---------- */
+app.post('/api/sales/:id/refin', auth, rol('admin','supervisor','sucursal'), idem, (req, res) => {
+  const id = +req.params.id;
+  const old = db.sales.find(s => s.id === id);
+  if (!old) return res.status(404).json({ error: 'Crédito no encontrado' });
+  const saldoActual = saldoDe(id);
+  if (saldoActual <= 0) return res.status(400).json({ error: 'Este crédito ya está liquidado, no aplica REFIN' });
+
+  const { nuevoMonto, nuevoTipo, nuevoPlazo, nuevoDias, nuevoProm } = req.body;
+  const monto = +nuevoMonto;
+  if (!monto || monto <= 0) return res.status(400).json({ error: 'Nuevo monto inválido' });
+  if (monto < saldoActual) return res.status(400).json({ error: `El nuevo monto ($${monto}) debe ser ≥ al saldo pendiente ($${Math.round(saldoActual)})` });
+
+  const tipo = nuevoTipo || old.tipo || 'semanal';
+  const plazo = +nuevoPlazo || old.plazo || 12;
+  const prom = nuevoProm || old.prom;
+  const r = calcCredito(tipo, plazo, monto, +nuevoDias || plazo);
+
+  const hoy = new Date().toLocaleDateString('es-MX');
+  // 1. liquida el viejo con un abono forma=refin
+  db.movimientos.push({
+    id: nextId('movimientos'), saleId: id, fecha: hoy,
+    concepto: 'Liquidación por REFIN',
+    origen: req.user.nombre + ' (REFIN ventanilla)',
+    cargo: 0, abono: saldoActual, forma: 'refin'
+  });
+  // 2. nuevo crédito
+  const folio = 'F-' + (1100 + nextId('sales'));
+  const nuevo = {
+    id: nextId('sales'), folio, clientId: old.clientId,
+    tipo, plazo, monto, cuota: r.cuota, total: r.total,
+    prom, sucursalId: old.sucursalId,
+    refinDe: old.id,
+    createdAt: new Date().toISOString(), createdBy: req.user.nombre,
+  };
+  db.sales.push(nuevo);
+  // 3. disposición del nuevo crédito
+  db.movimientos.push({
+    id: nextId('movimientos'), saleId: nuevo.id, fecha: hoy,
+    concepto: `Disposición REFIN (descuenta $${Math.round(saldoActual)} del crédito ${old.folio})`,
+    origen: 'Sucursal: ' + req.user.nombre,
+    cargo: r.total, abono: 0
+  });
+
+  const neto = monto - saldoActual;
+  markIdem(req); saveDB();
+  res.status(201).json({
+    ok: true,
+    oldFolio: old.folio, saldoLiquidado: saldoActual,
+    nuevoFolio: nuevo.folio, nuevoSaleId: nuevo.id,
+    nuevoMonto: monto, nuevoTotal: r.total, nuevoCuota: r.cuota,
+    saldoNuevo: saldoDe(nuevo.id), neto
+  });
+});
+
 /* ---------- Supervisor: cargo / abono / condonación ---------- */
 app.post('/api/sales/:id/cargo', auth, rol('admin', 'supervisor'), idem, (req, res) => {
   const id = +req.params.id; const { monto, concepto } = req.body;
@@ -465,6 +520,117 @@ function _ultimas16Cuotas(sale, abonos){
   let u = estados.slice(-16); while (u.length < 16) u.unshift('x');
   return u;
 }
+/* ---------- Reportes nuevos: colocación, REFIN, comisiones ---------- */
+app.get('/api/reports/colocacion', auth, rol('admin','supervisor'), (req, res) => {
+  const bucket = (req.query.bucket || 'dia').toLowerCase(); // dia | semana
+  const dias = Math.max(1, Math.min(180, +req.query.dias || 30));
+  const ahora = new Date();
+  const desde = new Date(); desde.setDate(desde.getDate() - dias);
+  const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
+  const ventas = db.sales.filter(s => s.createdAt && activos.has(s.clientId) && new Date(s.createdAt) >= desde);
+  const buckets = {};
+  ventas.forEach(s => {
+    const d = new Date(s.createdAt);
+    let key;
+    if (bucket === 'semana') {
+      const monday = new Date(d); monday.setDate(d.getDate() - ((d.getDay()+6) % 7));
+      key = monday.toISOString().slice(0,10);
+    } else { key = d.toISOString().slice(0,10); }
+    buckets[key] = buckets[key] || { fecha: key, creditos: 0, monto: 0 };
+    buckets[key].creditos++; buckets[key].monto += s.monto || 0;
+  });
+  // serie completa con ceros donde no hubo nada
+  const serie = [];
+  if (bucket === 'semana') {
+    const start = new Date(desde); start.setDate(start.getDate() - ((start.getDay()+6)%7));
+    for (let d = new Date(start); d <= ahora; d.setDate(d.getDate()+7)) {
+      const k = d.toISOString().slice(0,10);
+      serie.push(buckets[k] || { fecha: k, creditos: 0, monto: 0 });
+    }
+  } else {
+    for (let d = new Date(desde); d <= ahora; d.setDate(d.getDate()+1)) {
+      const k = d.toISOString().slice(0,10);
+      serie.push(buckets[k] || { fecha: k, creditos: 0, monto: 0 });
+    }
+  }
+  // breakdowns por sucursal y por cobrador
+  const porSucursal = db.sucursales.map(suc => {
+    const vs = ventas.filter(s => s.sucursalId === suc.id);
+    return { id: suc.id, nombre: suc.nombre, creditos: vs.length, monto: vs.reduce((a,s)=>a+(s.monto||0),0) };
+  }).filter(s => s.creditos > 0).sort((a,b)=>b.monto-a.monto);
+  const cobs = {};
+  ventas.forEach(s => { if (!s.prom) return; cobs[s.prom] = cobs[s.prom] || { nombre: s.prom, creditos: 0, monto: 0 }; cobs[s.prom].creditos++; cobs[s.prom].monto += s.monto||0; });
+  const porCobrador = Object.values(cobs).sort((a,b)=>b.monto-a.monto);
+  res.json({
+    bucket, dias,
+    serie,
+    totales: { creditos: ventas.length, monto: ventas.reduce((a,s)=>a+(s.monto||0),0) },
+    porSucursal, porCobrador,
+  });
+});
+
+app.get('/api/reports/refin', auth, rol('admin','supervisor'), (req, res) => {
+  const desde = req.query.desde ? new Date(req.query.desde) : new Date(Date.now() - 30*86400000);
+  const hasta = req.query.hasta ? new Date(req.query.hasta) : new Date();
+  const refins = db.movimientos.filter(m => m.forma === 'refin' && m.abono > 0).map(m => {
+    const fechaMs = _parseFechaMx(m.fecha);
+    if (fechaMs < desde.getTime() || fechaMs > hasta.getTime()+86400000) return null;
+    const oldSale = db.sales.find(s => s.id === m.saleId);
+    if (!oldSale) return null;
+    const cliente = db.clients.find(c => c.id === oldSale.clientId) || {};
+    const suc = db.sucursales.find(s => s.id === oldSale.sucursalId);
+    const nuevo = db.sales.find(s => s.refinDe === oldSale.id);
+    return {
+      fecha: m.fecha,
+      cliente: cliente.nombre || '—',
+      cobrador: oldSale.prom || '—',
+      sucursal: suc ? suc.nombre : '—',
+      oldFolio: oldSale.folio, saldoLiquidado: m.abono,
+      nuevoFolio: nuevo ? nuevo.folio : null,
+      nuevoMonto: nuevo ? nuevo.monto : 0,
+      neto: nuevo ? (nuevo.monto - m.abono) : 0,
+      operador: m.origen
+    };
+  }).filter(Boolean).sort((a,b)=>_parseFechaMx(b.fecha)-_parseFechaMx(a.fecha));
+  const totales = {
+    n: refins.length,
+    saldoLiquidado: refins.reduce((a,r)=>a+r.saldoLiquidado,0),
+    nuevoMonto: refins.reduce((a,r)=>a+r.nuevoMonto,0),
+    neto: refins.reduce((a,r)=>a+r.neto,0),
+  };
+  res.json({ desde: desde.toISOString(), hasta: hasta.toISOString(), refins, totales });
+});
+
+app.get('/api/reports/comisiones', auth, rol('admin','supervisor'), (req, res) => {
+  const periodo = req.query.periodo || 'semana';
+  const desdeMs = _desdePeriodo(periodo);
+  const tasa = (db.config && db.config.tasaCobrador) || 5; // % por defecto
+  const cobradores = db.users.filter(u => u.rol === 'cobrador' && u.activo);
+  const sucActivos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
+  const out = cobradores.map(c => {
+    const sus_sales = db.sales.filter(s => s.prom === c.nombre && sucActivos.has(s.clientId));
+    const sus_movs = db.movimientos.filter(m => {
+      const s = sus_sales.find(x => x.id === m.saleId);
+      return s && m.abono > 0 && _parseFechaMx(m.fecha) >= desdeMs;
+    });
+    const efe = sus_movs.filter(m => !m.forma || m.forma === 'efectivo').reduce((a,m)=>a+m.abono,0);
+    const tra = sus_movs.filter(m => m.forma === 'transferencia').reduce((a,m)=>a+m.abono,0);
+    const dep = sus_movs.filter(m => m.forma === 'deposito').reduce((a,m)=>a+m.abono,0);
+    const ref = sus_movs.filter(m => m.forma === 'refin').reduce((a,m)=>a+m.abono,0);
+    const total = efe + tra + dep + ref;
+    const suc = db.sucursales.find(s => s.id === c.sucursalId);
+    return { nombre: c.nombre, sucursal: suc?suc.nombre:'—', efectivo:efe, transferencia:tra, deposito:dep, refin:ref, total, comision: total * tasa/100 };
+  }).sort((a,b)=>b.total-a.total);
+  res.json({ periodo, tasa, cobradores: out, totales: {
+    efectivo: out.reduce((a,c)=>a+c.efectivo,0),
+    transferencia: out.reduce((a,c)=>a+c.transferencia,0),
+    deposito: out.reduce((a,c)=>a+c.deposito,0),
+    refin: out.reduce((a,c)=>a+c.refin,0),
+    total: out.reduce((a,c)=>a+c.total,0),
+    comision: out.reduce((a,c)=>a+c.comision,0),
+  }});
+});
+
 app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, res) => {
   const promFilter = req.query.prom;
   const cobradores = db.users.filter(u => u.rol === 'cobrador' && u.activo);
