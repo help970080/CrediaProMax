@@ -384,7 +384,24 @@ app.get('/api/mi-ruta', auth, (req, res) => {
       atraso: at.montoAtraso, diasAtraso: at.diasAtraso, cuotasAtraso: at.cuotasAtraso, cuotasDebidas: at.cuotasDebidas, cuotasPagadas: at.cuotasPagadas };
   }).filter(Boolean));
 });
-app.get('/api/cobradores', auth, (req, res) => res.json(db.users.filter(u => u.rol === 'cobrador' && u.activo).map(u => ({ id: u.id, nombre: u.nombre }))));
+app.get('/api/cobradores', auth, (req, res) => {
+  const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
+  const users = db.users.filter(u => u.rol === 'cobrador' && u.activo);
+  const lista = users.map(u => ({ id: u.id, nombre: u.nombre, sucursal: sucMap[u.sucursalId] || null, esUsuario: true }));
+  if (req.query.conCartera) {
+    const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
+    const nombresUsuario = new Set(users.map(u => u.nombre));
+    const promsCartera = {};
+    db.sales.filter(s => activos.has(s.clientId) && saldoDe(s.id) > 0 && s.prom).forEach(s => {
+      if (nombresUsuario.has(s.prom)) return;
+      promsCartera[s.prom] = promsCartera[s.prom] || { nombre: s.prom, sucursal: sucMap[s.sucursalId] || null, clientes: new Set() };
+      promsCartera[s.prom].clientes.add(s.clientId);
+    });
+    Object.values(promsCartera).forEach(p => lista.push({ nombre: p.nombre, sucursal: p.sucursal, esUsuario: false, nClientes: p.clientes.size }));
+  }
+  lista.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+  res.json(lista);
+});
 app.post('/api/sales/:id/gestion', auth, idem, (req, res) => {
   db.gestiones.push({ id: nextId('gestiones'), saleId: +req.params.id, fecha: new Date().toISOString(), tipo: req.body.tipo || 'nopago', detalle: req.body.detalle || '', por: req.user.nombre });
   markIdem(req); saveDB(); res.json({ ok: true });
