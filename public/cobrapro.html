@@ -130,6 +130,7 @@
     <button class="navitem" data-v="cartera"><span class="ic">≣</span> Cartera de crédito</button>
     <button class="navitem" data-v="estado"><span class="ic">🧾</span> Estado de cuenta</button>
     <button class="navitem" data-v="promotores"><span class="ic">⛬</span> Cobradores</button>
+    <button class="navitem" data-v="transferencias"><span class="ic">⇆</span> Transferencias</button>
     <button class="navitem" data-v="sucursales"><span class="ic">🏪</span> Sucursales</button>
     <div class="nav-lbl">Finanzas</div>
     <button class="navitem" data-v="comisiones"><span class="ic">%</span> Comisiones</button>
@@ -252,6 +253,51 @@
   </section>
 
   <!-- SUCURSALES -->
+  <section class="view" id="transferencias">
+    <div class="panel">
+      <div class="ph"><h3>Transferir clientes entre cobradores</h3><span class="hint">Uno por uno o selección múltiple · conserva todo el historial</span></div>
+      <div style="padding:10px">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+          <div style="min-width:240px">
+            <label style="font-size:.72rem;color:var(--dim);display:block;margin-bottom:4px">Ver cartera completa de un cobrador</label>
+            <select id="tr-filtro-cob" style="width:100%;padding:10px;background:var(--surf-2);border:1px solid var(--line);border-radius:8px;color:var(--ink);font-family:inherit" onchange="trVerCartera()"><option value="">— elige cobrador —</option></select>
+          </div>
+          <div style="flex:1;min-width:220px">
+            <label style="font-size:.72rem;color:var(--dim);display:block;margin-bottom:4px">O buscar cliente (nombre, teléfono, folio)</label>
+            <input id="tr-q" placeholder="Escribe para buscar…" style="width:100%;padding:10px;background:var(--surf-2);border:1px solid var(--line);border-radius:8px;color:var(--ink);font-family:inherit" oninput="trBuscar()">
+          </div>
+        </div>
+        <div id="tr-toolbar" style="display:none;gap:10px;margin-top:12px;align-items:center;flex-wrap:wrap">
+          <button class="btn" onclick="trSelTodos(true)">Seleccionar todos</button>
+          <button class="btn" onclick="trSelTodos(false)">Limpiar selección</button>
+          <span id="tr-count" style="font-size:.8rem;color:var(--dim)"></span>
+        </div>
+        <div id="tr-resultados" style="margin-top:12px"><div style="color:var(--faint);padding:12px;font-size:.85rem">Elige un cobrador o busca un cliente para empezar.</div></div>
+      </div>
+    </div>
+
+    <!-- Barra de transferencia en lote -->
+    <div class="panel" id="tr-batchbar" style="display:none;position:sticky;bottom:12px;z-index:50;border-color:var(--acc);box-shadow:0 6px 24px rgba(0,0,0,.3)">
+      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;padding:6px">
+        <div style="font-weight:600;font-size:1rem"><span id="tr-batch-n">0</span> cliente(s) seleccionado(s)</div>
+        <div style="min-width:220px">
+          <label style="font-size:.7rem;color:var(--dim);display:block;margin-bottom:4px">Transferir a cobrador</label>
+          <select id="tr-batch-dest" style="width:100%;padding:9px;background:var(--surf-2);border:1px solid var(--line);border-radius:7px;color:var(--ink);font-family:inherit"></select>
+        </div>
+        <div style="flex:1;min-width:180px">
+          <label style="font-size:.7rem;color:var(--dim);display:block;margin-bottom:4px">Motivo (opcional)</label>
+          <input id="tr-batch-motivo" placeholder="Ej. baja de cobrador, reparto de ruta…" style="width:100%;padding:9px;background:var(--surf-2);border:1px solid var(--line);border-radius:7px;color:var(--ink);font-family:inherit">
+        </div>
+        <button class="btn gold" style="padding:11px 18px" onclick="trTransferirLote()">⇆ Transferir lote</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><h3>Historial de transferencias</h3><button class="btn" onclick="trCargarLog()">↻ Actualizar</button></div>
+      <table><thead><tr><th>Fecha</th><th>Cliente</th><th>De cobrador</th><th>A cobrador</th><th class="n">Créditos</th><th>Autorizó</th><th>Motivo</th></tr></thead><tbody id="tr-log"></tbody></table>
+    </div>
+  </section>
+
   <section class="view" id="sucursales">
     <div class="kpis" id="suc-kpis"></div>
     <div class="panel"><div class="ph"><h3>Sucursales</h3><button class="btn" onclick="exportCSV('suc')">⬇ CSV</button></div>
@@ -859,6 +905,106 @@ function rpExportCSV(){
 }
 function rpImprimirActual(){ window.print(); }
 
+/* ===== TRANSFERENCIAS de clientes entre cobradores (individual + lote) ===== */
+let _trCobradores=[], _trBT=null, _trClientes=[], _trSel=new Set();
+async function trInit(){
+  if(!_trCobradores.length){
+    try{ _trCobradores=await apiU('GET','/api/cobradores'); }catch(e){ _trCobradores=[]; }
+  }
+  const sel=$('tr-filtro-cob');
+  if(sel && sel.options.length<=1){
+    sel.innerHTML='<option value="">— elige cobrador —</option>'+_trCobradores.map(c=>`<option value="${c.nombre}">${c.nombre}${c.sucursal?' ('+c.sucursal+')':''}</option>`).join('');
+  }
+  const bd=$('tr-batch-dest');
+  if(bd) bd.innerHTML=_trCobradores.map(c=>`<option value="${c.nombre}">${c.nombre}${c.sucursal?' ('+c.sucursal+')':''}</option>`).join('');
+}
+function trBuscar(){ clearTimeout(_trBT); _trBT=setTimeout(()=>{ $('tr-filtro-cob').value=''; _trBuscar(); },260); }
+async function _trBuscar(){
+  const q=($('tr-q').value||'').trim();
+  if(q.length<2){ $('tr-resultados').innerHTML='<div style="color:var(--faint);padding:12px;font-size:.85rem">Escribe al menos 2 letras.</div>'; $('tr-toolbar').style.display='none'; return; }
+  try{ _trClientes=await apiU('GET','/api/clients?search='+encodeURIComponent(q)); _trSel.clear(); trPintar(); }
+  catch(e){ $('tr-resultados').innerHTML='<div style="color:var(--red);padding:12px">'+e.message+'</div>'; }
+}
+async function trVerCartera(){
+  const prom=$('tr-filtro-cob').value;
+  if(!prom){ $('tr-resultados').innerHTML='<div style="color:var(--faint);padding:12px;font-size:.85rem">Elige un cobrador o busca un cliente.</div>'; $('tr-toolbar').style.display='none'; return; }
+  $('tr-q').value='';
+  try{ _trClientes=await apiU('GET','/api/clients?prom='+encodeURIComponent(prom)); _trSel.clear(); trPintar(); }
+  catch(e){ $('tr-resultados').innerHTML='<div style="color:var(--red);padding:12px">'+e.message+'</div>'; }
+}
+function trPintar(){
+  const cont=$('tr-resultados');
+  if(!_trClientes.length){ cont.innerHTML='<div style="color:var(--faint);padding:12px">Sin clientes.</div>'; $('tr-toolbar').style.display='none'; return; }
+  $('tr-toolbar').style.display='flex';
+  cont.innerHTML=_trClientes.map(c=>{
+    const creds=(c.creditos||[]).filter(cr=>cr.saldo>0);
+    const credTxt = creds.length? creds.map(cr=>`${cr.folio} · ${fmt(cr.saldo)}`).join(' · ') : 'sin créditos activos';
+    const opts=_trCobradores.filter(co=>co.nombre!==c.prom).map(co=>`<option value="${co.nombre}">${co.nombre}</option>`).join('');
+    const checked=_trSel.has(c.id)?'checked':'';
+    const dis=creds.length?'':'disabled';
+    return `<div style="border:1px solid ${_trSel.has(c.id)?'var(--acc)':'var(--line)'};border-radius:10px;padding:12px;margin-bottom:9px;background:var(--surf-1);display:flex;gap:12px;align-items:flex-start">
+      <input type="checkbox" ${checked} ${dis} onchange="trToggle(${c.id},this.checked)" style="margin-top:4px;width:18px;height:18px;cursor:pointer;accent-color:var(--acc)">
+      <div style="flex:1">
+        <div style="font-weight:600">${c.nombre}</div>
+        <div style="font-size:.74rem;color:var(--dim);margin-top:2px">📞 ${c.tel||'—'} · ${[c.calle,c.col].filter(Boolean).join(', ')||'sin domicilio'}</div>
+        <div style="font-size:.74rem;margin-top:3px">Cobrador: <b style="color:var(--acc)">${c.prom||'sin asignar'}</b> · ${_sucMap[c.sucursalId]||'—'} · <span style="color:var(--dim)">${creds.length} créd: ${credTxt}</span></div>
+      </div>
+      <div style="min-width:200px;text-align:right">
+        <select id="tr-dest-${c.id}" style="width:100%;padding:7px;background:var(--surf-2);border:1px solid var(--line);border-radius:7px;color:var(--ink);font-family:inherit;margin-bottom:5px;font-size:.8rem">${opts||'<option>Sin otros cobradores</option>'}</select>
+        <button class="btn" style="width:100%;font-size:.78rem;padding:7px" onclick="trTransferirUno(${c.id},'${(c.nombre||'').replace(/'/g,'')}')" ${dis}>⇆ Transferir solo este</button>
+      </div>
+    </div>`;
+  }).join('');
+  trActualizarBarra();
+}
+function trToggle(id,on){ if(on)_trSel.add(id); else _trSel.delete(id); trActualizarBarra(); trPintarSel(id,on); }
+function trPintarSel(id,on){ /* borde visual sin re-render completo */ }
+function trSelTodos(on){
+  _trSel.clear();
+  if(on) _trClientes.filter(c=>(c.creditos||[]).some(cr=>cr.saldo>0)).forEach(c=>_trSel.add(c.id));
+  trPintar();
+}
+function trActualizarBarra(){
+  const n=_trSel.size;
+  $('tr-count').textContent = n? `${n} seleccionado(s)` : '';
+  $('tr-batch-n').textContent=n;
+  $('tr-batchbar').style.display = n>0 ? 'block':'none';
+}
+async function trTransferirUno(clientId, nombre){
+  const dest=$('tr-dest-'+clientId)?.value;
+  if(!dest){ alert('Selecciona el cobrador destino'); return; }
+  if(!confirm(`¿Transferir a "${nombre}" al cobrador ${dest}?\n\nTodos sus créditos vigentes y su historial pasan a la ruta del nuevo cobrador.`)) return;
+  try{
+    const r=await apiU('POST','/api/transferencias',{clientId,nuevoProm:dest});
+    alert(`✓ ${nombre} transferido a ${dest} · ${r.transferidos} crédito(s).`);
+    if($('tr-filtro-cob').value) trVerCartera(); else _trBuscar();
+    trCargarLog();
+  }catch(e){ alert(e.message); }
+}
+async function trTransferirLote(){
+  const dest=$('tr-batch-dest').value;
+  const motivo=$('tr-batch-motivo').value||'';
+  const ids=[..._trSel];
+  if(!ids.length){ alert('No hay clientes seleccionados'); return; }
+  if(!dest){ alert('Selecciona el cobrador destino'); return; }
+  if(!confirm(`¿Transferir ${ids.length} cliente(s) al cobrador ${dest}?\n\nTodos sus créditos vigentes y su historial pasan al nuevo cobrador.`)) return;
+  try{
+    const r=await apiU('POST','/api/transferencias/lote',{clientIds:ids,nuevoProm:dest,motivo});
+    alert(`✓ ${r.totalClientes} cliente(s) transferido(s) a ${dest}\n${r.totalCreditos} crédito(s) reasignado(s).`);
+    _trSel.clear(); $('tr-batch-motivo').value='';
+    if($('tr-filtro-cob').value) trVerCartera(); else _trBuscar();
+    trCargarLog();
+  }catch(e){ alert(e.message); }
+}
+async function trCargarLog(){
+  try{
+    const log=await apiU('GET','/api/transferencias');
+    $('tr-log').innerHTML = log.length
+      ? log.map(t=>`<tr><td class="mono" style="font-size:.76rem">${new Date(t.fecha).toLocaleString('es-MX')}</td><td class="nm">${t.cliente}${t.lote?' <span class="pill w" style="font-size:.6rem">LOTE</span>':''}</td><td>${t.de}</td><td style="color:var(--acc)">${t.a}</td><td class="n">${t.nCreditos}</td><td class="sn">${t.por}</td><td class="sn">${t.motivo||'—'}</td></tr>`).join('')
+      : '<tr><td colspan="7" style="color:var(--faint);padding:18px;text-align:center">Sin transferencias registradas.</td></tr>';
+  }catch(e){ $('tr-log').innerHTML='<tr><td colspan="7" style="color:var(--red);padding:12px">'+e.message+'</td></tr>'; }
+}
+
 /* ===== ESTADO DE CUENTA: cargos, abonos y moratorio automático ===== */
 let _ecSales=[], ecActual=null, _ecLib=null;
 async function ecInit(){
@@ -1059,6 +1205,7 @@ document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
   if(n.dataset.v==='estado') ecInit();
   if(n.dataset.v==='conciliacion') cargarCortes();
   if(n.dataset.v==='reportes') renderReportesLive();
+  if(n.dataset.v==='transferencias'){ _trSel.clear(); trInit(); $('tr-resultados').innerHTML='<div style="color:var(--faint);padding:12px;font-size:.85rem">Elige un cobrador o busca un cliente para empezar.</div>'; $('tr-toolbar').style.display='none'; $('tr-batchbar').style.display='none'; trCargarLog(); }
 });
 document.querySelectorAll('#period button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#period button').forEach(x=>x.classList.remove('on'));b.classList.add('on');period=b.dataset.p;render();});
 ['c-cob','c-meta','c-bono','c-mora','c-coloc'].forEach(id=>document.getElementById(id).oninput=render);
