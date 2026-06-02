@@ -908,15 +908,17 @@ function rpImprimirActual(){ window.print(); }
 /* ===== TRANSFERENCIAS de clientes entre cobradores (individual + lote) ===== */
 let _trCobradores=[], _trBT=null, _trClientes=[], _trSel=new Set();
 async function trInit(){
-  if(!_trCobradores.length){
-    try{ _trCobradores=await apiU('GET','/api/cobradores'); }catch(e){ _trCobradores=[]; }
-  }
+  try{ _trCobradores=await apiU('GET','/api/cobradores?conCartera=1'); }catch(e){ _trCobradores=[]; }
+  const opt=c=>`<option value="${c.nombre}">${c.nombre}${c.sucursal?' · '+c.sucursal:''}${c.esUsuario===false?' (sin usuario)':''}</option>`;
   const sel=$('tr-filtro-cob');
-  if(sel && sel.options.length<=1){
-    sel.innerHTML='<option value="">— elige cobrador —</option>'+_trCobradores.map(c=>`<option value="${c.nombre}">${c.nombre}${c.sucursal?' ('+c.sucursal+')':''}</option>`).join('');
+  if(sel){
+    sel.innerHTML='<option value="">— elige cobrador —</option>'+_trCobradores.map(opt).join('');
   }
   const bd=$('tr-batch-dest');
-  if(bd) bd.innerHTML=_trCobradores.map(c=>`<option value="${c.nombre}">${c.nombre}${c.sucursal?' ('+c.sucursal+')':''}</option>`).join('');
+  if(bd) bd.innerHTML=_trCobradores.length? _trCobradores.map(opt).join('') : '<option value="">No hay cobradores</option>';
+  if(!_trCobradores.length){
+    $('tr-resultados').innerHTML='<div style="color:var(--faint);padding:16px;font-size:.85rem;line-height:1.6">No hay cobradores en el sistema todavía.<br>Crea usuarios con rol <b>cobrador</b> en la sección <b>Usuarios</b>, o captura créditos asignándoles un cobrador desde Sucursal. En cuanto existan, aparecerán aquí.</div>';
+  }
 }
 function trBuscar(){ clearTimeout(_trBT); _trBT=setTimeout(()=>{ $('tr-filtro-cob').value=''; _trBuscar(); },260); }
 async function _trBuscar(){
@@ -1193,7 +1195,7 @@ function sim(){const t=$('s-tipo').value,monto=+$('s-monto').value||0,plazo=+$('
 }
 
 /* NAV + EVENTOS */
-const titles={resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo']};
+const titles={resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo']};
 document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
   document.querySelectorAll('.navitem').forEach(x=>x.classList.remove('on'));
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
