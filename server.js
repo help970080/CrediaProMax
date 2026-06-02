@@ -140,7 +140,10 @@ app.get('/api/sucursales', auth, (req, res) => res.json(db.sucursales));
 /* ---------- Clientes / cartera ---------- */
 app.get('/api/clients', auth, (req, res) => {
   const q = (req.query.search || '').toLowerCase();
-  const out = db.clients.filter(c => c.activo !== false).filter(c => !q || [c.nombre, c.tel, c.calle, c.col, c.prom].join(' ').toLowerCase().includes(q))
+  const prom = req.query.prom;
+  const out = db.clients.filter(c => c.activo !== false)
+    .filter(c => !prom || c.prom === prom)
+    .filter(c => !q || [c.nombre, c.tel, c.calle, c.col, c.prom].join(' ').toLowerCase().includes(q))
     .map(c => ({ ...c, creditos: db.sales.filter(s => s.clientId === c.id).map(s => ({ ...s, saldo: saldoDe(s.id) })) }));
   res.json(out);
 });
@@ -727,6 +730,78 @@ app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, 
 
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
 
+/* ---------- Transferencias de cliente entre cobradores ---------- */
+app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
+  const { clientId, nuevoProm, nuevaSucursalId, motivo } = req.body;
+  const c = db.clients.find(x => x.id === +clientId);
+  if (!c) return res.status(404).json({ error: 'Cliente no encontrado' });
+  if (!nuevoProm) return res.status(400).json({ error: 'Indica el cobrador destino' });
+  const deProm = c.prom || '—';
+  if (nuevoProm === deProm && (!nuevaSucursalId || +nuevaSucursalId === c.sucursalId)) {
+    return res.status(400).json({ error: 'El cliente ya está asignado a ese cobrador' });
+  }
+  const fecha = new Date().toISOString();
+  // reasigna el cliente y TODOS sus créditos vigentes (saldo > 0); el historial de movimientos queda intacto (van por saleId)
+  const activosSales = db.sales.filter(s => s.clientId === c.id && saldoDe(s.id) > 0);
+  activosSales.forEach(s => {
+    s.historialCobrador = s.historialCobrador || [];
+    s.historialCobrador.push({ de: s.prom || '—', a: nuevoProm, fecha, por: req.user.nombre });
+    s.prom = nuevoProm;
+    if (nuevaSucursalId) s.sucursalId = +nuevaSucursalId;
+  });
+  c.prom = nuevoProm;
+  if (nuevaSucursalId) c.sucursalId = +nuevaSucursalId;
+  db.transferencias = db.transferencias || [];
+  const reg = {
+    id: nextId('transferencias'), clientId: c.id, cliente: c.nombre,
+    de: deProm, a: nuevoProm, nCreditos: activosSales.length,
+    fecha, por: req.user.nombre, motivo: motivo || ''
+  };
+  db.transferencias.push(reg);
+  saveDB();
+  res.status(201).json({ ok: true, transferidos: activosSales.length, registro: reg });
+});
+app.get('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
+  const log = (db.transferencias || []).slice().reverse();
+  res.json(log);
+});
+app.post('/api/transferencias/lote', auth, rol('admin', 'supervisor'), (req, res) => {
+  const { clientIds, nuevoProm, nuevaSucursalId, motivo } = req.body;
+  if (!Array.isArray(clientIds) || !clientIds.length) return res.status(400).json({ error: 'Selecciona al menos un cliente' });
+  if (!nuevoProm) return res.status(400).json({ error: 'Indica el cobrador destino' });
+  const fecha = new Date().toISOString();
+  let totalClientes = 0, totalCreditos = 0;
+  const fuentes = new Set(); const detalles = [];
+  clientIds.forEach(cid => {
+    const c = db.clients.find(x => x.id === +cid);
+    if (!c) return;
+    if (c.prom === nuevoProm && (!nuevaSucursalId || +nuevaSucursalId === c.sucursalId)) return;
+    const deProm = c.prom || '—'; fuentes.add(deProm);
+    const activos = db.sales.filter(s => s.clientId === c.id && saldoDe(s.id) > 0);
+    activos.forEach(s => {
+      s.historialCobrador = s.historialCobrador || [];
+      s.historialCobrador.push({ de: s.prom || '—', a: nuevoProm, fecha, por: req.user.nombre });
+      s.prom = nuevoProm;
+      if (nuevaSucursalId) s.sucursalId = +nuevaSucursalId;
+    });
+    c.prom = nuevoProm;
+    if (nuevaSucursalId) c.sucursalId = +nuevaSucursalId;
+    totalClientes++; totalCreditos += activos.length;
+    detalles.push({ cliente: c.nombre, de: deProm, nCreditos: activos.length });
+  });
+  if (!totalClientes) return res.status(400).json({ error: 'Ningún cliente requería transferencia (ya estaban asignados al destino)' });
+  db.transferencias = db.transferencias || [];
+  const deTxt = fuentes.size === 1 ? [...fuentes][0] : `${fuentes.size} cobradores`;
+  const reg = {
+    id: nextId('transferencias'), clientId: null,
+    cliente: `Lote · ${totalClientes} cliente(s)`, de: deTxt, a: nuevoProm,
+    nCreditos: totalCreditos, fecha, por: req.user.nombre, motivo: motivo || '', lote: true, detalles
+  };
+  db.transferencias.push(reg);
+  saveDB();
+  res.status(201).json({ ok: true, totalClientes, totalCreditos, registro: reg });
+});
+
 // Sirve el portal (index.html) en "/" y en cualquier ruta que NO sea /api
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api')) return next();
@@ -744,6 +819,7 @@ app.get('*', (req, res, next) => {
     // normalización para DBs ya existentes con esquema previo
     db.cortes = db.cortes || [];
     db.gestiones = db.gestiones || [];
+    db.transferencias = db.transferencias || [];
     db.config = db.config || { corteAutoHora: '19:00', corteAutoDias: [1,2,3,4,5,6] };
     db._idem = db._idem || {};
   }
