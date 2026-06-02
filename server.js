@@ -146,7 +146,10 @@ app.get('/api/clients', auth, (req, res) => {
 });
 app.get('/api/sales', auth, (req, res) => {
   const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
-  res.json(db.sales.filter(s => activos.has(s.clientId)).map(s => ({ ...s, saldo: saldoDe(s.id), cliente: (db.clients.find(c => c.id === s.clientId) || {}).nombre })));
+  res.json(db.sales.filter(s => activos.has(s.clientId)).map(s => {
+    const c = db.clients.find(x => x.id === s.clientId) || {};
+    return { ...s, saldo: saldoDe(s.id), cliente: c.nombre, tel: c.tel || '', calle: c.calle || '', col: c.col || '' };
+  }));
 });
 app.delete('/api/clients/:id', auth, rol('admin', 'supervisor'), (req, res) => {
   const id = +req.params.id;
@@ -156,9 +159,56 @@ app.delete('/api/clients/:id', auth, rol('admin', 'supervisor'), (req, res) => {
   saveDB();
   res.json({ ok: true });
 });
+app.patch('/api/clients/:id', auth, rol('admin', 'supervisor'), (req, res) => {
+  const id = +req.params.id;
+  const c = db.clients.find(x => x.id === id);
+  if (!c) return res.status(404).json({ error: 'Cliente no encontrado' });
+  const { nombre, tel, calle, col, prom, sucursalId } = req.body;
+  // si cambia el teléfono, validar que no choque con otro cliente activo
+  if (tel !== undefined && tel !== c.tel) {
+    const telNorm = String(tel || '').replace(/\D/g, '');
+    if (telNorm.length >= 10) {
+      const dup = db.clients.find(x => x.id !== id && x.activo !== false && (x.tel || '').replace(/\D/g, '') === telNorm);
+      if (dup) return res.status(409).json({ error: `El teléfono ${tel} ya pertenece a "${dup.nombre}"` });
+    }
+  }
+  const antesNombre = c.nombre;
+  if (nombre !== undefined) c.nombre = nombre;
+  if (tel !== undefined) c.tel = tel;
+  if (calle !== undefined) c.calle = calle;
+  if (col !== undefined) c.col = col;
+  if (sucursalId !== undefined) c.sucursalId = +sucursalId;
+  // si cambia el cobrador, propaga a sus créditos vigentes (reasignación de cartera)
+  if (prom !== undefined && prom !== c.prom) {
+    c.prom = prom;
+    db.sales.filter(s => s.clientId === id && saldoDe(s.id) > 0).forEach(s => { s.prom = prom; if (sucursalId !== undefined) s.sucursalId = +sucursalId; });
+  } else if (sucursalId !== undefined) {
+    db.sales.filter(s => s.clientId === id && saldoDe(s.id) > 0).forEach(s => { s.sucursalId = +sucursalId; });
+  }
+  c.editadoAt = new Date().toISOString(); c.editadoBy = req.user.nombre;
+  saveDB();
+  res.json({ ok: true, cliente: c });
+});
 app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
-  const { nombre, tel, calle, col, sucursalId, prom, tipo, plazo, monto, dias } = req.body;
+  const { nombre, tel, calle, col, sucursalId, prom, tipo, plazo, monto, dias, force } = req.body;
   if (!nombre || !calle || !col) return res.status(400).json({ error: 'Domicilio (calle y colonia) obligatorio en la venta' });
+  // Validación: teléfono ya ocupado por otro cliente / crédito activo en otra sucursal
+  const telNorm = String(tel || '').replace(/\D/g, '');
+  if (telNorm.length >= 10 && !force) {
+    const dup = db.clients.find(c => c.activo !== false && (c.tel || '').replace(/\D/g, '') === telNorm);
+    if (dup) {
+      const sucDup = db.sucursales.find(s => s.id === dup.sucursalId);
+      const credAct = db.sales.find(s => s.clientId === dup.id && saldoDe(s.id) > 0);
+      const mismaSuc = String(dup.sucursalId) === String(sucursalId || req.user.sucursalId || 1);
+      return res.status(409).json({
+        error: 'cliente_duplicado',
+        detalle: `El teléfono ${tel} ya pertenece a "${dup.nombre}"${sucDup ? ' (sucursal ' + sucDup.nombre + ')' : ''}.` +
+          (credAct ? ` Tiene un crédito ACTIVO ${credAct.folio} con saldo $${Math.round(saldoDe(credAct.id))}${!mismaSuc ? ' en OTRA sucursal' : ''}.` : ' Sin crédito activo.'),
+        clienteExistente: { id: dup.id, nombre: dup.nombre, sucursalId: dup.sucursalId, sucursal: sucDup ? sucDup.nombre : null, tieneCreditoActivo: !!credAct, folioActivo: credAct ? credAct.folio : null, otraSucursal: !mismaSuc },
+        puedeForzar: req.user.rol === 'admin' || req.user.rol === 'supervisor'
+      });
+    }
+  }
   const r = calcCredito(tipo, +plazo, +monto, +dias);
   const client = { id: nextId('clients'), nombre, tel: tel || '', calle, col, sucursalId: sucursalId || req.user.sucursalId || 1, prom: prom || '' };
   db.clients.push(client);
@@ -205,21 +255,25 @@ app.post('/api/sales/:id/pago', auth, idem, (req, res) => {
     return res.status(403).json({ error: 'Solo administrador o supervisor pueden registrar ajustes' });
   }
   const sale = db.sales.find(s => s.id === id); if (!sale) return res.status(404).json({ error: 'Crédito no encontrado' });
-  db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: new Date().toLocaleDateString('es-MX'), concepto: 'Abono', origen: req.user.nombre, cargo: 0, abono: +monto, forma: forma || 'efectivo' });
-  const sid = String(sale.sucursalId || 1); const f = forma || 'efectivo';
-  db.caja[sid] = db.caja[sid] || { inicial: 0, efectivo: 0, banco: 0, entregas: 0 };
+  const f = forma || 'efectivo';
+  const sidCredito = String(sale.sucursalId || 1);
+  // El dinero FÍSICO entra a la caja de QUIEN RECIBE el pago (no a la del crédito).
+  const sidCobro = String(req.user.sucursalId || sidCredito);
+  db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: new Date().toLocaleDateString('es-MX'), concepto: 'Abono', origen: req.user.nombre, cargo: 0, abono: +monto, forma: f, sucursalCobro: +sidCobro, sucursalCredito: +sidCredito });
+  db.caja[sidCobro] = db.caja[sidCobro] || { inicial: 0, efectivo: 0, banco: 0, entregas: 0 };
   if (req.user.rol === 'cobrador') {
-    // cobro en ruta: el efectivo NO entra a caja, va a "por entregar" a nombre del cobrador
+    // cobro en ruta: el efectivo NO entra a caja, va a "por entregar" a nombre del cobrador en SU sucursal
     if (f === 'efectivo') {
-      let pe = db.porEntregar.find(p => p.prom === req.user.nombre && String(p.sucursalId) === sid);
-      if (pe) pe.monto += +monto; else db.porEntregar.push({ id: nextId('porEntregar'), sucursalId: +sid, prom: req.user.nombre, monto: +monto });
-    } else if (f === 'transferencia' || f === 'deposito') { db.caja[sid].banco += +monto; }
+      let pe = db.porEntregar.find(p => p.prom === req.user.nombre && String(p.sucursalId) === sidCobro);
+      if (pe) pe.monto += +monto; else db.porEntregar.push({ id: nextId('porEntregar'), sucursalId: +sidCobro, prom: req.user.nombre, monto: +monto });
+    } else if (f === 'transferencia' || f === 'deposito') { db.caja[sidCobro].banco += +monto; }
   } else {
-    if (f === 'efectivo') db.caja[sid].efectivo += +monto;
-    else if (f === 'transferencia' || f === 'deposito') db.caja[sid].banco += +monto;
+    // ventanilla / admin / supervisor: el dinero entra a la caja de la sucursal que lo recibió
+    if (f === 'efectivo') db.caja[sidCobro].efectivo += +monto;
+    else if (f === 'transferencia' || f === 'deposito') db.caja[sidCobro].banco += +monto;
   }
   markIdem(req); saveDB();
-  res.status(201).json({ ok: true, saldo: saldoDe(id) });
+  res.status(201).json({ ok: true, saldo: saldoDe(id), cobroCruzado: sidCobro !== sidCredito });
 });
 
 /* ---------- REFIN: liquida el saldo del crédito viejo y genera uno nuevo ---------- */
