@@ -218,7 +218,7 @@ app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) 
   const folio = 'F-' + (1100 + nextId('sales'));
   const sale = { id: nextId('sales'), folio, clientId: client.id, tipo, plazo: +plazo, monto: +monto, cuota: r.cuota, total: r.total, prom: client.prom, sucursalId: client.sucursalId, createdAt: new Date().toISOString() };
   db.sales.push(sale);
-  db.movimientos.push({ id: nextId('movimientos'), saleId: sale.id, fecha: new Date().toLocaleDateString('es-MX'), concepto: 'Disposición de crédito', origen: 'Sucursal', cargo: r.total, abono: 0 });
+  db.movimientos.push({ id: nextId('movimientos'), saleId: sale.id, fecha: fechaMxHoyDDMM(), concepto: 'Disposición de crédito', origen: 'Sucursal', cargo: r.total, abono: 0 });
   saveDB();
   res.status(201).json({ ...sale, saldo: saldoDe(sale.id) });
 });
@@ -258,11 +258,15 @@ app.post('/api/sales/:id/pago', auth, idem, (req, res) => {
     return res.status(403).json({ error: 'Solo administrador o supervisor pueden registrar ajustes' });
   }
   const sale = db.sales.find(s => s.id === id); if (!sale) return res.status(404).json({ error: 'Crédito no encontrado' });
+  // Regla: tras entregar su corte del día, el cobrador no puede registrar más cobros.
+  if (req.user.rol === 'cobrador' && corteHechoHoy(req.user.nombre)) {
+    return res.status(423).json({ error: 'Ya entregaste tu corte de hoy. No puedes registrar más cobros hasta mañana. Si recibiste dinero después del corte, repórtalo a tu sucursal.' });
+  }
   const f = forma || 'efectivo';
   const sidCredito = String(sale.sucursalId || 1);
   // El dinero FÍSICO entra a la caja de QUIEN RECIBE el pago (no a la del crédito).
   const sidCobro = String(req.user.sucursalId || sidCredito);
-  db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: new Date().toLocaleDateString('es-MX'), concepto: 'Abono', origen: req.user.nombre, cargo: 0, abono: +monto, forma: f, sucursalCobro: +sidCobro, sucursalCredito: +sidCredito });
+  db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: fechaMxHoyDDMM(), concepto: 'Abono', origen: req.user.nombre, cargo: 0, abono: +monto, forma: f, sucursalCobro: +sidCobro, sucursalCredito: +sidCredito });
   db.caja[sidCobro] = db.caja[sidCobro] || { inicial: 0, efectivo: 0, banco: 0, entregas: 0 };
   if (req.user.rol === 'cobrador') {
     // cobro en ruta: el efectivo NO entra a caja, va a "por entregar" a nombre del cobrador en SU sucursal
@@ -297,7 +301,7 @@ app.post('/api/sales/:id/refin', auth, rol('admin','supervisor','sucursal'), ide
   const prom = nuevoProm || old.prom;
   const r = calcCredito(tipo, plazo, monto, +nuevoDias || plazo);
 
-  const hoy = new Date().toLocaleDateString('es-MX');
+  const hoy = fechaMxHoyDDMM();
   // 1. liquida el viejo con un abono forma=refin
   db.movimientos.push({
     id: nextId('movimientos'), saleId: id, fecha: hoy,
@@ -337,22 +341,22 @@ app.post('/api/sales/:id/refin', auth, rol('admin','supervisor','sucursal'), ide
 /* ---------- Supervisor: cargo / abono / condonación ---------- */
 app.post('/api/sales/:id/cargo', auth, rol('admin', 'supervisor'), idem, (req, res) => {
   const id = +req.params.id; const { monto, concepto } = req.body;
-  db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: new Date().toLocaleDateString('es-MX'), concepto: concepto || 'Cargo manual', origen: 'Supervisor: ' + req.user.nombre, cargo: +monto, abono: 0 });
+  db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: fechaMxHoyDDMM(), concepto: concepto || 'Cargo manual', origen: 'Supervisor: ' + req.user.nombre, cargo: +monto, abono: 0 });
   markIdem(req); saveDB(); res.json({ ok: true, saldo: saldoDe(id) });
 });
 app.post('/api/sales/:id/abono', auth, rol('admin', 'supervisor'), idem, (req, res) => {
   const id = +req.params.id;
-  db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: new Date().toLocaleDateString('es-MX'), concepto: 'Abono manual', origen: 'Supervisor: ' + req.user.nombre, cargo: 0, abono: +req.body.monto });
+  db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: fechaMxHoyDDMM(), concepto: 'Abono manual', origen: 'Supervisor: ' + req.user.nombre, cargo: 0, abono: +req.body.monto });
   markIdem(req); saveDB(); res.json({ ok: true, saldo: saldoDe(id) });
 });
 app.post('/api/sales/:id/condonar', auth, rol('admin', 'supervisor'), idem, (req, res) => {
   const id = +req.params.id;
-  db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: new Date().toLocaleDateString('es-MX'), concepto: 'Condonación: ' + (req.body.motivo || 'ajuste'), origen: 'Supervisor: ' + req.user.nombre, cargo: 0, abono: +req.body.monto });
+  db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: fechaMxHoyDDMM(), concepto: 'Condonación: ' + (req.body.motivo || 'ajuste'), origen: 'Supervisor: ' + req.user.nombre, cargo: 0, abono: +req.body.monto });
   markIdem(req); saveDB(); res.json({ ok: true, saldo: saldoDe(id) });
 });
 app.post('/api/sales/:id/aplicar-mora', auth, (req, res) => {
   const id = +req.params.id; const monto = +req.body.monto || 25;
-  db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: new Date().toLocaleDateString('es-MX'), concepto: 'Moratorio automático', origen: 'Sistema', cargo: monto, abono: 0, auto: true });
+  db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: fechaMxHoyDDMM(), concepto: 'Moratorio automático', origen: 'Sistema', cargo: monto, abono: 0, auto: true });
   saveDB(); res.json({ ok: true, saldo: saldoDe(id) });
 });
 
@@ -502,8 +506,13 @@ app.get('/api/reports/pagos', auth, (req,res)=>{
 });
 
 /* ---------- Cortes de cobrador ---------- */
-function fechaMxHoyDDMM(){ const d=new Date(); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`; }
-function fechaMxHoyISO(){ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+// Hora de México (CDMX/Edomex = UTC-6 todo el año desde 2023, sin horario de verano)
+function nowMx(){ return new Date(Date.now() - 6*3600*1000); }
+function fechaMxHoyDDMM(){ const d=nowMx(); return `${String(d.getUTCDate()).padStart(2,'0')}/${String(d.getUTCMonth()+1).padStart(2,'0')}/${d.getUTCFullYear()}`; }
+function fechaMxHoyISO(){ const d=nowMx(); return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`; }
+function horaMxHHMM(){ const d=nowMx(); let h=d.getUTCHours(); const m=String(d.getUTCMinutes()).padStart(2,'0'); const ap=h<12?'a.m.':'p.m.'; h=h%12||12; return `${String(h).padStart(2,'0')}:${m} ${ap}`; }
+// ¿el cobrador ya entregó su corte de hoy? (para bloquear cobros posteriores)
+function corteHechoHoy(nombre){ return !!db.cortes.find(c => c.prom === nombre && c.fecha === fechaMxHoyISO()); }
 function generarCorte(user, isAuto){
   if (!user || !user.nombre) return { error: 'Usuario inválido' };
   const fecha = fechaMxHoyISO();
@@ -516,7 +525,7 @@ function generarCorte(user, isAuto){
     id: nextId('cortes'), prom: user.nombre, sucursalId: user.sucursalId || null,
     fecha, totalEfectivo: efectivo, totalBanco: banco, npagos: pagos.length,
     items: pagos.map(m => ({ saleId: m.saleId, monto: m.abono, forma: m.forma||'efectivo' })),
-    horaEntrega: new Date().toLocaleTimeString('es-MX', { hour:'2-digit', minute:'2-digit' }),
+    horaEntrega: horaMxHHMM(),
     auto: !!isAuto, by: isAuto ? 'sistema' : 'cobrador', estado: 'pendiente', createdAt: new Date().toISOString()
   };
   db.cortes.push(corte); saveDB();
@@ -524,12 +533,12 @@ function generarCorte(user, isAuto){
 }
 function checkAutoCorte(){
   if (!db || !db.config) return;
-  const now = new Date();
+  const now = nowMx();
   const [hh, mm] = (db.config.corteAutoHora || '19:00').split(':').map(Number);
-  const dow = now.getDay();
+  const dow = now.getUTCDay();
   const dayList = db.config.corteAutoDias || [1,2,3,4,5,6];
   if (!dayList.includes(dow)) return;
-  if (now.getHours() < hh || (now.getHours() === hh && now.getMinutes() < mm)) return;
+  if (now.getUTCHours() < hh || (now.getUTCHours() === hh && now.getUTCMinutes() < mm)) return;
   db.users.filter(u => u.rol === 'cobrador' && u.activo).forEach(u => generarCorte(u, true));
 }
 setInterval(checkAutoCorte, 60_000);
