@@ -103,6 +103,9 @@
   .btn{background:var(--surf-3);border:1px solid var(--line-2);color:var(--txt);font-family:"Sora";font-size:.81rem;font-weight:500;padding:8px 14px;border-radius:8px;cursor:pointer;transition:.13s;display:inline-flex;align-items:center;gap:7px}
   .btn:hover{border-color:var(--acc);color:var(--acc)}
   .btn.gold{background:linear-gradient(140deg,var(--acc),var(--acc-d));color:#1a1408;border:none;font-weight:600}.btn.gold:hover{filter:brightness(1.07);color:#1a1408}
+  .rp-card{background:var(--surf-1);border:1px solid var(--line);border-radius:10px;padding:14px;cursor:pointer;transition:all .15s;display:flex;flex-direction:column}.rp-card:hover{border-color:var(--acc);transform:translateY(-1px);box-shadow:0 4px 14px rgba(240,180,41,.08)}.rp-ic{font-size:1.8rem;margin-bottom:4px}.rp-tt{font-size:.95rem;font-weight:600;color:var(--ink)}.rp-ds{font-size:.74rem;color:var(--dim);margin-top:3px;line-height:1.35;flex:1}
+  .rp-table{width:100%;border-collapse:collapse}.rp-table th{background:var(--surf-2);padding:8px 6px;text-align:left;font-size:.7rem;color:var(--dim);font-weight:600;border-bottom:1px solid var(--line)}.rp-table td{padding:8px 6px;border-bottom:1px solid var(--line);font-size:.82rem}.rp-table td.n{text-align:right;font-variant-numeric:tabular-nums}.rp-table tfoot td{font-weight:600;background:var(--surf-2)}
+  .bar-chart{display:flex;align-items:flex-end;gap:3px;height:140px;padding:10px 0;border-bottom:1px solid var(--line)}.bar-chart .bar{flex:1;background:var(--acc);border-radius:2px 2px 0 0;min-height:2px;position:relative}.bar-chart .bar:hover{filter:brightness(1.2)}.bar-chart .bar .tip{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);background:#000;color:#fff;padding:3px 6px;border-radius:4px;font-size:.65rem;white-space:nowrap;display:none}.bar-chart .bar:hover .tip{display:block}
   .legend{display:flex;gap:15px;flex-wrap:wrap;margin-top:11px;font-size:.77rem;color:var(--dim)}
   .legend span{display:flex;align-items:center;gap:6px}.legend i{width:10px;height:10px;border-radius:3px}
 
@@ -305,20 +308,51 @@
 
   <!-- REPORTES -->
   <section class="view" id="reportes">
+    <!-- 5 KPIs incluyendo REFIN -->
     <div class="kpis">
       <div class="kpi g"><div class="l">💵 Efectivo</div><div class="v" id="rp-efe">$0</div><div class="s">cobrado en efectivo</div></div>
       <div class="kpi b"><div class="l">🏦 Transferencia</div><div class="v" id="rp-tra">$0</div><div class="s">a banco</div></div>
       <div class="kpi v"><div class="l">🧾 Depósito</div><div class="v" id="rp-dep">$0</div><div class="s">a banco</div></div>
+      <div class="kpi" style="border-color:#b388ff"><div class="l">🔄 REFIN</div><div class="v" id="rp-ref">$0</div><div class="s">refinanciamientos del periodo</div></div>
       <div class="kpi"><div class="l">⚖ Ajustes</div><div class="v" id="rp-aju">$0</div><div class="s">sin movimiento de caja</div></div>
     </div>
+
+    <!-- Menu de reportes en tarjetas -->
     <div class="panel">
-      <div class="ph"><h3>Efectivo en tránsito — por entregar por promotora</h3><span class="hint">cobrado en ruta que aún NO está en caja</span></div>
-      <table><thead><tr><th>Promotora / cobrador</th><th>Sucursal</th><th class="n">Cobrado efectivo</th><th class="n">Entregado</th><th class="n">Por entregar</th><th>Estado</th></tr></thead><tbody id="rp-transito"></tbody><tfoot id="rp-transito-tf"></tfoot></table>
-      <div class="note">Mientras la promotora no entregue físicamente, ese efectivo se contabiliza como <b>cuenta por cobrar a su nombre</b>, no como entrada de caja de la sucursal. Aquí el admin ve quién trae dinero en tránsito.</div>
+      <div class="ph"><h3>Centro de reportes</h3><span class="hint">Solo Admin y Supervisor · genera PDFs e exporta a CSV</span></div>
+      <div id="rp-menu" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;padding:8px">
+        <div class="rp-card" onclick="abrirImprimirCartera()"><div class="rp-ic">📄</div><div class="rp-tt">Cartera por cobrador</div><div class="rp-ds">PDF imprimible · 16 últimas cuotas por cliente</div><button class="btn gold" style="margin-top:8px">Imprimir PDF</button></div>
+        <div class="rp-card" onclick="rpVerColocacion()"><div class="rp-ic">📊</div><div class="rp-tt">Colocación día/semana</div><div class="rp-ds">Tendencia de créditos otorgados · monto y volumen</div><button class="btn" style="margin-top:8px">Ver</button></div>
+        <div class="rp-card" onclick="rpVerRefin()"><div class="rp-ic">🔄</div><div class="rp-tt">REFIN del periodo</div><div class="rp-ds">Refinanciamientos · liquidación + nuevo crédito + neto</div><button class="btn" style="margin-top:8px">Ver</button></div>
+        <div class="rp-card" onclick="rpVerComisiones()"><div class="rp-ic">💵</div><div class="rp-tt">Comisiones por cobrador</div><div class="rp-ds">Cobrado, REFIN, comisión calculada · exporta CSV</div><button class="btn" style="margin-top:8px">Ver</button></div>
+        <div class="rp-card" onclick="rpVerAtraso()"><div class="rp-ic">⚠️</div><div class="rp-tt">Atraso / mora por sucursal</div><div class="rp-ds">Clientes vencidos y monto en atraso</div><button class="btn" style="margin-top:8px">Ver</button></div>
+        <div class="rp-card" onclick="exportCSV('pagos')"><div class="rp-ic">⬇</div><div class="rp-tt">Movimientos del periodo</div><div class="rp-ds">Quién pagó · hora · forma · cobrador · sucursal</div><button class="btn" style="margin-top:8px">Descargar CSV</button></div>
+      </div>
     </div>
+
+    <!-- Panel dinámico donde se pintan los reportes seleccionados -->
+    <div class="panel" id="rp-output" style="display:none">
+      <div class="ph"><h3 id="rp-out-tt">Reporte</h3>
+        <div style="display:flex;gap:6px;margin-left:auto">
+          <button class="btn" id="rp-out-print" onclick="rpImprimirActual()" style="display:none">🖨 Imprimir</button>
+          <button class="btn" id="rp-out-csv" onclick="rpExportCSV()" style="display:none">⬇ CSV</button>
+          <button class="btn" onclick="rpCerrar()">✕</button>
+        </div>
+      </div>
+      <div id="rp-out-body" style="padding:14px"></div>
+    </div>
+
+    <!-- Efectivo en tránsito en vivo -->
     <div class="panel">
-      <div class="ph"><h3>Quién pagó — movimientos del periodo</h3><button class="btn" onclick="exportCSV('pagos')">⬇ CSV</button></div>
-      <table><thead><tr><th>Hora</th><th>Cliente</th><th>Folio</th><th>Cobrado por</th><th>Forma de pago</th><th class="n">Monto</th></tr></thead><tbody id="rp-pagos"></tbody></table>
+      <div class="ph"><h3>Efectivo en tránsito — por entregar por cobrador</h3><span class="hint">cobrado en ruta que aún NO está en caja</span></div>
+      <table><thead><tr><th>Cobrador</th><th>Sucursal</th><th class="n">Por entregar</th><th>Estado</th></tr></thead><tbody id="rp-transito"></tbody></table>
+      <div class="note">Mientras el cobrador no entregue físicamente, ese efectivo se contabiliza como <b>cuenta por cobrar a su nombre</b>, no como entrada de caja de la sucursal.</div>
+    </div>
+
+    <!-- Quién pagó en vivo -->
+    <div class="panel">
+      <div class="ph"><h3>Quién pagó — últimos movimientos</h3><button class="btn" onclick="exportCSV('pagos')">⬇ CSV</button></div>
+      <table><thead><tr><th>Fecha</th><th>Cliente</th><th>Folio</th><th>Cobrado por</th><th>Forma de pago</th><th class="n">Monto</th></tr></thead><tbody id="rp-pagos"></tbody></table>
     </div>
   </section>
 
@@ -550,28 +584,7 @@ function pintaConciliacion(d){
   }).join('');
 }
 
-// ===== Reportes (lista de pagos) =====
-async function cargarReportes(){
-  try{
-    const ps=await apiU('GET','/api/dashboard?periodo='+period);
-    const r=ps.pagos_recientes||[];
-    // KPIs por forma
-    const totForma={efectivo:0,transferencia:0,deposito:0,ajuste:0};
-    r.forEach(p=>{ totForma[p.forma]=(totForma[p.forma]||0)+p.monto; });
-    $('rp-efe').textContent=fmt(totForma.efectivo);
-    $('rp-tra').textContent=fmt(totForma.transferencia);
-    $('rp-dep').textContent=fmt(totForma.deposito);
-    $('rp-aju').textContent=fmt(totForma.ajuste);
-    $('rp-transito').textContent=fmt(ps.totales.por_entregar);
-    $('rp-transito-tf').textContent=ps.por_cobrador.filter(c=>c.por_entregar>0).length+' cobradores con efectivo en tránsito';
-    $('rp-pagos').innerHTML= r.length? r.map(p=>`<tr>
-      <td class="mono" style="font-size:.78rem">${p.fecha}</td>
-      <td>${p.cliente}</td><td class="mono" style="font-size:.78rem">${p.folio}</td>
-      <td>${p.prom}</td><td>${p.sucursal}</td>
-      <td><span class="pill ${_formaCls[p.forma]||'ok'}">${_formaLbl[p.forma]||p.forma}</span></td>
-      <td class="n">${fmt(p.monto)}</td></tr>`).join('') : '<tr><td colspan="7" style="color:var(--faint);padding:18px;text-align:center">Sin pagos en el periodo seleccionado.</td></tr>';
-  }catch(e){ console.warn('reportes:',e.message); }
-}
+// ===== Reportes (replaced by renderReportesLive below — see Centro de reportes section) =====
 
 /* CARTERA conectada al backend */
 let _cartera=[], _sucMap={};
@@ -675,46 +688,134 @@ function _oneReport(r,fechaGen){
   </div>`;
 }
 
-/* REPORTES: forma de pago, efectivo en tránsito, quién pagó */
-const formaLbl={efectivo:'💵 Efectivo',transferencia:'🏦 Transferencia',deposito:'🧾 Depósito',ajuste:'⚖ Ajuste'};
-const PAGOS=[
-  {hora:'08:14',cliente:'María González',folio:'F-1042',por:'Ana Reyes',forma:'efectivo',monto:600},
-  {hora:'08:32',cliente:'Joel Ramírez',folio:'F-1063',por:'Ana Reyes',forma:'efectivo',monto:125},
-  {hora:'09:05',cliente:'Carmen Díaz',folio:'F-1055',por:'Ventanilla Chalco',forma:'transferencia',monto:750},
-  {hora:'09:21',cliente:'Pedro Jiménez',folio:'F-1043',por:'Ana Reyes',forma:'efectivo',monto:300},
-  {hora:'09:48',cliente:'Rosa Maldonado',folio:'F-1051',por:'Raúl Cárdenas',forma:'efectivo',monto:488},
-  {hora:'10:12',cliente:'Sandra Vélez',folio:'F-1080',por:'Ventanilla Ozumba',forma:'deposito',monto:675},
-  {hora:'10:39',cliente:'Ángel Rosas',folio:'F-1090',por:'Laura Ortega',forma:'efectivo',monto:540},
-  {hora:'11:02',cliente:'Norma Beltrán',folio:'F-1071',por:'Ventanilla Amecameca',forma:'efectivo',monto:750},
-  {hora:'11:30',cliente:'Iván Cortés',folio:'F-1058',por:'Sofía Pacheco',forma:'efectivo',monto:711},
-  {hora:'12:05',cliente:'Verónica Lara',folio:'F-1101',por:'Marisol Vega',forma:'ajuste',monto:200},
-  {hora:'12:44',cliente:'Gloria Méndez',folio:'F-1066',por:'Laura Ortega',forma:'efectivo',monto:146},
-  {hora:'13:18',cliente:'Fernando Gil',folio:'F-1112',por:'Ventanilla Juchitepec',forma:'transferencia',monto:750},
-];
-function renderReportes(proms){
-  const by={efectivo:0,transferencia:0,deposito:0,ajuste:0};
-  PAGOS.forEach(p=>by[p.forma]+=p.monto);
-  const f=PF[period];
-  document.getElementById('rp-efe').textContent=fmt(by.efectivo*f*3);
-  document.getElementById('rp-tra').textContent=fmt(by.transferencia*f*3);
-  document.getElementById('rp-dep').textContent=fmt(by.deposito*f*3);
-  document.getElementById('rp-aju').textContent=fmt(by.ajuste*f*3);
-  // efectivo en tránsito = cobrado − entregado por promotora
-  let totPE=0;
-  document.getElementById('rp-transito').innerHTML=proms.map(p=>{
-    const ent=p.entregado||0, pe=Math.max(0,p.cobrado-ent); totPE+=pe;
-    const est= pe<1?'<span class="pill ok">Entregado</span>':'<span class="pill w">En tránsito</span>';
-    return `<tr><td><div class="who"><div class="ava" style="background:${p.color}">${p.id}</div><div class="nm">${p.nombre}</div></div></td>
-      <td>${SUC.find(s=>s.id===p.suc).nombre}</td><td class="n">${fmt(p.cobrado)}</td><td class="n">${fmt(ent)}</td>
-      <td class="n" style="color:${pe>=1?'var(--acc)':'var(--faint)'}">${fmt(pe)}</td><td>${est}</td></tr>`;
-  }).join('');
-  document.getElementById('rp-transito-tf').innerHTML=`<tr style="border-top:2px solid var(--line-2)"><td colspan="4" style="font-weight:600;padding-top:13px">TOTAL EN TRÁNSITO</td><td class="n cm" style="padding-top:13px">${fmt(totPE)}</td><td></td></tr>`;
-  // quién pagó
-  document.getElementById('rp-pagos').innerHTML=PAGOS.map(p=>`<tr>
-    <td class="mono" style="color:var(--faint);font-size:.78rem">${p.hora}</td><td class="nm">${p.cliente}</td>
-    <td class="mono" style="font-size:.78rem">${p.folio}</td><td class="sn">${p.por}</td>
-    <td>${formaLbl[p.forma]}</td><td class="n">${fmt(p.monto)}</td></tr>`).join('');
+/* ===== REPORTES: ahora con datos reales del backend + centro de reportes ===== */
+const formaLbl={efectivo:'💵 Efectivo',transferencia:'🏦 Transferencia',deposito:'🧾 Depósito',ajuste:'⚖ Ajuste',refin:'🔄 REFIN'};
+async function renderReportesLive(){
+  try{
+    const periodo = period==='dia'?'hoy':period;
+    const d = await apiU('GET','/api/dashboard?periodo='+periodo);
+    const pagos = d.pagos_recientes||[];
+    const by={efectivo:0,transferencia:0,deposito:0,ajuste:0,refin:0};
+    pagos.forEach(p=>{ const k=(p.forma||'efectivo').toLowerCase(); if(by[k]!==undefined) by[k]+=p.monto; });
+    $('rp-efe').textContent=fmt(by.efectivo);
+    $('rp-tra').textContent=fmt(by.transferencia);
+    $('rp-dep').textContent=fmt(by.deposito);
+    $('rp-ref').textContent=fmt(by.refin);
+    $('rp-aju').textContent=fmt(by.ajuste);
+    // tránsito real
+    const cobrEnTransito = d.por_cobrador.filter(c=>c.por_entregar>0);
+    $('rp-transito').innerHTML = cobrEnTransito.length
+      ? cobrEnTransito.map(c=>`<tr><td>${c.nombre}</td><td>${c.sucursal}</td><td class="n">${fmt(c.por_entregar)}</td><td><span class="pill w">En tránsito</span></td></tr>`).join('')
+      : '<tr><td colspan="4" style="color:var(--faint);padding:18px;text-align:center">Sin efectivo en tránsito · todos cuadrados</td></tr>';
+    // quién pagó
+    $('rp-pagos').innerHTML = pagos.length
+      ? pagos.slice(0,30).map(p=>`<tr><td class="mono" style="color:var(--faint);font-size:.78rem">${p.fecha}</td><td class="nm">${p.cliente}</td><td class="mono" style="font-size:.78rem">${p.folio||'—'}</td><td class="sn">${p.prom||'—'}</td><td>${formaLbl[p.forma]||p.forma}</td><td class="n">${fmt(p.monto)}</td></tr>`).join('')
+      : '<tr><td colspan="6" style="color:var(--faint);padding:18px;text-align:center">Sin pagos en el periodo</td></tr>';
+  }catch(e){ console.warn('renderReportesLive',e); }
 }
+
+/* ===== Centro de reportes: visualizadores ===== */
+let _rpActual=null, _rpData=null;
+function rpCerrar(){ $('rp-output').style.display='none'; _rpActual=null; }
+function rpAbrir(titulo, html, opts){
+  $('rp-out-tt').textContent=titulo;
+  $('rp-out-body').innerHTML=html;
+  $('rp-out-print').style.display = opts && opts.print ? '' : 'none';
+  $('rp-out-csv').style.display = opts && opts.csv ? '' : 'none';
+  $('rp-output').style.display='block';
+  $('rp-output').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+async function rpVerColocacion(){
+  try{
+    const bucket = confirm('Aceptar = por DÍA (últimos 30 días)\nCancelar = por SEMANA (últimas 12 semanas)')?'dia':'semana';
+    const dias = bucket==='dia'?30:84;
+    const d = await apiU('GET','/api/reports/colocacion?bucket='+bucket+'&dias='+dias);
+    _rpActual='colocacion'; _rpData=d;
+    const maxMonto = Math.max(...d.serie.map(s=>s.monto), 1);
+    const bars = d.serie.map(s=>{
+      const h = (s.monto/maxMonto)*100;
+      const lbl = bucket==='dia'?s.fecha.slice(5):'sem '+s.fecha.slice(5);
+      return `<div class="bar" style="height:${Math.max(h,1)}%"><div class="tip">${lbl}<br>${s.creditos} créd · ${fmt(s.monto)}</div></div>`;
+    }).join('');
+    const totSuc = d.porSucursal.map(s=>`<tr><td>${s.nombre}</td><td class="n">${s.creditos}</td><td class="n">${fmt(s.monto)}</td></tr>`).join('') || '<tr><td colspan="3" style="color:var(--faint);padding:10px">Sin colocación en el periodo</td></tr>';
+    const totCob = d.porCobrador.slice(0,15).map(c=>`<tr><td>${c.nombre}</td><td class="n">${c.creditos}</td><td class="n">${fmt(c.monto)}</td></tr>`).join('') || '<tr><td colspan="3" style="color:var(--faint);padding:10px">—</td></tr>';
+    rpAbrir(`📊 Colocación ${bucket==='dia'?'por día (30d)':'por semana (12sem)'}`,`
+      <div style="display:grid;grid-template-columns:1fr;gap:14px">
+        <div><div style="display:flex;justify-content:space-between;margin-bottom:8px;align-items:baseline"><div style="font-size:.74rem;color:var(--dim)">TOTAL DEL PERIODO</div><div style="font-size:1.4rem;font-weight:600">${d.totales.creditos} créditos · ${fmt(d.totales.monto)}</div></div><div class="bar-chart">${bars}</div><div style="font-size:.65rem;color:var(--faint);margin-top:4px">Pasa el cursor por las barras para ver detalle</div></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <div><h4 style="margin:0 0 8px;font-size:.85rem">Por sucursal</h4><table class="rp-table"><thead><tr><th>Sucursal</th><th class="n">Créd.</th><th class="n">Monto</th></tr></thead><tbody>${totSuc}</tbody></table></div>
+          <div><h4 style="margin:0 0 8px;font-size:.85rem">Top cobradores con colocación</h4><table class="rp-table"><thead><tr><th>Cobrador</th><th class="n">Créd.</th><th class="n">Monto</th></tr></thead><tbody>${totCob}</tbody></table></div>
+        </div>
+      </div>`, {csv:true});
+  }catch(e){ alert(e.message); }
+}
+
+async function rpVerRefin(){
+  try{
+    const d = await apiU('GET','/api/reports/refin');
+    _rpActual='refin'; _rpData=d;
+    const rows = d.refins.map(r=>`<tr><td class="mono" style="font-size:.74rem">${r.fecha}</td><td class="nm">${r.cliente}</td><td>${r.cobrador}</td><td>${r.sucursal}</td><td class="mono" style="font-size:.74rem">${r.oldFolio}→${r.nuevoFolio||'—'}</td><td class="n">${fmt(r.saldoLiquidado)}</td><td class="n">${fmt(r.nuevoMonto)}</td><td class="n" style="color:var(--grn)">${fmt(r.neto)}</td></tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--faint);padding:18px">Sin REFIN en el periodo (últimos 30 días)</td></tr>';
+    rpAbrir('🔄 REFIN — refinanciamientos del periodo',`
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px">
+        <div class="kpi b" style="padding:10px"><div class="l">Operaciones</div><div class="v" style="font-size:1.25rem">${d.totales.n}</div></div>
+        <div class="kpi" style="padding:10px"><div class="l">Saldo liquidado</div><div class="v" style="font-size:1.25rem">${fmt(d.totales.saldoLiquidado)}</div></div>
+        <div class="kpi v" style="padding:10px"><div class="l">Nuevo monto otorgado</div><div class="v" style="font-size:1.25rem">${fmt(d.totales.nuevoMonto)}</div></div>
+        <div class="kpi g" style="padding:10px"><div class="l">Neto entregado al cliente</div><div class="v" style="font-size:1.25rem">${fmt(d.totales.neto)}</div></div>
+      </div>
+      <table class="rp-table"><thead><tr><th>Fecha</th><th>Cliente</th><th>Cobrador</th><th>Sucursal</th><th>Folio viejo → nuevo</th><th class="n">Liquidado</th><th class="n">Nuevo monto</th><th class="n">Neto</th></tr></thead><tbody>${rows}</tbody></table>`, {csv:true});
+  }catch(e){ alert(e.message); }
+}
+
+async function rpVerComisiones(){
+  try{
+    const periodo = period==='dia'?'hoy':period;
+    const d = await apiU('GET','/api/reports/comisiones?periodo='+periodo);
+    _rpActual='comisiones'; _rpData=d;
+    const rows = d.cobradores.map(c=>`<tr><td class="nm">${c.nombre}</td><td>${c.sucursal}</td><td class="n">${fmt(c.efectivo)}</td><td class="n">${fmt(c.transferencia+c.deposito)}</td><td class="n" style="color:#b388ff">${fmt(c.refin)}</td><td class="n"><b>${fmt(c.total)}</b></td><td class="n cm">${fmt(c.comision)}</td></tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--faint);padding:18px">Sin actividad en el periodo</td></tr>';
+    rpAbrir(`💵 Comisiones · ${periodo} (tasa ${d.tasa}%)`,`
+      <table class="rp-table"><thead><tr><th>Cobrador</th><th>Sucursal</th><th class="n">Efectivo</th><th class="n">Transf.+Dep.</th><th class="n">REFIN</th><th class="n">Total cobrado</th><th class="n">Comisión</th></tr></thead><tbody>${rows}</tbody>
+      <tfoot><tr><td colspan="2">TOTAL</td><td class="n">${fmt(d.totales.efectivo)}</td><td class="n">${fmt(d.totales.transferencia+d.totales.deposito)}</td><td class="n">${fmt(d.totales.refin)}</td><td class="n">${fmt(d.totales.total)}</td><td class="n cm">${fmt(d.totales.comision)}</td></tr></tfoot></table>
+      <div class="note" style="margin-top:10px">REFIN cuenta como cobrado para comisión del cobrador asignado, aunque la operación la realice la sucursal.</div>`, {csv:true});
+  }catch(e){ alert(e.message); }
+}
+
+async function rpVerAtraso(){
+  try{
+    const periodo = period==='dia'?'hoy':period;
+    const d = await apiU('GET','/api/dashboard?periodo='+periodo);
+    _rpActual='atraso'; _rpData=d;
+    const sucs = d.por_sucursal.map(s=>{
+      const pct = s.cartera>0 ? (s.atraso_monto/s.cartera*100):0;
+      return `<tr><td>${s.nombre}</td><td>${s.encargada}</td><td class="n">${s.creditos}</td><td class="n">${fmt(s.cartera)}</td><td class="n" style="color:${s.atraso_monto>0?'var(--red)':'var(--faint)'}">${fmt(s.atraso_monto||0)}</td><td class="n">${s.atraso_clientes||0}</td><td class="n">${pct.toFixed(1)}%</td></tr>`;
+    }).join('') || '<tr><td colspan="7" style="color:var(--faint);padding:10px">—</td></tr>';
+    const cobs = d.por_cobrador.filter(c=>c.atraso_monto>0).sort((a,b)=>b.atraso_monto-a.atraso_monto).map(c=>{
+      const pct = c.cartera>0 ? (c.atraso_monto/c.cartera*100):0;
+      return `<tr><td>${c.nombre}</td><td>${c.sucursal}</td><td class="n">${c.clientes}</td><td class="n">${fmt(c.cartera)}</td><td class="n" style="color:var(--red)">${fmt(c.atraso_monto)}</td><td class="n">${c.atraso_clientes}</td><td class="n">${pct.toFixed(1)}%</td></tr>`;
+    }).join('') || '<tr><td colspan="7" style="color:var(--grn);padding:10px">¡Sin cobradores con atraso!</td></tr>';
+    rpAbrir('⚠️ Atraso / mora por sucursal y cobrador',`
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px">
+        <div class="kpi" style="padding:10px;border-color:var(--red)"><div class="l">Atraso total</div><div class="v" style="font-size:1.3rem;color:var(--red)">${fmt(d.totales.atraso_total||0)}</div></div>
+        <div class="kpi" style="padding:10px"><div class="l">Clientes en mora</div><div class="v" style="font-size:1.3rem">${d.totales.clientes_atrasados||0}</div></div>
+        <div class="kpi" style="padding:10px"><div class="l">% sobre cartera</div><div class="v" style="font-size:1.3rem">${d.totales.saldo_pendiente>0?((d.totales.atraso_total||0)/d.totales.saldo_pendiente*100).toFixed(1):'0'}%</div></div>
+      </div>
+      <h4 style="margin:6px 0;font-size:.85rem">Por sucursal</h4><table class="rp-table"><thead><tr><th>Sucursal</th><th>Encargada</th><th class="n">Créditos</th><th class="n">Cartera</th><th class="n">Atraso</th><th class="n">Clientes mora</th><th class="n">% mora</th></tr></thead><tbody>${sucs}</tbody></table>
+      <h4 style="margin:16px 0 6px;font-size:.85rem">Cobradores con atraso (peor primero)</h4><table class="rp-table"><thead><tr><th>Cobrador</th><th>Sucursal</th><th class="n">Clientes</th><th class="n">Cartera</th><th class="n">Atraso</th><th class="n">Mora #</th><th class="n">% mora</th></tr></thead><tbody>${cobs}</tbody></table>`, {csv:true});
+  }catch(e){ alert(e.message); }
+}
+
+function rpExportCSV(){
+  if(!_rpActual||!_rpData) return;
+  let rows=[];
+  if(_rpActual==='colocacion'){ rows=[['fecha','creditos','monto']].concat(_rpData.serie.map(s=>[s.fecha,s.creditos,s.monto])); }
+  else if(_rpActual==='refin'){ rows=[['fecha','cliente','cobrador','sucursal','folio_viejo','folio_nuevo','saldo_liquidado','nuevo_monto','neto']].concat(_rpData.refins.map(r=>[r.fecha,r.cliente,r.cobrador,r.sucursal,r.oldFolio,r.nuevoFolio||'',r.saldoLiquidado,r.nuevoMonto,r.neto])); }
+  else if(_rpActual==='comisiones'){ rows=[['cobrador','sucursal','efectivo','transferencia','deposito','refin','total','comision']].concat(_rpData.cobradores.map(c=>[c.nombre,c.sucursal,c.efectivo,c.transferencia,c.deposito,c.refin,c.total,c.comision])); }
+  else if(_rpActual==='atraso'){ rows=[['cobrador','sucursal','clientes','cartera','atraso','clientes_mora']].concat(_rpData.por_cobrador.map(c=>[c.nombre,c.sucursal,c.clientes,c.cartera,c.atraso_monto||0,c.atraso_clientes||0])); }
+  const csv = rows.map(r=>r.map(x=>typeof x==='string'&&x.includes(',')?`"${x}"`:x).join(',')).join('\n');
+  const blob = new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`reporte_${_rpActual}_${new Date().toISOString().slice(0,10)}.csv`; a.click();
+}
+function rpImprimirActual(){ window.print(); }
 
 /* ===== ESTADO DE CUENTA: cargos, abonos y moratorio automático ===== */
 let _ecSales=[], ecActual=null, _ecLib=null;
@@ -915,7 +1016,7 @@ document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
   if(n.dataset.v==='cartera') cargarCartera();
   if(n.dataset.v==='estado') ecInit();
   if(n.dataset.v==='conciliacion') cargarCortes();
-  if(n.dataset.v==='reportes') cargarReportes();
+  if(n.dataset.v==='reportes') renderReportesLive();
 });
 document.querySelectorAll('#period button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#period button').forEach(x=>x.classList.remove('on'));b.classList.add('on');period=b.dataset.p;render();});
 ['c-cob','c-meta','c-bono','c-mora','c-coloc'].forEach(id=>document.getElementById(id).oninput=render);

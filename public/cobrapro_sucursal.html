@@ -257,20 +257,82 @@ function pintar(){
 function selCli(id){sel=sel===id?null:id;pintar();}
 function abrirPago(cid,saleId){
   const c=_clientes.find(x=>x.id===cid); const cr=(c.creditos||[]).find(x=>x.id===saleId);
-  payCtx={saleId, cliente:c.nombre, folio:cr.folio, tel:c.tel||''}; formaPay='efectivo';
+  payCtx={saleId, cliente:c.nombre, folio:cr.folio, tel:c.tel||'', saldo:cr.saldo, tipoOld:cr.tipo, plazoOld:cr.plazo, promOld:cr.prom}; formaPay='efectivo';
   document.getElementById('overlay').innerHTML=`<div class="modal">
     <h3>Pago — ${c.nombre}</h3>
     <div style="font-size:.78rem;color:var(--faint);margin-bottom:12px">${cr.folio} · ${tipoLbl[cr.tipo]||cr.tipo} · saldo ${fmt(cr.saldo)}</div>
     <div class="amt-box"><div class="l">Monto recibido</div><input class="amt-input" id="payamt" value="${Math.round(Math.min(cr.cuota,cr.saldo))}" inputmode="numeric"></div>
     <div style="font-size:.72rem;color:var(--dim);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Forma de pago</div>
-    <div class="forma" id="forma">
+    <div class="forma" id="forma" style="grid-template-columns:1fr 1fr">
       <button class="on" onclick="setForma('efectivo',this)">💵 Efectivo</button>
       <button onclick="setForma('transferencia',this)">🏦 Transferencia</button>
       <button onclick="setForma('deposito',this)">🧾 Depósito</button>
+      <button onclick="abrirRefin()" style="border-color:#b388ff;color:#b388ff">🔄 REFIN</button>
     </div>
+    <div style="font-size:.65rem;color:var(--faint);margin-top:-4px;margin-bottom:8px">REFIN liquida el saldo actual y otorga un crédito nuevo descontando ese saldo.</div>
     <div class="modal-actions"><button class="ma cancel" onclick="cerrar()">Cancelar</button><button class="ma ok" onclick="confirmPago()">Registrar y dar recibo</button></div>
   </div>`;
   document.getElementById('overlay').classList.add('on');
+}
+function abrirRefin(){
+  const saldo = payCtx.saldo||0;
+  document.getElementById('overlay').innerHTML=`<div class="modal">
+    <h3>🔄 REFIN — ${payCtx.cliente}</h3>
+    <div style="font-size:.78rem;color:var(--faint);margin-bottom:6px">Crédito anterior: <b>${payCtx.folio}</b> · saldo a liquidar <b style="color:var(--red)">${fmt(saldo)}</b></div>
+    <div class="amt-box"><div class="l">Nuevo monto a otorgar</div><input class="amt-input" id="ref-monto" placeholder="${Math.max(saldo*2,3000)}" inputmode="numeric" oninput="calcRefin()"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+      <div><div class="l" style="font-size:.7rem;color:var(--dim);margin-bottom:4px">Modalidad</div>
+        <select id="ref-tipo" style="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--ink);padding:9px;border-radius:7px;font-family:inherit" onchange="calcRefin()">
+          <option value="semanal" selected>Semanal</option><option value="diario">Diario</option><option value="unico">Pago único</option>
+        </select></div>
+      <div><div class="l" style="font-size:.7rem;color:var(--dim);margin-bottom:4px">Plazo</div>
+        <input id="ref-plazo" type="number" value="12" min="1" style="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--ink);padding:9px;border-radius:7px;font-family:inherit" oninput="calcRefin()"></div>
+    </div>
+    <div id="ref-preview" style="background:rgba(179,136,255,.08);border:1px solid rgba(179,136,255,.3);border-radius:8px;padding:11px;margin-bottom:10px;font-size:.78rem;line-height:1.7">
+      <div style="display:flex;justify-content:space-between"><span>Saldo a liquidar</span><b style="color:var(--red)">${fmt(saldo)}</b></div>
+      <div style="display:flex;justify-content:space-between"><span>Nuevo monto</span><b id="rp-nm">$0</b></div>
+      <div style="display:flex;justify-content:space-between;border-top:1px dashed rgba(255,255,255,.1);padding-top:6px;margin-top:6px"><span><b>Neto a entregar al cliente</b></span><b id="rp-neto" style="color:var(--grn)">$0</b></div>
+    </div>
+    <div class="modal-actions"><button class="ma cancel" onclick="cerrar()">Cancelar</button><button class="ma ok" style="background:#b388ff" onclick="confirmRefin()">Aplicar REFIN</button></div>
+  </div>`;
+}
+function calcRefin(){
+  const nm=parseFloat(document.getElementById('ref-monto').value)||0;
+  const neto=Math.max(0,nm-(payCtx.saldo||0));
+  document.getElementById('rp-nm').textContent=fmt(nm);
+  document.getElementById('rp-neto').textContent=fmt(neto);
+}
+async function confirmRefin(){
+  const nuevoMonto=parseFloat(document.getElementById('ref-monto').value)||0;
+  const nuevoTipo=document.getElementById('ref-tipo').value;
+  const nuevoPlazo=parseInt(document.getElementById('ref-plazo').value)||12;
+  if(nuevoMonto<=0){ toast('Captura el nuevo monto'); return; }
+  if(nuevoMonto < (payCtx.saldo||0)){ toast('El nuevo monto debe ser ≥ saldo pendiente'); return; }
+  try{
+    const d=await api('POST','/api/sales/'+payCtx.saleId+'/refin',{nuevoMonto,nuevoTipo,nuevoPlazo,nuevoDias:nuevoPlazo,idempotencyKey:uuid()});
+    const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+    const fecha=new Date().toLocaleDateString('es-MX');
+    movs.unshift({hora,txt:`REFIN ${d.oldFolio}→${d.nuevoFolio} · ${payCtx.cliente}`,monto:d.saldoLiquidado});
+    window._lastRecibo={cliente:payCtx.cliente,folio:d.nuevoFolio,forma:'REFIN',monto:fmt(d.saldoLiquidado),saldo:fmt(d.saldoNuevo),fecha,hora,tel:payCtx.tel,esRefin:true,oldFolio:d.oldFolio,neto:d.neto,nuevoMonto:d.nuevoMonto};
+    document.getElementById('overlay').innerHTML=`<div class="modal">
+      <h3>✓ REFIN aplicado</h3>
+      <div class="recibo">
+        <div class="rr"><span>Cliente</span><span class="v">${payCtx.cliente}</span></div>
+        <div class="rr"><span>Crédito anterior</span><span class="v">${d.oldFolio} <span style="color:var(--grn)">LIQUIDADO</span></span></div>
+        <div class="rr"><span>Saldo liquidado</span><span class="v">${fmt(d.saldoLiquidado)}</span></div>
+        <div class="rr"><span>Nuevo crédito</span><span class="v" style="color:var(--acc)">${d.nuevoFolio}</span></div>
+        <div class="rr"><span>Monto otorgado</span><span class="v">${fmt(d.nuevoMonto)}</span></div>
+        <div class="rr"><span>Cuota</span><span class="v">${fmt(d.nuevoCuota)}</span></div>
+        <div class="rr"><span><b>Neto entregado al cliente</b></span><span class="v" style="color:var(--grn)">${fmt(d.neto)}</span></div>
+        <div class="rr"><span>Fecha · hora</span><span class="v">${fecha} ${hora}</span></div>
+      </div>
+      <div class="modal-actions">
+        <button class="ma cancel" onclick="enviarWA()" ${payCtx.tel?'':'disabled style="opacity:.45"'}>📱 Enviar por WhatsApp</button>
+        <button class="ma ok" onclick="cerrar()">Cerrar</button>
+      </div>
+    </div>`;
+    caja.ncob++; await cargarCaja();
+  }catch(e){ toast(e.message); }
 }
 function setForma(f,el){formaPay=f;document.querySelectorAll('#forma button').forEach(b=>b.classList.remove('on'));el.classList.add('on');}
 const formaLbl={efectivo:'Efectivo',transferencia:'Transferencia',deposito:'Depósito',ajuste:'Ajuste'};
@@ -305,7 +367,9 @@ function enviarWA(){
   const r=window._lastRecibo; if(!r) return;
   if(!r.tel){ toast('El cliente no tiene teléfono'); return; }
   const num=String(r.tel).replace(/\D/g,''); const full=num.startsWith('52')?num:'52'+num;
-  const msg=`*Comprobante de pago — LeGaXi*\n\nCliente: ${r.cliente}\nFolio: ${r.folio}\nMonto recibido: ${r.monto}\nForma: ${r.forma}\nSaldo restante: ${r.saldo}\nFecha: ${r.fecha} ${r.hora}\n\nGracias por su pago.`;
+  const msg = r.esRefin
+    ? `*REFIN aplicado — LeGaXi*\n\nCliente: ${r.cliente}\nCrédito anterior: ${r.oldFolio} (liquidado)\nNuevo crédito: ${r.folio}\nMonto del nuevo crédito: ${fmt(r.nuevoMonto)}\nSaldo nuevo: ${r.saldo}\nNeto recibido: ${fmt(r.neto)}\nFecha: ${r.fecha} ${r.hora}\n\nGracias por su confianza.`
+    : `*Comprobante de pago — LeGaXi*\n\nCliente: ${r.cliente}\nFolio: ${r.folio}\nMonto recibido: ${r.monto}\nForma: ${r.forma}\nSaldo restante: ${r.saldo}\nFecha: ${r.fecha} ${r.hora}\n\nGracias por su pago.`;
   window.open(`https://wa.me/${full}?text=${encodeURIComponent(msg)}`,'_blank');
 }
 function cerrar(){document.getElementById('overlay').classList.remove('on');_buscar();}
