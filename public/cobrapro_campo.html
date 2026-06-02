@@ -270,6 +270,7 @@ function render(){
       </div>
       ${done?`<div class="done-tag">✓ Cobrado ${fmt(e.monto)} · ${formaLbl[e.forma]||''} · ${e.hora}</div>`
        : visited?`<div class="done-tag" style="color:var(--acc)">● ${e.statusLbl} · ${e.hora}</div>`
+       : _miCorte?`<div class="done-tag" style="color:var(--faint)">🔒 Corte entregado · cobro cerrado por hoy</div>`
        :`<div class="cact">
           <button class="b cobrar" onclick="abrirCobro(${c.id})">Cobrar</button>
           <button class="b ghost" onclick="whatsapp(${c.id})" title="WhatsApp">✆</button>
@@ -308,7 +309,9 @@ function render(){
 let cobroId=null, formaPay='efectivo';
 const formaLbl={efectivo:'Efectivo',transferencia:'Transferencia',deposito:'Depósito',ajuste:'Ajuste'};
 function setForma(f,el){formaPay=f;document.querySelectorAll('#forma button').forEach(b=>b.classList.remove('on'));el.classList.add('on');}
-function abrirCobro(id){cobroId=id;formaPay='efectivo';const c=clientes.find(x=>x.id===id);
+function abrirCobro(id){
+  if(_miCorte){ toast('⛔ Ya entregaste tu corte hoy. No puedes cobrar más hasta mañana.'); return; }
+  cobroId=id;formaPay='efectivo';const c=clientes.find(x=>x.id===id);
   document.getElementById('overlay').innerHTML=`<div class="sheet">
     <h3>Cobrar a ${c.nombre}</h3><div class="sh-sub">${tipoLbl[c.tipo]} · saldo ${fmt(c.saldo)}</div>
     <div class="amt-box"><div class="l">Monto recibido</div><input class="amt-input" id="amt" value="${c.cuota}" inputmode="numeric"></div>
@@ -400,7 +403,7 @@ document.getElementById('syncBtn').onclick=()=>{
 };
 let _miCorte=null; // si ya tengo corte hoy, queda aquí
 async function checkMiCorte(){
-  try{ const d=await api('GET','/api/mi-corte'); _miCorte=d.corte; pintarBtnCorte(); }catch(e){}
+  try{ const d=await api('GET','/api/mi-corte'); _miCorte=d.corte; pintarBtnCorte(); render(); }catch(e){}
 }
 function pintarBtnCorte(){
   const btn=document.querySelector('.corte'); if(!btn) return;
@@ -419,7 +422,7 @@ async function entregar(){
   if(cola.length){ toast('Quedan pagos sin sincronizar. Conéctate para entregar el corte.'); return; }
   try{
     const d=await api('POST','/api/corte');
-    _miCorte=d.corte; pintarBtnCorte();
+    _miCorte=d.corte; pintarBtnCorte(); render();
     toast('✓ Corte entregado · efectivo '+fmt(d.corte.totalEfectivo)+' · '+d.corte.npagos+' pago(s)');
   }catch(e){
     if((e.message||'').toLowerCase().includes('ya hay')){
