@@ -302,8 +302,8 @@
 
   <section class="view" id="sucursales">
     <div class="kpis" id="suc-kpis"></div>
-    <div class="panel"><div class="ph"><h3>Sucursales</h3><button class="btn" onclick="exportCSV('suc')">⬇ CSV</button></div>
-      <table><thead><tr><th>Sucursal</th><th>Encargada</th><th class="n">Pagos recibidos</th><th class="n"># Pagos</th><th class="n">Créditos captados</th><th class="n">Cartera total</th><th class="n">Atraso</th><th class="n">Efectivo en caja</th><th>Conciliación</th></tr></thead><tbody id="tb-suc"></tbody></table>
+    <div class="panel"><div class="ph"><h3>Sucursales</h3><div style="display:flex;gap:6px;margin-left:auto"><button class="btn gold" onclick="nuevaSucursal()">＋ Nueva sucursal</button><button class="btn" onclick="exportCSV('suc')">⬇ CSV</button></div></div>
+      <table><thead><tr><th>Sucursal</th><th>Encargada</th><th class="n">Pagos recibidos</th><th class="n"># Pagos</th><th class="n">Créditos captados</th><th class="n">Cartera total</th><th class="n">Atraso</th><th class="n">Efectivo en caja</th><th>Conciliación</th><th></th></tr></thead><tbody id="tb-suc"></tbody></table>
       <div class="note">La encargada captura los créditos nuevos; ese movimiento aparece de inmediato en la cartera del cobrador asignado, sin listas ni esperas al día siguiente.</div>
     </div>
   </section>
@@ -564,6 +564,26 @@ function pintaResumen(d){
   drawDailyPagos(d.pagos_recientes||[]);
 }
 
+async function refrescarSucursales(){
+  try{ const s=await apiU('GET','/api/sucursales'); _sucMap={}; s.forEach(x=>_sucMap[x.id]=x.nombre); _sucursales=s; }catch(e){}
+}
+async function nuevaSucursal(){
+  const nombre=prompt('Nombre de la nueva sucursal:');
+  if(!nombre||!nombre.trim()) return;
+  try{ await apiU('POST','/api/sucursales',{nombre:nombre.trim()}); await refrescarSucursales(); render(); }
+  catch(e){ alert(e.message); }
+}
+async function editarSucursal(id, nombre){
+  const nuevo=prompt('Nuevo nombre de la sucursal:', nombre);
+  if(!nuevo||!nuevo.trim()||nuevo.trim()===nombre) return;
+  try{ await apiU('PATCH','/api/sucursales/'+id,{nombre:nuevo.trim()}); await refrescarSucursales(); render(); }
+  catch(e){ alert(e.message); }
+}
+async function borrarSucursal(id, nombre){
+  if(!confirm(`¿Eliminar la sucursal "${nombre}"?\n\nSolo se puede si no tiene créditos activos ni usuarios asignados (encargada/cobradores). Si los tiene, primero transfiere los créditos y reasigna los usuarios.`)) return;
+  try{ await apiU('DELETE','/api/sucursales/'+id); await refrescarSucursales(); render(); }
+  catch(e){ alert(e.message); }
+}
 function pintaSucursales(d){
   const sucs=d.por_sucursal;
   $('suc-kpis').innerHTML=sucs.map(s=>`<div class="kpi b"><div class="l">${s.nombre}</div><div class="v">${fmtK(s.pagos_recibidos)}</div><div class="s">${s.creditos} créditos · cartera ${fmtK(s.cartera)} · atraso ${fmtK(s.atraso_monto||0)}</div></div>`).join('') || '<div style="color:var(--faint);padding:10px">Sin sucursales.</div>';
@@ -576,7 +596,8 @@ function pintaSucursales(d){
       <td>${s.encargada}</td><td class="n">${fmt(s.pagos_recibidos)}</td><td class="n">${s.npagos}</td><td class="n">${s.creditos_captados}</td>
       <td class="n">${fmt(s.cartera)}</td>
       <td class="n" style="color:${(s.atraso_monto||0)>0?'var(--red)':'var(--faint)'}">${(s.atraso_monto||0)>0?fmt(s.atraso_monto)+' <span style="font-size:.65rem">('+s.atraso_clientes+')</span>':'—'}</td>
-      <td class="n">${fmt(s.efectivo_caja)}</td><td>${est}</td></tr>`;
+      <td class="n">${fmt(s.efectivo_caja)}</td><td>${est}</td>
+      <td style="text-align:right;white-space:nowrap"><button class="btn" style="padding:4px 8px;font-size:.72rem" onclick="editarSucursal(${s.id},'${(s.nombre||'').replace(/'/g,'')}')">✏️</button> <button class="btn" style="padding:4px 8px;font-size:.72rem;color:var(--red);border-color:var(--red)" onclick="borrarSucursal(${s.id},'${(s.nombre||'').replace(/'/g,'')}')">🗑</button></td></tr>`;
   }).join('') || '<tr><td colspan="9" style="color:var(--faint);padding:18px;text-align:center">Sin actividad por sucursal en el periodo.</td></tr>';
 }
 
