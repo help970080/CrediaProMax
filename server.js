@@ -250,7 +250,9 @@ app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) 
     }
   }
   const r = calcCredito(tipo, +plazo, +monto, +dias);
-  const client = { id: nextId('clients'), nombre, tel: tel || '', calle, col, sucursalId: sucursalId || req.user.sucursalId || 1, prom: prom || '' };
+  // una sucursal solo puede dar de alta en SU propia sucursal
+  const sucFinal = req.user.rol === 'sucursal' ? (req.user.sucursalId || 1) : (sucursalId || req.user.sucursalId || 1);
+  const client = { id: nextId('clients'), nombre, tel: tel || '', calle, col, sucursalId: sucFinal, prom: prom || '' };
   db.clients.push(client);
   const folio = 'F-' + (1100 + nextId('sales'));
   const sale = { id: nextId('sales'), folio, clientId: client.id, tipo, plazo: +plazo, monto: +monto, cuota: r.cuota, total: r.total, prom: client.prom, sucursalId: client.sucursalId, createdAt: new Date().toISOString() };
@@ -479,9 +481,11 @@ app.get('/api/mi-ruta', auth, (req, res) => {
 });
 app.get('/api/cobradores', auth, (req, res) => {
   const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
-  const users = db.users.filter(u => u.rol === 'cobrador' && u.activo);
+  // Una encargada de sucursal solo ve a SUS cobradores (los dados de alta en su sucursal).
+  const esSucursal = req.user.rol === 'sucursal';
+  const users = db.users.filter(u => u.rol === 'cobrador' && u.activo && (!esSucursal || u.sucursalId === req.user.sucursalId));
   const lista = users.map(u => ({ id: u.id, nombre: u.nombre, sucursal: sucMap[u.sucursalId] || null, esUsuario: true }));
-  if (req.query.conCartera) {
+  if (req.query.conCartera && !esSucursal) {
     const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
     const nombresUsuario = new Set(users.map(u => u.nombre));
     const promsCartera = {};
