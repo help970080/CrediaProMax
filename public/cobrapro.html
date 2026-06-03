@@ -9,12 +9,13 @@
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#0a0c10; --surf:#11141a; --surf-2:#171b22; --surf-3:#1e232c;
-    --line:#262c36; --line-2:#333b48;
-    --txt:#eef1f5; --dim:#97a1b0; --faint:#5a6470;
-    --acc:#f0b429; --acc-d:#b3851f;
-    --grn:#3ecf8e; --grn-d:#1d7a55; --red:#f0654d; --red-d:#a13a2b;
-    --blu:#5aa0e8; --vio:#b07ce0;
+    /* Tema claro y legible de día — CobraPro */
+    --bg:#eef1f7; --surf:#ffffff; --surf-1:#ffffff; --surf-2:#f1f4f9; --surf-3:#e7ecf3;
+    --line:#dde3ec; --line-2:#c9d2de;
+    --txt:#1b2330; --ink:#1b2330; --dim:#5b6675; --faint:#97a2b2;
+    --acc:#d99a0f; --acc-d:#a87a10;
+    --grn:#178a55; --grn-d:#0f6e42; --red:#d6432d; --red-d:#a4321f;
+    --blu:#2f7fd1; --vio:#7c5ce0;
     --r:11px; font-size:14.5px;
   }
   *{box-sizing:border-box;margin:0;padding:0}
@@ -912,21 +913,57 @@ async function rpVerRecoleccion(){
   try{
     const d=await apiU('GET','/api/reports/recoleccion');
     _rpActual='recoleccion'; _rpData=d;
-    const cobs=d.porCobrador.map(c=>`<tr><td class="nm">${c.cobrador}</td><td>${c.sucursal}</td><td class="n"><b>${fmt(c.monto)}</b></td></tr>`).join('') || '<tr><td colspan="3" style="color:var(--faint);padding:12px;text-align:center">Ningún cobrador trae efectivo en mano.</td></tr>';
-    const sucs=d.porSucursal.map(s=>`<tr><td class="nm">${s.sucursal}</td><td>${s.encargada}</td><td class="n"><b>${fmt(s.efectivo)}</b></td></tr>`).join('') || '<tr><td colspan="3" style="color:var(--faint);padding:12px;text-align:center">Ninguna sucursal tiene efectivo en caja.</td></tr>';
-    rpAbrir('💰 Recolección de efectivo',`
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
-        <div class="kpi" style="padding:10px"><div class="l">En mano de cobradores</div><div class="v" style="font-size:1.3rem">${fmt(d.totalCobradores)}</div></div>
-        <div class="kpi" style="padding:10px"><div class="l">En caja de sucursales</div><div class="v" style="font-size:1.3rem">${fmt(d.totalSucursales)}</div></div>
-        <div class="kpi g" style="padding:10px"><div class="l">TOTAL A RECOLECTAR</div><div class="v" style="font-size:1.5rem">${fmt(d.totalGeneral)}</div></div>
+    const filas=[
+      ...d.porCobrador.map(c=>({tipo:'cobrador', ref:c.ref, origen:c.cobrador, detalle:'Cobrador en ruta · '+c.sucursal, monto:c.monto})),
+      ...d.porSucursal.map(s=>({tipo:'sucursal', ref:s.sucursalId, origen:s.sucursal, detalle:'Caja sucursal · '+(s.encargada||'—'), monto:s.efectivo})),
+    ].sort((a,b)=>b.monto-a.monto);
+    const rows=filas.map(f=>`<tr><td class="nm">${f.origen}</td><td class="sn">${f.detalle}</td><td class="n"><b>${fmt(f.monto)}</b></td>
+      <td style="text-align:right"><button class="btn" style="padding:4px 10px;font-size:.74rem;color:var(--grn);border-color:var(--grn)" onclick="recolectar('${f.tipo}','${String(f.ref).replace(/'/g,'')}','${f.origen.replace(/'/g,'')}',${f.monto})">✓ Recolectar</button></td></tr>`).join('')
+      || '<tr><td colspan="4" style="color:var(--faint);padding:16px;text-align:center">No hay efectivo por recolectar. Todo recogido.</td></tr>';
+    rpAbrir('💰 Dinero por recolectar',`
+      <div style="text-align:center;margin-bottom:16px">
+        <div style="font-size:.75rem;color:var(--dim);text-transform:uppercase;letter-spacing:.05em">Total por recolectar</div>
+        <div style="font-size:2.2rem;font-weight:700;color:var(--grn)">${fmt(d.totalGeneral)}</div>
+        ${filas.length>1?`<button class="btn gold" style="margin-top:8px" onclick="recolectarTodo()">✓ Recolectar todo (${filas.length} orígenes)</button>`:''}
       </div>
-      <h4 style="margin:6px 0;font-size:.85rem">Efectivo en mano de cobradores (cobrado en ruta, sin entregar)</h4>
-      <table class="rp-table"><thead><tr><th>Cobrador / Promotor</th><th>Sucursal</th><th class="n">Monto a recolectar</th></tr></thead><tbody>${cobs}</tbody>
-        ${d.porCobrador.length?`<tfoot><tr><td colspan="2">Subtotal cobradores</td><td class="n">${fmt(d.totalCobradores)}</td></tr></tfoot>`:''}</table>
-      <h4 style="margin:16px 0 6px;font-size:.85rem">Efectivo en caja de sucursales (entregado, listo para recolección)</h4>
-      <table class="rp-table"><thead><tr><th>Sucursal</th><th>Encargada</th><th class="n">Efectivo en caja</th></tr></thead><tbody>${sucs}</tbody>
-        ${d.porSucursal.length?`<tfoot><tr><td colspan="2">Subtotal sucursales</td><td class="n">${fmt(d.totalSucursales)}</td></tr></tfoot>`:''}</table>`, {csv:true, print:true});
+      <table class="rp-table"><thead><tr><th>De quién</th><th>Origen</th><th class="n">Monto a recibir</th><th></th></tr></thead><tbody>${rows}</tbody>
+        <tfoot><tr><td colspan="2">TOTAL</td><td class="n">${fmt(d.totalGeneral)}</td><td></td></tr></tfoot></table>
+      <div id="rec-hist" style="margin-top:18px"></div>`, {csv:true, print:true});
+    rpCargarHistRecoleccion();
   }catch(e){ alert(e.message); }
+}
+async function recolectar(tipo, ref, origen, monto){
+  if(!confirm(`¿Registrar recolección de ${fmt(monto)} de ${origen}?\n\nEste efectivo saldrá del disponible por recolectar y quedará en el historial.`)) return;
+  try{
+    await apiU('POST','/api/recoleccion',{tipo, ref: tipo==='sucursal'?+ref:ref});
+    rpVerRecoleccion();
+  }catch(e){ alert(e.message); }
+}
+let _recColas=[];
+async function recolectarTodo(){
+  const d=_rpData; if(!d) return;
+  const items=[...d.porCobrador.map(c=>({tipo:'cobrador',ref:c.ref,origen:c.cobrador,monto:c.monto})),
+               ...d.porSucursal.map(s=>({tipo:'sucursal',ref:s.sucursalId,origen:s.sucursal,monto:s.efectivo}))];
+  if(!items.length) return;
+  if(!confirm(`¿Recolectar TODO?\n${items.length} orígenes · total ${fmt(d.totalGeneral)}\n\nTodo el efectivo disponible quedará registrado como recolectado.`)) return;
+  try{
+    for(const it of items){ await apiU('POST','/api/recoleccion',{tipo:it.tipo, ref: it.tipo==='sucursal'?+it.ref:it.ref}); }
+    rpVerRecoleccion();
+  }catch(e){ alert(e.message); rpVerRecoleccion(); }
+}
+async function rpCargarHistRecoleccion(){
+  try{
+    const log=await apiU('GET','/api/recolecciones');
+    const hoy=new Date().toISOString().slice(0,10);
+    const hoyLog=log.filter(r=>r.fecha.slice(0,10)===hoy);
+    const totalHoy=hoyLog.reduce((a,r)=>a+r.monto,0);
+    const el=document.getElementById('rec-hist'); if(!el) return;
+    el.innerHTML=`<h4 style="margin:6px 0;font-size:.85rem">Recolecciones de hoy · total ${fmt(totalHoy)}</h4>
+      <table class="rp-table"><thead><tr><th>Hora</th><th>De quién</th><th>Tipo</th><th class="n">Monto</th><th>Recolectó</th></tr></thead><tbody>${
+        hoyLog.length? hoyLog.map(r=>`<tr><td class="mono" style="font-size:.74rem">${new Date(r.fecha).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'})}</td><td class="nm">${r.nombre}</td><td class="sn">${r.tipo==='cobrador'?'Cobrador':'Caja sucursal'}</td><td class="n">${fmt(r.monto)}</td><td class="sn">${r.por}</td></tr>`).join('')
+        : '<tr><td colspan="5" style="color:var(--faint);padding:12px;text-align:center">Aún no hay recolecciones hoy.</td></tr>'
+      }</tbody></table>`;
+  }catch(e){}
 }
 
 /* ===== TRANSFERENCIAS de clientes entre cobradores (individual + lote) ===== */

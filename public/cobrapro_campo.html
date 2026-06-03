@@ -8,9 +8,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#0a0c10;--surf:#11141a;--surf-2:#171b22;--surf-3:#1e232c;--line:#262c36;--line-2:#333b48;
-    --txt:#eef1f5;--dim:#97a1b0;--faint:#5a6470;--acc:#f0b429;--acc-d:#b3851f;
-    --grn:#3ecf8e;--grn-d:#1d7a55;--red:#f0654d;--blu:#5aa0e8;--vio:#b07ce0;--r:13px;
+    --bg:#eef1f7;--surf:#ffffff;--surf-1:#ffffff;--surf-2:#f1f4f9;--surf-3:#e7ecf3;--line:#dde3ec;--line-2:#c9d2de;
+    --txt:#1b2330;--ink:#1b2330;--dim:#5b6675;--faint:#97a2b2;--acc:#d99a0f;--acc-d:#a87a10;
+    --grn:#178a55;--grn-d:#0f6e42;--red:#d6432d;--blu:#2f7fd1;--vio:#7c5ce0;--r:13px;
   }
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
   body{background:#05070a;font-family:"Sora",sans-serif;color:var(--txt);display:flex;justify-content:center;min-height:100vh}
@@ -408,8 +408,13 @@ async function checkMiCorte(){
 function pintarBtnCorte(){
   const btn=document.querySelector('.corte'); if(!btn) return;
   if(_miCorte){
-    btn.disabled=true; btn.style.opacity='.55'; btn.style.cursor='default';
-    btn.innerHTML='✓ Corte entregado · '+_miCorte.horaEntrega+(_miCorte.auto?' (auto)':'');
+    btn.disabled=true; btn.style.opacity='.7'; btn.style.cursor='default';
+    if(_miCorte.estado==='recibido'){
+      btn.style.opacity='.55';
+      btn.innerHTML='✓ Recibido por admin · '+_miCorte.horaEntrega;
+    } else {
+      btn.innerHTML='⏳ Entregado · pendiente de recibir por admin';
+    }
   } else {
     btn.disabled=false; btn.style.opacity=''; btn.style.cursor='';
     btn.innerHTML='⇄ Entregar corte';

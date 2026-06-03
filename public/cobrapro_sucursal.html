@@ -7,9 +7,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>
-  :root{--bg:#0a0c10;--surf:#11141a;--surf-2:#171b22;--surf-3:#1e232c;--line:#262c36;--line-2:#333b48;
-    --txt:#eef1f5;--dim:#97a1b0;--faint:#5a6470;--acc:#f0b429;--acc-d:#b3851f;
-    --grn:#3ecf8e;--grn-d:#1d7a55;--red:#f0654d;--blu:#5aa0e8;--vio:#b07ce0;--r:12px;}
+  :root{--bg:#eef1f7;--surf:#ffffff;--surf-1:#ffffff;--surf-2:#f1f4f9;--surf-3:#e7ecf3;--line:#dde3ec;--line-2:#c9d2de;
+    --txt:#1b2330;--ink:#1b2330;--dim:#5b6675;--faint:#97a2b2;--acc:#d99a0f;--acc-d:#a87a10;
+    --grn:#178a55;--grn-d:#0f6e42;--red:#d6432d;--blu:#2f7fd1;--vio:#7c5ce0;--r:12px;}
   *{box-sizing:border-box;margin:0;padding:0}
   body{background:var(--bg);color:var(--txt);font-family:"Sora",sans-serif;line-height:1.45}
   .mono{font-family:"IBM Plex Mono",monospace;font-feature-settings:"tnum"}
@@ -132,7 +132,6 @@
   <div class="kpis">
     <div class="kpi g"><div class="l">Cobrado en ventanilla</div><div class="v" id="k-cob">$0</div><div class="s" id="k-ncob">0 pagos</div></div>
     <div class="kpi b"><div class="l">Créditos captados hoy</div><div class="v" id="k-cred">0</div><div class="s" id="k-coloc">$0 colocado</div></div>
-    <div class="kpi r"><div class="l">Por entregar (en tránsito)</div><div class="v" id="k-pe">$0</div><div class="s">cobradores · aún NO en caja</div></div>
     <div class="kpi"><div class="l">Efectivo real en caja</div><div class="v" id="k-caja">$0</div><div class="s">disponible para conciliar</div></div>
   </div>
   <div class="grid">
@@ -180,10 +179,6 @@
           <tr><td style="color:var(--dim)">Pagos por banco (transf./depósito)*</td><td class="n" id="ct-banco" style="color:var(--dim)">$0</td></tr>
         </tbody></table>
         <div style="font-size:.72rem;color:var(--faint);margin-top:8px">*No es efectivo en caja: entró directo a banco.</div>
-
-        <div class="sect-lbl">Por entregar de cobradores</div>
-        <div class="pe-note">⚠ El efectivo que reportan los cobradores en ruta <b>NO entra a caja</b> hasta que lo entregan físicamente. Aparece aquí como <b>cuenta por entregar</b> a su nombre. Al confirmar la entrega, pasa a efectivo real.</div>
-        <div id="peList"></div>
 
         <div class="sect-lbl">Movimientos de hoy</div>
         <table><thead><tr><th>Hora</th><th>Concepto</th><th class="n">Monto</th></tr></thead><tbody id="movs"></tbody></table>
@@ -452,8 +447,6 @@ function render(){
   document.getElementById('k-ncob').textContent=caja.ncob+' pagos';
   document.getElementById('k-cred').textContent=caja.ncred;
   document.getElementById('k-coloc').textContent=fmt(caja.coloc)+' colocado';
-  const pe=porEntregar.reduce((a,x)=>a+x.monto,0);
-  document.getElementById('k-pe').textContent=fmt(pe);
   const efectivoReal=caja.inicial+caja.efectivo+caja.entregasConfirmadas;
   document.getElementById('k-caja').textContent=fmt(efectivoReal);
   document.getElementById('cut-tot').textContent=fmt(efectivoReal);
@@ -462,12 +455,6 @@ function render(){
   document.getElementById('ct-eng').textContent=fmt(0);
   document.getElementById('ct-ent').textContent=fmt(caja.entregasConfirmadas);
   document.getElementById('ct-banco').textContent=fmt(caja.banco);
-  document.getElementById('peList').innerHTML= porEntregar.length? porEntregar.map(p=>`<div class="pe-card">
-    <div class="pe-ava" style="background:${p.color}">${(p.prom||'').split(' ').map(w=>w[0]).slice(0,2).join('')}</div>
-    <div><div class="pe-nm">${p.prom}</div><div class="pe-sub">cobros en ruta · por entregar</div></div>
-    <div class="pe-monto">${fmt(p.monto)}</div>
-    <button class="pe-btn" onclick="confirmarEntrega(${p.id})">✓ Confirmar entrega</button></div>`).join('')
-    : '<div style="color:var(--grn);font-size:.84rem;padding:6px 2px">Nada en tránsito.</div>';
   document.getElementById('movs').innerHTML= movs.length? movs.map(m=>`<tr><td class="mono" style="color:var(--faint);font-size:.78rem">${m.hora}</td><td>${m.txt}</td><td class="n">${m.monto>0?fmt(m.monto):'—'}</td></tr>`).join('') : '<tr><td colspan="3" style="color:var(--faint);font-size:.82rem;text-align:center;padding:16px">Sin movimientos aún.</td></tr>';
 }
 function toast(t){const el=document.getElementById('toast');el.textContent=t;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2800);}
