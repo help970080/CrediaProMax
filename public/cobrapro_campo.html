@@ -411,7 +411,7 @@ function pintarBtnCorte(){
     btn.disabled=true; btn.style.opacity='.7'; btn.style.cursor='default';
     if(_miCorte.estado==='recibido'){
       btn.style.opacity='.55';
-      btn.innerHTML='✓ Recibido por admin · '+_miCorte.horaEntrega;
+      btn.innerHTML=(_miCorte.totalEfectivo>0)?('✓ Recibido por admin · '+_miCorte.horaEntrega):'✓ Corte cerrado · sin efectivo que entregar';
     } else {
       btn.innerHTML='⏳ Entregado · pendiente de recibir por admin';
     }
