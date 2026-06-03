@@ -135,7 +135,36 @@ app.patch('/api/users/:id', auth, rol('admin'), (req, res) => {
 });
 
 /* ---------- Catálogos ---------- */
-app.get('/api/sucursales', auth, (req, res) => res.json(db.sucursales));
+app.get('/api/sucursales', auth, (req, res) => res.json(db.sucursales.filter(s => s.activo !== false)));
+app.post('/api/sucursales', auth, rol('admin'), (req, res) => {
+  const nombre = (req.body.nombre || '').trim();
+  if (!nombre) return res.status(400).json({ error: 'Nombre de sucursal requerido' });
+  if (db.sucursales.find(s => s.activo !== false && (s.nombre || '').toLowerCase() === nombre.toLowerCase()))
+    return res.status(409).json({ error: 'Ya existe una sucursal con ese nombre' });
+  const suc = { id: nextId('sucursales'), nombre };
+  db.sucursales.push(suc); saveDB();
+  res.status(201).json(suc);
+});
+app.patch('/api/sucursales/:id', auth, rol('admin'), (req, res) => {
+  const s = db.sucursales.find(x => x.id === +req.params.id);
+  if (!s) return res.status(404).json({ error: 'Sucursal no encontrada' });
+  const nombre = (req.body.nombre || '').trim();
+  if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
+  s.nombre = nombre; saveDB();
+  res.json(s);
+});
+app.delete('/api/sucursales/:id', auth, rol('admin'), (req, res) => {
+  const id = +req.params.id;
+  const s = db.sucursales.find(x => x.id === id);
+  if (!s) return res.status(404).json({ error: 'Sucursal no encontrada' });
+  const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
+  const credAct = db.sales.filter(x => x.sucursalId === id && activos.has(x.clientId) && saldoDe(x.id) > 0);
+  if (credAct.length) return res.status(409).json({ error: `No se puede eliminar "${s.nombre}": tiene ${credAct.length} crédito(s) activo(s). Transfiérelos a otra sucursal primero.` });
+  const usuarios = db.users.filter(u => u.activo && u.sucursalId === id);
+  if (usuarios.length) return res.status(409).json({ error: `No se puede eliminar "${s.nombre}": tiene ${usuarios.length} usuario(s) asignado(s). Reasígnalos primero.` });
+  s.activo = false; s.bajaAt = new Date().toISOString(); saveDB();
+  res.json({ ok: true });
+});
 
 /* ---------- Clientes / cartera ---------- */
 app.get('/api/clients', auth, (req, res) => {
@@ -478,7 +507,7 @@ app.get('/api/dashboard', auth, (req,res)=>{
   const desde=_desdePeriodo(periodo);
   const activeClients=db.clients.filter(c=>c.activo!==false);
   const activeClientIds=new Set(activeClients.map(c=>c.id));
-  const sales=db.sales.filter(s=>activeClientIds.has(s.clientId)), clients=activeClients, sucursales=db.sucursales;
+  const sales=db.sales.filter(s=>activeClientIds.has(s.clientId)), clients=activeClients, sucursales=db.sucursales.filter(s=>s.activo!==false);
   const abonos=db.movimientos.filter(m=>m.abono>0 && _parseFechaMx(m.fecha)>=desde);
   const nuevos=sales.filter(s=>s.createdAt && new Date(s.createdAt).getTime()>=desde);
   // atraso acumulado por sale
