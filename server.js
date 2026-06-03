@@ -19,7 +19,15 @@ const DB_FILE = path.join(__dirname, 'db.json');
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 const PUBLIC_DIR = path.join(__dirname, 'public');
-app.use(express.static(PUBLIC_DIR));
+app.use(express.static(PUBLIC_DIR, {
+  setHeaders: (res, path) => {
+    if (path.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
+  }
+}));
 
 /* ---------- Almacén: PostgreSQL si hay DATABASE_URL (Render), si no archivo JSON (local) ---------- */
 const USE_PG = !!process.env.DATABASE_URL;
@@ -970,6 +978,7 @@ app.post('/api/transferencias/lote', auth, rol('admin', 'supervisor'), (req, res
 // Sirve el portal (index.html) en "/" y en cualquier ruta que NO sea /api
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api')) return next();
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
 });
 
