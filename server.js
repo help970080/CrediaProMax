@@ -417,7 +417,7 @@ app.get('/api/caja/hoy', auth, (req, res) => {
   const sid = String(req.user.sucursalId || req.query.sucursalId || 1);
   const c = db.caja[sid] || { inicial: 0, efectivo: 0, banco: 0, entregas: 0 };
   const pe = db.porEntregar.filter(p => String(p.sucursalId) === sid);
-  res.json({ caja: c, efectivoReal: c.inicial + c.efectivo + c.entregas, porEntregar: pe });
+  res.json({ caja: c, efectivoReal: c.inicial + c.efectivo + c.entregas - (c.retiros||0), porEntregar: pe });
 });
 app.post('/api/caja/entrega', auth, (req, res) => {
   const pe = db.porEntregar.find(p => p.id == req.body.porEntregarId);
@@ -498,7 +498,7 @@ app.get('/api/dashboard', auth, (req,res)=>{
     return {id:suc.id, nombre:suc.nombre, encargada:enc?enc.nombre:'—',
       pagos_recibidos:recuperado, npagos:abonos_suc.length,
       creditos_captados:nuevos_suc.length, colocado:nuevos_suc.reduce((a,s)=>a+s.monto,0),
-      efectivo_caja:(caja.inicial||0)+(caja.efectivo||0)+(caja.entregas||0), banco:caja.banco||0,
+      efectivo_caja:(caja.inicial||0)+(caja.efectivo||0)+(caja.entregas||0)-(caja.retiros||0), banco:caja.banco||0,
       por_entregar:db.porEntregar.filter(p=>p.sucursalId===suc.id).reduce((a,p)=>a+p.monto,0),
       cartera:ventas_suc.reduce((a,s)=>a+saldoDe(s.id),0), creditos:ventas_suc.length,
       atraso_monto, atraso_clientes, esperado_acum };
@@ -738,16 +738,15 @@ app.get('/api/reports/refin', auth, rol('admin','supervisor'), (req, res) => {
 
 app.get('/api/reports/recoleccion', auth, rol('admin', 'supervisor'), (req, res) => {
   const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
-  // Efectivo en mano de cada cobrador (cobrado en ruta, aún no entregado a sucursal)
   const porCobrador = (db.porEntregar || []).filter(p => p.monto > 0).map(p => ({
-    cobrador: p.prom, sucursal: sucMap[p.sucursalId] || '—', monto: p.monto
+    tipo: 'cobrador', ref: p.prom, cobrador: p.prom, sucursal: sucMap[p.sucursalId] || '—', monto: p.monto
   })).sort((a, b) => b.monto - a.monto);
-  // Efectivo en caja de cada sucursal (ya entregado, listo para recolección de la empresa)
   const porSucursal = db.sucursales.map(s => {
     const caja = db.caja[String(s.id)] || {};
-    const efectivo = (caja.inicial || 0) + (caja.efectivo || 0) + (caja.entregas || 0);
+    // recolectable = efectivo cobrado + entregas de cobradores − lo ya recolectado (NO incluye el fondo inicial)
+    const efectivo = Math.max(0, (caja.efectivo || 0) + (caja.entregas || 0) - (caja.retiros || 0));
     const enc = db.users.find(u => u.rol === 'sucursal' && u.sucursalId === s.id);
-    return { sucursal: s.nombre, encargada: enc ? enc.nombre : '—', efectivo };
+    return { tipo: 'sucursal', ref: s.id, sucursalId: s.id, sucursal: s.nombre, encargada: enc ? enc.nombre : '—', efectivo };
   }).filter(s => s.efectivo > 0).sort((a, b) => b.efectivo - a.efectivo);
   res.json({
     generadoEn: new Date().toISOString(),
@@ -756,6 +755,37 @@ app.get('/api/reports/recoleccion', auth, rol('admin', 'supervisor'), (req, res)
     totalSucursales: porSucursal.reduce((a, s) => a + s.efectivo, 0),
     totalGeneral: porCobrador.reduce((a, c) => a + c.monto, 0) + porSucursal.reduce((a, s) => a + s.efectivo, 0),
   });
+});
+app.post('/api/recoleccion', auth, rol('admin', 'supervisor'), (req, res) => {
+  const { tipo, ref, motivo } = req.body;
+  const fecha = new Date().toISOString();
+  let monto = 0, nombre = '';
+  if (tipo === 'cobrador') {
+    const entries = db.porEntregar.filter(p => p.prom === ref);
+    monto = entries.reduce((a, p) => a + p.monto, 0);
+    if (monto <= 0) return res.status(400).json({ error: 'Ese cobrador no trae efectivo por recolectar' });
+    db.porEntregar = db.porEntregar.filter(p => p.prom !== ref);
+    nombre = ref;
+    // el "check" del administrador cierra los cortes pendientes de ese cobrador
+    (db.cortes || []).filter(c => c.prom === ref && c.estado !== 'recibido').forEach(c => {
+      c.estado = 'recibido'; c.recibidoAt = fecha; c.recibidoBy = req.user.nombre;
+    });
+  } else if (tipo === 'sucursal') {
+    const sid = String(ref);
+    const c = db.caja[sid] || { inicial: 0, efectivo: 0, banco: 0, entregas: 0, retiros: 0 };
+    c.retiros = c.retiros || 0;
+    const disponible = Math.max(0, (c.efectivo || 0) + (c.entregas || 0) - c.retiros);
+    if (disponible <= 0) return res.status(400).json({ error: 'Esa sucursal no tiene efectivo por recolectar' });
+    c.retiros += disponible; db.caja[sid] = c; monto = disponible;
+    const suc = db.sucursales.find(s => s.id === +sid); nombre = suc ? suc.nombre : ('Sucursal ' + sid);
+  } else return res.status(400).json({ error: 'Tipo inválido' });
+  db.recolecciones = db.recolecciones || [];
+  const reg = { id: nextId('recolecciones'), tipo, ref, nombre, monto, fecha, por: req.user.nombre, motivo: motivo || '' };
+  db.recolecciones.push(reg); saveDB();
+  res.json({ ok: true, registro: reg });
+});
+app.get('/api/recolecciones', auth, rol('admin', 'supervisor'), (req, res) => {
+  res.json((db.recolecciones || []).slice().reverse());
 });
 
 app.get('/api/reports/comisiones', auth, rol('admin','supervisor'), (req, res) => {
@@ -920,6 +950,7 @@ app.get('*', (req, res, next) => {
     db.cortes = db.cortes || [];
     db.gestiones = db.gestiones || [];
     db.transferencias = db.transferencias || [];
+    db.recolecciones = db.recolecciones || [];
     db.config = db.config || { corteAutoHora: '19:00', corteAutoDias: [1,2,3,4,5,6] };
     db._idem = db._idem || {};
   }
