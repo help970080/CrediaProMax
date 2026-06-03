@@ -229,6 +229,7 @@
           <button class="btn" onclick="ecMov('condonar')">⊘ Condonar</button>
           <button class="btn" onclick="ecMora()">＋ Moratorio</button>
           <button class="btn" onclick="ecAjuste()">⚖ Ajuste</button>
+          <button class="btn" style="border-color:#5ab0ff;color:#5ab0ff" onclick="ecReestructura()">🗓 Reestructurar</button>
           <button class="btn gold" onclick="ecImprimir()">🖨 Estado de cuenta</button>
         </div>
       </div>
@@ -371,6 +372,7 @@
         <div class="rp-card" onclick="rpVerColocacion()"><div class="rp-ic">📊</div><div class="rp-tt">Colocación día/semana</div><div class="rp-ds">Tendencia de créditos otorgados · monto y volumen</div><button class="btn" style="margin-top:8px">Ver</button></div>
         <div class="rp-card" onclick="rpVerRefin()"><div class="rp-ic">🔄</div><div class="rp-tt">REFIN del periodo</div><div class="rp-ds">Refinanciamientos · liquidación + nuevo crédito + neto</div><button class="btn" style="margin-top:8px">Ver</button></div>
         <div class="rp-card" onclick="rpVerComisiones()"><div class="rp-ic">💵</div><div class="rp-tt">Comisiones por cobrador</div><div class="rp-ds">Cobrado, REFIN, comisión calculada · exporta CSV</div><button class="btn" style="margin-top:8px">Ver</button></div>
+        <div class="rp-card" onclick="rpVerRecoleccion()"><div class="rp-ic">💰</div><div class="rp-tt">Recolección de efectivo</div><div class="rp-ds">Cuánto recolectar por cobrador y por sucursal · imprimible</div><button class="btn gold" style="margin-top:8px">Generar</button></div>
         <div class="rp-card" onclick="rpVerAtraso()"><div class="rp-ic">⚠️</div><div class="rp-tt">Atraso / mora por sucursal</div><div class="rp-ds">Clientes vencidos y monto en atraso</div><button class="btn" style="margin-top:8px">Ver</button></div>
         <div class="rp-card" onclick="exportCSV('pagos')"><div class="rp-ic">⬇</div><div class="rp-tt">Movimientos del periodo</div><div class="rp-ds">Quién pagó · hora · forma · cobrador · sucursal</div><button class="btn" style="margin-top:8px">Descargar CSV</button></div>
       </div>
@@ -899,11 +901,33 @@ function rpExportCSV(){
   else if(_rpActual==='refin'){ rows=[['fecha','cliente','cobrador','sucursal','folio_viejo','folio_nuevo','saldo_liquidado','nuevo_monto','neto']].concat(_rpData.refins.map(r=>[r.fecha,r.cliente,r.cobrador,r.sucursal,r.oldFolio,r.nuevoFolio||'',r.saldoLiquidado,r.nuevoMonto,r.neto])); }
   else if(_rpActual==='comisiones'){ rows=[['cobrador','sucursal','efectivo','transferencia','deposito','refin','total','comision']].concat(_rpData.cobradores.map(c=>[c.nombre,c.sucursal,c.efectivo,c.transferencia,c.deposito,c.refin,c.total,c.comision])); }
   else if(_rpActual==='atraso'){ rows=[['cobrador','sucursal','clientes','cartera','atraso','clientes_mora']].concat(_rpData.por_cobrador.map(c=>[c.nombre,c.sucursal,c.clientes,c.cartera,c.atraso_monto||0,c.atraso_clientes||0])); }
+  else if(_rpActual==='recoleccion'){ rows=[['tipo','nombre','sucursal','monto']].concat(_rpData.porCobrador.map(c=>['cobrador',c.cobrador,c.sucursal,c.monto])).concat(_rpData.porSucursal.map(s=>['sucursal_caja',s.sucursal,s.encargada,s.efectivo])); }
   const csv = rows.map(r=>r.map(x=>typeof x==='string'&&x.includes(',')?`"${x}"`:x).join(',')).join('\n');
   const blob = new Blob([csv],{type:'text/csv'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`reporte_${_rpActual}_${new Date().toISOString().slice(0,10)}.csv`; a.click();
 }
 function rpImprimirActual(){ window.print(); }
+
+async function rpVerRecoleccion(){
+  try{
+    const d=await apiU('GET','/api/reports/recoleccion');
+    _rpActual='recoleccion'; _rpData=d;
+    const cobs=d.porCobrador.map(c=>`<tr><td class="nm">${c.cobrador}</td><td>${c.sucursal}</td><td class="n"><b>${fmt(c.monto)}</b></td></tr>`).join('') || '<tr><td colspan="3" style="color:var(--faint);padding:12px;text-align:center">Ningún cobrador trae efectivo en mano.</td></tr>';
+    const sucs=d.porSucursal.map(s=>`<tr><td class="nm">${s.sucursal}</td><td>${s.encargada}</td><td class="n"><b>${fmt(s.efectivo)}</b></td></tr>`).join('') || '<tr><td colspan="3" style="color:var(--faint);padding:12px;text-align:center">Ninguna sucursal tiene efectivo en caja.</td></tr>';
+    rpAbrir('💰 Recolección de efectivo',`
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
+        <div class="kpi" style="padding:10px"><div class="l">En mano de cobradores</div><div class="v" style="font-size:1.3rem">${fmt(d.totalCobradores)}</div></div>
+        <div class="kpi" style="padding:10px"><div class="l">En caja de sucursales</div><div class="v" style="font-size:1.3rem">${fmt(d.totalSucursales)}</div></div>
+        <div class="kpi g" style="padding:10px"><div class="l">TOTAL A RECOLECTAR</div><div class="v" style="font-size:1.5rem">${fmt(d.totalGeneral)}</div></div>
+      </div>
+      <h4 style="margin:6px 0;font-size:.85rem">Efectivo en mano de cobradores (cobrado en ruta, sin entregar)</h4>
+      <table class="rp-table"><thead><tr><th>Cobrador / Promotor</th><th>Sucursal</th><th class="n">Monto a recolectar</th></tr></thead><tbody>${cobs}</tbody>
+        ${d.porCobrador.length?`<tfoot><tr><td colspan="2">Subtotal cobradores</td><td class="n">${fmt(d.totalCobradores)}</td></tr></tfoot>`:''}</table>
+      <h4 style="margin:16px 0 6px;font-size:.85rem">Efectivo en caja de sucursales (entregado, listo para recolección)</h4>
+      <table class="rp-table"><thead><tr><th>Sucursal</th><th>Encargada</th><th class="n">Efectivo en caja</th></tr></thead><tbody>${sucs}</tbody>
+        ${d.porSucursal.length?`<tfoot><tr><td colspan="2">Subtotal sucursales</td><td class="n">${fmt(d.totalSucursales)}</td></tr></tfoot>`:''}</table>`, {csv:true, print:true});
+  }catch(e){ alert(e.message); }
+}
 
 /* ===== TRANSFERENCIAS de clientes entre cobradores (individual + lote) ===== */
 let _trCobradores=[], _trBT=null, _trClientes=[], _trSel=new Set();
@@ -1071,6 +1095,63 @@ async function ecAjuste(){
   if(!m||m<=0) return;
   try{ await apiU('POST','/api/sales/'+ecActual.id+'/pago',{monto:m,forma:'ajuste',idempotencyKey:'aj-'+Date.now()}); await ecCargar(); }
   catch(e){ alert(e.message); }
+}
+function ecReestructura(){
+  if(!ecActual){ alert('Selecciona un crédito primero'); return; }
+  const saldo=ecActual.saldo!=null?ecActual.saldo:0;
+  const ov=document.createElement('div'); ov.id='reov';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:9999';
+  ov.innerHTML=`<div style="background:var(--surf-1);border:1px solid var(--line);border-radius:14px;padding:22px;width:min(460px,92vw)">
+    <h3 style="margin:0 0 4px">🗓 Reestructurar crédito ${ecActual.folio}</h3>
+    <div style="font-size:.76rem;color:var(--dim);margin-bottom:16px;line-height:1.5">Cambia el modelo de pago y aplica un cargo sobre el saldo insoluto. <b>No liquida el crédito</b> — conserva su historia y no genera ingreso ficticio. El calendario se reinicia desde hoy.</div>
+    <div style="background:var(--surf-2);border-radius:8px;padding:10px;margin-bottom:14px;font-size:.82rem">
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--dim)">Modelo actual</span><b>${({diario:'Diario',semanal:'Semanal',unico:'Pago único',p17:'Celulares 17'})[ecActual.tipo]||ecActual.tipo} · plazo ${ecActual.plazo} · cuota ${fmt(ecActual.cuota)}</b></div>
+      <div style="display:flex;justify-content:space-between;margin-top:4px"><span style="color:var(--dim)">Saldo insoluto</span><b style="color:var(--red)">${fmt(saldo)}</b></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label style="font-size:.72rem;color:var(--dim)">Nuevo modelo</label>
+        <select id="re-tipo" style="width:100%;margin-top:4px;padding:9px;background:var(--surf-2);border:1px solid var(--line);border-radius:7px;color:var(--ink);font-family:inherit" onchange="ecReCalc()">
+          <option value="semanal">Semanal</option><option value="diario">Diario</option><option value="unico">Pago único</option>
+        </select></div>
+      <div><label style="font-size:.72rem;color:var(--dim)">Nuevo plazo (pagos)</label>
+        <input id="re-plazo" type="number" value="12" min="1" style="width:100%;margin-top:4px;padding:9px;background:var(--surf-2);border:1px solid var(--line);border-radius:7px;color:var(--ink);font-family:inherit" oninput="ecReCalc()"></div>
+    </div>
+    <label style="font-size:.72rem;color:var(--dim);display:block;margin-top:12px">Cargo extra sobre saldo insoluto</label>
+    <input id="re-cargo" type="number" value="0" min="0" placeholder="0" style="width:100%;margin-top:4px;padding:9px;background:var(--surf-2);border:1px solid var(--line);border-radius:7px;color:var(--ink);font-family:inherit" oninput="ecReCalc()">
+    <label style="font-size:.72rem;color:var(--dim);display:block;margin-top:12px">Motivo (opcional)</label>
+    <input id="re-motivo" placeholder="Ej. no pudo sostener pago diario, se reprograma a semanal" style="width:100%;margin-top:4px;padding:9px;background:var(--surf-2);border:1px solid var(--line);border-radius:7px;color:var(--ink);font-family:inherit">
+    <div id="re-preview" style="background:rgba(90,176,255,.08);border:1px solid rgba(90,176,255,.3);border-radius:8px;padding:11px;margin-top:14px;font-size:.82rem;line-height:1.7">
+      <div style="display:flex;justify-content:space-between"><span>Nuevo saldo a pagar</span><b id="re-nsaldo">${fmt(saldo)}</b></div>
+      <div style="display:flex;justify-content:space-between"><span>Nueva cuota</span><b id="re-ncuota" style="color:#5ab0ff">$0</b></div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+      <button class="btn" onclick="document.getElementById('reov').remove()">Cancelar</button>
+      <button class="btn gold" onclick="ecReAplicar()">Aplicar reestructura</button>
+    </div>
+  </div>`;
+  ov.onclick=e=>{ if(e.target.id==='reov') ov.remove(); };
+  document.body.appendChild(ov);
+  window._reSaldo=saldo; ecReCalc();
+}
+function ecReCalc(){
+  const cargo=parseFloat(document.getElementById('re-cargo').value)||0;
+  const plazo=parseInt(document.getElementById('re-plazo').value)||1;
+  const ns=(window._reSaldo||0)+cargo;
+  document.getElementById('re-nsaldo').textContent=fmt(ns);
+  document.getElementById('re-ncuota').textContent=fmt(Math.round(ns/plazo));
+}
+async function ecReAplicar(){
+  const nuevoTipo=document.getElementById('re-tipo').value;
+  const nuevoPlazo=parseInt(document.getElementById('re-plazo').value)||0;
+  const cargoExtra=parseFloat(document.getElementById('re-cargo').value)||0;
+  const motivo=document.getElementById('re-motivo').value||'';
+  if(nuevoPlazo<=0){ alert('Indica un plazo válido'); return; }
+  try{
+    const r=await apiU('POST','/api/sales/'+ecActual.id+'/reestructura',{nuevoTipo,nuevoPlazo,cargoExtra,motivo});
+    document.getElementById('reov').remove();
+    alert(`✓ Reestructurado ${r.folio}\nDe ${r.de.tipo} (cuota ${fmt(r.de.cuota)}) → ${r.a.tipo} (cuota ${fmt(r.a.cuota)})\nCargo aplicado: ${fmt(r.cargo)} · Nuevo saldo: ${fmt(r.nuevoSaldo)}`);
+    await ecCargar();
+  }catch(e){ alert(e.message); }
 }
 
 /* ===== Cortes (admin) ===== */
