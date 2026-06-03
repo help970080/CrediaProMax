@@ -42,6 +42,25 @@
 
   /* MAIN */
   main{flex:1;min-width:0;padding:24px 30px 60px}
+  .menu-btn{display:none;position:fixed;top:10px;left:10px;z-index:100;background:var(--acc);color:#1a1408;border:none;border-radius:9px;width:42px;height:42px;font-size:1.25rem;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.18)}
+  .nav-backdrop{display:none}
+  @media(max-width:760px){
+    body{display:block}
+    .menu-btn{display:block}
+    aside{position:fixed;top:0;left:0;z-index:99;height:100vh;width:248px;transform:translateX(-100%);transition:transform .22s ease}
+    body.nav-open aside{transform:translateX(0);box-shadow:3px 0 22px rgba(0,0,0,.22)}
+    body.nav-open .nav-backdrop{display:block;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:98}
+    main{padding:60px 13px 50px}
+    .top{flex-direction:column;align-items:flex-start;gap:10px;margin-bottom:16px}
+    .top h1,h1{font-size:1.3rem;line-height:1.2}
+    .kpis{grid-template-columns:1fr 1fr;gap:9px;margin-bottom:16px}
+    .panel{padding:14px 12px}
+    .ph{flex-wrap:wrap;gap:8px}
+    main table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
+    .g2{grid-template-columns:1fr}
+    #rp-menu{grid-template-columns:1fr !important}
+  }
+  @media(max-width:420px){ .kpis{grid-template-columns:1fr} }
   .top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:22px;flex-wrap:wrap}
   .top h2{font-size:1.5rem;font-weight:700;letter-spacing:-.02em}
   .top p{font-size:.84rem;color:var(--dim);margin-top:2px}
@@ -123,6 +142,8 @@
 </style>
 </head>
 <body>
+<button class="menu-btn" onclick="document.body.classList.toggle('nav-open')">☰</button>
+<div class="nav-backdrop" onclick="document.body.classList.remove('nav-open')"></div>
 <aside>
   <div class="logo"><div class="mk">₵</div><div><h1>CobraPro</h1><span>Crédito · Cobranza</span></div></div>
   <nav id="nav">
@@ -1339,6 +1360,7 @@ document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
   document.querySelectorAll('.navitem').forEach(x=>x.classList.remove('on'));
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
   n.classList.add('on');document.getElementById(n.dataset.v).classList.add('on');
+  document.body.classList.remove('nav-open');
   document.getElementById('title').textContent=titles[n.dataset.v][0];
   document.getElementById('subtitle').textContent=titles[n.dataset.v][1];
   if(n.dataset.v==='usuarios') cargarUsuarios();
