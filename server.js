@@ -232,18 +232,23 @@ app.get('/api/sales/:id/movimientos', auth, (req, res) => {
 });
 
 /* ---------- Pago (idempotente, con forma de pago) ---------- */
-function calcAtraso(sale, totalAbonado){
+function calcAtraso(sale){
   const cuota = sale.cuota || 0;
-  const created = sale.createdAt ? new Date(sale.createdAt) : new Date();
-  const dias = Math.max(0, Math.floor((Date.now() - created.getTime())/86400000));
+  // ancla del calendario: si hubo reestructura, el reloj se reinicia desde esa fecha
+  const anchor = sale.reestructuraAt ? new Date(sale.reestructuraAt) : (sale.createdAt ? new Date(sale.createdAt) : new Date());
+  const dias = Math.max(0, Math.floor((Date.now() - anchor.getTime())/86400000));
   let cuotasDebidas = 0;
   if (sale.tipo === 'diario') cuotasDebidas = Math.min(sale.plazo || 0, dias);
   else if (sale.tipo === 'semanal') cuotasDebidas = Math.min(sale.plazo || 0, Math.floor(dias/7));
   else if (sale.tipo === 'unico') cuotasDebidas = dias >= (sale.plazo || 0) ? 1 : 0;
   else if (sale.tipo === 'p17') cuotasDebidas = Math.min(17, Math.floor(dias / ((sale.plazo || 270)/17)));
-  const cuotasPagadas = cuota > 0 ? Math.floor(totalAbonado/cuota) : 0;
-  const cuotasAtraso = Math.max(0, cuotasDebidas - cuotasPagadas);
-  const montoAtraso = cuotasAtraso * cuota;
+  // saldo base: total original, o el saldo reprogramado si hubo reestructura
+  const saldoBase = sale.saldoBaseReestructura != null ? sale.saldoBaseReestructura : (sale.total || 0);
+  const saldoActual = saldoDe(sale.id);
+  const expectedSaldo = Math.max(0, saldoBase - cuotasDebidas * cuota);
+  const montoAtraso = Math.max(0, saldoActual - expectedSaldo);
+  const cuotasAtraso = cuota > 0 ? Math.round(montoAtraso / cuota) : 0;
+  const cuotasPagadas = cuota > 0 ? Math.max(0, Math.round((saldoBase - saldoActual)/cuota)) : 0;
   const diasAtraso = sale.tipo === 'diario' ? cuotasAtraso
                    : sale.tipo === 'semanal' ? cuotasAtraso*7
                    : sale.tipo === 'unico' ? Math.max(0, dias - (sale.plazo||0))
@@ -335,6 +340,53 @@ app.post('/api/sales/:id/refin', auth, rol('admin','supervisor','sucursal'), ide
     nuevoFolio: nuevo.folio, nuevoSaleId: nuevo.id,
     nuevoMonto: monto, nuevoTotal: r.total, nuevoCuota: r.cuota,
     saldoNuevo: saldoDe(nuevo.id), neto
+  });
+});
+
+/* ---------- Reestructura: cambia el modelo de pago + cargo, SIN liquidar (no genera ingreso ficticio) ---------- */
+app.post('/api/sales/:id/reestructura', auth, rol('admin', 'supervisor'), (req, res) => {
+  const id = +req.params.id;
+  const sale = db.sales.find(s => s.id === id);
+  if (!sale) return res.status(404).json({ error: 'Crédito no encontrado' });
+  const saldoActual = saldoDe(id);
+  if (saldoActual <= 0) return res.status(400).json({ error: 'Este crédito ya está liquidado, no aplica reestructura' });
+
+  const { nuevoTipo, nuevoPlazo, cargoExtra, motivo } = req.body;
+  const tipo = nuevoTipo || sale.tipo;
+  const plazo = +nuevoPlazo;
+  const cargo = Math.max(0, +cargoExtra || 0);
+  if (!plazo || plazo <= 0) return res.status(400).json({ error: 'Plazo inválido' });
+
+  const hoy = fechaMxHoyDDMM();
+  // 1. cargo real sobre el saldo insoluto (NO es abono, no infla cobranza)
+  if (cargo > 0) {
+    db.movimientos.push({
+      id: nextId('movimientos'), saleId: id, fecha: hoy,
+      concepto: 'Cargo por reestructura' + (motivo ? ' — ' + motivo : ''),
+      origen: 'Supervisor: ' + req.user.nombre,
+      cargo: cargo, abono: 0, forma: 'reestructura'
+    });
+  }
+  // 2. nuevo saldo base y cuota reprogramada (sin factor: se reparte el saldo insoluto + cargo)
+  const nuevoSaldoBase = saldoActual + cargo;
+  const nuevaCuota = Math.round(nuevoSaldoBase / plazo);
+  // 3. cambia el modelo EN EL MISMO crédito; reinicia el reloj del calendario
+  const tipoAnt = sale.tipo, plazoAnt = sale.plazo, cuotaAnt = sale.cuota;
+  sale.tipo = tipo; sale.plazo = plazo; sale.cuota = nuevaCuota;
+  sale.saldoBaseReestructura = nuevoSaldoBase;
+  sale.reestructuraAt = new Date().toISOString();
+  sale.historialReestructura = sale.historialReestructura || [];
+  sale.historialReestructura.push({
+    fecha: sale.reestructuraAt, por: req.user.nombre,
+    de: { tipo: tipoAnt, plazo: plazoAnt, cuota: cuotaAnt },
+    a: { tipo, plazo, cuota: nuevaCuota }, cargo, saldoAntes: saldoActual, motivo: motivo || ''
+  });
+  saveDB();
+  res.json({
+    ok: true, folio: sale.folio,
+    saldoAntes: saldoActual, cargo, nuevoSaldo: saldoDe(id),
+    de: { tipo: tipoAnt, plazo: plazoAnt, cuota: cuotaAnt },
+    a: { tipo, plazo, cuota: nuevaCuota }
   });
 });
 
@@ -682,6 +734,28 @@ app.get('/api/reports/refin', auth, rol('admin','supervisor'), (req, res) => {
     neto: refins.reduce((a,r)=>a+r.neto,0),
   };
   res.json({ desde: desde.toISOString(), hasta: hasta.toISOString(), refins, totales });
+});
+
+app.get('/api/reports/recoleccion', auth, rol('admin', 'supervisor'), (req, res) => {
+  const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
+  // Efectivo en mano de cada cobrador (cobrado en ruta, aún no entregado a sucursal)
+  const porCobrador = (db.porEntregar || []).filter(p => p.monto > 0).map(p => ({
+    cobrador: p.prom, sucursal: sucMap[p.sucursalId] || '—', monto: p.monto
+  })).sort((a, b) => b.monto - a.monto);
+  // Efectivo en caja de cada sucursal (ya entregado, listo para recolección de la empresa)
+  const porSucursal = db.sucursales.map(s => {
+    const caja = db.caja[String(s.id)] || {};
+    const efectivo = (caja.inicial || 0) + (caja.efectivo || 0) + (caja.entregas || 0);
+    const enc = db.users.find(u => u.rol === 'sucursal' && u.sucursalId === s.id);
+    return { sucursal: s.nombre, encargada: enc ? enc.nombre : '—', efectivo };
+  }).filter(s => s.efectivo > 0).sort((a, b) => b.efectivo - a.efectivo);
+  res.json({
+    generadoEn: new Date().toISOString(),
+    porCobrador, porSucursal,
+    totalCobradores: porCobrador.reduce((a, c) => a + c.monto, 0),
+    totalSucursales: porSucursal.reduce((a, s) => a + s.efectivo, 0),
+    totalGeneral: porCobrador.reduce((a, c) => a + c.monto, 0) + porSucursal.reduce((a, s) => a + s.efectivo, 0),
+  });
 });
 
 app.get('/api/reports/comisiones', auth, rol('admin','supervisor'), (req, res) => {
