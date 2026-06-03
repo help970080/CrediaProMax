@@ -419,6 +419,7 @@ async function crearCredito(){
   const t=document.getElementById('n-tipo').value; const monto=+document.getElementById('n-monto').value||0;
   const plazo=+(document.getElementById('n-plazo')?.value||0);
   const tel=document.getElementById('n-tel').value||''; const prom=document.getElementById('n-prom').value;
+  if(!prom){toast('Esta sucursal no tiene cobradores dados de alta. Pídele al admin que cree el usuario cobrador y lo asigne a tu sucursal.');return;}
   // fetch directo para poder leer el 409 estructurado de validación
   try{
     const r=await fetch('/api/sales',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+TOKEN},body:JSON.stringify({nombre,tel,calle,col,prom,tipo:t,plazo,monto,dias:plazo})});
@@ -463,7 +464,12 @@ document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelect
 setInterval(()=>document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'}),1000);
 document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'});
 async function _init(){
-  try{ const cob=await api('GET','/api/cobradores'); if(cob.length) document.getElementById('n-prom').innerHTML=cob.map(c=>`<option>${c.nombre}</option>`).join(''); }catch(e){}
+  try{
+    const cob=await api('GET','/api/cobradores');
+    document.getElementById('n-prom').innerHTML = cob.length
+      ? cob.map(c=>`<option>${c.nombre}</option>`).join('')
+      : '<option value="">— sin cobradores en esta sucursal —</option>';
+  }catch(e){}
   fillPlazos(); calc(); _buscar(); cargarCaja();
 }
 _init();
