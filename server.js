@@ -602,12 +602,18 @@ function generarCorte(user, isAuto){
   const pagos = db.movimientos.filter(m => m.abono > 0 && m.origen === user.nombre && m.fecha === hoy);
   const efectivo = pagos.filter(m => (m.forma||'efectivo') === 'efectivo').reduce((a,m)=>a+m.abono,0);
   const banco = pagos.filter(m => m.forma === 'transferencia' || m.forma === 'deposito').reduce((a,m)=>a+m.abono,0);
+  const tieneEfectivo = efectivo > 0;
   const corte = {
     id: nextId('cortes'), prom: user.nombre, sucursalId: user.sucursalId || null,
     fecha, totalEfectivo: efectivo, totalBanco: banco, npagos: pagos.length,
     items: pagos.map(m => ({ saleId: m.saleId, monto: m.abono, forma: m.forma||'efectivo' })),
     horaEntrega: horaMxHHMM(),
-    auto: !!isAuto, by: isAuto ? 'sistema' : 'cobrador', estado: 'pendiente', createdAt: new Date().toISOString()
+    auto: !!isAuto, by: isAuto ? 'sistema' : 'cobrador',
+    // si no hay efectivo que entregar, el corte se cierra solo (no hay nada que el admin reciba)
+    estado: tieneEfectivo ? 'pendiente' : 'recibido',
+    recibidoAt: tieneEfectivo ? null : new Date().toISOString(),
+    recibidoBy: tieneEfectivo ? null : 'sin efectivo',
+    createdAt: new Date().toISOString()
   };
   db.cortes.push(corte); saveDB();
   return { corte };
@@ -980,6 +986,8 @@ app.get('*', (req, res, next) => {
     db.gestiones = db.gestiones || [];
     db.transferencias = db.transferencias || [];
     db.recolecciones = db.recolecciones || [];
+    // auto-sana cortes atorados: si no hay efectivo que entregar, no deben quedar "pendientes de recibir"
+    (db.cortes || []).forEach(c => { if (c.estado === 'pendiente' && !(c.totalEfectivo > 0)) { c.estado = 'recibido'; c.recibidoAt = c.recibidoAt || new Date().toISOString(); c.recibidoBy = c.recibidoBy || 'sin efectivo'; } });
     db.config = db.config || { corteAutoHora: '19:00', corteAutoDias: [1,2,3,4,5,6] };
     db._idem = db._idem || {};
   }
