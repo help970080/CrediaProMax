@@ -410,6 +410,22 @@ function calc(){
     ${extra}
     <div class="calc-row big"><span>Cuota ${freq}</span><span class="v">${fmt(r.cuota)}</span></div>`;
 }
+async function agregarCreditoExistente(clienteId){
+  cerrar();
+  const t=document.getElementById('n-tipo').value; const monto=+document.getElementById('n-monto').value||0;
+  const plazo=+(document.getElementById('n-plazo')?.value||0);
+  const prom=document.getElementById('n-prom').value;
+  if(!prom){toast('Selecciona el cobrador para este crédito');return;}
+  try{
+    const d=await api('POST','/api/sales',{clienteExistenteId:clienteId,prom,tipo:t,plazo,monto,dias:plazo});
+    caja.ncred++; caja.coloc+=monto;
+    const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+    movs.unshift({hora,txt:`Crédito ${d.folio} — ${d.cliente} (${prom}) · 2º crédito`,monto:0});
+    ['n-cli','n-tel','n-calle','n-col','n-ref'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    render(); _buscar();
+    toast(`✓ ${d.folio} agregado a ${d.cliente} · ahora tiene ${d.totalCreditosCliente} créditos · cuota ${fmt(d.cuota)}`);
+  }catch(e){ toast(e.message); }
+}
 async function crearCredito(){
   const nombre=document.getElementById('n-cli').value.trim();
   const calle=document.getElementById('n-calle').value.trim();
@@ -425,12 +441,20 @@ async function crearCredito(){
     const r=await fetch('/api/sales',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+TOKEN},body:JSON.stringify({nombre,tel,calle,col,prom,tipo:t,plazo,monto,dias:plazo})});
     const d=await r.json().catch(()=>({}));
     if(r.status===409 && d.error==='cliente_duplicado'){
-      // la sucursal NO puede forzar — muestra el bloqueo
+      const ex=d.clienteExistente||{};
+      const puedeAgregar=d.puedeAgregar && ex.mismaSucursal;
+      const opcionAgregar = puedeAgregar
+        ? `<div style="background:rgba(23,138,85,.08);border:1px solid rgba(23,138,85,.35);border-radius:8px;padding:12px;font-size:.82rem;line-height:1.55;margin-top:10px">¿Es un <b>segundo crédito autorizado</b> para el mismo cliente? Puedes colgárselo sin duplicar la persona. Cada crédito conserva su propio folio, saldo y cuota.</div>
+           <div class="modal-actions" style="margin-top:14px">
+             <button class="ma" onclick="cerrar()">Cancelar</button>
+             <button class="ma ok" style="background:var(--grn);border-color:var(--grn)" onclick="agregarCreditoExistente(${ex.id})">➕ Agregar 2º crédito a ${ex.nombre}</button>
+           </div>`
+        : `<div style="background:rgba(224,176,32,.08);border:1px solid rgba(224,176,32,.3);border-radius:8px;padding:12px;font-size:.8rem;line-height:1.55">Ese cliente pertenece a otra sucursal. Para un segundo crédito o renovación, pídele al <b>administrador o supervisor</b> que lo registre, o usa <b>REFIN</b> si el cliente quiere refinanciar su saldo.</div>
+           <div class="modal-actions"><button class="ma ok" onclick="cerrar()">Entendido</button></div>`;
       document.getElementById('overlay').innerHTML=`<div class="modal">
         <h3 style="color:#e0b020">⚠ Cliente ya existe</h3>
-        <div style="font-size:.85rem;line-height:1.6;color:var(--dim);margin:10px 0 16px">${d.detalle}</div>
-        <div style="background:rgba(224,176,32,.08);border:1px solid rgba(224,176,32,.3);border-radius:8px;padding:12px;font-size:.8rem;line-height:1.55">No se puede dar de alta un crédito duplicado desde sucursal. Si es un caso legítimo (renovación o segundo crédito autorizado), pídele al <b>administrador o supervisor</b> que lo registre, o usa <b>REFIN</b> si el cliente quiere refinanciar su saldo actual.</div>
-        <div class="modal-actions"><button class="ma ok" onclick="cerrar()">Entendido</button></div>
+        <div style="font-size:.85rem;line-height:1.6;color:var(--dim);margin:10px 0 4px">${d.detalle}</div>
+        ${opcionAgregar}
       </div>`;
       document.getElementById('overlay').classList.add('on');
       return;
