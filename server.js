@@ -230,36 +230,50 @@ app.patch('/api/clients/:id', auth, rol('admin', 'supervisor'), (req, res) => {
   res.json({ ok: true, cliente: c });
 });
 app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
-  const { nombre, tel, calle, col, sucursalId, prom, tipo, plazo, monto, dias, force } = req.body;
-  if (!nombre || !calle || !col) return res.status(400).json({ error: 'Domicilio (calle y colonia) obligatorio en la venta' });
-  // Validación: teléfono ya ocupado por otro cliente / crédito activo en otra sucursal
-  const telNorm = String(tel || '').replace(/\D/g, '');
-  if (telNorm.length >= 10 && !force) {
-    const dup = db.clients.find(c => c.activo !== false && (c.tel || '').replace(/\D/g, '') === telNorm);
-    if (dup) {
-      const sucDup = db.sucursales.find(s => s.id === dup.sucursalId);
-      const credAct = db.sales.find(s => s.clientId === dup.id && saldoDe(s.id) > 0);
-      const mismaSuc = String(dup.sucursalId) === String(sucursalId || req.user.sucursalId || 1);
-      return res.status(409).json({
-        error: 'cliente_duplicado',
-        detalle: `El teléfono ${tel} ya pertenece a "${dup.nombre}"${sucDup ? ' (sucursal ' + sucDup.nombre + ')' : ''}.` +
-          (credAct ? ` Tiene un crédito ACTIVO ${credAct.folio} con saldo $${Math.round(saldoDe(credAct.id))}${!mismaSuc ? ' en OTRA sucursal' : ''}.` : ' Sin crédito activo.'),
-        clienteExistente: { id: dup.id, nombre: dup.nombre, sucursalId: dup.sucursalId, sucursal: sucDup ? sucDup.nombre : null, tieneCreditoActivo: !!credAct, folioActivo: credAct ? credAct.folio : null, otraSucursal: !mismaSuc },
-        puedeForzar: req.user.rol === 'admin' || req.user.rol === 'supervisor'
-      });
+  const { nombre, tel, calle, col, sucursalId, prom, tipo, plazo, monto, dias, force, clienteExistenteId } = req.body;
+
+  let client;
+  if (clienteExistenteId) {
+    // Agregar un crédito ADICIONAL a un cliente que ya existe (sin duplicar la persona)
+    client = db.clients.find(c => c.id === +clienteExistenteId && c.activo !== false);
+    if (!client) return res.status(404).json({ error: 'Cliente existente no encontrado' });
+    if (req.user.rol === 'sucursal' && client.sucursalId !== req.user.sucursalId)
+      return res.status(403).json({ error: `Ese cliente pertenece a otra sucursal. No puedes agregarle créditos desde aquí.` });
+  } else {
+    if (!nombre || !calle || !col) return res.status(400).json({ error: 'Domicilio (calle y colonia) obligatorio en la venta' });
+    // Validación: teléfono ya ocupado por otro cliente / crédito activo
+    const telNorm = String(tel || '').replace(/\D/g, '');
+    if (telNorm.length >= 10 && !force) {
+      const dup = db.clients.find(c => c.activo !== false && (c.tel || '').replace(/\D/g, '') === telNorm);
+      if (dup) {
+        const sucDup = db.sucursales.find(s => s.id === dup.sucursalId);
+        const credAct = db.sales.find(s => s.clientId === dup.id && saldoDe(s.id) > 0);
+        const mismaSuc = String(dup.sucursalId) === String(sucursalId || req.user.sucursalId || 1);
+        return res.status(409).json({
+          error: 'cliente_duplicado',
+          detalle: `El teléfono ${tel} ya pertenece a "${dup.nombre}"${sucDup ? ' (sucursal ' + sucDup.nombre + ')' : ''}.` +
+            (credAct ? ` Tiene un crédito ACTIVO ${credAct.folio} con saldo $${Math.round(saldoDe(credAct.id))}${!mismaSuc ? ' en OTRA sucursal' : ''}.` : ' Sin crédito activo.'),
+          clienteExistente: { id: dup.id, nombre: dup.nombre, sucursalId: dup.sucursalId, sucursal: sucDup ? sucDup.nombre : null, tieneCreditoActivo: !!credAct, folioActivo: credAct ? credAct.folio : null, otraSucursal: !mismaSuc, mismaSucursal: mismaSuc },
+          puedeForzar: req.user.rol === 'admin' || req.user.rol === 'supervisor',
+          puedeAgregar: req.user.rol !== 'sucursal' || mismaSuc   // se le puede colgar un 2º crédito
+        });
+      }
     }
+    const sucFinal = req.user.rol === 'sucursal' ? (req.user.sucursalId || 1) : (sucursalId || req.user.sucursalId || 1);
+    client = { id: nextId('clients'), nombre, tel: tel || '', calle, col, sucursalId: sucFinal, prom: prom || '' };
+    db.clients.push(client);
   }
+
   const r = calcCredito(tipo, +plazo, +monto, +dias);
-  // una sucursal solo puede dar de alta en SU propia sucursal
-  const sucFinal = req.user.rol === 'sucursal' ? (req.user.sucursalId || 1) : (sucursalId || req.user.sucursalId || 1);
-  const client = { id: nextId('clients'), nombre, tel: tel || '', calle, col, sucursalId: sucFinal, prom: prom || '' };
-  db.clients.push(client);
   const folio = 'F-' + (1100 + nextId('sales'));
-  const sale = { id: nextId('sales'), folio, clientId: client.id, tipo, plazo: +plazo, monto: +monto, cuota: r.cuota, total: r.total, prom: client.prom, sucursalId: client.sucursalId, createdAt: new Date().toISOString() };
+  const promFinal = prom || client.prom || '';
+  const sucCred = req.user.rol === 'sucursal' ? (req.user.sucursalId || 1) : (clienteExistenteId ? client.sucursalId : (sucursalId || req.user.sucursalId || 1));
+  const sale = { id: nextId('sales'), folio, clientId: client.id, tipo, plazo: +plazo, monto: +monto, cuota: r.cuota, total: r.total, prom: promFinal, sucursalId: sucCred, createdAt: new Date().toISOString() };
   db.sales.push(sale);
   db.movimientos.push({ id: nextId('movimientos'), saleId: sale.id, fecha: fechaMxHoyDDMM(), concepto: 'Disposición de crédito', origen: 'Sucursal', cargo: r.total, abono: 0 });
   saveDB();
-  res.status(201).json({ ...sale, saldo: saldoDe(sale.id) });
+  const nCreditos = db.sales.filter(s => s.clientId === client.id).length;
+  res.status(201).json({ ...sale, saldo: saldoDe(sale.id), cliente: client.nombre, agregadoAExistente: !!clienteExistenteId, totalCreditosCliente: nCreditos });
 });
 
 /* ---------- Estado de cuenta (libro de cargos y abonos) ---------- */
@@ -302,11 +316,17 @@ app.post('/api/sales/:id/pago', auth, idem, (req, res) => {
     return res.status(403).json({ error: 'Solo administrador o supervisor pueden registrar ajustes' });
   }
   const sale = db.sales.find(s => s.id === id); if (!sale) return res.status(404).json({ error: 'Crédito no encontrado' });
+  const f = forma || 'efectivo';
+  // No se permite abonar a un crédito ya liquidado ni exceder el saldo (evita saldos negativos).
+  if (f !== 'ajuste') {
+    const saldoVigente = saldoDe(id);
+    if (saldoVigente <= 0) return res.status(409).json({ error: 'Este crédito ya está liquidado (saldo $0). No admite más abonos.' });
+    if (+monto > saldoVigente + 1) return res.status(409).json({ error: `El abono ($${Math.round(+monto)}) excede el saldo pendiente. El máximo a pagar es $${Math.round(saldoVigente)}.` });
+  }
   // Regla: tras entregar su corte del día, el cobrador no puede registrar más cobros.
   if (req.user.rol === 'cobrador' && corteHechoHoy(req.user.nombre)) {
     return res.status(423).json({ error: 'Ya entregaste tu corte de hoy. No puedes registrar más cobros hasta mañana. Si recibiste dinero después del corte, repórtalo a tu sucursal.' });
   }
-  const f = forma || 'efectivo';
   const sidCredito = String(sale.sucursalId || 1);
   // El dinero FÍSICO entra a la caja de QUIEN RECIBE el pago (no a la del crédito).
   const sidCobro = String(req.user.sucursalId || sidCredito);
