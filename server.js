@@ -321,6 +321,38 @@ app.get('/api/sales', auth, (req, res) => {
     return { ...s, saldo: saldoDe(s.id), cliente: c.nombre, tel: c.tel || '', calle: c.calle || '', col: c.col || '' };
   }));
 });
+/* ---------- Mapa de clientes ---------- */
+app.get('/api/mapa', auth, rol('admin', 'supervisor'), (req, res) => {
+  const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
+  const activos = db.clients.filter(c => c.activo !== false);
+  const out = []; let pendientes = 0, sumLat = 0, sumLng = 0, nLoc = 0;
+  for (const c of activos) {
+    const sales = db.sales.filter(s => s.clientId === c.id);
+    const saldo = sales.reduce((a, s) => a + Math.max(0, saldoDe(s.id)), 0);
+    let maxAtraso = 0, cuotaRef = 1;
+    sales.forEach(s => { if (saldoDe(s.id) > 0) { const at = calcAtraso(s); if (at.montoAtraso > maxAtraso) maxAtraso = at.montoAtraso; cuotaRef = s.cuota || cuotaRef; } });
+    let estado = 'corriente';
+    if (saldo <= 0) estado = 'liquidado';
+    else if (maxAtraso <= 0) estado = 'corriente';
+    else estado = maxAtraso > cuotaRef * 3 ? 'vencido' : 'atraso';
+    const has = typeof c.lat === 'number' && typeof c.lng === 'number';
+    if (has) { sumLat += c.lat; sumLng += c.lng; nLoc++; } else pendientes++;
+    out.push({ id: c.id, nombre: c.nombre, tel: c.tel || '', dir: [c.calle, c.col].filter(Boolean).join(', '),
+      sucursal: sucMap[c.sucursalId] || '—', cobrador: c.prom || '—', saldo, estado,
+      lat: has ? c.lat : null, lng: has ? c.lng : null });
+  }
+  const centro = nLoc ? [sumLat / nLoc, sumLng / nLoc] : [19.4326, -99.1332];
+  res.json({ clientes: out, pendientes, ubicados: nLoc, total: activos.length, centro });
+});
+app.post('/api/clients/:id/ubicar', auth, rol('admin', 'supervisor'), (req, res) => {
+  const c = db.clients.find(x => x.id == req.params.id);
+  if (!c) return res.status(404).json({ error: 'Cliente no encontrado' });
+  const { lat, lng, src } = req.body;
+  if (typeof lat !== 'number' || typeof lng !== 'number') return res.status(400).json({ error: 'lat/lng requeridos' });
+  c.lat = lat; c.lng = lng; c.geoSrc = src || 'manual'; saveDB();
+  res.json({ ok: true });
+});
+
 app.delete('/api/clients/:id', auth, rol('admin', 'supervisor'), (req, res) => {
   const id = +req.params.id;
   const c = db.clients.find(x => x.id === id);
