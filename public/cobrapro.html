@@ -460,6 +460,15 @@
         <div class="sim-out" id="sim-out"></div>
       </div>
     </div>
+    <div class="panel" id="tarifas-panel" style="display:none">
+      <div class="ph"><h3>🏷️ Tarifas de crédito</h3><span class="hint">Solo admin · estos factores definen cuánto paga el cliente</span></div>
+      <div style="font-size:.82rem;color:var(--dim);line-height:1.55;margin-bottom:14px">El <b>total a pagar = monto × factor + cuota fija</b>, repartido en el número de pagos. Edita los factores de tu agencia; aplican de inmediato a los créditos nuevos. No afecta a otras agencias ni a los créditos ya colocados.</div>
+      <div id="tarifas-editor"></div>
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button class="btn gold" onclick="guardarTarifas()">Guardar tarifas</button>
+        <button class="btn" onclick="resetTarifas()">Restaurar valores por defecto</button>
+      </div>
+    </div>
   </section>
 </main>
 
@@ -1332,7 +1341,7 @@ function drawDonutForma(pagos){
 function drawDonut(D){ drawDonutForma([]); }
 
 /* SIMULADOR */
-const PROD={diario:[{p:10,f:1.17,fijo:30},{p:20,f:1.23,fijo:60},{p:30,f:1.33,fijo:90}],semanal:[{p:4,f:1.35,fijo:60},{p:8,f:1.43,fijo:120},{p:12,f:1.53,fijo:180},{p:16,f:1.63,fijo:240},{p:20,f:1.83,fijo:300}],p17:[{p:17,f:1.73,fijo:270}]};
+let PROD={diario:[{p:10,f:1.17,fijo:30},{p:20,f:1.23,fijo:60},{p:30,f:1.33,fijo:90}],semanal:[{p:4,f:1.35,fijo:60},{p:8,f:1.43,fijo:120},{p:12,f:1.53,fijo:180},{p:16,f:1.63,fijo:240},{p:20,f:1.83,fijo:300}],p17:[{p:17,f:1.73,fijo:270}],unico:{base:2,factor:0.0183}};
 const plazosUnico=[10,15,20,30];
 function fillPlazos(){const t=$('s-tipo').value;
   if(t==='unico'){$('s-plazo').innerHTML=plazosUnico.map(p=>`<option value="${p}">${p} días</option>`).join('');$('s-plazo').value=15;return;}
@@ -1371,11 +1380,62 @@ document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
   if(n.dataset.v==='conciliacion') cargarCortes();
   if(n.dataset.v==='reportes') renderReportesLive();
   if(n.dataset.v==='transferencias'){ _trSel.clear(); trInit(); $('tr-resultados').innerHTML='<div style="color:var(--faint);padding:12px;font-size:.85rem">Elige un cobrador o busca un cliente para empezar.</div>'; $('tr-toolbar').style.display='none'; $('tr-batchbar').style.display='none'; trCargarLog(); }
+  if(n.dataset.v==='simulador') initTarifas();
 });
 document.querySelectorAll('#period button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#period button').forEach(x=>x.classList.remove('on'));b.classList.add('on');period=b.dataset.p;render();});
 ['c-cob','c-meta','c-bono','c-mora','c-coloc'].forEach(id=>document.getElementById(id).oninput=render);
 ['f-suc','f-tipo','f-sem','f-q'].forEach(id=>document.getElementById(id).oninput=renderCartera);
 ['s-tipo','s-monto','s-plazo'].forEach(id=>document.getElementById(id).oninput=()=>{if(event.target.id==='s-tipo')fillPlazos();sim();});
+
+/* ===== Tarifas de crédito (editable por el admin de la agencia) ===== */
+const _tLbl={diario:'Diario',semanal:'Semanal',p17:'Celulares 17 pagos'};
+async function initTarifas(){
+  try{ const t=await apiU('GET','/api/tarifas'); if(t&&t.semanal){ PROD=t; fillPlazos(); sim(); } }catch(e){}
+  const panel=document.getElementById('tarifas-panel');
+  if(ME && ME.rol==='admin'){ panel.style.display='block'; renderTarifasEditor(); }
+  else panel.style.display='none';
+}
+function renderTarifasEditor(){
+  let html='';
+  ['diario','semanal','p17'].forEach(tipo=>{
+    html+=`<div style="margin-bottom:14px"><div style="font-weight:600;font-size:.85rem;margin-bottom:6px">${_tLbl[tipo]}</div>
+      <table style="width:100%"><thead><tr><th>Plazo (pagos)</th><th>Factor</th><th>Cuota fija $</th></tr></thead><tbody>`;
+    (PROD[tipo]||[]).forEach((it,i)=>{
+      html+=`<tr><td><input type="number" data-t="${tipo}" data-i="${i}" data-k="p" value="${it.p}" style="width:90px;padding:6px;background:var(--surf-2);border:1px solid var(--line);border-radius:6px;color:var(--ink)"></td>
+        <td><input type="number" step="0.01" data-t="${tipo}" data-i="${i}" data-k="f" value="${it.f}" style="width:100px;padding:6px;background:var(--surf-2);border:1px solid var(--line);border-radius:6px;color:var(--ink)"></td>
+        <td><input type="number" data-t="${tipo}" data-i="${i}" data-k="fijo" value="${it.fijo}" style="width:110px;padding:6px;background:var(--surf-2);border:1px solid var(--line);border-radius:6px;color:var(--ink)"></td></tr>`;
+    });
+    html+='</tbody></table></div>';
+  });
+  const u=PROD.unico||{base:2,factor:0.0183};
+  html+=`<div style="margin-bottom:6px"><div style="font-weight:600;font-size:.85rem;margin-bottom:6px">Pago único</div>
+    <div style="font-size:.76rem;color:var(--dim);margin-bottom:6px">Total = monto + días × (base + monto × factor)</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <label style="font-size:.76rem;color:var(--dim)">Base $ <input type="number" step="0.5" id="u-base" value="${u.base}" style="width:90px;padding:6px;background:var(--surf-2);border:1px solid var(--line);border-radius:6px;color:var(--ink)"></label>
+      <label style="font-size:.76rem;color:var(--dim)">Factor diario <input type="number" step="0.0001" id="u-factor" value="${u.factor}" style="width:110px;padding:6px;background:var(--surf-2);border:1px solid var(--line);border-radius:6px;color:var(--ink)"></label>
+    </div></div>`;
+  document.getElementById('tarifas-editor').innerHTML=html;
+}
+function leerTarifasEditor(){
+  const t={diario:[],semanal:[],p17:[]};
+  document.querySelectorAll('#tarifas-editor input[data-t]').forEach(inp=>{
+    const tipo=inp.dataset.t,i=+inp.dataset.i,k=inp.dataset.k;
+    t[tipo][i]=t[tipo][i]||{}; t[tipo][i][k]=+inp.value;
+  });
+  t.unico={base:+document.getElementById('u-base').value||0,factor:+document.getElementById('u-factor').value||0};
+  return t;
+}
+async function guardarTarifas(){
+  const t=leerTarifasEditor();
+  for(const tipo of ['diario','semanal','p17']){ if(t[tipo].some(x=>!x.p||x.f==null||x.fijo==null)){ alert('Revisa que todos los plazos tengan plazo, factor y cuota fija.'); return; } }
+  try{ const saved=await apiU('PUT','/api/tarifas',t); PROD=saved; renderTarifasEditor(); fillPlazos(); sim(); alert('✓ Tarifas guardadas. Aplican a los créditos nuevos.'); }
+  catch(e){ alert(e.message); }
+}
+async function resetTarifas(){
+  if(!confirm('¿Restaurar las tarifas por defecto? Se perderán tus factores personalizados.')) return;
+  try{ const d=await apiU('POST','/api/tarifas/reset'); PROD=d; renderTarifasEditor(); fillPlazos(); sim(); alert('Tarifas restauradas a los valores por defecto.'); }
+  catch(e){ alert(e.message); }
+}
 // f-suc se llena con sucursales reales al abrir Cartera (ver cargarCartera)
 
 function exportCSV(t){let rows=[],name=t;const D=CRED.map(deriva);
@@ -1392,8 +1452,8 @@ let _sucursales = [];
 if(ME) document.getElementById('meName').textContent = ME.nombre + ' · ' + (rolLbl[ME.rol]||ME.rol);
 async function cargarUsuarios(){
   try{
-    if(!_sucursales.length){ _sucursales = await apiU('GET','/api/sucursales');
-      document.getElementById('u-suc').innerHTML = '<option value="">— sin sucursal —</option>' + _sucursales.map(s=>`<option value="${s.id}">${s.nombre}</option>`).join(''); }
+    _sucursales = await apiU('GET','/api/sucursales');
+    document.getElementById('u-suc').innerHTML = '<option value="">— sin sucursal —</option>' + _sucursales.map(s=>`<option value="${s.id}">${s.nombre}</option>`).join('');
     const us = await apiU('GET','/api/users');
     document.getElementById('u-list').innerHTML = us.map(u=>{
       const s=_sucursales.find(x=>x.id===u.sucursalId);
@@ -1412,6 +1472,7 @@ async function crearUsuario(){
     rol:document.getElementById('u-rol').value, sucursalId:+document.getElementById('u-suc').value||null,
     password:document.getElementById('u-pass').value.trim()||undefined };
   if(!body.nombre||!body.usuario){ alert('Nombre y usuario son obligatorios'); return; }
+  if((body.rol==='cobrador'||body.rol==='sucursal') && !body.sucursalId){ alert('Asigna una sucursal a este '+(body.rol==='cobrador'?'cobrador':'usuario de sucursal')); return; }
   try{ const d=await apiU('POST','/api/users',body); mostrarPw(d.nombre,d.passwordGenerada);
     ['u-nombre','u-usuario','u-pass'].forEach(id=>document.getElementById(id).value=''); cargarUsuarios();
   }catch(e){ alert(e.message); }

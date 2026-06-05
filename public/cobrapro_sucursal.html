@@ -198,15 +198,16 @@ function salir(){ try{localStorage.removeItem('cobrapro_token');localStorage.rem
 if(ME&&ME.nombre){ var _en=document.getElementById('encName'); if(_en)_en.textContent='Caja · '+ME.nombre; }
 const BRAND=(()=>{try{return JSON.parse(localStorage.getItem('cobrapro_brand')||'null')||{nombre:'CobraPro'};}catch(e){return {nombre:'CobraPro'};}})();
 try{ if(BRAND.nombre){ var _h=document.querySelector('h1'); if(_h)_h.textContent=BRAND.nombre+' · Sucursal'; document.title=BRAND.nombre+' · Sucursal'; } }catch(e){}
-// ===== Motor de cálculo REAL (factores Credia) =====
-const PROD={
+// ===== Motor de cálculo — las tarifas se cargan de la agencia (editable por su admin) =====
+let PROD={
   diario:[{p:10,f:1.17,fijo:30},{p:20,f:1.23,fijo:60},{p:30,f:1.33,fijo:90}],
   semanal:[{p:4,f:1.35,fijo:60},{p:8,f:1.43,fijo:120},{p:12,f:1.53,fijo:180},{p:16,f:1.63,fijo:240},{p:20,f:1.83,fijo:300}],
-  p17:[{p:17,f:1.73,fijo:270}]
+  p17:[{p:17,f:1.73,fijo:270}],
+  unico:{base:2,factor:0.0183}
 };
 let diasUnico=15;
 function calcCredito(tipo,plazo,monto){
-  if(tipo==='unico'){const tap=monto+diasUnico*(2+monto*0.0183);const mor=4+tap*0.0183;return {total:tap,pagos:1,cuota:tap,com:0,mor,dias:diasUnico};}
+  if(tipo==='unico'){const u=PROD.unico||{base:2,factor:0.0183};const tap=monto+diasUnico*((u.base||0)+monto*(u.factor||0));const mor=4+tap*0.0183;return {total:tap,pagos:1,cuota:tap,com:0,mor,dias:diasUnico};}
   const arr=PROD[tipo];const it=arr.find(x=>x.p===plazo)||arr[0];
   const total=monto*it.f+it.fijo;return {total,pagos:it.p,cuota:total/it.p,com:(total-monto)/it.p};
 }
@@ -490,6 +491,7 @@ document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelect
 setInterval(()=>document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'}),1000);
 document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'});
 async function _init(){
+  try{ const t=await api('GET','/api/tarifas'); if(t&&t.semanal) PROD=t; }catch(e){}
   try{
     const cob=await api('GET','/api/cobradores');
     document.getElementById('n-prom').innerHTML = cob.length
