@@ -29,27 +29,78 @@ app.use(express.static(PUBLIC_DIR, {
   }
 }));
 
-/* ---------- Almacén: PostgreSQL si hay DATABASE_URL (Render), si no archivo JSON (local) ---------- */
+/* ---------- Almacén multitenant: una FILA por agencia (id=0 = registro del sistema) ----------
+   - PostgreSQL si hay DATABASE_URL (Render); si no, archivo JSON local.
+   - Cada tenant tiene su propio blob completo (users, clients, sales, ...).
+   - id=0 guarda el "sistema": lista de agencias, superadmins e índice usuario→agencia.
+   - El acceso por petición se aísla con AsyncLocalStorage; `db` apunta al blob de la agencia
+     del request en curso, así el resto del código (db.users, db.sales, ...) no cambia. */
+const { AsyncLocalStorage } = require('async_hooks');
+const als = new AsyncLocalStorage();
 const USE_PG = !!process.env.DATABASE_URL;
 let pool = null;
 if (USE_PG) { const { Pool } = require('pg'); pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { require: true, rejectUnauthorized: false } }); }
 
-async function loadDB() {
+let SYS = null;                 // registro del sistema (fila id=0)
+const tenantCache = {};         // {tid: blob} en memoria
+
+async function loadRow(id) {
   if (USE_PG) {
     await pool.query('CREATE TABLE IF NOT EXISTS cobrapro_state (id INT PRIMARY KEY, data JSONB)');
-    const r = await pool.query('SELECT data FROM cobrapro_state WHERE id = 1');
+    const r = await pool.query('SELECT data FROM cobrapro_state WHERE id = $1', [id]);
     return r.rows[0] ? r.rows[0].data : null;
   }
-  try { return JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch { return null; }
+  try { const all = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); return all[id] != null ? all[id] : null; } catch { return null; }
 }
-function saveDB() {
+function saveRow(id, data) {
   if (USE_PG) {
-    pool.query('INSERT INTO cobrapro_state (id, data) VALUES (1, $1) ON CONFLICT (id) DO UPDATE SET data = $1', [db])
-      .catch(e => console.error('❌ Error al guardar en Postgres:', e.message));
+    pool.query('INSERT INTO cobrapro_state (id, data) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET data = $2', [id, data])
+      .catch(e => console.error('❌ Error al guardar fila ' + id + ':', e.message));
   } else {
-    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+    let all = {}; try { all = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch {}
+    all[id] = data; fs.writeFileSync(DB_FILE, JSON.stringify(all, null, 2));
   }
 }
+const loadSystem = () => loadRow(0);
+const saveSystem = () => saveRow(0, SYS);
+
+// blob en blanco para una agencia nueva (con su admin inicial y branding)
+function blankTenant(brandNombre, adminUser, adminPass, adminNombre) {
+  return {
+    users: [{ id: 1, nombre: adminNombre || 'Administrador', usuario: (adminUser || 'admin').toLowerCase(), rol: 'admin', sucursalId: null, passwordHash: bcrypt.hashSync(adminPass || 'admin123', 8), activo: true, createdAt: new Date().toISOString() }],
+    sucursales: [], clients: [], sales: [], movimientos: [], caja: {}, porEntregar: [],
+    gestiones: [], cortes: [], transferencias: [], recolecciones: [],
+    config: { corteAutoHora: '19:00', corteAutoDias: [1, 2, 3, 4, 5, 6], brand: { nombre: brandNombre || 'CobraPro' } }, _idem: {}
+  };
+}
+function normalizeTenant(b) {
+  b.cortes = b.cortes || []; b.gestiones = b.gestiones || []; b.transferencias = b.transferencias || [];
+  b.recolecciones = b.recolecciones || []; b.caja = b.caja || {}; b.porEntregar = b.porEntregar || [];
+  b.config = b.config || {}; if (!b.config.corteAutoHora) b.config.corteAutoHora = '19:00';
+  if (!b.config.corteAutoDias) b.config.corteAutoDias = [1, 2, 3, 4, 5, 6];
+  b.config.brand = b.config.brand || { nombre: 'CobraPro' };
+  b._idem = b._idem || {};
+  (b.cortes || []).forEach(c => { if (c.estado === 'pendiente' && !(c.totalEfectivo > 0)) { c.estado = 'recibido'; c.recibidoAt = c.recibidoAt || new Date().toISOString(); c.recibidoBy = c.recibidoBy || 'sin efectivo'; } });
+  return b;
+}
+async function getTenant(tid) {
+  tid = +tid;
+  if (tenantCache[tid]) return tenantCache[tid];
+  const blob = await loadRow(tid);
+  if (!blob) return null;
+  tenantCache[tid] = normalizeTenant(blob);
+  return tenantCache[tid];
+}
+// `db` apunta dinámicamente al blob de la agencia del request (vía AsyncLocalStorage)
+const db = new Proxy({}, {
+  get(_, p) { const s = als.getStore(); return s && s.db ? s.db[p] : undefined; },
+  set(_, p, v) { const s = als.getStore(); if (s && s.db) s.db[p] = v; return true; },
+  has(_, p) { const s = als.getStore(); return s && s.db ? (p in s.db) : false; },
+  deleteProperty(_, p) { const s = als.getStore(); if (s && s.db) delete s.db[p]; return true; },
+  ownKeys() { const s = als.getStore(); return s && s.db ? Reflect.ownKeys(s.db) : []; },
+  getOwnPropertyDescriptor(_, p) { const s = als.getStore(); return s && s.db ? Object.getOwnPropertyDescriptor(s.db, p) : undefined; }
+});
+function saveDB() { const s = als.getStore(); if (s && s.tenantId != null) saveRow(s.tenantId, s.db); }
 function nextId(coll) { return (db[coll] || []).reduce((m, x) => Math.max(m, x.id), 0) + 1; }
 
 /* ---------- Motor de cálculo real (factores Credia) ---------- */
@@ -66,42 +117,46 @@ function calcCredito(tipo, plazo, monto, dias) {
 function genPassword() { const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let p = ''; for (let i = 0; i < 8; i++) p += c[Math.floor(Math.random() * c.length)]; return p; }
 function saldoDe(saleId) { return db.movimientos.filter(m => m.saleId === saleId).reduce((s, m) => s + (m.cargo || 0) - (m.abono || 0), 0); }
 
-/* ---------- Semilla inicial ---------- */
-function seed() {
-  db = { users: [], sucursales: [], clients: [], sales: [], movimientos: [], caja: {}, porEntregar: [], gestiones: [], cortes: [], config: { corteAutoHora: '19:00', corteAutoDias: [1,2,3,4,5,6] }, _idem: {} };
-  db.sucursales = ['Amecameca', 'Chalco', 'Ozumba', 'Tláhuac', 'Tepetlixpa', 'Juchitepec'].map((n, i) => ({ id: i + 1, nombre: n }));
-  db.users = [
-    { id: 1, nombre: 'Administrador', usuario: 'admin', rol: 'admin', sucursalId: null, passwordHash: bcrypt.hashSync('admin123', 8), activo: true, createdAt: new Date().toISOString() },
-  ];
-  // 2 clientes demo con su crédito
+/* ---------- Semilla de agencia DEMO (datos de ejemplo, solo para la primera agencia migrada si está vacía) ---------- */
+function seedDemo(brandNombre) {
+  const b = blankTenant(brandNombre || 'CobraPro', 'admin', 'admin123', 'Administrador');
+  b.sucursales = ['Amecameca', 'Chalco', 'Ozumba', 'Tláhuac', 'Tepetlixpa', 'Juchitepec'].map((n, i) => ({ id: i + 1, nombre: n }));
   const c1 = calcCredito('semanal', 12, 6000);
   const c2 = calcCredito('diario', 20, 3000);
-  db.clients = [
+  b.clients = [
     { id: 1, nombre: 'María González', tel: '5544120098', calle: 'Calle Hidalgo 24', col: 'Centro', sucursalId: 1, prom: 'Ana Reyes' },
     { id: 2, nombre: 'Pedro Jiménez', tel: '5544120134', calle: 'Av. Juárez 110', col: 'San Miguel', sucursalId: 1, prom: 'Ana Reyes' },
   ];
-  db.sales = [
+  b.sales = [
     { id: 1, folio: 'F-1042', clientId: 1, tipo: 'semanal', plazo: 12, monto: 6000, cuota: c1.cuota, total: c1.total, prom: 'Ana Reyes', sucursalId: 1, createdAt: new Date().toISOString() },
     { id: 2, folio: 'F-1043', clientId: 2, tipo: 'diario', plazo: 20, monto: 3000, cuota: c2.cuota, total: c2.total, prom: 'Ana Reyes', sucursalId: 1, createdAt: new Date().toISOString() },
   ];
-  db.movimientos = [
+  b.movimientos = [
     { id: 1, saleId: 1, fecha: '05/03/2026', concepto: 'Disposición de crédito', origen: 'Sucursal Amecameca', cargo: c1.total, abono: 0 },
     { id: 2, saleId: 1, fecha: '12/03/2026', concepto: 'Abono semana 1', origen: 'Ruta · A. Reyes', cargo: 0, abono: c1.cuota, forma: 'efectivo' },
     { id: 3, saleId: 2, fecha: '06/03/2026', concepto: 'Disposición de crédito', origen: 'Sucursal Amecameca', cargo: c2.total, abono: 0 },
   ];
-  db.caja = { '1': { inicial: 2000, efectivo: 0, banco: 0, entregas: 0 } };
-  db.porEntregar = [{ id: 1, sucursalId: 1, prom: 'Ana Reyes', monto: 8400 }];
-  saveDB();
+  b.caja = { '1': { inicial: 2000, efectivo: 0, banco: 0, entregas: 0, retiros: 0 } };
+  b.porEntregar = [{ id: 1, sucursalId: 1, prom: 'Ana Reyes', monto: 8400 }];
+  return b;
 }
-let db = null;
 
-/* ---------- Auth ---------- */
-function auth(req, res, next) {
+/* ---------- Auth (multitenant) ---------- */
+async function auth(req, res, next) {
   const t = (req.headers.authorization || '').replace('Bearer ', '');
-  try { req.user = jwt.verify(t, JWT_SECRET); next(); }
-  catch { res.status(401).json({ error: 'No autorizado' }); }
+  let payload;
+  try { payload = jwt.verify(t, JWT_SECRET); } catch { return res.status(401).json({ error: 'No autorizado' }); }
+  req.user = payload;
+  if (payload.tenantId != null) {
+    const blob = await getTenant(payload.tenantId);
+    if (!blob) return res.status(401).json({ error: 'Agencia no encontrada' });
+    return als.run({ tenantId: +payload.tenantId, db: blob }, () => next());
+  }
+  // superadmin sin agencia seleccionada (solo endpoints /api/super/*)
+  return next();
 }
 function rol(...roles) { return (req, res, next) => roles.includes(req.user.rol) ? next() : res.status(403).json({ error: 'Permiso insuficiente' }); }
+function superOnly(req, res, next) { return req.user && req.user.super ? next() : res.status(403).json({ error: 'Solo superadmin' }); }
 function idem(req, res, next) {
   const k = req.body && req.body.idempotencyKey;
   if (k && db._idem[k]) return res.json({ ok: true, duplicado: true });
@@ -109,14 +164,74 @@ function idem(req, res, next) {
 }
 function markIdem(req) { if (req._idemKey) { db._idem[req._idemKey] = true; } }
 
-app.post('/api/auth/login', (req, res) => {
-  const { usuario, password } = req.body;
-  const u = db.users.find(x => x.usuario === (usuario || '').toLowerCase().trim() && x.activo);
-  if (!u || !bcrypt.compareSync(password || '', u.passwordHash)) return res.status(401).json({ error: 'Usuario o contraseña inválidos' });
-  const token = jwt.sign({ id: u.id, rol: u.rol, nombre: u.nombre, sucursalId: u.sucursalId }, JWT_SECRET, { expiresIn: '12h' });
-  res.json({ token, user: { id: u.id, nombre: u.nombre, rol: u.rol, sucursalId: u.sucursalId, usuario: u.usuario } });
+app.post('/api/auth/login', async (req, res) => {
+  const usuario = (req.body.usuario || '').toLowerCase().trim();
+  const password = req.body.password || '';
+  // ¿superadmin?
+  const su = (SYS.superUsers || []).find(x => x.usuario === usuario);
+  if (su && bcrypt.compareSync(password, su.passwordHash)) {
+    const token = jwt.sign({ super: true, nombre: su.nombre, usuario: su.usuario }, JWT_SECRET, { expiresIn: '12h' });
+    return res.json({ token, super: true, user: { nombre: su.nombre, usuario: su.usuario, rol: 'super' }, brand: { nombre: 'CobraPro · Panel maestro' } });
+  }
+  // usuario de agencia: el índice global dice a qué agencia pertenece
+  const tid = SYS.userIndex ? SYS.userIndex[usuario] : null;
+  if (tid == null) return res.status(401).json({ error: 'Usuario o contraseña inválidos' });
+  const tnt = (SYS.tenants || []).find(t => t.id === +tid);
+  if (tnt && tnt.activo === false) return res.status(403).json({ error: 'Esta agencia está suspendida. Contacta a soporte.' });
+  const blob = await getTenant(tid);
+  const u = blob && blob.users.find(x => x.usuario === usuario && x.activo);
+  if (!u || !bcrypt.compareSync(password, u.passwordHash)) return res.status(401).json({ error: 'Usuario o contraseña inválidos' });
+  const brand = (blob.config && blob.config.brand) || { nombre: 'CobraPro' };
+  const token = jwt.sign({ id: u.id, rol: u.rol, nombre: u.nombre, sucursalId: u.sucursalId, tenantId: +tid }, JWT_SECRET, { expiresIn: '12h' });
+  res.json({ token, user: { id: u.id, nombre: u.nombre, rol: u.rol, sucursalId: u.sucursalId, usuario: u.usuario }, brand });
 });
 app.get('/api/auth/me', auth, (req, res) => res.json(req.user));
+app.get('/api/brand', auth, (req, res) => {
+  if (req.user.tenantId != null) return res.json((db.config && db.config.brand) || { nombre: 'CobraPro' });
+  res.json({ nombre: 'CobraPro · Panel maestro' });
+});
+
+/* ---------- SUPERADMIN: gestión de agencias ---------- */
+app.get('/api/super/tenants', auth, superOnly, (req, res) => {
+  const list = (SYS.tenants || []).map(t => {
+    const b = tenantCache[t.id];
+    return { id: t.id, nombre: t.nombre, activo: t.activo !== false, createdAt: t.createdAt,
+      stats: b ? { usuarios: (b.users || []).length, sucursales: (b.sucursales || []).length, clientes: (b.clients || []).length } : null };
+  });
+  res.json(list);
+});
+app.post('/api/super/tenants', auth, superOnly, async (req, res) => {
+  const { nombre, adminUsuario, adminPassword, adminNombre } = req.body;
+  if (!nombre || !adminUsuario) return res.status(400).json({ error: 'Nombre de agencia y usuario admin son obligatorios' });
+  const uname = adminUsuario.toLowerCase().trim();
+  if (SYS.userIndex && SYS.userIndex[uname] != null) return res.status(409).json({ error: 'Ese usuario admin ya está en uso por otra agencia' });
+  SYS.seqTenant = (SYS.seqTenant || 0) + 1;
+  const tid = SYS.seqTenant;
+  const pass = (adminPassword && adminPassword.length >= 4) ? adminPassword : genPassword();
+  const blob = blankTenant(nombre, uname, pass, adminNombre || 'Administrador');
+  tenantCache[tid] = blob; saveRow(tid, blob);
+  SYS.tenants.push({ id: tid, nombre, activo: true, createdAt: new Date().toISOString() });
+  SYS.userIndex = SYS.userIndex || {}; SYS.userIndex[uname] = tid;
+  saveSystem();
+  res.status(201).json({ id: tid, nombre, adminUsuario: uname, adminPassword: pass });
+});
+app.patch('/api/super/tenants/:id', auth, superOnly, (req, res) => {
+  const t = (SYS.tenants || []).find(x => x.id === +req.params.id);
+  if (!t) return res.status(404).json({ error: 'Agencia no encontrada' });
+  if (typeof req.body.activo === 'boolean') t.activo = req.body.activo;
+  if (req.body.nombre) { t.nombre = req.body.nombre; const b = tenantCache[t.id]; if (b) { b.config = b.config || {}; b.config.brand = b.config.brand || {}; b.config.brand.nombre = req.body.nombre; saveRow(t.id, b); } }
+  saveSystem();
+  res.json({ ok: true });
+});
+// el superadmin "entra" a una agencia para dar soporte (token con rol admin acotado a ese tenant)
+app.post('/api/super/enter/:id', auth, superOnly, async (req, res) => {
+  const tid = +req.params.id;
+  const blob = await getTenant(tid);
+  if (!blob) return res.status(404).json({ error: 'Agencia no encontrada' });
+  const t = (SYS.tenants || []).find(x => x.id === tid);
+  const token = jwt.sign({ id: 0, rol: 'admin', nombre: 'Soporte (superadmin)', sucursalId: null, tenantId: tid, super: true }, JWT_SECRET, { expiresIn: '6h' });
+  res.json({ token, user: { id: 0, nombre: 'Soporte', rol: 'admin', sucursalId: null, usuario: 'soporte' }, brand: (blob.config && blob.config.brand) || { nombre: t ? t.nombre : 'CobraPro' } });
+});
 
 /* ---------- Usuarios (panel de alta de usuarios y contraseñas) ---------- */
 app.get('/api/users', auth, rol('admin', 'supervisor'), (req, res) => {
@@ -127,9 +242,13 @@ app.post('/api/users', auth, rol('admin'), (req, res) => {
   if (!nombre || !usuario || !r) return res.status(400).json({ error: 'nombre, usuario y rol son obligatorios' });
   const uname = usuario.toLowerCase().trim();
   if (db.users.some(u => u.usuario === uname)) return res.status(409).json({ error: 'Ese usuario ya existe' });
+  if (SYS.userIndex && SYS.userIndex[uname] != null) return res.status(409).json({ error: 'Ese usuario ya está en uso (debe ser único en todo el sistema)' });
   const plain = (password && password.length >= 4) ? password : genPassword();
   const u = { id: nextId('users'), nombre, usuario: uname, rol: r, sucursalId: sucursalId || null, passwordHash: bcrypt.hashSync(plain, 8), activo: true, createdAt: new Date().toISOString() };
   db.users.push(u); saveDB();
+  // registra el usuario en el índice global para que pueda iniciar sesión
+  const tid = als.getStore().tenantId;
+  SYS.userIndex = SYS.userIndex || {}; SYS.userIndex[uname] = tid; saveSystem();
   res.status(201).json({ id: u.id, nombre: u.nombre, usuario: u.usuario, rol: u.rol, sucursalId: u.sucursalId, passwordGenerada: plain });
 });
 app.patch('/api/users/:id', auth, rol('admin'), (req, res) => {
@@ -651,14 +770,20 @@ function generarCorte(user, isAuto){
   return { corte };
 }
 function checkAutoCorte(){
-  if (!db || !db.config) return;
-  const now = nowMx();
-  const [hh, mm] = (db.config.corteAutoHora || '19:00').split(':').map(Number);
-  const dow = now.getUTCDay();
-  const dayList = db.config.corteAutoDias || [1,2,3,4,5,6];
-  if (!dayList.includes(dow)) return;
-  if (now.getUTCHours() < hh || (now.getUTCHours() === hh && now.getUTCMinutes() < mm)) return;
-  db.users.filter(u => u.rol === 'cobrador' && u.activo).forEach(u => generarCorte(u, true));
+  for (const t of (SYS && SYS.tenants ? SYS.tenants : [])) {
+    if (t.activo === false) continue;
+    const blob = tenantCache[t.id];
+    if (!blob || !blob.config) continue;
+    als.run({ tenantId: t.id, db: blob }, () => {
+      const now = nowMx();
+      const [hh, mm] = (db.config.corteAutoHora || '19:00').split(':').map(Number);
+      const dow = now.getUTCDay();
+      const dayList = db.config.corteAutoDias || [1,2,3,4,5,6];
+      if (!dayList.includes(dow)) return;
+      if (now.getUTCHours() < hh || (now.getUTCHours() === hh && now.getUTCMinutes() < mm)) return;
+      db.users.filter(u => u.rol === 'cobrador' && u.activo).forEach(u => generarCorte(u, true));
+    });
+  }
 }
 setInterval(checkAutoCorte, 60_000);
 
@@ -699,6 +824,12 @@ app.patch('/api/config', auth, rol('admin','supervisor'), (req, res) => {
   db.config = db.config || {};
   if (req.body.corteAutoHora) db.config.corteAutoHora = req.body.corteAutoHora;
   if (Array.isArray(req.body.corteAutoDias)) db.config.corteAutoDias = req.body.corteAutoDias;
+  if (req.body.brandNombre && req.user.rol === 'admin') {
+    db.config.brand = db.config.brand || {};
+    db.config.brand.nombre = String(req.body.brandNombre).trim();
+    const t = (SYS.tenants || []).find(x => x.id === als.getStore().tenantId);
+    if (t) { t.nombre = db.config.brand.nombre; saveSystem(); }
+  }
   saveDB(); res.json(db.config);
 });
 
@@ -1006,23 +1137,44 @@ app.get('*', (req, res, next) => {
   res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
 });
 
-/* ---------- Arranque ---------- */
+/* ---------- Arranque (multitenant) ---------- */
 (async () => {
   const hayIndex = fs.existsSync(path.join(PUBLIC_DIR, 'index.html'));
   console.log('📁 Carpeta public:', PUBLIC_DIR);
-  console.log('📄 index.html encontrado:', hayIndex ? 'SÍ' : 'NO  ← revisa que public/ esté en el repo junto a server.js');
-  db = await loadDB();
-  if (!db) { seed(); console.log('🌱 Base sembrada (admin / admin123).'); }
-  else {
-    // normalización para DBs ya existentes con esquema previo
-    db.cortes = db.cortes || [];
-    db.gestiones = db.gestiones || [];
-    db.transferencias = db.transferencias || [];
-    db.recolecciones = db.recolecciones || [];
-    // auto-sana cortes atorados: si no hay efectivo que entregar, no deben quedar "pendientes de recibir"
-    (db.cortes || []).forEach(c => { if (c.estado === 'pendiente' && !(c.totalEfectivo > 0)) { c.estado = 'recibido'; c.recibidoAt = c.recibidoAt || new Date().toISOString(); c.recibidoBy = c.recibidoBy || 'sin efectivo'; } });
-    db.config = db.config || { corteAutoHora: '19:00', corteAutoDias: [1,2,3,4,5,6] };
-    db._idem = db._idem || {};
+  console.log('📄 index.html encontrado:', hayIndex ? 'SÍ' : 'NO  ← revisa que public/ esté junto a server.js');
+
+  SYS = await loadSystem();
+  if (!SYS) {
+    // Primer arranque del modelo multitenant: crear el sistema y migrar datos existentes.
+    SYS = { tenants: [], superUsers: [], userIndex: {}, seqTenant: 0 };
+    SYS.superUsers.push({ nombre: 'Super Admin', usuario: 'super', passwordHash: bcrypt.hashSync(process.env.SUPER_PASS || 'super123', 8) });
+
+    const existing = await loadRow(1); // datos previos del sistema mono-tenant (si los hay)
+    if (existing && existing.users) {
+      // migra los datos actuales como Agencia #1, conservando todo
+      existing.config = existing.config || {};
+      existing.config.brand = existing.config.brand || { nombre: 'LeGaXi / Credia' };
+      normalizeTenant(existing);
+      tenantCache[1] = existing; saveRow(1, existing);
+      SYS.seqTenant = 1;
+      SYS.tenants.push({ id: 1, nombre: existing.config.brand.nombre, activo: true, createdAt: new Date().toISOString() });
+      (existing.users || []).forEach(u => { if (u.usuario) SYS.userIndex[u.usuario] = 1; });
+      console.log('🔄 Datos existentes migrados a la Agencia #1 (' + existing.config.brand.nombre + ').');
+    } else {
+      // instalación nueva y limpia: una agencia DEMO de ejemplo
+      const demo = seedDemo('CobraPro Demo');
+      tenantCache[1] = demo; saveRow(1, demo);
+      SYS.seqTenant = 1;
+      SYS.tenants.push({ id: 1, nombre: 'CobraPro Demo', activo: true, createdAt: new Date().toISOString() });
+      (demo.users || []).forEach(u => { if (u.usuario) SYS.userIndex[u.usuario] = 1; });
+      console.log('🌱 Agencia DEMO creada (admin / admin123).');
+    }
+    saveSystem();
+    console.log('🛡  Superadmin creado (super / ' + (process.env.SUPER_PASS || 'super123') + ').');
+  } else {
+    // precarga las agencias en memoria (para login rápido y cron)
+    SYS.userIndex = SYS.userIndex || {};
+    for (const t of (SYS.tenants || [])) { try { await getTenant(t.id); } catch (e) {} }
   }
-  app.listen(PORT, () => console.log('🚀 CobraPro backend en puerto ' + PORT + (USE_PG ? ' (PostgreSQL)' : ' (archivo local)') + '  ·  login admin / admin123'));
+  app.listen(PORT, () => console.log('🚀 CobraPro multitenant en puerto ' + PORT + (USE_PG ? ' (PostgreSQL)' : ' (archivo local)')));
 })().catch(e => { console.error('❌ Error fatal al iniciar:', e); process.exit(1); });
