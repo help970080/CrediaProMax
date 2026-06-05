@@ -69,14 +69,14 @@ function blankTenant(brandNombre, adminUser, adminPass, adminNombre) {
   return {
     users: [{ id: 1, nombre: adminNombre || 'Administrador', usuario: (adminUser || 'admin').toLowerCase(), rol: 'admin', sucursalId: null, passwordHash: bcrypt.hashSync(adminPass || 'admin123', 8), activo: true, createdAt: new Date().toISOString() }],
     sucursales: [], clients: [], sales: [], movimientos: [], caja: {}, porEntregar: [],
-    gestiones: [], cortes: [], transferencias: [], recolecciones: [], jcEntregas: [],
+    gestiones: [], cortes: [], transferencias: [], recolecciones: [], jcEntregas: [], jcCierres: [],
     config: { corteAutoHora: '19:00', corteAutoDias: [1, 2, 3, 4, 5, 6], brand: { nombre: brandNombre || 'CobraPro' }, tarifas: JSON.parse(JSON.stringify(DEFAULT_TARIFAS)) }, _idem: {}
   };
 }
 function normalizeTenant(b) {
   b.cortes = b.cortes || []; b.gestiones = b.gestiones || []; b.transferencias = b.transferencias || [];
   b.recolecciones = b.recolecciones || []; b.caja = b.caja || {}; b.porEntregar = b.porEntregar || [];
-  b.jcEntregas = b.jcEntregas || [];
+  b.jcEntregas = b.jcEntregas || []; b.jcCierres = b.jcCierres || [];
   b.config = b.config || {}; if (!b.config.corteAutoHora) b.config.corteAutoHora = '19:00';
   if (!b.config.corteAutoDias) b.config.corteAutoDias = [1, 2, 3, 4, 5, 6];
   b.config.brand = b.config.brand || { nombre: 'CobraPro' };
@@ -319,7 +319,8 @@ app.get('/api/sales', auth, (req, res) => {
   const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
   res.json(db.sales.filter(s => activos.has(s.clientId)).map(s => {
     const c = db.clients.find(x => x.id === s.clientId) || {};
-    return { ...s, saldo: saldoDe(s.id), cliente: c.nombre, tel: c.tel || '', calle: c.calle || '', col: c.col || '' };
+    const { entrega, ...rest } = s;
+    return { ...rest, saldo: saldoDe(s.id), cliente: c.nombre, tel: c.tel || '', calle: c.calle || '', col: c.col || '', tieneEvidencia: !!entrega };
   }));
 });
 /* ---------- Mapa de clientes ---------- */
@@ -358,7 +359,8 @@ app.post('/api/clients/:id/ubicar', auth, rol('admin', 'supervisor'), (req, res)
 function jcCajaDe(jcId) {
   const recibido = db.jcEntregas.filter(e => e.jcId == jcId && e.estado === 'recibido').reduce((a, e) => a + (e.monto || 0), 0);
   const entregado = db.sales.filter(s => s.entrega && s.entrega.jcId == jcId).reduce((a, s) => a + (s.monto || 0), 0);
-  return { recibido, entregado, saldo: recibido - entregado };
+  const recolectado = (db.recolecciones || []).filter(r => r.tipo === 'jc' && r.ref == jcId).reduce((a, r) => a + (r.monto || 0), 0);
+  return { recibido, entregado, recolectado, saldo: recibido - entregado - recolectado };
 }
 // JC disponibles en la sucursal (para que el cobrador elija a quién entregar)
 app.get('/api/jc/lista', auth, (req, res) => {
@@ -377,7 +379,16 @@ app.post('/api/jc-entregas', auth, rol('cobrador', 'sucursal'), (req, res) => {
   const jc = db.users.find(u => u.id == jcId && u.rol === 'jc' && u.activo);
   if (!jc) return res.status(404).json({ error: 'JC no encontrado' });
   const me = db.users.find(u => u.id === req.user.id);
-  const ent = { id: nextId('jcEntregas'), cobradorId: req.user.id, cobradorNombre: req.user.nombre, jcId: jc.id, jcNombre: jc.nombre, monto: m, nota: nota || '', estado: 'pendiente', sucursalId: me ? me.sucursalId : null, creadoEn: new Date().toISOString() };
+  // El efectivo sale de lo que el promotor trae en mano (su "por entregar").
+  if (req.user.rol === 'cobrador') {
+    const mis = db.porEntregar.filter(p => p.prom === req.user.nombre);
+    const disp = mis.reduce((a, p) => a + p.monto, 0);
+    if (m > disp + 0.5) return res.status(409).json({ error: `Solo traes $${Math.round(disp).toLocaleString('es-MX')} en efectivo por entregar; no puedes asignar $${Math.round(m).toLocaleString('es-MX')} al JC.` });
+    let restante = m;
+    for (const pe of mis) { if (restante <= 0) break; const take = Math.min(pe.monto, restante); pe.monto -= take; restante -= take; }
+    db.porEntregar = db.porEntregar.filter(p => p.monto > 0.5);
+  }
+  const ent = { id: nextId('jcEntregas'), cobradorId: req.user.id, cobradorNombre: req.user.nombre, jcId: jc.id, jcNombre: jc.nombre, monto: m, nota: nota || '', estado: 'pendiente', sucursalId: me ? me.sucursalId : null, fechaDDMM: fechaMxHoyDDMM(), creadoEn: new Date().toISOString() };
   db.jcEntregas.push(ent); saveDB();
   res.status(201).json(ent);
 });
@@ -413,7 +424,16 @@ app.get('/api/jc/panel', auth, rol('jc'), (req, res) => {
     const cli = db.clients.find(c => c.id === s.clientId) || {};
     return { id: s.id, folio: s.folio, cliente: cli.nombre, monto: s.monto, fecha: s.entrega.fecha, lat: s.entrega.lat, lng: s.entrega.lng, fotoCasa: s.entrega.fotoCasa, fotoCliente: s.entrega.fotoCliente };
   }).reverse();
-  res.json({ caja: jcCajaDe(req.user.id), pendientes, recibidas: recibidas.slice(0, 30), porEntregar, entregados: entregados.slice(0, 30) });
+  res.json({ caja: jcCajaDe(req.user.id), sucursal: (db.sucursales.find(s => s.id === sucId) || {}).nombre || null, pendientes, recibidas: recibidas.slice(0, 30), porEntregar, entregados: entregados.slice(0, 30) });
+});
+// Reenviar un crédito existente a la cola de entrega del JC (para reconciliar)
+app.post('/api/sales/:id/pendiente-entrega', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
+  const s = db.sales.find(x => x.id == req.params.id);
+  if (!s) return res.status(404).json({ error: 'Crédito no encontrado' });
+  if (req.user.rol === 'sucursal') { const me = db.users.find(u => u.id === req.user.id); if (!me || s.sucursalId !== me.sucursalId) return res.status(403).json({ error: 'Ese crédito no es de tu sucursal' }); }
+  s.entregado = false; if (s.entrega) delete s.entrega;
+  saveDB();
+  res.json({ ok: true });
 });
 // JC entrega un crédito al cliente con evidencia
 app.post('/api/sales/:id/entregar', auth, rol('jc'), (req, res) => {
@@ -430,6 +450,27 @@ app.post('/api/sales/:id/entregar', auth, rol('jc'), (req, res) => {
   if (cli && (typeof cli.lat !== 'number') && typeof lat === 'number') { cli.lat = lat; cli.lng = lng; cli.geoSrc = 'entrega-jc'; }
   saveDB();
   res.json({ ok: true, caja: jcCajaDe(req.user.id) });
+});
+// JC hace su cierre del día (deja registro; el efectivo puede quedarse o recolectarse aparte)
+app.post('/api/jc/cierre', auth, rol('jc'), (req, res) => {
+  const hoy = fechaMxHoyISO();
+  const ddmm = fechaMxHoyDDMM();
+  const recibidoHoy = db.jcEntregas.filter(e => e.jcId === req.user.id && e.estado === 'recibido' && e.fechaDDMM === ddmm).reduce((a, e) => a + e.monto, 0);
+  const entregadoHoy = db.sales.filter(s => s.entrega && s.entrega.jcId === req.user.id && s.entrega.fecha && fechaMxDeISO(s.entrega.fecha) === ddmm).reduce((a, s) => a + s.monto, 0);
+  const caja = jcCajaDe(req.user.id);
+  const cierre = { id: nextId('jcCierres'), jcId: req.user.id, jcNombre: req.user.nombre, fecha: hoy, recibidoHoy, entregadoHoy, saldoFinal: caja.saldo, creadoEn: new Date().toISOString() };
+  db.jcCierres = db.jcCierres || []; db.jcCierres.push(cierre); saveDB();
+  res.json({ ok: true, cierre });
+});
+// Ver evidencia de entrega de un crédito (admin/supervisor todos; cobrador solo sus clientes)
+app.get('/api/sales/:id/entrega', auth, (req, res) => {
+  const s = db.sales.find(x => x.id == req.params.id);
+  if (!s) return res.status(404).json({ error: 'Crédito no encontrado' });
+  const role = req.user.rol;
+  const allowed = ['admin', 'supervisor', 'jc', 'sucursal'].includes(role) || (role === 'cobrador' && s.prom === req.user.nombre);
+  if (!allowed) return res.status(403).json({ error: 'Sin permiso' });
+  const cli = db.clients.find(c => c.id === s.clientId) || {};
+  res.json({ entrega: s.entrega || null, cliente: cli.nombre, folio: s.folio });
 });
 // Resumen para admin
 app.get('/api/jc/resumen', auth, rol('admin', 'supervisor'), (req, res) => {
@@ -628,7 +669,7 @@ app.post('/api/sales/:id/refin', auth, rol('admin','supervisor','sucursal'), ide
     id: nextId('sales'), folio, clientId: old.clientId,
     tipo, plazo, monto, cuota: r.cuota, total: r.total,
     prom, sucursalId: old.sucursalId,
-    refinDe: old.id,
+    refinDe: old.id, entregado: true,
     createdAt: new Date().toISOString(), createdBy: req.user.nombre,
   };
   db.sales.push(nuevo);
@@ -745,8 +786,16 @@ app.get('/api/mi-ruta', auth, (req, res) => {
     const totalAbonado = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0).reduce((a,m)=>a+m.abono,0);
     const at = calcAtraso(s, totalAbonado);
     return { id: s.id, folio: s.folio, nombre: c.nombre || '—', dir: [c.calle, c.col].filter(Boolean).join(', '), tel: c.tel || '', tipo: s.tipo, cuota: s.cuota, saldo: saldoDe(s.id),
-      atraso: at.montoAtraso, diasAtraso: at.diasAtraso, cuotasAtraso: at.cuotasAtraso, cuotasDebidas: at.cuotasDebidas, cuotasPagadas: at.cuotasPagadas };
+      atraso: at.montoAtraso, diasAtraso: at.diasAtraso, cuotasAtraso: at.cuotasAtraso, cuotasDebidas: at.cuotasDebidas, cuotasPagadas: at.cuotasPagadas, tieneEvidencia: !!s.entrega };
   }).filter(Boolean));
+});
+// Evidencias de entrega del cobrador (incluye clientes dados de baja)
+app.get('/api/mi-evidencias', auth, rol('cobrador'), (req, res) => {
+  const out = db.sales.filter(s => s.prom === req.user.nombre && s.entrega).map(s => {
+    const c = db.clients.find(x => x.id === s.clientId) || {};
+    return { saleId: s.id, folio: s.folio, cliente: c.nombre || '—', activo: c.activo !== false, fecha: s.entrega.fecha };
+  }).sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+  res.json(out);
 });
 app.get('/api/cobradores', auth, (req, res) => {
   const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
@@ -871,6 +920,7 @@ app.get('/api/reports/pagos', auth, (req,res)=>{
 // Hora de México (CDMX/Edomex = UTC-6 todo el año desde 2023, sin horario de verano)
 function nowMx(){ return new Date(Date.now() - 6*3600*1000); }
 function fechaMxHoyDDMM(){ const d=nowMx(); return `${String(d.getUTCDate()).padStart(2,'0')}/${String(d.getUTCMonth()+1).padStart(2,'0')}/${d.getUTCFullYear()}`; }
+function fechaMxDeISO(iso){ const d=new Date(new Date(iso).getTime() - 6*3600*1000); return `${String(d.getUTCDate()).padStart(2,'0')}/${String(d.getUTCMonth()+1).padStart(2,'0')}/${d.getUTCFullYear()}`; }
 function fechaMxHoyISO(){ const d=nowMx(); return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`; }
 function horaMxHHMM(){ const d=nowMx(); let h=d.getUTCHours(); const m=String(d.getUTCMinutes()).padStart(2,'0'); const ap=h<12?'a.m.':'p.m.'; h=h%12||12; return `${String(h).padStart(2,'0')}:${m} ${ap}`; }
 // ¿el cobrador ya entregó su corte de hoy? (para bloquear cobros posteriores)
@@ -881,12 +931,15 @@ function generarCorte(user, isAuto){
   if (db.cortes.find(c => c.prom === user.nombre && c.fecha === fecha)) return { duplicate: true };
   const hoy = fechaMxHoyDDMM();
   const pagos = db.movimientos.filter(m => m.abono > 0 && m.origen === user.nombre && m.fecha === hoy);
-  const efectivo = pagos.filter(m => (m.forma||'efectivo') === 'efectivo').reduce((a,m)=>a+m.abono,0);
+  const efectivoBruto = pagos.filter(m => (m.forma||'efectivo') === 'efectivo').reduce((a,m)=>a+m.abono,0);
   const banco = pagos.filter(m => m.forma === 'transferencia' || m.forma === 'deposito').reduce((a,m)=>a+m.abono,0);
+  // descontar el efectivo que el promotor ya entregó al JC hoy (no lo debe entregar dos veces)
+  const aJC = db.jcEntregas.filter(e => e.cobradorId === user.id && e.fechaDDMM === hoy).reduce((a,e)=>a+e.monto,0);
+  const efectivo = Math.max(0, efectivoBruto - aJC);
   const tieneEfectivo = efectivo > 0;
   const corte = {
     id: nextId('cortes'), prom: user.nombre, sucursalId: user.sucursalId || null,
-    fecha, totalEfectivo: efectivo, totalBanco: banco, npagos: pagos.length,
+    fecha, totalEfectivo: efectivo, efectivoBruto, entregadoAlJC: aJC, totalBanco: banco, npagos: pagos.length,
     items: pagos.map(m => ({ saleId: m.saleId, monto: m.abono, forma: m.forma||'efectivo' })),
     horaEntrega: horaMxHHMM(),
     auto: !!isAuto, by: isAuto ? 'sistema' : 'cobrador',
@@ -1093,12 +1146,17 @@ app.get('/api/reports/recoleccion', auth, rol('admin', 'supervisor'), (req, res)
     const enc = db.users.find(u => u.rol === 'sucursal' && u.sucursalId === s.id);
     return { tipo: 'sucursal', ref: s.id, sucursalId: s.id, sucursal: s.nombre, encargada: enc ? enc.nombre : '—', efectivo };
   }).filter(s => s.efectivo > 0).sort((a, b) => b.efectivo - a.efectivo);
+  const porJC = db.users.filter(u => u.rol === 'jc' && u.activo).map(j => {
+    const caja = jcCajaDe(j.id);
+    return { tipo: 'jc', ref: j.id, jc: j.nombre, sucursal: sucMap[j.sucursalId] || '—', monto: caja.saldo, recibido: caja.recibido, entregado: caja.entregado };
+  }).filter(j => j.monto > 0).sort((a, b) => b.monto - a.monto);
   res.json({
     generadoEn: new Date().toISOString(),
-    porCobrador, porSucursal,
+    porCobrador, porSucursal, porJC,
     totalCobradores: porCobrador.reduce((a, c) => a + c.monto, 0),
     totalSucursales: porSucursal.reduce((a, s) => a + s.efectivo, 0),
-    totalGeneral: porCobrador.reduce((a, c) => a + c.monto, 0) + porSucursal.reduce((a, s) => a + s.efectivo, 0),
+    totalJC: porJC.reduce((a, j) => a + j.monto, 0),
+    totalGeneral: porCobrador.reduce((a, c) => a + c.monto, 0) + porSucursal.reduce((a, s) => a + s.efectivo, 0) + porJC.reduce((a, j) => a + j.monto, 0),
   });
 });
 app.post('/api/recoleccion', auth, rol('admin', 'supervisor'), (req, res) => {
@@ -1123,6 +1181,13 @@ app.post('/api/recoleccion', auth, rol('admin', 'supervisor'), (req, res) => {
     if (disponible <= 0) return res.status(400).json({ error: 'Esa sucursal no tiene efectivo por recolectar' });
     c.retiros += disponible; db.caja[sid] = c; monto = disponible;
     const suc = db.sucursales.find(s => s.id === +sid); nombre = suc ? suc.nombre : ('Sucursal ' + sid);
+  } else if (tipo === 'jc') {
+    const jc = db.users.find(u => u.id == ref && u.rol === 'jc');
+    if (!jc) return res.status(404).json({ error: 'JC no encontrado' });
+    const caja = jcCajaDe(jc.id);
+    if (caja.saldo <= 0) return res.status(400).json({ error: 'Ese JC no trae efectivo por recolectar' });
+    monto = caja.saldo; nombre = jc.nombre;
+    // el registro de recolección (abajo) lo descuenta de su caja vía jcCajaDe
   } else return res.status(400).json({ error: 'Tipo inválido' });
   db.recolecciones = db.recolecciones || [];
   const reg = { id: nextId('recolecciones'), tipo, ref, nombre, monto, fecha, por: req.user.nombre, motivo: motivo || '' };
