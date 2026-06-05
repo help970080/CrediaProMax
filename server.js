@@ -259,10 +259,17 @@ app.patch('/api/users/:id', auth, rol('admin'), (req, res) => {
   const u = db.users.find(x => x.id == req.params.id);
   if (!u) return res.status(404).json({ error: 'Usuario no encontrado' });
   if (typeof req.body.activo === 'boolean') u.activo = req.body.activo;
+  if (req.body.nombre) u.nombre = String(req.body.nombre).trim();
+  if (req.body.rol && ['admin','supervisor','sucursal','cobrador'].includes(req.body.rol)) u.rol = req.body.rol;
+  if (req.body.sucursalId !== undefined) {
+    const sid = req.body.sucursalId === null || req.body.sucursalId === '' ? null : +req.body.sucursalId;
+    if ((u.rol === 'cobrador' || u.rol === 'sucursal') && !sid) return res.status(400).json({ error: 'Un cobrador o usuario de sucursal debe tener una sucursal asignada.' });
+    u.sucursalId = sid;
+  }
   let nueva = null;
   if (req.body.resetPassword) { nueva = genPassword(); u.passwordHash = bcrypt.hashSync(nueva, 8); }
   saveDB();
-  res.json({ ok: true, passwordGenerada: nueva });
+  res.json({ ok: true, passwordGenerada: nueva, usuario: { id: u.id, nombre: u.nombre, rol: u.rol, sucursalId: u.sucursalId } });
 });
 
 /* ---------- Catálogos ---------- */
