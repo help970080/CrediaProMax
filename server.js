@@ -69,13 +69,14 @@ function blankTenant(brandNombre, adminUser, adminPass, adminNombre) {
   return {
     users: [{ id: 1, nombre: adminNombre || 'Administrador', usuario: (adminUser || 'admin').toLowerCase(), rol: 'admin', sucursalId: null, passwordHash: bcrypt.hashSync(adminPass || 'admin123', 8), activo: true, createdAt: new Date().toISOString() }],
     sucursales: [], clients: [], sales: [], movimientos: [], caja: {}, porEntregar: [],
-    gestiones: [], cortes: [], transferencias: [], recolecciones: [],
+    gestiones: [], cortes: [], transferencias: [], recolecciones: [], jcEntregas: [],
     config: { corteAutoHora: '19:00', corteAutoDias: [1, 2, 3, 4, 5, 6], brand: { nombre: brandNombre || 'CobraPro' }, tarifas: JSON.parse(JSON.stringify(DEFAULT_TARIFAS)) }, _idem: {}
   };
 }
 function normalizeTenant(b) {
   b.cortes = b.cortes || []; b.gestiones = b.gestiones || []; b.transferencias = b.transferencias || [];
   b.recolecciones = b.recolecciones || []; b.caja = b.caja || {}; b.porEntregar = b.porEntregar || [];
+  b.jcEntregas = b.jcEntregas || [];
   b.config = b.config || {}; if (!b.config.corteAutoHora) b.config.corteAutoHora = '19:00';
   if (!b.config.corteAutoDias) b.config.corteAutoDias = [1, 2, 3, 4, 5, 6];
   b.config.brand = b.config.brand || { nombre: 'CobraPro' };
@@ -260,10 +261,10 @@ app.patch('/api/users/:id', auth, rol('admin'), (req, res) => {
   if (!u) return res.status(404).json({ error: 'Usuario no encontrado' });
   if (typeof req.body.activo === 'boolean') u.activo = req.body.activo;
   if (req.body.nombre) u.nombre = String(req.body.nombre).trim();
-  if (req.body.rol && ['admin','supervisor','sucursal','cobrador'].includes(req.body.rol)) u.rol = req.body.rol;
+  if (req.body.rol && ['admin','supervisor','sucursal','cobrador','jc'].includes(req.body.rol)) u.rol = req.body.rol;
   if (req.body.sucursalId !== undefined) {
     const sid = req.body.sucursalId === null || req.body.sucursalId === '' ? null : +req.body.sucursalId;
-    if ((u.rol === 'cobrador' || u.rol === 'sucursal') && !sid) return res.status(400).json({ error: 'Un cobrador o usuario de sucursal debe tener una sucursal asignada.' });
+    if ((u.rol === 'cobrador' || u.rol === 'sucursal' || u.rol === 'jc') && !sid) return res.status(400).json({ error: 'Un cobrador, JC o usuario de sucursal debe tener una sucursal asignada.' });
     u.sucursalId = sid;
   }
   let nueva = null;
@@ -353,6 +354,92 @@ app.post('/api/clients/:id/ubicar', auth, rol('admin', 'supervisor'), (req, res)
   res.json({ ok: true });
 });
 
+/* ---------- Flujo JC (Jefe de Crédito): efectivo y entrega de créditos ---------- */
+function jcCajaDe(jcId) {
+  const recibido = db.jcEntregas.filter(e => e.jcId == jcId && e.estado === 'recibido').reduce((a, e) => a + (e.monto || 0), 0);
+  const entregado = db.sales.filter(s => s.entrega && s.entrega.jcId == jcId).reduce((a, s) => a + (s.monto || 0), 0);
+  return { recibido, entregado, saldo: recibido - entregado };
+}
+// JC disponibles en la sucursal (para que el cobrador elija a quién entregar)
+app.get('/api/jc/lista', auth, (req, res) => {
+  let jcs = db.users.filter(u => u.rol === 'jc' && u.activo);
+  if (req.user.rol === 'cobrador' || req.user.rol === 'sucursal') {
+    const me = db.users.find(u => u.id === req.user.id);
+    if (me && me.sucursalId) jcs = jcs.filter(j => j.sucursalId === me.sucursalId);
+  }
+  res.json(jcs.map(j => ({ id: j.id, nombre: j.nombre })));
+});
+// Cobrador asigna efectivo a un JC (queda pendiente de que el JC lo reciba)
+app.post('/api/jc-entregas', auth, rol('cobrador', 'sucursal'), (req, res) => {
+  const { jcId, monto, nota } = req.body;
+  const m = +monto;
+  if (!jcId || !(m > 0)) return res.status(400).json({ error: 'Selecciona un JC e indica un monto válido' });
+  const jc = db.users.find(u => u.id == jcId && u.rol === 'jc' && u.activo);
+  if (!jc) return res.status(404).json({ error: 'JC no encontrado' });
+  const me = db.users.find(u => u.id === req.user.id);
+  const ent = { id: nextId('jcEntregas'), cobradorId: req.user.id, cobradorNombre: req.user.nombre, jcId: jc.id, jcNombre: jc.nombre, monto: m, nota: nota || '', estado: 'pendiente', sucursalId: me ? me.sucursalId : null, creadoEn: new Date().toISOString() };
+  db.jcEntregas.push(ent); saveDB();
+  res.status(201).json(ent);
+});
+// Listado de entregas (cobrador ve las suyas; JC las dirigidas a él; admin todas)
+app.get('/api/jc-entregas', auth, (req, res) => {
+  let list = db.jcEntregas;
+  if (req.user.rol === 'cobrador') list = list.filter(e => e.cobradorId === req.user.id);
+  else if (req.user.rol === 'jc') list = list.filter(e => e.jcId === req.user.id);
+  res.json(list.slice().reverse());
+});
+// JC confirma que recibió el efectivo → entra a su caja
+app.post('/api/jc-entregas/:id/recibir', auth, rol('jc'), (req, res) => {
+  const e = db.jcEntregas.find(x => x.id == req.params.id);
+  if (!e) return res.status(404).json({ error: 'Entrega no encontrada' });
+  if (e.jcId !== req.user.id) return res.status(403).json({ error: 'Esa entrega no es para ti' });
+  if (e.estado === 'recibido') return res.status(409).json({ error: 'Ya estaba recibida' });
+  e.estado = 'recibido'; e.recibidoEn = new Date().toISOString(); saveDB();
+  res.json({ ok: true, caja: jcCajaDe(req.user.id) });
+});
+// Panel del JC
+app.get('/api/jc/panel', auth, rol('jc'), (req, res) => {
+  const me = db.users.find(u => u.id === req.user.id);
+  const sucId = me ? me.sucursalId : null;
+  const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
+  const pendientes = db.jcEntregas.filter(e => e.jcId === req.user.id && e.estado === 'pendiente').reverse();
+  const recibidas = db.jcEntregas.filter(e => e.jcId === req.user.id && e.estado === 'recibido').reverse();
+  // créditos por entregar: de su sucursal, no entregados
+  const porEntregar = db.sales.filter(s => s.entregado === false && (sucId == null || s.sucursalId === sucId)).map(s => {
+    const cli = db.clients.find(c => c.id === s.clientId) || {};
+    return { id: s.id, folio: s.folio, cliente: cli.nombre, tel: cli.tel || '', dir: [cli.calle, cli.col].filter(Boolean).join(', '), monto: s.monto, cobrador: s.prom, sucursal: sucMap[s.sucursalId] || '—', createdAt: s.createdAt };
+  }).reverse();
+  const entregados = db.sales.filter(s => s.entrega && s.entrega.jcId === req.user.id).map(s => {
+    const cli = db.clients.find(c => c.id === s.clientId) || {};
+    return { id: s.id, folio: s.folio, cliente: cli.nombre, monto: s.monto, fecha: s.entrega.fecha, lat: s.entrega.lat, lng: s.entrega.lng, fotoCasa: s.entrega.fotoCasa, fotoCliente: s.entrega.fotoCliente };
+  }).reverse();
+  res.json({ caja: jcCajaDe(req.user.id), pendientes, recibidas: recibidas.slice(0, 30), porEntregar, entregados: entregados.slice(0, 30) });
+});
+// JC entrega un crédito al cliente con evidencia
+app.post('/api/sales/:id/entregar', auth, rol('jc'), (req, res) => {
+  const s = db.sales.find(x => x.id == req.params.id);
+  if (!s) return res.status(404).json({ error: 'Crédito no encontrado' });
+  if (s.entregado === true || s.entrega) return res.status(409).json({ error: 'Ese crédito ya fue entregado' });
+  const { lat, lng, fotoCasa, fotoCliente } = req.body;
+  if (!fotoCasa || !fotoCliente) return res.status(400).json({ error: 'Sube la foto de la casa y la foto del cliente' });
+  s.entregado = true;
+  s.entrega = { jcId: req.user.id, jcNombre: req.user.nombre, fecha: new Date().toISOString(),
+    lat: typeof lat === 'number' ? lat : null, lng: typeof lng === 'number' ? lng : null, fotoCasa, fotoCliente };
+  // si el cliente no tiene ubicación, usar la de la entrega
+  const cli = db.clients.find(c => c.id === s.clientId);
+  if (cli && (typeof cli.lat !== 'number') && typeof lat === 'number') { cli.lat = lat; cli.lng = lng; cli.geoSrc = 'entrega-jc'; }
+  saveDB();
+  res.json({ ok: true, caja: jcCajaDe(req.user.id) });
+});
+// Resumen para admin
+app.get('/api/jc/resumen', auth, rol('admin', 'supervisor'), (req, res) => {
+  const jcs = db.users.filter(u => u.rol === 'jc');
+  const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
+  res.json(jcs.map(j => ({ id: j.id, nombre: j.nombre, sucursal: sucMap[j.sucursalId] || '—', caja: jcCajaDe(j.id),
+    pendientesRecibir: db.jcEntregas.filter(e => e.jcId === j.id && e.estado === 'pendiente').length,
+    entregados: db.sales.filter(s => s.entrega && s.entrega.jcId === j.id).length })));
+});
+
 app.delete('/api/clients/:id', auth, rol('admin', 'supervisor'), (req, res) => {
   const id = +req.params.id;
   const c = db.clients.find(x => x.id === id);
@@ -430,7 +517,7 @@ app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) 
   const folio = 'F-' + (1100 + nextId('sales'));
   const promFinal = prom || client.prom || '';
   const sucCred = req.user.rol === 'sucursal' ? (req.user.sucursalId || 1) : (clienteExistenteId ? client.sucursalId : (sucursalId || req.user.sucursalId || 1));
-  const sale = { id: nextId('sales'), folio, clientId: client.id, tipo, plazo: +plazo, monto: +monto, cuota: r.cuota, total: r.total, prom: promFinal, sucursalId: sucCred, createdAt: new Date().toISOString() };
+  const sale = { id: nextId('sales'), folio, clientId: client.id, tipo, plazo: +plazo, monto: +monto, cuota: r.cuota, total: r.total, prom: promFinal, sucursalId: sucCred, entregado: false, createdAt: new Date().toISOString() };
   db.sales.push(sale);
   db.movimientos.push({ id: nextId('movimientos'), saleId: sale.id, fecha: fechaMxHoyDDMM(), concepto: 'Disposición de crédito', origen: 'Sucursal', cargo: r.total, abono: 0 });
   saveDB();
