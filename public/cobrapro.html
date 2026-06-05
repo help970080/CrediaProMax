@@ -140,6 +140,11 @@
   .sim-big .l{font-size:.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;opacity:.8}
   .sim-big .v{font-size:2rem;font-weight:700;font-family:"IBM Plex Mono"}
 </style>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
 </head>
 <body>
 <button class="menu-btn" onclick="document.body.classList.toggle('nav-open')">☰</button>
@@ -159,6 +164,7 @@
     <button class="navitem" data-v="conciliacion"><span class="ic">⇄</span> Conciliación</button>
     <button class="navitem" data-v="reportes"><span class="ic">📑</span> Reportes</button>
     <button class="navitem" data-v="usuarios"><span class="ic">👤</span> Usuarios</button>
+    <button class="navitem" data-v="mapa"><span class="ic">🗺️</span> Mapa de clientes</button>
     <button class="navitem" data-v="simulador"><span class="ic">🖩</span> Simulador de crédito</button>
   </nav>
   <div class="side-foot">
@@ -449,6 +455,24 @@
     </div>
   </section>
 
+  <section class="view" id="mapa">
+    <div class="top"><h1>Mapa de clientes</h1></div>
+    <div class="panel" style="padding:14px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+        <div id="mapa-chips" style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn mapa-chip on" data-f="all" onclick="mapaFiltro('all')">Todos</button>
+          <button class="btn mapa-chip" data-f="corriente" onclick="mapaFiltro('corriente')">🟢 Al corriente</button>
+          <button class="btn mapa-chip" data-f="atraso" onclick="mapaFiltro('atraso')">🟠 Con atraso</button>
+          <button class="btn mapa-chip" data-f="vencido" onclick="mapaFiltro('vencido')">🔴 Vencidos</button>
+        </div>
+        <span id="mapa-stat" style="font-size:.8rem;color:var(--dim);margin-left:auto"></span>
+        <button class="btn gold" id="mapa-geo-btn" onclick="mapaGeocodificar()">📍 Ubicar clientes por dirección</button>
+      </div>
+      <div id="leaflet-map" style="height:62vh;min-height:420px;width:100%;border-radius:10px;border:1px solid var(--line);background:var(--surf-2)"></div>
+      <div id="mapa-geo-prog" style="display:none;margin-top:10px;font-size:.82rem;color:var(--dim)"></div>
+      <div style="font-size:.74rem;color:var(--faint);margin-top:8px">Las ubicaciones se obtienen de la dirección de cada cliente (OpenStreetMap) y se guardan para no volver a calcularlas. Pueden ser aproximadas según qué tan completa esté la dirección.</div>
+    </div>
+  </section>
   <section class="view" id="simulador">
     <div class="panel"><div class="ph"><h3>Simulador de crédito</h3><span class="hint">maneja las tres modalidades</span></div>
       <div class="sim-grid">
@@ -1381,13 +1405,74 @@ document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
   if(n.dataset.v==='reportes') renderReportesLive();
   if(n.dataset.v==='transferencias'){ _trSel.clear(); trInit(); $('tr-resultados').innerHTML='<div style="color:var(--faint);padding:12px;font-size:.85rem">Elige un cobrador o busca un cliente para empezar.</div>'; $('tr-toolbar').style.display='none'; $('tr-batchbar').style.display='none'; trCargarLog(); }
   if(n.dataset.v==='simulador') initTarifas();
+  if(n.dataset.v==='mapa') initMapa();
 });
 document.querySelectorAll('#period button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#period button').forEach(x=>x.classList.remove('on'));b.classList.add('on');period=b.dataset.p;render();});
 ['c-cob','c-meta','c-bono','c-mora','c-coloc'].forEach(id=>document.getElementById(id).oninput=render);
 ['f-suc','f-tipo','f-sem','f-q'].forEach(id=>document.getElementById(id).oninput=renderCartera);
 ['s-tipo','s-monto','s-plazo'].forEach(id=>document.getElementById(id).oninput=()=>{if(event.target.id==='s-tipo')fillPlazos();sim();});
 
-/* ===== Tarifas de crédito (editable por el admin de la agencia) ===== */
+/* ===== Mapa de clientes (Leaflet) ===== */
+let _map=null,_cluster=null,_mapaData=[],_mapaFiltro='all';
+const ESTADO_COLOR={corriente:'#178a55',atraso:'#e0a012',vencido:'#d6432d',liquidado:'#97a2b2'};
+const ESTADO_NOM={corriente:'Al corriente',atraso:'Con atraso',vencido:'Vencido',liquidado:'Liquidado'};
+async function initMapa(){
+  if(typeof L==='undefined'){ document.getElementById('leaflet-map').innerHTML='<div style="padding:20px;color:var(--dim)">No se pudo cargar el mapa (sin conexión a Leaflet).</div>'; return; }
+  try{
+    const d=await apiU('GET','/api/mapa'); _mapaData=d.clientes;
+    if(!_map){
+      _map=L.map('leaflet-map',{center:d.centro,zoom:12,preferCanvas:true});
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{attribution:'© OpenStreetMap, © CARTO',maxZoom:19,subdomains:'abcd'}).addTo(_map);
+      _cluster=L.markerClusterGroup({chunkedLoading:true,maxClusterRadius:50,showCoverageOnHover:false});
+      _map.addLayer(_cluster);
+    } else { _map.setView(d.centro); }
+    setTimeout(()=>_map.invalidateSize(),120);
+    pintarMapa();
+    document.getElementById('mapa-stat').textContent=`${d.ubicados} de ${d.total} clientes ubicados · ${d.pendientes} por ubicar`;
+  }catch(e){ document.getElementById('leaflet-map').innerHTML='<div style="padding:20px;color:var(--red)">'+e.message+'</div>'; }
+}
+function pintarMapa(){
+  if(!_cluster) return; _cluster.clearLayers();
+  let pts=_mapaData.filter(c=>c.lat!=null&&c.lng!=null);
+  if(_mapaFiltro!=='all') pts=pts.filter(c=>c.estado===_mapaFiltro);
+  const markers=pts.map(c=>{
+    const m=L.circleMarker([c.lat,c.lng],{radius:c.estado==='vencido'?8:6,fillColor:ESTADO_COLOR[c.estado]||'#888',color:'#fff',weight:1.2,opacity:0.95,fillOpacity:0.9});
+    m.bindPopup(`<div style="min-width:180px"><b>${c.nombre}</b><br>
+      <span style="color:#666">📞 ${c.tel||'—'}</span><br>
+      <span style="color:#666;font-size:11px">📍 ${c.dir||'—'}</span><br>
+      <div style="margin:5px 0;padding:4px 6px;background:#f4f4f4;border-radius:4px"><b>Saldo: $${(c.saldo||0).toLocaleString('es-MX')}</b></div>
+      👤 ${c.cobrador} · 🏪 ${c.sucursal}<br>
+      <span style="display:inline-block;margin-top:4px;padding:2px 8px;border-radius:10px;font-size:11px;color:#fff;background:${ESTADO_COLOR[c.estado]}">${ESTADO_NOM[c.estado]}</span></div>`);
+    return m;
+  });
+  _cluster.addLayers(markers);
+}
+function mapaFiltro(f){ _mapaFiltro=f; document.querySelectorAll('#mapa-chips .mapa-chip').forEach(b=>b.classList.toggle('on',b.dataset.f===f)); pintarMapa(); }
+async function mapaGeocodificar(){
+  const pend=_mapaData.filter(c=>c.lat==null);
+  if(!pend.length){ alert('Todos los clientes con dirección ya están ubicados.'); return; }
+  const btn=document.getElementById('mapa-geo-btn'); const prog=document.getElementById('mapa-geo-prog');
+  btn.disabled=true; prog.style.display='block';
+  let ok=0,fail=0;
+  for(let i=0;i<pend.length;i++){
+    const c=pend[i];
+    prog.textContent=`Ubicando ${i+1} de ${pend.length}… (${ok} ubicados) — puedes seguir trabajando, esto corre en segundo plano.`;
+    try{
+      const q=encodeURIComponent([c.dir,c.sucursal,'México'].filter(Boolean).join(', '));
+      const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+q,{headers:{'Accept':'application/json'}});
+      const arr=await r.json();
+      if(arr&&arr[0]){
+        const lat=parseFloat(arr[0].lat),lng=parseFloat(arr[0].lon);
+        await apiU('POST','/api/clients/'+c.id+'/ubicar',{lat,lng,src:'nominatim'});
+        c.lat=lat;c.lng=lng; ok++; pintarMapa();
+      } else fail++;
+    }catch(e){ fail++; }
+    await new Promise(res=>setTimeout(res,1100)); // respeta el límite de OpenStreetMap (1/seg)
+  }
+  prog.textContent=`✓ Listo: ${ok} clientes ubicados${fail?`, ${fail} no se pudieron ubicar (dirección incompleta)`:''}.`;
+  btn.disabled=false;
+  initMapa();
+}
 const _tLbl={diario:'Diario',semanal:'Semanal',p17:'Celulares 17 pagos'};
 async function initTarifas(){
   try{ const t=await apiU('GET','/api/tarifas'); if(t&&t.semanal){ PROD=t; fillPlazos(); sim(); } }catch(e){}
