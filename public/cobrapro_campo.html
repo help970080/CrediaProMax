@@ -178,6 +178,15 @@
         <div class="res-row"><span>Promesas de pago</span><span class="v" id="r-prom">0</span></div>
         <div class="res-row"><span>Pendientes de sincronizar</span><span class="v" id="r-pend" style="color:var(--acc)">0</span></div>
       </div>
+      <div class="res-card"><h3>💵 Entregar efectivo al JC</h3>
+        <div style="font-size:.8rem;color:var(--dim);margin-bottom:10px;line-height:1.4">Asigna efectivo al Jefe de Crédito para que entregue créditos. Él lo confirmará en su caja.</div>
+        <div id="jc-wrap">
+          <select id="jc-sel" style="width:100%;background:var(--surf-2);border:1px solid var(--line-2);color:var(--txt);font-family:'Sora';font-size:.92rem;padding:10px 12px;border-radius:9px;margin-bottom:8px"></select>
+          <input id="jc-monto" type="number" inputmode="numeric" placeholder="Monto a entregar $" style="width:100%;background:var(--surf-2);border:1px solid var(--line-2);color:var(--txt);font-family:'Sora';font-size:.95rem;padding:10px 12px;border-radius:9px;margin-bottom:8px">
+          <button class="corte" style="width:100%;justify-content:center" onclick="entregarJC(this)">Entregar efectivo al JC</button>
+        </div>
+        <div id="jc-hist" style="margin-top:10px"></div>
+      </div>
       <div class="res-card"><h3>Actividad reciente</h3><div id="logs"><div style="color:var(--faint);font-size:.82rem">Sin movimientos aún.</div></div></div>
     </section>
   </div>
@@ -227,6 +236,26 @@ let forceOffline=false, _flushing=false;
 function saveCola(){ try{localStorage.setItem('cobrapro_cola',JSON.stringify(cola));}catch(e){} queue=cola.length; }
 function efectivamenteOnline(){ return navigator.onLine && !forceOffline; }
 async function cargarRuta(){ try{ clientes=await api('GET','/api/mi-ruta'); }catch(e){ toast('No se pudo cargar la ruta: '+e.message); } render(); }
+async function cargarJC(){
+  try{
+    const jcs=await api('GET','/api/jc/lista');
+    const sel=document.getElementById('jc-sel'); if(!sel) return;
+    if(!jcs.length){ document.getElementById('jc-wrap').innerHTML='<div style="color:var(--faint);font-size:.82rem">No hay un JC en tu sucursal todavía.</div>'; }
+    else sel.innerHTML=jcs.map(j=>`<option value="${j.id}">${j.nombre}</option>`).join('');
+    const ents=await api('GET','/api/jc-entregas');
+    const hoy=ents.slice(0,5).map(e=>`<div style="display:flex;justify-content:space-between;font-size:.78rem;color:var(--dim);padding:5px 0;border-top:1px solid var(--line)"><span>${e.jcNombre} · ${e.estado==='recibido'?'✓ recibido':'⏳ pendiente'}</span><span class="mono">$${Math.round(e.monto).toLocaleString('es-MX')}</span></div>`).join('');
+    const h=document.getElementById('jc-hist'); if(h) h.innerHTML=hoy;
+  }catch(e){}
+}
+async function entregarJC(btn){
+  const jcId=+document.getElementById('jc-sel').value, monto=+document.getElementById('jc-monto').value;
+  if(!jcId){ toast('No hay JC disponible'); return; }
+  if(!(monto>0)){ toast('Indica un monto válido'); return; }
+  btn.disabled=true; btn.textContent='Entregando…';
+  try{ await api('POST','/api/jc-entregas',{jcId,monto}); document.getElementById('jc-monto').value=''; toast('Efectivo asignado al JC'); cargarJC(); }
+  catch(e){ toast(e.message); }
+  finally{ btn.disabled=false; btn.textContent='Entregar efectivo al JC'; }
+}
 function enqueue(item){ item.idem=item.idem||uuid(); cola.push(item); saveCola(); render(); flush(); }
 async function flush(){
   if(!efectivamenteOnline()||_flushing) return; _flushing=true;
@@ -449,7 +478,7 @@ document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
   t.classList.add('on');document.getElementById(t.dataset.v).classList.add('on');
 });
-cargarRuta(); flush(); checkMiCorte();
+cargarRuta(); flush(); checkMiCorte(); cargarJC();
 setInterval(checkMiCorte, 60_000);
 </script>
 </body>

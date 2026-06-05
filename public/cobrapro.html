@@ -145,6 +145,40 @@
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+<style>
+/* CSS crítico de Leaflet incrustado (respaldo si no carga el externo) */
+.leaflet-pane,.leaflet-tile,.leaflet-marker-icon,.leaflet-marker-shadow,.leaflet-tile-container,.leaflet-pane>svg,.leaflet-pane>canvas,.leaflet-zoom-box,.leaflet-image-layer,.leaflet-layer{position:absolute;left:0;top:0}
+.leaflet-container{overflow:hidden;-webkit-tap-highlight-color:transparent;background:#ddd;outline-offset:1px}
+.leaflet-tile,.leaflet-marker-icon,.leaflet-marker-shadow{-webkit-user-select:none;-moz-user-select:none;user-select:none;-webkit-user-drag:none}
+.leaflet-tile{filter:inherit;visibility:hidden}
+.leaflet-tile-loaded{visibility:inherit}
+.leaflet-zoom-box{width:0;height:0;box-sizing:border-box;z-index:800}
+.leaflet-overlay-pane svg{-moz-user-select:none}
+.leaflet-pane{z-index:400}.leaflet-tile-pane{z-index:200}.leaflet-overlay-pane{z-index:400}
+.leaflet-shadow-pane{z-index:500}.leaflet-marker-pane{z-index:600}.leaflet-tooltip-pane{z-index:650}
+.leaflet-popup-pane{z-index:700}.leaflet-map-pane canvas{z-index:100}.leaflet-map-pane svg{z-index:200}
+.leaflet-control{position:relative;z-index:800;pointer-events:visiblePainted;pointer-events:auto;float:left;clear:both}
+.leaflet-top,.leaflet-bottom{position:absolute;z-index:1000;pointer-events:none}
+.leaflet-top{top:0}.leaflet-bottom{bottom:0}.leaflet-left{left:0}.leaflet-right{right:0}
+.leaflet-left .leaflet-control{margin-left:10px}.leaflet-right .leaflet-control{float:right;margin-right:10px}
+.leaflet-top .leaflet-control{margin-top:10px}.leaflet-bottom .leaflet-control{margin-bottom:10px}
+.leaflet-bar{box-shadow:0 1px 5px rgba(0,0,0,.65);border-radius:4px}
+.leaflet-bar a{background:#fff;border-bottom:1px solid #ccc;width:26px;height:26px;line-height:26px;display:block;text-align:center;text-decoration:none;color:#000;font:bold 18px Tahoma}
+.leaflet-bar a:hover{background:#f4f4f4}
+.leaflet-control-attribution{background:rgba(255,255,255,.7);margin:0;padding:0 5px;font:11px/1.5 sans-serif;color:#333}
+.leaflet-popup{position:absolute;text-align:center}
+.leaflet-popup-content-wrapper{padding:1px;text-align:left;border-radius:12px;background:#fff;box-shadow:0 3px 14px rgba(0,0,0,.4)}
+.leaflet-popup-content{margin:13px 19px;line-height:1.4;font:13px/1.4 sans-serif}
+.leaflet-popup-tip-container{width:40px;height:20px;position:absolute;left:50%;margin-top:-1px;margin-left:-20px;overflow:hidden;pointer-events:none}
+.leaflet-popup-tip{width:17px;height:17px;padding:1px;margin:-10px auto 0;transform:rotate(45deg);background:#fff;box-shadow:0 3px 14px rgba(0,0,0,.4)}
+.leaflet-container a.leaflet-popup-close-button{position:absolute;top:0;right:0;width:24px;height:24px;font:16px/24px Tahoma;color:#757575;text-decoration:none;text-align:center;background:transparent}
+.marker-cluster{background-clip:padding-box;border-radius:20px}
+.marker-cluster div{width:30px;height:30px;margin-left:5px;margin-top:5px;text-align:center;border-radius:15px;font:12px sans-serif}
+.marker-cluster span{line-height:30px}
+.marker-cluster-small{background:rgba(181,226,140,.6)}.marker-cluster-small div{background:rgba(110,204,57,.6)}
+.marker-cluster-medium{background:rgba(241,211,87,.6)}.marker-cluster-medium div{background:rgba(240,194,12,.6)}
+.marker-cluster-large{background:rgba(253,156,115,.6)}.marker-cluster-large div{background:rgba(241,128,23,.6)}
+</style>
 </head>
 <body>
 <button class="menu-btn" onclick="document.body.classList.toggle('nav-open')">☰</button>
@@ -443,7 +477,7 @@
       <div class="filters">
         <input id="u-nombre" placeholder="Nombre completo" style="flex:1;min-width:150px">
         <input id="u-usuario" placeholder="Usuario (ej. areyes)" style="flex:1;min-width:130px">
-        <select id="u-rol"><option value="cobrador">Cobrador</option><option value="sucursal">Sucursal</option><option value="supervisor">Supervisor</option><option value="admin">Administrador</option></select>
+        <select id="u-rol"><option value="cobrador">Cobrador</option><option value="jc">JC (Jefe de Crédito)</option><option value="sucursal">Sucursal</option><option value="supervisor">Supervisor</option><option value="admin">Administrador</option></select>
         <select id="u-suc"></select>
         <input id="u-pass" placeholder="Clave (vacío = automática)" style="min-width:150px">
         <button class="btn gold" onclick="crearUsuario()">Crear</button>
@@ -1418,17 +1452,21 @@ const ESTADO_COLOR={corriente:'#178a55',atraso:'#e0a012',vencido:'#d6432d',liqui
 const ESTADO_NOM={corriente:'Al corriente',atraso:'Con atraso',vencido:'Vencido',liquidado:'Liquidado'};
 async function initMapa(){
   if(typeof L==='undefined'){ document.getElementById('leaflet-map').innerHTML='<div style="padding:20px;color:var(--dim)">No se pudo cargar el mapa (sin conexión a Leaflet).</div>'; return; }
+  const cont=document.getElementById('leaflet-map');
+  // espera a que el contenedor sea visible y tenga tamaño (evita el mapa en blanco)
+  if(!cont || cont.offsetWidth===0 || cont.offsetHeight===0){ setTimeout(initMapa,200); return; }
   try{
     const d=await apiU('GET','/api/mapa'); _mapaData=d.clientes;
     if(!_map){
       _map=L.map('leaflet-map',{center:d.centro,zoom:12,preferCanvas:true});
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{attribution:'© OpenStreetMap, © CARTO',maxZoom:19,subdomains:'abcd'}).addTo(_map);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(_map);
       _cluster=L.markerClusterGroup({chunkedLoading:true,maxClusterRadius:50,showCoverageOnHover:false});
       _map.addLayer(_cluster);
     } else { _map.setView(d.centro); }
-    setTimeout(()=>_map.invalidateSize(),120);
     pintarMapa();
     document.getElementById('mapa-stat').textContent=`${d.ubicados} de ${d.total} clientes ubicados · ${d.pendientes} por ubicar`;
+    // fuerza el repintado de baldosas tras hacerse visible
+    [50,250,600,1200].forEach(t=>setTimeout(()=>{ if(_map) _map.invalidateSize(); },t));
   }catch(e){ document.getElementById('leaflet-map').innerHTML='<div style="padding:20px;color:var(--red)">'+e.message+'</div>'; }
 }
 function pintarMapa(){
@@ -1532,7 +1570,7 @@ function exportCSV(t){let rows=[],name=t;const D=CRED.map(deriva);
 setInterval(()=>document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'}),1000);
 document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'});
 /* ===== USUARIOS (conectado al backend) ===== */
-const rolLbl = {admin:'Administrador',supervisor:'Supervisor',sucursal:'Sucursal',cobrador:'Cobrador'};
+const rolLbl = {admin:'Administrador',supervisor:'Supervisor',sucursal:'Sucursal',cobrador:'Cobrador',jc:'JC (Jefe de Crédito)'};
 let _sucursales = [];
 if(ME) document.getElementById('meName').textContent = ME.nombre + ' · ' + (rolLbl[ME.rol]||ME.rol);
 async function cargarUsuarios(){
@@ -1555,7 +1593,7 @@ async function cargarUsuarios(){
 }
 function editarUsuario(u){
   const sucOpts='<option value="">— sin sucursal —</option>'+_sucursales.map(s=>`<option value="${s.id}" ${s.id===u.sucursalId?'selected':''}>${s.nombre}</option>`).join('');
-  const rolOpts=['cobrador','sucursal','supervisor','admin'].map(r=>`<option value="${r}" ${r===u.rol?'selected':''}>${rolLbl[r]||r}</option>`).join('');
+  const rolOpts=['cobrador','jc','sucursal','supervisor','admin'].map(r=>`<option value="${r}" ${r===u.rol?'selected':''}>${rolLbl[r]||r}</option>`).join('');
   const ov=document.createElement('div');
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:9999';
   ov.innerHTML=`<div style="background:var(--surf-1);border:1px solid var(--line);border-radius:14px;padding:22px;width:min(420px,92vw)">
@@ -1584,7 +1622,7 @@ async function crearUsuario(){
     rol:document.getElementById('u-rol').value, sucursalId:+document.getElementById('u-suc').value||null,
     password:document.getElementById('u-pass').value.trim()||undefined };
   if(!body.nombre||!body.usuario){ alert('Nombre y usuario son obligatorios'); return; }
-  if((body.rol==='cobrador'||body.rol==='sucursal') && !body.sucursalId){ alert('Asigna una sucursal a este '+(body.rol==='cobrador'?'cobrador':'usuario de sucursal')); return; }
+  if((body.rol==='cobrador'||body.rol==='sucursal'||body.rol==='jc') && !body.sucursalId){ alert('Asigna una sucursal a este '+(body.rol==='cobrador'?'cobrador':body.rol==='jc'?'JC':'usuario de sucursal')); return; }
   try{ const d=await apiU('POST','/api/users',body); mostrarPw(d.nombre,d.passwordGenerada);
     ['u-nombre','u-usuario','u-pass'].forEach(id=>document.getElementById(id).value=''); cargarUsuarios();
   }catch(e){ alert(e.message); }
