@@ -430,6 +430,7 @@
     <div class="panel">
       <div class="ph"><h3>Centro de reportes</h3><span class="hint">Solo Admin y Supervisor · genera PDFs e exporta a CSV</span></div>
       <div id="rp-menu" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;padding:8px">
+        <div class="rp-card" onclick="rpVerGerencial()"><div class="rp-ic">🏢</div><div class="rp-tt">Reporte gerencial</div><div class="rp-ds">Empresa → sucursal (gerente) → promotor · cartera, cobranza, colocación y mora</div><button class="btn gold" style="margin-top:8px">Ver</button></div>
         <div class="rp-card" onclick="abrirImprimirCartera()"><div class="rp-ic">📄</div><div class="rp-tt">Cartera por cobrador</div><div class="rp-ds">PDF imprimible · 16 últimas cuotas por cliente</div><button class="btn gold" style="margin-top:8px">Imprimir PDF</button></div>
         <div class="rp-card" onclick="rpVerColocacion()"><div class="rp-ic">📊</div><div class="rp-tt">Colocación día/semana</div><div class="rp-ds">Tendencia de créditos otorgados · monto y volumen</div><button class="btn" style="margin-top:8px">Ver</button></div>
         <div class="rp-card" onclick="rpVerRefin()"><div class="rp-ic">🔄</div><div class="rp-tt">REFIN del periodo</div><div class="rp-ds">Refinanciamientos · liquidación + nuevo crédito + neto</div><button class="btn" style="margin-top:8px">Ver</button></div>
@@ -928,6 +929,45 @@ function rpAbrir(titulo, html, opts){
   $('rp-output').scrollIntoView({behavior:'smooth',block:'start'});
 }
 
+let _gerPeriodo='semana';
+async function rpVerGerencial(p){
+  _gerPeriodo = p || _gerPeriodo;
+  try{
+    const d=await apiU('GET','/api/reports/gerencial?periodo='+_gerPeriodo);
+    _rpActual='gerencial'; _rpData=d;
+    const pLbl={hoy:'Hoy',semana:'Semana operativa',mes:'Mes'};
+    const sel=['hoy','semana','mes'].map(x=>`<button class="btn ${x===_gerPeriodo?'gold':''}" style="padding:6px 12px" onclick="rpVerGerencial('${x}')">${pLbl[x]}</button>`).join(' ');
+    const e=d.empresa;
+    const kpi=(l,v,s,c)=>`<div class="kpi ${c||''}" style="min-width:0"><div class="l">${l}</div><div class="v" style="font-size:1.2rem">${v}</div><div class="s">${s}</div></div>`;
+    const empBlock=`<div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+      ${kpi('Cartera activa',fmt(e.cartera),e.creditosActivos+' créditos · '+e.clientes+' clientes')}
+      ${kpi('Cobrado',fmt(e.cobrado),e.npagos+' pagos en el periodo','g')}
+      ${kpi('Colocado',fmt(e.colocado),e.ncoloc+' créditos nuevos','b')}
+      ${kpi('Atraso',fmt(e.atrasoMonto),e.atrasoClientes+' clientes en mora')}
+      ${kpi('Morosidad',e.morosidad+'%','atraso ÷ cartera')}
+    </div>`;
+    const sucBlocks=d.sucursales.map(s=>{
+      const proms=s.promotores.length? s.promotores.map(p=>`<tr>
+        <td>${p.promotor}</td><td class="n">${fmt(p.cartera)}</td><td class="n">${fmt(p.cobrado)}</td>
+        <td class="n">${p.ncoloc}·${fmt(p.colocado)}</td><td class="n">${fmt(p.atrasoMonto)}</td><td class="n">${p.morosidad}%</td></tr>`).join('')
+        : '<tr><td colspan="6" style="color:var(--faint);padding:8px">Sin promotores con cartera</td></tr>';
+      return `<div class="panel" style="margin-top:12px">
+        <div class="ph"><h3>🏪 ${s.sucursal} <span style="font-weight:400;color:var(--dim);font-size:.85rem">· Gerente: ${s.gerente}</span></h3>
+          <span class="hint" style="margin-left:auto">Cartera ${fmt(s.cartera)} · Cobrado ${fmt(s.cobrado)} · Mora ${s.morosidad}%</span></div>
+        <table class="rp-table"><thead><tr><th>Promotor</th><th class="n">Cartera</th><th class="n">Cobrado</th><th class="n">Colocación</th><th class="n">Atraso</th><th class="n">Mora</th></tr></thead><tbody>${proms}</tbody></table>
+      </div>`;
+    }).join('');
+    rpAbrir(`🏢 Reporte gerencial`,`
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
+        <span style="font-size:.8rem;color:var(--dim)">Periodo:</span> ${sel}
+        <span style="margin-left:auto;font-size:.74rem;color:var(--faint)">${d.nivel==='empresa'?'Vista empresa (todas las sucursales)':'Vista de tu sucursal'} · ${pLbl[_gerPeriodo]}</span>
+      </div>
+      <div style="font-size:.78rem;color:var(--dim);margin-bottom:6px;font-weight:600">NIVEL EMPRESA</div>
+      ${empBlock}
+      <div style="font-size:.78rem;color:var(--dim);margin:6px 0 0;font-weight:600">NIVEL SUCURSAL (GERENTE) Y PROMOTOR</div>
+      ${sucBlocks||'<div style="color:var(--faint);padding:10px">Sin sucursales.</div>'}`, {});
+  }catch(e){ alert(e.message); }
+}
 async function rpVerColocacion(){
   try{
     const bucket = confirm('Aceptar = por DÍA (últimos 30 días)\nCancelar = por SEMANA (últimas 12 semanas)')?'dia':'semana';
