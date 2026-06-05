@@ -1163,6 +1163,40 @@ app.get('/api/reports/comisiones', auth, rol('admin','supervisor'), (req, res) =
   }});
 });
 
+/* ---------- Reporte gerencial (rollup por niveles) ---------- */
+app.get('/api/reports/gerencial', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
+  const periodo = req.query.periodo || 'semana';
+  const desde = _desdePeriodo(periodo);
+  const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
+  const esGerente = req.user.rol === 'sucursal';
+  const miSuc = esGerente ? (db.users.find(u => u.id === req.user.id) || {}).sucursalId : null;
+  let sucursales = db.sucursales.filter(s => s.activo !== false);
+  if (esGerente) sucursales = sucursales.filter(s => s.id === miSuc);
+  function atrasoDe(s) { const totAb = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0).reduce((a, m) => a + m.abono, 0); return calcAtraso(s, totAb); }
+  function kpisDe(sales) {
+    let cartera = 0, creditosAct = 0, atrasoMonto = 0, atrasoCli = 0, colocado = 0, ncoloc = 0, cobrado = 0, npagos = 0;
+    const cliSet = new Set();
+    sales.forEach(s => {
+      const saldo = saldoDe(s.id);
+      if (saldo > 0) { cartera += saldo; creditosAct++; cliSet.add(s.clientId); const at = atrasoDe(s); if (at.montoAtraso > 0) { atrasoMonto += at.montoAtraso; atrasoCli++; } }
+      if (s.createdAt && new Date(s.createdAt).getTime() >= desde) { colocado += s.monto; ncoloc++; }
+    });
+    const ids = new Set(sales.map(s => s.id));
+    db.movimientos.filter(m => m.abono > 0 && ids.has(m.saleId) && _parseFechaMx(m.fecha) >= desde).forEach(m => { cobrado += m.abono; npagos++; });
+    return { cartera, clientes: cliSet.size, creditosActivos: creditosAct, atrasoMonto, atrasoClientes: atrasoCli,
+      morosidad: cartera > 0 ? +(atrasoMonto / cartera * 100).toFixed(1) : 0, colocado, ncoloc, cobrado, npagos };
+  }
+  const porSucursal = sucursales.map(suc => {
+    const ventasSuc = db.sales.filter(s => s.sucursalId === suc.id && activos.has(s.clientId));
+    const enc = db.users.find(u => u.rol === 'sucursal' && u.sucursalId === suc.id);
+    const cobradores = db.users.filter(u => u.rol === 'cobrador' && u.activo && u.sucursalId === suc.id);
+    const promotores = cobradores.map(cob => ({ promotor: cob.nombre, ...kpisDe(ventasSuc.filter(s => s.prom === cob.nombre)) }));
+    return { id: suc.id, sucursal: suc.nombre, gerente: enc ? enc.nombre : '—', ...kpisDe(ventasSuc), promotores };
+  });
+  const todas = db.sales.filter(s => (esGerente ? s.sucursalId === miSuc : true) && activos.has(s.clientId));
+  res.json({ periodo, generado: new Date().toISOString(), nivel: esGerente ? 'sucursal' : 'empresa', empresa: kpisDe(todas), sucursales: porSucursal });
+});
+
 app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, res) => {
   const promFilter = req.query.prom;
   const cobradores = db.users.filter(u => u.rol === 'cobrador' && u.activo);
