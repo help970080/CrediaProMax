@@ -1462,10 +1462,37 @@ async function cargarUsuarios(){
         <td>${s?s.nombre:'—'}</td>
         <td><span class="pill ${u.activo?'ok':'bad'}">${u.activo?'Activo':'Inactivo'}</span></td>
         <td style="text-align:right;white-space:nowrap">
+          <button class="btn" style="padding:5px 9px;font-size:.74rem" onclick='editarUsuario(${JSON.stringify(u).replace(/'/g,"&#39;")})'>✏️ Editar</button>
           <button class="btn" style="padding:5px 9px;font-size:.74rem" onclick="toggleU(${u.id},${!u.activo})">${u.activo?'Desactivar':'Activar'}</button>
           <button class="btn" style="padding:5px 9px;font-size:.74rem" onclick="resetU(${u.id})">Reset clave</button></td></tr>`;
     }).join('') || '<tr><td colspan="6" style="color:var(--faint);padding:14px">Sin usuarios.</td></tr>';
   }catch(e){ document.getElementById('u-list').innerHTML = `<tr><td colspan="6" style="color:var(--red);padding:14px">${e.message}</td></tr>`; }
+}
+function editarUsuario(u){
+  const sucOpts='<option value="">— sin sucursal —</option>'+_sucursales.map(s=>`<option value="${s.id}" ${s.id===u.sucursalId?'selected':''}>${s.nombre}</option>`).join('');
+  const rolOpts=['cobrador','sucursal','supervisor','admin'].map(r=>`<option value="${r}" ${r===u.rol?'selected':''}>${rolLbl[r]||r}</option>`).join('');
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:9999';
+  ov.innerHTML=`<div style="background:var(--surf-1);border:1px solid var(--line);border-radius:14px;padding:22px;width:min(420px,92vw)">
+    <h3 style="margin:0 0 14px">✏️ Editar usuario · ${u.usuario}</h3>
+    <label style="font-size:.72rem;color:var(--dim)">Nombre</label>
+    <input id="eu-nom" value="${(u.nombre||'').replace(/"/g,'&quot;')}" style="width:100%;margin:4px 0 12px;padding:9px;background:var(--surf-2);border:1px solid var(--line);border-radius:7px;color:var(--ink)">
+    <label style="font-size:.72rem;color:var(--dim)">Rol</label>
+    <select id="eu-rol" style="width:100%;margin:4px 0 12px;padding:9px;background:var(--surf-2);border:1px solid var(--line);border-radius:7px;color:var(--ink)">${rolOpts}</select>
+    <label style="font-size:.72rem;color:var(--dim)">Sucursal</label>
+    <select id="eu-suc" style="width:100%;margin:4px 0 4px;padding:9px;background:var(--surf-2);border:1px solid var(--line);border-radius:7px;color:var(--ink)">${sucOpts}</select>
+    <div style="font-size:.74rem;color:var(--dim);margin:8px 0 4px;line-height:1.5">Un cobrador o encargada de sucursal <b>debe</b> tener su sucursal asignada, o no aparecerá en el panel de esa sucursal.</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn" onclick="this.closest('div[style*=fixed]').remove()">Cancelar</button>
+      <button class="btn gold" onclick="guardarEdicionUsuario(${u.id},this)">Guardar</button>
+    </div></div>`;
+  ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+  document.body.appendChild(ov);
+}
+async function guardarEdicionUsuario(id,btn){
+  const body={ nombre:document.getElementById('eu-nom').value.trim(), rol:document.getElementById('eu-rol').value, sucursalId:document.getElementById('eu-suc').value||null };
+  try{ await apiU('PATCH','/api/users/'+id,body); btn.closest('div[style*=fixed]').remove(); cargarUsuarios(); }
+  catch(e){ alert(e.message); }
 }
 async function crearUsuario(){
   const body={ nombre:document.getElementById('u-nombre').value.trim(), usuario:document.getElementById('u-usuario').value.trim(),
