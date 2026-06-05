@@ -70,7 +70,7 @@ function blankTenant(brandNombre, adminUser, adminPass, adminNombre) {
     users: [{ id: 1, nombre: adminNombre || 'Administrador', usuario: (adminUser || 'admin').toLowerCase(), rol: 'admin', sucursalId: null, passwordHash: bcrypt.hashSync(adminPass || 'admin123', 8), activo: true, createdAt: new Date().toISOString() }],
     sucursales: [], clients: [], sales: [], movimientos: [], caja: {}, porEntregar: [],
     gestiones: [], cortes: [], transferencias: [], recolecciones: [],
-    config: { corteAutoHora: '19:00', corteAutoDias: [1, 2, 3, 4, 5, 6], brand: { nombre: brandNombre || 'CobraPro' } }, _idem: {}
+    config: { corteAutoHora: '19:00', corteAutoDias: [1, 2, 3, 4, 5, 6], brand: { nombre: brandNombre || 'CobraPro' }, tarifas: JSON.parse(JSON.stringify(DEFAULT_TARIFAS)) }, _idem: {}
   };
 }
 function normalizeTenant(b) {
@@ -79,6 +79,7 @@ function normalizeTenant(b) {
   b.config = b.config || {}; if (!b.config.corteAutoHora) b.config.corteAutoHora = '19:00';
   if (!b.config.corteAutoDias) b.config.corteAutoDias = [1, 2, 3, 4, 5, 6];
   b.config.brand = b.config.brand || { nombre: 'CobraPro' };
+  b.config.tarifas = b.config.tarifas || JSON.parse(JSON.stringify(DEFAULT_TARIFAS));
   b._idem = b._idem || {};
   (b.cortes || []).forEach(c => { if (c.estado === 'pendiente' && !(c.totalEfectivo > 0)) { c.estado = 'recibido'; c.recibidoAt = c.recibidoAt || new Date().toISOString(); c.recibidoBy = c.recibidoBy || 'sin efectivo'; } });
   return b;
@@ -104,14 +105,17 @@ function saveDB() { const s = als.getStore(); if (s && s.tenantId != null) saveR
 function nextId(coll) { return (db[coll] || []).reduce((m, x) => Math.max(m, x.id), 0) + 1; }
 
 /* ---------- Motor de cálculo real (factores Credia) ---------- */
-const PROD = {
+const DEFAULT_TARIFAS = {
   diario:  [{ p: 10, f: 1.17, fijo: 30 }, { p: 20, f: 1.23, fijo: 60 }, { p: 30, f: 1.33, fijo: 90 }],
   semanal: [{ p: 4, f: 1.35, fijo: 60 }, { p: 8, f: 1.43, fijo: 120 }, { p: 12, f: 1.53, fijo: 180 }, { p: 16, f: 1.63, fijo: 240 }, { p: 20, f: 1.83, fijo: 300 }],
   p17:     [{ p: 17, f: 1.73, fijo: 270 }],
+  unico:   { base: 2, factor: 0.0183 }
 };
+function tarifasActuales() { return (db && db.config && db.config.tarifas) ? db.config.tarifas : DEFAULT_TARIFAS; }
 function calcCredito(tipo, plazo, monto, dias) {
-  if (tipo === 'unico') { const tap = monto + (dias || 15) * (2 + monto * 0.0183); return { total: tap, pagos: 1, cuota: tap }; }
-  const arr = PROD[tipo] || PROD.semanal; const it = arr.find(x => x.p === plazo) || arr[0];
+  const T = tarifasActuales();
+  if (tipo === 'unico') { const u = T.unico || DEFAULT_TARIFAS.unico; const tap = monto + (dias || 15) * ((u.base||0) + monto * (u.factor||0)); return { total: tap, pagos: 1, cuota: tap }; }
+  const arr = T[tipo] || T.semanal || DEFAULT_TARIFAS.semanal; const it = arr.find(x => x.p === plazo) || arr[0];
   const total = monto * it.f + it.fijo; return { total, pagos: it.p, cuota: total / it.p };
 }
 function genPassword() { const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let p = ''; for (let i = 0; i < 8; i++) p += c[Math.floor(Math.random() * c.length)]; return p; }
@@ -820,6 +824,23 @@ app.delete('/api/cortes/:id', auth, rol('admin','supervisor'), (req, res) => {
   res.json({ ok: true });
 });
 app.get('/api/config', auth, (req, res) => res.json(db.config || {}));
+app.get('/api/tarifas', auth, (req, res) => res.json((db.config && db.config.tarifas) || DEFAULT_TARIFAS));
+app.put('/api/tarifas', auth, rol('admin'), (req, res) => {
+  const t = req.body || {};
+  // validación mínima de estructura
+  const okArr = a => Array.isArray(a) && a.every(x => typeof x.p === 'number' && typeof x.f === 'number' && typeof x.fijo === 'number');
+  if (!okArr(t.diario) || !okArr(t.semanal) || !okArr(t.p17) || !t.unico || typeof t.unico.base !== 'number' || typeof t.unico.factor !== 'number')
+    return res.status(400).json({ error: 'Estructura de tarifas inválida' });
+  db.config = db.config || {};
+  db.config.tarifas = { diario: t.diario, semanal: t.semanal, p17: t.p17, unico: { base: t.unico.base, factor: t.unico.factor } };
+  saveDB();
+  res.json(db.config.tarifas);
+});
+app.post('/api/tarifas/reset', auth, rol('admin'), (req, res) => {
+  db.config = db.config || {};
+  db.config.tarifas = JSON.parse(JSON.stringify(DEFAULT_TARIFAS));
+  saveDB(); res.json(db.config.tarifas);
+});
 app.patch('/api/config', auth, rol('admin','supervisor'), (req, res) => {
   db.config = db.config || {};
   if (req.body.corteAutoHora) db.config.corteAutoHora = req.body.corteAutoHora;
