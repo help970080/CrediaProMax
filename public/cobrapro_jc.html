@@ -73,6 +73,8 @@
       <div class="tab" data-t="entregar" onclick="tab('entregar')">Entregar <span class="n" id="n-ent">0</span></div>
       <div class="tab" data-t="hist" onclick="tab('hist')">Historial</div>
     </div>
+    <button class="btn full" style="margin:10px 0 0;background:var(--vio);color:#fff;border-color:var(--vio)" onclick="cerrarDia(this)">🔒 Hacer cierre del día</button>
+    <div id="cierre-info" style="font-size:.74rem;color:var(--dim);text-align:center;margin-top:6px"></div>
   </header>
   <main id="main"><div class="empty">Cargando…</div></main>
 </div>
@@ -117,7 +119,7 @@ function pintar(){
       <div><div class="nm">${s.cliente}</div><div class="meta">${s.folio} · 📞 ${s.tel||'—'}<br>📍 ${s.dir||'—'}<br>👤 ${s.cobrador} · 🏪 ${s.sucursal}</div></div>
       <div class="monto">${money(s.monto)}</div></div>
       <button class="btn vio full" onclick="abrirEntrega(${s.id},'${(s.cliente||'').replace(/'/g,"\\'")}',${s.monto})">📦 Entregar crédito + evidencia</button></div>`).join('')
-      : '<div class="empty">No hay créditos por entregar en tu sucursal.</div>';
+      : `<div class="empty">No hay créditos por entregar${DATA.sucursal?` en <b>${DATA.sucursal}</b>`:''}.<br><span style="font-size:.78rem">Los créditos nuevos que capture la sucursal aparecen aquí automáticamente. El admin también puede enviar un crédito existente desde su Estado de cuenta.</span></div>`;
   } else {
     const es=DATA.entregados||[];
     m.innerHTML = es.length ? es.map(s=>`<div class="card"><div class="top">
@@ -187,6 +189,15 @@ async function confirmarEntrega(btn){
 }
 cargar();
 setInterval(cargar,30000);
+async function cerrarDia(btn){
+  const c=DATA.caja||{};
+  if(!confirm(`¿Hacer tu cierre del día?\n\nRecibido: ${money(c.recibido)}\nEntregado en créditos: ${money(c.entregado)}\nEn caja: ${money(c.saldo)}\n\nEl efectivo en caja se queda contigo para seguir entregando créditos, salvo que el admin lo recolecte. Solo queda el registro del cierre.`)) return;
+  btn.disabled=true; btn.textContent='Cerrando…';
+  try{ const r=await api('POST','/api/jc/cierre'); const ci=r.cierre;
+    toast('Cierre registrado'); document.getElementById('cierre-info').textContent=`Último cierre: recibido ${money(ci.recibidoHoy)} · entregado ${money(ci.entregadoHoy)} · en caja ${money(ci.saldoFinal)}`;
+  }catch(e){ toast(e.message); }
+  finally{ btn.disabled=false; btn.textContent='🔒 Hacer cierre del día'; }
+}
 </script>
 </body>
 </html>

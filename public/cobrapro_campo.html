@@ -187,6 +187,11 @@
         </div>
         <div id="jc-hist" style="margin-top:10px"></div>
       </div>
+      <div class="res-card"><h3>📷 Evidencias de entrega</h3>
+        <div style="font-size:.8rem;color:var(--dim);margin-bottom:8px;line-height:1.4">Fotos y ubicación de los créditos que el JC entregó a tus clientes. Disponibles aunque el cliente se dé de baja.</div>
+        <button class="btn" style="width:100%;background:var(--surf-2);border:1px solid var(--line-2);color:var(--txt);padding:10px;border-radius:9px;font-family:'Sora';font-weight:600;cursor:pointer" onclick="cargarEvidencias()">Ver evidencias</button>
+        <div id="evid-list" style="margin-top:8px"></div>
+      </div>
       <div class="res-card"><h3>Actividad reciente</h3><div id="logs"><div style="color:var(--faint);font-size:.82rem">Sin movimientos aún.</div></div></div>
     </section>
   </div>
@@ -236,6 +241,35 @@ let forceOffline=false, _flushing=false;
 function saveCola(){ try{localStorage.setItem('cobrapro_cola',JSON.stringify(cola));}catch(e){} queue=cola.length; }
 function efectivamenteOnline(){ return navigator.onLine && !forceOffline; }
 async function cargarRuta(){ try{ clientes=await api('GET','/api/mi-ruta'); }catch(e){ toast('No se pudo cargar la ruta: '+e.message); } render(); }
+async function cargarEvidencias(){
+  const box=document.getElementById('evid-list');
+  box.innerHTML='<div style="color:var(--faint);font-size:.82rem;padding:6px">Cargando…</div>';
+  try{
+    const list=await api('GET','/api/mi-evidencias');
+    if(!list.length){ box.innerHTML='<div style="color:var(--faint);font-size:.82rem;padding:6px">Aún no hay entregas con evidencia.</div>'; return; }
+    box.innerHTML=list.map(x=>`<div onclick="verEvidencia(${x.saleId})" style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid var(--line);cursor:pointer">
+      <div><div style="font-weight:600;font-size:.88rem">${x.cliente} ${x.activo?'':'<span style="color:var(--red);font-size:.72rem">· baja</span>'}</div>
+      <div style="font-size:.74rem;color:var(--dim)">${x.folio} · ${x.fecha?new Date(x.fecha).toLocaleDateString('es-MX'):''}</div></div>
+      <span style="font-size:1.05rem">📷</span></div>`).join('');
+  }catch(e){ box.innerHTML='<div style="color:var(--red);font-size:.82rem;padding:6px">'+e.message+'</div>'; }
+}
+async function verEvidencia(saleId){
+  try{
+    const d=await api('GET','/api/sales/'+saleId+'/entrega');
+    if(!d.entrega){ toast('Sin evidencia registrada'); return; }
+    const e=d.entrega;
+    const ov=document.createElement('div'); ov.className='overlay'; ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:300;padding:14px'; ov.onclick=ev=>{if(ev.target===ov)ov.remove();};
+    const ubic=(e.lat!=null&&e.lng!=null)?`<a href="https://maps.google.com/?q=${e.lat},${e.lng}" target="_blank" style="color:var(--blu)">📍 Ver ubicación</a>`:'<span style="color:var(--faint)">Sin ubicación</span>';
+    ov.innerHTML=`<div style="background:var(--surf);border-radius:14px;padding:16px;width:100%;max-width:420px;max-height:88vh;overflow:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b>📷 Evidencia de entrega</b><span onclick="this.closest('div[style*=fixed]').remove()" style="cursor:pointer;color:var(--acc);font-weight:600">Cerrar</span></div>
+      <div style="font-size:.78rem;color:var(--dim);margin-bottom:12px">${d.cliente} · ${d.folio}${e.fecha?' · '+new Date(e.fecha).toLocaleDateString('es-MX'):''}</div>
+      <div style="font-size:.72rem;color:var(--dim);margin-bottom:4px">🏠 Fachada / casa</div>${e.fotoCasa?`<img src="${e.fotoCasa}" style="width:100%;border-radius:10px;margin-bottom:12px">`:'<div style="color:var(--faint);font-size:.8rem;margin-bottom:12px">Sin foto</div>'}
+      <div style="font-size:.72rem;color:var(--dim);margin-bottom:4px">🧍 Cliente</div>${e.fotoCliente?`<img src="${e.fotoCliente}" style="width:100%;border-radius:10px;margin-bottom:12px">`:'<div style="color:var(--faint);font-size:.8rem;margin-bottom:12px">Sin foto</div>'}
+      <div>${ubic}</div></div>`;
+    document.body.appendChild(ov);
+  }catch(e){ toast(e.message); }
+}
+let _jcDadoHoy=0;
 async function cargarJC(){
   try{
     const jcs=await api('GET','/api/jc/lista');
@@ -243,8 +277,11 @@ async function cargarJC(){
     if(!jcs.length){ document.getElementById('jc-wrap').innerHTML='<div style="color:var(--faint);font-size:.82rem">No hay un JC en tu sucursal todavía.</div>'; }
     else sel.innerHTML=jcs.map(j=>`<option value="${j.id}">${j.nombre}</option>`).join('');
     const ents=await api('GET','/api/jc-entregas');
-    const hoy=ents.slice(0,5).map(e=>`<div style="display:flex;justify-content:space-between;font-size:.78rem;color:var(--dim);padding:5px 0;border-top:1px solid var(--line)"><span>${e.jcNombre} · ${e.estado==='recibido'?'✓ recibido':'⏳ pendiente'}</span><span class="mono">$${Math.round(e.monto).toLocaleString('es-MX')}</span></div>`).join('');
-    const h=document.getElementById('jc-hist'); if(h) h.innerHTML=hoy;
+    const hoy=new Date().toDateString();
+    _jcDadoHoy=ents.filter(e=>e.cobradorId===ME.id && new Date(e.creadoEn).toDateString()===hoy).reduce((a,e)=>a+e.monto,0);
+    const hist=ents.slice(0,5).map(e=>`<div style="display:flex;justify-content:space-between;font-size:.78rem;color:var(--dim);padding:5px 0;border-top:1px solid var(--line)"><span>${e.jcNombre} · ${e.estado==='recibido'?'✓ recibido':'⏳ pendiente'}</span><span class="mono">$${Math.round(e.monto).toLocaleString('es-MX')}</span></div>`).join('');
+    const h=document.getElementById('jc-hist'); if(h) h.innerHTML=hist;
+    render();
   }catch(e){}
 }
 async function entregarJC(btn){
@@ -252,7 +289,7 @@ async function entregarJC(btn){
   if(!jcId){ toast('No hay JC disponible'); return; }
   if(!(monto>0)){ toast('Indica un monto válido'); return; }
   btn.disabled=true; btn.textContent='Entregando…';
-  try{ await api('POST','/api/jc-entregas',{jcId,monto}); document.getElementById('jc-monto').value=''; toast('Efectivo asignado al JC'); cargarJC(); }
+  try{ await api('POST','/api/jc-entregas',{jcId,monto}); document.getElementById('jc-monto').value=''; toast('Efectivo asignado al JC'); await cargarJC(); }
   catch(e){ toast(e.message); }
   finally{ btn.disabled=false; btn.textContent='Entregar efectivo al JC'; }
 }
@@ -295,7 +332,7 @@ function render(){
       <div class="ctop">
         <div class="cnum">${i+1}</div>
         <div style="flex:1;min-width:0"><div class="cname">${c.nombre}</div><div class="caddr">${c.dir}</div></div>
-        <div class="csem"><span class="pill ${sem}">${semL}</span></div>
+        <div class="csem" style="display:flex;align-items:center;gap:6px">${c.tieneEvidencia?`<span onclick="event.stopPropagation();verEvidencia(${c.id})" title="Evidencia de entrega" style="cursor:pointer;font-size:1.05rem">📷</span>`:''}<span class="pill ${sem}">${semL}</span></div>
       </div>
       <div class="cinfo">
         <div><div class="k">Modalidad</div><div class="v"><span class="tipo ${tipoCls[c.tipo]||'sem'}">${tipoLbl[c.tipo]||c.tipo}</span></div></div>
@@ -326,9 +363,10 @@ function render(){
   document.getElementById('s-rec').textContent=rec+'%';
   document.getElementById('meta-txt').textContent=fmt(totCob)+' / '+fmt(META);
   document.getElementById('meta-fill').style.width=Math.min(100,totCob/META*100)+'%';
-  // bottom + resumen: efectivo en mano = SOLO efectivo (lo que entrega físicamente)
-  document.getElementById('bb-ef').textContent=fmt(efectivo);
-  document.getElementById('cut-ef').textContent=fmt(efectivo);
+  // bottom + resumen: efectivo en mano = efectivo cobrado − lo que ya entregó al JC
+  const efMano=Math.max(0, efectivo - _jcDadoHoy);
+  document.getElementById('bb-ef').textContent=fmt(efMano);
+  document.getElementById('cut-ef').textContent=fmt(efMano);
   document.getElementById('r-ncob').textContent=cob.length;
   document.getElementById('r-tot').textContent=fmt(totCob);
   document.getElementById('r-efe').textContent=fmt(efectivo);

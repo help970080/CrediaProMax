@@ -292,6 +292,7 @@
           <button class="btn" onclick="ecMora()">＋ Moratorio</button>
           <button class="btn" onclick="ecAjuste()">⚖ Ajuste</button>
           <button class="btn" style="border-color:#5ab0ff;color:#5ab0ff" onclick="ecReestructura()">🗓 Reestructurar</button>
+          <button class="btn" style="border-color:#7c5ce0;color:#7c5ce0" onclick="ecEnviarJC()">📦 Enviar a entrega del JC</button>
           <button class="btn gold" onclick="ecImprimir()">🖨 Estado de cuenta</button>
         </div>
       </div>
@@ -776,8 +777,26 @@ function renderCartera(){
       <td><div style="display:flex;align-items:center;gap:7px"><div class="bar" style="min-width:46px"><i style="width:${(av*100).toFixed(0)}%;background:var(--grn)"></i></div><span class="mono" style="font-size:.72rem">${(av*100).toFixed(0)}%</span></div></td>
       <td class="sn">${liq?'—':'Pendiente'}</td>
       <td><span class="pill ok">${liq?'Liquidado':'Activo'}</span></td>
-      <td style="text-align:right;white-space:nowrap">${puedeBorrar?`<button class="btn" style="padding:4px 8px;font-size:.72rem" onclick='editarCliente(${JSON.stringify({id:c.clientId,nombre:c.cliente,tel:c.tel||"",calle:c.calle||"",col:c.col||"",prom:c.prom||"",sucursalId:c.sucursalId})})'>✏️</button> <button class="btn" style="padding:4px 8px;font-size:.72rem;color:var(--red);border-color:var(--red)" onclick="borrarCliente(${c.clientId},'${(c.cliente||'').replace(/'/g,'')}')">🗑</button>`:''}</td></tr>`;
+      <td style="text-align:right;white-space:nowrap">${c.tieneEvidencia?`<button class="btn" style="padding:4px 8px;font-size:.72rem;color:var(--vio);border-color:var(--vio)" onclick="verEvidencia(${c.id})" title="Ver evidencia de entrega">📷</button> `:''}${puedeBorrar?`<button class="btn" style="padding:4px 8px;font-size:.72rem" onclick='editarCliente(${JSON.stringify({id:c.clientId,nombre:c.cliente,tel:c.tel||"",calle:c.calle||"",col:c.col||"",prom:c.prom||"",sucursalId:c.sucursalId})})'>✏️</button> <button class="btn" style="padding:4px 8px;font-size:.72rem;color:var(--red);border-color:var(--red)" onclick="borrarCliente(${c.clientId},'${(c.cliente||'').replace(/'/g,'')}')">🗑</button>`:''}</td></tr>`;
   }).join('') || `<tr><td colspan="12" style="text-align:center;color:var(--faint);padding:24px">Sin créditos en la base.</td></tr>`;
+}
+async function verEvidencia(saleId){
+  try{
+    const d=await apiU('GET','/api/sales/'+saleId+'/entrega');
+    if(!d.entrega){ alert('Este crédito no tiene evidencia de entrega registrada.'); return; }
+    const e=d.entrega;
+    const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'; ov.onclick=ev=>{if(ev.target===ov)ov.remove();};
+    const ubic = (e.lat!=null&&e.lng!=null)?`<a href="https://maps.google.com/?q=${e.lat},${e.lng}" target="_blank" style="color:var(--blu)">📍 Ver ubicación en el mapa</a>`:'<span style="color:var(--faint)">Sin ubicación</span>';
+    ov.innerHTML=`<div style="background:var(--surf-1);border:1px solid var(--line);border-radius:14px;padding:20px;width:min(560px,94vw);max-height:90vh;overflow:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><h3 style="margin:0">📷 Evidencia de entrega</h3><button class="btn" onclick="this.closest('div[style*=fixed]').remove()">✕</button></div>
+      <div style="font-size:.8rem;color:var(--dim);margin-bottom:14px">${d.cliente} · ${d.folio} · entregó ${e.jcNombre||'—'} · ${e.fecha?new Date(e.fecha).toLocaleString('es-MX',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):''}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div><div style="font-size:.72rem;color:var(--dim);margin-bottom:5px">🏠 Fachada / casa</div>${e.fotoCasa?`<img src="${e.fotoCasa}" style="width:100%;border-radius:10px;border:1px solid var(--line);cursor:zoom-in" onclick="window.open().document.write('<img src=\\''+this.src+'\\' style=max-width:100%>')">`:'<div style="color:var(--faint);font-size:.8rem">Sin foto</div>'}</div>
+        <div><div style="font-size:.72rem;color:var(--dim);margin-bottom:5px">🧍 Cliente</div>${e.fotoCliente?`<img src="${e.fotoCliente}" style="width:100%;border-radius:10px;border:1px solid var(--line);cursor:zoom-in" onclick="window.open().document.write('<img src=\\''+this.src+'\\' style=max-width:100%>')">`:'<div style="color:var(--faint);font-size:.8rem">Sin foto</div>'}</div>
+      </div>
+      <div style="margin-top:14px">${ubic}</div></div>`;
+    document.body.appendChild(ov);
+  }catch(e){ alert(e.message); }
 }
 async function borrarCliente(clientId, nombre){
   if(!confirm(`¿Eliminar al cliente "${nombre}"?\n\nQuedará fuera de la cartera y de la ruta del cobrador, pero su historial de pagos se conserva para auditoría. Esta acción se puede deshacer reactivándolo en la base.`)) return;
@@ -1067,6 +1086,7 @@ async function rpVerRecoleccion(){
     const filas=[
       ...d.porCobrador.map(c=>({tipo:'cobrador', ref:c.ref, origen:c.cobrador, detalle:'Cobrador en ruta · '+c.sucursal, monto:c.monto})),
       ...d.porSucursal.map(s=>({tipo:'sucursal', ref:s.sucursalId, origen:s.sucursal, detalle:'Caja sucursal · '+(s.encargada||'—'), monto:s.efectivo})),
+      ...(d.porJC||[]).map(j=>({tipo:'jc', ref:j.ref, origen:j.jc, detalle:'JC · '+j.sucursal+' · trae para entregar créditos', monto:j.monto})),
     ].sort((a,b)=>b.monto-a.monto);
     const rows=filas.map(f=>`<tr><td class="nm">${f.origen}</td><td class="sn">${f.detalle}</td><td class="n"><b>${fmt(f.monto)}</b></td>
       <td style="text-align:right"><button class="btn" style="padding:4px 10px;font-size:.74rem;color:var(--grn);border-color:var(--grn)" onclick="recolectar('${f.tipo}','${String(f.ref).replace(/'/g,'')}','${f.origen.replace(/'/g,'')}',${f.monto})">✓ Recolectar</button></td></tr>`).join('')
@@ -1284,6 +1304,12 @@ async function ecAjuste(){
   try{ await apiU('POST','/api/sales/'+ecActual.id+'/pago',{monto:m,forma:'ajuste',idempotencyKey:'aj-'+Date.now()}); await ecCargar(); }
   catch(e){ alert(e.message); }
 }
+async function ecEnviarJC(){
+  if(!ecActual){ alert('Selecciona un crédito primero'); return; }
+  if(!confirm('¿Enviar el crédito '+ecActual.folio+' a la cola de entrega del JC?\n\nQuedará "pendiente de entregar" para que el JC lo entregue con efectivo y registre la evidencia (foto de casa, cliente y ubicación).')) return;
+  try{ await apiU('POST','/api/sales/'+ecActual.id+'/pendiente-entrega'); alert('✓ Crédito enviado a la cola de entrega del JC de su sucursal.'); }
+  catch(e){ alert(e.message); }
+}
 function ecReestructura(){
   if(!ecActual){ alert('Selecciona un crédito primero'); return; }
   const saldo=ecActual.saldo!=null?ecActual.saldo:0;
@@ -1355,7 +1381,7 @@ async function cargarCortes(){
     $('cortes-list').innerHTML= cortes.length? cortes.map(c=>`<div class="recon">
       <div class="lf"><div class="ava" style="background:var(--surf-3)">${(c.prom||'·').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase()}</div>
         <div><div class="nm">${c.prom} ${c.auto?'<span class="pill w" style="font-size:.6rem">AUTO</span>':'<span class="pill ok" style="font-size:.6rem">MANUAL</span>'}</div>
-          <div class="sn">${c.npagos} pagos · ${c.horaEntrega} · efectivo ${fmt(c.totalEfectivo)} · banco ${fmt(c.totalBanco)}</div></div></div>
+          <div class="sn">${c.npagos} pagos · ${c.horaEntrega} · efectivo ${fmt(c.totalEfectivo)} · banco ${fmt(c.totalBanco)}${c.entregadoAlJC>0?` · <span style="color:var(--vio)">cobró ${fmt(c.efectivoBruto)}, dio ${fmt(c.entregadoAlJC)} al JC</span>`:''}</div></div></div>
       <div style="text-align:right"><div class="mono doc" style="font-weight:600">${fmt(c.totalEfectivo+c.totalBanco)}</div>
         <button class="btn" style="padding:4px 9px;font-size:.72rem;margin-top:4px" onclick="borrarCorte(${c.id})">Borrar</button></div></div>`).join('') : '<div style="color:var(--faint);padding:12px;font-size:.85rem">Sin cortes registrados hoy.</div>';
   }catch(e){ $('cortes-list').innerHTML='<div style="color:var(--red);padding:12px">'+e.message+'</div>'; }
