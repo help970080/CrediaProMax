@@ -145,7 +145,7 @@
 <button class="menu-btn" onclick="document.body.classList.toggle('nav-open')">☰</button>
 <div class="nav-backdrop" onclick="document.body.classList.remove('nav-open')"></div>
 <aside>
-  <div class="logo"><div class="mk">₵</div><div><h1>CobraPro</h1><span>Crédito · Cobranza</span></div></div>
+  <div class="logo"><div class="mk">₵</div><div><h1 id="brandName">CobraPro</h1><span id="brandSub">Crédito · Cobranza</span></div></div>
   <nav id="nav">
     <div class="nav-lbl">Operación</div>
     <button class="navitem on" data-v="resumen"><span class="ic">▣</span> Resumen</button>
@@ -467,6 +467,8 @@
 /* ===== Sesión: exige token del login ===== */
 const TOKEN = (()=>{ try{ return localStorage.getItem('cobrapro_token'); }catch(e){ return null; } })();
 const ME = (()=>{ try{ return JSON.parse(localStorage.getItem('cobrapro_user')||'null'); }catch(e){ return null; } })();
+const BRAND = (()=>{ try{ return JSON.parse(localStorage.getItem('cobrapro_brand')||'null')||{nombre:'CobraPro'}; }catch(e){ return {nombre:'CobraPro'}; } })();
+try{ if(BRAND.nombre){ const bn=document.getElementById('brandName'); if(bn) bn.textContent=BRAND.nombre; document.title=BRAND.nombre+' · Crédito y Cobranza'; } }catch(e){}
 if(!TOKEN){ location.replace('index.html'); }
 async function apiU(method, path, body){
   const r = await fetch(path, { method, headers:{'Content-Type':'application/json', Authorization:'Bearer '+TOKEN}, body: body?JSON.stringify(body):undefined });
@@ -795,7 +797,7 @@ function _oneReport(r,fechaGen){
   }).join('');
   return `<div class="report">
     <div class="head"><div class="logo">₵</div>
-      <div class="title"><h1>CobraPro · Cartera por Cobrador</h1><div class="sub">LeGaXi Asociados · sistema de crédito y cobranza</div></div>
+      <div class="title"><h1>${(BRAND.nombre||'CobraPro')} · Cartera por Cobrador</h1><div class="sub">${(BRAND.nombre||'CobraPro')} · sistema de crédito y cobranza</div></div>
       <div class="info"><b>Cobrador:</b> ${r.cobrador}<br><b>Sucursal:</b> ${r.sucursal} · <b>Encargada:</b> ${r.encargada}<br><b>Periodo:</b> últimas 16 cuotas<br><b>Generado:</b> ${fechaGen}</div></div>
     <div class="kpis">
       <div class="kpi"><div class="l">Clientes asignados</div><div class="v">${k.clientes}</div></div>
@@ -817,7 +819,7 @@ function _oneReport(r,fechaGen){
       <div class="firma"><div class="line">Encargada de sucursal</div>${r.encargada}</div>
       <div class="firma"><div class="line">Supervisor / Administrador</div>${ME?ME.nombre:''}</div>
     </div>
-    <div class="foot">CobraPro · LeGaXi Asociados · Generado ${fechaGen}</div>
+    <div class="foot">${(BRAND.nombre||"CobraPro")} · Generado ${fechaGen}</div>
   </div>`;
 }
 
@@ -1284,7 +1286,7 @@ function ecImprimir(){
     table{width:100%;border-collapse:collapse;margin-top:8px}th,td{border-bottom:1px solid #e3e3e3;padding:7px;text-align:left;font-size:12px}
     th{background:#f4f4f4}tfoot td{font-weight:bold;border-top:2px solid #999}
     .tot{text-align:right;margin-top:14px;font-size:16px}</style></head><body>
-    <h1>CobraPro · Estado de cuenta</h1><div class="sub">Emitido ${new Date().toLocaleString('es-MX')}</div>
+    <h1>${(BRAND.nombre||"CobraPro")} · Estado de cuenta</h1><div class="sub">Emitido ${new Date().toLocaleString('es-MX')}</div>
     <div class="box"><div class="g">
       <div><span>Cliente:</span> <b>${c.cliente||'—'}</b></div><div><span>Folio:</span> <b>${c.folio}</b></div>
       <div><span>Producto:</span> ${_tipoLbl[c.tipo]||c.tipo} · cuota ${fmt(c.cuota)}</div><div><span>Cobrador:</span> ${c.prom||'—'}</div></div></div>

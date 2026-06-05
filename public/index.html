@@ -42,7 +42,7 @@
     <div class="hint">Primer acceso: <b>admin</b> / <b>admin123</b><br>Cada usuario entra a su panel según su rol.</div>
   </div>
 <script>
-  const dest = { admin:'cobrapro.html', supervisor:'cobrapro.html', sucursal:'cobrapro_sucursal.html', cobrador:'cobrapro_campo.html' };
+  const dest = { admin:'cobrapro.html', supervisor:'cobrapro.html', sucursal:'cobrapro_sucursal.html', cobrador:'cobrapro_campo.html', super:'super.html' };
   async function entrar(){
     const err = document.getElementById('err'); const btn = document.getElementById('btn');
     err.textContent = ''; btn.disabled = true; btn.textContent = 'Entrando…';
@@ -51,7 +51,8 @@
         body: JSON.stringify({ usuario: document.getElementById('u').value.trim(), password: document.getElementById('p').value }) });
       const d = await r.json();
       if(!r.ok) throw new Error(d.error || 'No se pudo iniciar sesión');
-      try{ localStorage.setItem('cobrapro_token', d.token); localStorage.setItem('cobrapro_user', JSON.stringify(d.user)); }catch(e){}
+      try{ localStorage.setItem('cobrapro_token', d.token); localStorage.setItem('cobrapro_user', JSON.stringify(d.user)); localStorage.setItem('cobrapro_brand', JSON.stringify(d.brand||{nombre:'CobraPro'})); }catch(e){}
+      if(d.super){ location.href='super.html'; return; }
       location.href = dest[d.user.rol] || 'cobrapro.html';
     }catch(e){
       err.textContent = e.message; btn.disabled = false; btn.textContent = 'Entrar';

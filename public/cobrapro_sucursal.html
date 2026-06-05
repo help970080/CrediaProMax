@@ -196,6 +196,8 @@ const ME=(()=>{try{return JSON.parse(localStorage.getItem('cobrapro_user')||'nul
 if(!TOKEN){ location.replace('index.html'); }
 function salir(){ try{localStorage.removeItem('cobrapro_token');localStorage.removeItem('cobrapro_user');}catch(e){} location.replace('index.html'); }
 if(ME&&ME.nombre){ var _en=document.getElementById('encName'); if(_en)_en.textContent='Caja · '+ME.nombre; }
+const BRAND=(()=>{try{return JSON.parse(localStorage.getItem('cobrapro_brand')||'null')||{nombre:'CobraPro'};}catch(e){return {nombre:'CobraPro'};}})();
+try{ if(BRAND.nombre){ var _h=document.querySelector('h1'); if(_h)_h.textContent=BRAND.nombre+' · Sucursal'; document.title=BRAND.nombre+' · Sucursal'; } }catch(e){}
 // ===== Motor de cálculo REAL (factores Credia) =====
 const PROD={
   diario:[{p:10,f:1.17,fijo:30},{p:20,f:1.23,fijo:60},{p:30,f:1.33,fijo:90}],
