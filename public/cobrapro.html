@@ -125,6 +125,10 @@
   .btn.gold{background:linear-gradient(140deg,var(--acc),var(--acc-d));color:#1a1408;border:none;font-weight:600}.btn.gold:hover{filter:brightness(1.07);color:#1a1408}
   .rp-card{background:var(--surf-1);border:1px solid var(--line);border-radius:10px;padding:14px;cursor:pointer;transition:all .15s;display:flex;flex-direction:column}.rp-card:hover{border-color:var(--acc);transform:translateY(-1px);box-shadow:0 4px 14px rgba(240,180,41,.08)}.rp-ic{font-size:1.8rem;margin-bottom:4px}.rp-tt{font-size:.95rem;font-weight:600;color:var(--ink)}.rp-ds{font-size:.74rem;color:var(--dim);margin-top:3px;line-height:1.35;flex:1}
   .rp-table{width:100%;border-collapse:collapse}.rp-table th{background:var(--surf-2);padding:8px 6px;text-align:left;font-size:.7rem;color:var(--dim);font-weight:600;border-bottom:1px solid var(--line)}.rp-table td{padding:8px 6px;border-bottom:1px solid var(--line);font-size:.82rem}.rp-table td.n{text-align:right;font-variant-numeric:tabular-nums}.rp-table tfoot td{font-weight:600;background:var(--surf-2)}
+  .dg-table th,.dg-table td{white-space:nowrap;border-right:1px solid var(--line)}
+  .dg-table th.lbl,.dg-table td.lbl{position:sticky;left:0;z-index:2;text-align:left;background:var(--surf-1);font-weight:600;box-shadow:2px 0 4px rgba(0,0,0,.04);min-width:190px}
+  .dg-table thead th.lbl{background:var(--surf-2);z-index:3}
+  .dg-table tbody tr:nth-child(even) td:not(.lbl){background:var(--surf-2)}
   .bar-chart{display:flex;align-items:flex-end;gap:3px;height:140px;padding:10px 0;border-bottom:1px solid var(--line)}.bar-chart .bar{flex:1;background:var(--acc);border-radius:2px 2px 0 0;min-height:2px;position:relative}.bar-chart .bar:hover{filter:brightness(1.2)}.bar-chart .bar .tip{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);background:#000;color:#fff;padding:3px 6px;border-radius:4px;font-size:.65rem;white-space:nowrap;display:none}.bar-chart .bar:hover .tip{display:block}
   .legend{display:flex;gap:15px;flex-wrap:wrap;margin-top:11px;font-size:.77rem;color:var(--dim)}
   .legend span{display:flex;align-items:center;gap:6px}.legend i{width:10px;height:10px;border-radius:3px}
@@ -433,6 +437,7 @@
       <div class="ph"><h3>Centro de reportes</h3><span class="hint">Solo Admin y Supervisor · genera PDFs e exporta a CSV</span></div>
       <div id="rp-menu" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;padding:8px">
         <div class="rp-card" onclick="rpVerGerencial()"><div class="rp-ic">🏢</div><div class="rp-tt">Reporte gerencial</div><div class="rp-ds">Empresa → sucursal (gerente) → promotor · cartera, cobranza, colocación y mora</div><button class="btn gold" style="margin-top:8px">Ver</button></div>
+        <div class="rp-card" onclick="rpVerDesglose()"><div class="rp-ic">📋</div><div class="rp-tt">Desglose de cartera</div><div class="rp-ds">Control semanal por sucursal y por promotor · cartera, débito, sin pago, ventas y cobranza</div><button class="btn gold" style="margin-top:8px">Ver</button></div>
         <div class="rp-card" onclick="abrirImprimirCartera()"><div class="rp-ic">📄</div><div class="rp-tt">Cartera por cobrador</div><div class="rp-ds">PDF imprimible · 16 últimas cuotas por cliente</div><button class="btn gold" style="margin-top:8px">Imprimir PDF</button></div>
         <div class="rp-card" onclick="rpVerColocacion()"><div class="rp-ic">📊</div><div class="rp-tt">Colocación día/semana</div><div class="rp-ds">Tendencia de créditos otorgados · monto y volumen</div><button class="btn" style="margin-top:8px">Ver</button></div>
         <div class="rp-card" onclick="rpVerRefin()"><div class="rp-ic">🔄</div><div class="rp-tt">REFIN del periodo</div><div class="rp-ds">Refinanciamientos · liquidación + nuevo crédito + neto</div><button class="btn" style="margin-top:8px">Ver</button></div>
@@ -953,6 +958,38 @@ function rpAbrir(titulo, html, opts){
 }
 
 let _gerPeriodo='semana', _gerDesde='', _gerHasta='';
+function _dgQS(){ return 'semanas=12'+(_dgSuc?'&sucursalId='+_dgSuc:'')+(_dgProm?'&promotor='+encodeURIComponent(_dgProm):''); }
+let _dgSuc=null, _dgProm='';
+async function rpVerDesglose(sucId, prom){
+  if(sucId!==undefined && sucId!==null) _dgSuc=sucId;
+  _dgProm = prom||'';
+  let d; try{ d=await apiU('GET','/api/reports/desglose?'+_dgQS()); }catch(e){ alert(e.message); return; }
+  _dgSuc=d.sucursal.id; _rpActual='desglose'; _rpData=d;
+  const esc=s=>String(s||'').replace(/'/g,"\\'");
+  const sucSel = d.sucursales.length>1
+    ? `<select onchange="rpVerDesglose(+this.value,'')" style="padding:6px 10px;background:var(--surf-2);border:1px solid var(--line);border-radius:7px;color:var(--ink);font-family:'Sora';font-size:.85rem">${d.sucursales.map(s=>`<option value="${s.id}" ${s.id===d.sucursal.id?'selected':''}>${s.nombre}</option>`).join('')}</select>`
+    : `<b>${d.sucursal.nombre}</b>`;
+  const tab=(lbl,val,active)=>`<button class="btn ${active?'gold':''}" style="padding:6px 12px" onclick="rpVerDesglose(${d.sucursal.id},'${esc(val)}')">${lbl}</button>`;
+  const tabs = tab('🏪 TOTAL sucursal','', _dgProm==='') + ' ' + (d.promotores.length? d.promotores.map(p=>tab('👤 '+p,p,_dgProm===p)).join(' ') : '<span style="color:var(--faint);font-size:.8rem;align-self:center">Sin promotores dados de alta</span>');
+  const cellTxt=(f,v)=> f.fmt==='money'?fmt(v) : f.fmt==='pct'?((Math.round(v*1000)/10).toFixed(1)+'%') : v.toLocaleString('es-MX');
+  const head=`<tr><th class="lbl">Concepto</th>${d.semanas.map(w=>`<th class="n">${w.label}<div style="font-weight:400;font-size:.64rem;color:var(--faint)">${w.fecha}</div></th>`).join('')}</tr>`;
+  const body=d.filas.map(f=>{
+    const sep = (f.k==='liquidados'||f.k==='ventas'||f.k==='cobranza')?' sep':'';
+    return `<tr class="${sep.trim()}"><td class="lbl">${f.lbl}</td>${f.vals.map(v=>{
+      let color='';
+      if(f.k==='pctCobranzaDebito') color = v>=0.95?'color:var(--grn)':(v>=0.8?'color:var(--acc)':(v>0?'color:var(--red)':''));
+      else if(f.k==='pctSinPago'||f.k==='pctCarteraSinPago'||f.k==='pctDebitoSinPago') color = v>0.10?'color:var(--red)':(v>0.05?'color:var(--acc)':'');
+      else if(f.k==='cobranza'&&v>0) color='color:var(--grn)';
+      return `<td class="n" style="${color}">${cellTxt(f,v)}</td>`;
+    }).join('')}</tr>`;
+  }).join('');
+  rpAbrir('📋 Desglose de cartera',`
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px"><span style="font-size:.8rem;color:var(--dim)">Sucursal:</span> ${sucSel}<span style="margin-left:auto;font-size:.74rem;color:var(--faint)">Últimas ${d.semanas.length} semanas · ${_dgProm?('Promotor: '+_dgProm):'Total de la sucursal (suma de sus promotores)'}</span></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${tabs}</div>
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:10px"><table class="rp-table dg-table" style="min-width:max-content;border:none">${''}<thead>${head}</thead><tbody>${body}</tbody></table></div>
+    <div style="font-size:.72rem;color:var(--faint);margin-top:8px">Cambia entre <b>TOTAL sucursal</b> y cada <b>promotor</b> con los botones de arriba. Desliza la tabla para ver más semanas.</div>
+  `);
+}
 function _gerQS(){ return (_gerDesde||_gerHasta) ? ('desde='+_gerDesde+'&hasta='+_gerHasta) : ('periodo='+_gerPeriodo); }
 function rpGerRango(){ _gerDesde=document.getElementById('ger-desde').value; _gerHasta=document.getElementById('ger-hasta').value; if(!_gerDesde||!_gerHasta){alert('Indica fecha inicio y fin');return;} rpVerGerencial(); }
 async function rpVerGerencial(p){

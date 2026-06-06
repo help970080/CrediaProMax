@@ -117,6 +117,18 @@
   .tab{background:none;border:none;color:var(--dim);font-family:"Sora";font-size:.9rem;font-weight:500;padding:10px 15px;cursor:pointer;position:relative}
   .tab.on{color:var(--acc)}.tab.on::after{content:"";position:absolute;left:10px;right:10px;bottom:-1px;height:2px;background:var(--acc)}
   .view{display:none}.view.on{display:block}
+
+  .dgov{position:fixed;inset:0;background:rgba(10,15,25,.55);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto}
+  .dgbox{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:18px;width:min(1100px,98vw);max-height:94vh;display:flex;flex-direction:column}
+  .dg-table{width:100%;border-collapse:collapse}
+  .dg-table th,.dg-table td{white-space:nowrap;border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:7px 8px;font-size:.8rem}
+  .dg-table th{background:var(--surf-2);color:var(--dim);font-weight:600;font-size:.7rem;text-align:right}
+  .dg-table th.lbl,.dg-table td.lbl{position:sticky;left:0;z-index:2;text-align:left;background:var(--surf);font-weight:600;min-width:180px;box-shadow:2px 0 4px rgba(0,0,0,.05)}
+  .dg-table thead th.lbl{background:var(--surf-2);z-index:3}
+  .dg-table td.n{text-align:right;font-variant-numeric:tabular-nums}
+  .dg-table tbody tr:nth-child(even) td:not(.lbl){background:var(--surf-2)}
+  .dg-tab{background:var(--surf-2);border:1px solid var(--line);color:var(--dim);font-family:'Sora';font-weight:600;font-size:.78rem;padding:6px 12px;border-radius:8px;cursor:pointer}
+  .dg-tab.on{background:var(--acc);border-color:var(--acc);color:#1b2330}
 </style>
 </head>
 <body>
@@ -126,6 +138,7 @@
   <div class="hmeta">
     <div class="live"><span class="dot"></span> Sincronizado en vivo</div>
     <div class="clock mono" id="clock"></div>
+    <button onclick="abrirDesglose()" style="background:var(--acc);border:1px solid var(--acc);color:#1b2330;font-family:'Sora';font-weight:700;font-size:.78rem;padding:7px 12px;border-radius:8px;cursor:pointer">📋 Desglose</button>
     <button onclick="salir()" style="background:var(--surf-3);border:1px solid var(--line-2);color:var(--dim);font-family:'Sora';font-size:.78rem;padding:7px 12px;border-radius:8px;cursor:pointer">Salir</button>
   </div>
 </header>
@@ -549,6 +562,33 @@ function mostrarPagareCapturado(saleId, folio){
     </div>
   </div>`;
   document.getElementById('overlay').classList.add('on');
+}
+async function abrirDesglose(prom){
+  const qs='semanas=12'+(prom?'&promotor='+encodeURIComponent(prom):'');
+  let d; try{ d=await api('GET','/api/reports/desglose?'+qs); }catch(e){ toast(e.message); return; }
+  const cur=prom||'';
+  const esc=s=>String(s||'').replace(/'/g,"\\'");
+  const cellTxt=(f,v)=> f.fmt==='money'?fmt(v) : f.fmt==='pct'?((Math.round(v*1000)/10).toFixed(1)+'%') : v.toLocaleString('es-MX');
+  const head=`<tr><th class="lbl">Concepto</th>${d.semanas.map(w=>`<th>${w.label}<div style="font-weight:400;font-size:.62rem;color:var(--faint)">${w.fecha}</div></th>`).join('')}</tr>`;
+  const body=d.filas.map(f=>`<tr><td class="lbl">${f.lbl}</td>${f.vals.map(v=>{
+    let color='';
+    if(f.k==='pctCobranzaDebito') color=v>=0.95?'color:var(--grn)':(v>=0.8?'color:var(--acc)':(v>0?'color:var(--red)':''));
+    else if(f.k==='pctSinPago'||f.k==='pctCarteraSinPago'||f.k==='pctDebitoSinPago') color=v>0.10?'color:var(--red)':(v>0.05?'color:var(--acc)':'');
+    else if(f.k==='cobranza'&&v>0) color='color:var(--grn)';
+    return `<td class="n" style="${color}">${cellTxt(f,v)}</td>`;
+  }).join('')}</tr>`).join('');
+  const tab=(lbl,val)=>`<button class="dg-tab ${cur===val?'on':''}" onclick="abrirDesglose('${esc(val)}')">${lbl}</button>`;
+  const tabs=tab('🏪 TOTAL sucursal','')+' '+(d.promotores.length?d.promotores.map(p=>tab('👤 '+p,p)).join(' '):'<span style="color:var(--faint);font-size:.78rem">Sin promotores</span>');
+  let ov=document.getElementById('dg-ov');
+  if(!ov){ ov=document.createElement('div'); ov.id='dg-ov'; ov.className='dgov'; ov.onclick=e=>{if(e.target===ov)ov.remove();}; document.body.appendChild(ov); }
+  ov.innerHTML=`<div class="dgbox">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><h3 style="margin:0;font-size:1.1rem">📋 Desglose de cartera</h3>
+      <span style="color:var(--dim);font-size:.78rem">${d.sucursal.nombre}</span>
+      <button onclick="document.getElementById('dg-ov').remove()" style="margin-left:auto;background:var(--surf-3);border:1px solid var(--line-2);color:var(--dim);border-radius:8px;padding:6px 12px;cursor:pointer;font-family:'Sora'">✕</button></div>
+    <div style="font-size:.74rem;color:var(--faint);margin-bottom:10px">Últimas ${d.semanas.length} semanas · ${cur?('Promotor: '+cur):'Total de la sucursal (suma de sus promotores)'}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${tabs}</div>
+    <div style="overflow:auto;border:1px solid var(--line);border-radius:10px;flex:1"><table class="dg-table">${''}<thead>${head}</thead><tbody>${body}</tbody></table></div>
+  </div>`;
 }
 function numeroALetras(num){
   const u=['','UNO','DOS','TRES','CUATRO','CINCO','SEIS','SIETE','OCHO','NUEVE','DIEZ','ONCE','DOCE','TRECE','CATORCE','QUINCE','DIECISÉIS','DIECISIETE','DIECIOCHO','DIECINUEVE'];
