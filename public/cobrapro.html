@@ -513,7 +513,7 @@
     <div class="panel"><div class="ph"><h3>Simulador de crédito</h3><span class="hint">maneja las tres modalidades</span></div>
       <div class="sim-grid">
         <div>
-          <div class="sim-field"><label>Modalidad</label><select id="s-tipo"><option value="diario">Diario</option><option value="semanal" selected>Semanal</option><option value="unico">Pago único</option><option value="p17">Celulares 17 pagos</option></select></div>
+          <div class="sim-field"><label>Modalidad</label><select id="s-tipo"><option value="diario">Diario</option><option value="semanal" selected>Semanal</option><option value="s16">Semanal 16 (primer pago)</option><option value="s17">Semanal 17 (primer pago)</option><option value="unico">Pago único</option><option value="p17">Celulares 17 pagos</option></select></div>
           <div class="sim-field"><label>Monto del crédito</label><input type="number" id="s-monto" value="5000" step="500"></div>
           <div class="sim-field"><label>Plazo</label><select id="s-plazo"></select></div>
         </div>
@@ -1469,13 +1469,29 @@ let PROD={diario:[{p:10,f:1.17,fijo:30},{p:20,f:1.23,fijo:60},{p:30,f:1.33,fijo:
 const plazosUnico=[10,15,20,30];
 function fillPlazos(){const t=$('s-tipo').value;
   if(t==='unico'){$('s-plazo').innerHTML=plazosUnico.map(p=>`<option value="${p}">${p} días</option>`).join('');$('s-plazo').value=15;return;}
+  if(t==='s16'){$('s-plazo').innerHTML='<option value="16">16 semanas</option>';return;}
+  if(t==='s17'){$('s-plazo').innerHTML='<option value="17">17 semanas</option>';return;}
   $('s-plazo').innerHTML=PROD[t].map(x=>`<option value="${x.p}">${x.p} ${t==='semanal'?'semanas':t==='p17'?'pagos':'días'}</option>`).join('');
   if(t==='semanal')$('s-plazo').value=12;}
 function calcReal(t,plazo,monto){
+  if(t==='s16'||t==='s17'){const c=PROD[t]||{factor:t==='s16'?1.6:1.7,fijo:t==='s16'?100:200,ppFactor:0.1,ppFijo:t==='s16'?100:200,pagos:t==='s16'?16:17};
+    const total=monto*c.factor+c.fijo;const primerPago=monto*c.ppFactor+c.ppFijo;const cuota=(total-primerPago)/(c.pagos-1);
+    return {total,pagos:c.pagos,cuota,primerPago,descuentaPP:true,entregaCliente:monto-primerPago};}
   if(t==='unico'){const tap=monto+plazo*(2+monto*0.0183);const mor=4+tap*0.0183;return {total:tap,pagos:1,cuota:tap,mor};}
   const it=PROD[t].find(x=>x.p===plazo)||PROD[t][0];const total=monto*it.f+it.fijo;return {total,pagos:it.p,cuota:total/it.p,com:(total-monto)/it.p};}
 function sim(){const t=$('s-tipo').value,monto=+$('s-monto').value||0,plazo=+$('s-plazo').value;
   const r=calcReal(t,plazo,monto);const interes=r.total-monto;
+  if(r.descuentaPP){
+    document.getElementById('sim-out').innerHTML=`
+      <div class="sim-big"><div class="l">Cuota semanal</div><div class="v">${fmt(r.cuota)}</div></div>
+      <div class="sim-row"><span class="k">Préstamo al cliente</span><span class="v">${fmt(monto)}</span></div>
+      <div class="sim-row"><span class="k">Cargo por servicio</span><span class="v" style="color:var(--acc)">${fmt(interes)}</span></div>
+      <div class="sim-row"><span class="k">Total a pagar</span><span class="v">${fmt(r.total)}</span></div>
+      <div class="sim-row"><span class="k">1er pago (Tarifa 1, se descuenta)</span><span class="v" style="color:var(--vio)">${fmt(r.primerPago)}</span></div>
+      <div class="sim-row"><span class="k">Entrega al cliente</span><span class="v" style="color:var(--grn)">${fmt(r.entregaCliente)}</span></div>
+      <div class="sim-row" style="border:none"><span class="k">Pagos</span><span class="v">${r.pagos} (1 descontado + ${r.pagos-1} de ${fmt(r.cuota)})</span></div>`;
+    return;
+  }
   const freq=t==='diario'?'diaria':t==='semanal'?'semanal':t==='p17'?'(17 pagos)':'única';
   const extra= t==='unico'? `<div class="sim-row"><span class="k">Moratorio por día</span><span class="v" style="color:var(--red)">${fmt(r.mor)}</span></div>`
              : `<div class="sim-row"><span class="k">Comisión por no pago</span><span class="v">${fmt(r.com)}</span></div>`;
@@ -1597,6 +1613,18 @@ function renderTarifasEditor(){
     html+='</tbody></table></div>';
   });
   const u=PROD.unico||{base:2,factor:0.0183};
+  ['s16','s17'].forEach(tipo=>{
+    const c=PROD[tipo]||{factor:tipo==='s16'?1.6:1.7,fijo:tipo==='s16'?100:200,ppFactor:0.1,ppFijo:tipo==='s16'?100:200,pagos:tipo==='s16'?16:17};
+    html+=`<div style="margin-bottom:14px"><div style="font-weight:600;font-size:.85rem;margin-bottom:4px">${tipo==='s16'?'Semanal 16 (primer pago)':'Semanal 17 (primer pago)'}</div>
+      <div style="font-size:.74rem;color:var(--dim);margin-bottom:6px">Total = monto × factor + fijo · 1er pago = monto × ppFactor + ppFijo (se descuenta) · ${c.pagos} pagos</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <label style="font-size:.74rem;color:var(--dim)">Factor <input type="number" step="0.01" data-pp="${tipo}" data-k="factor" value="${c.factor}" style="width:80px;padding:6px;background:var(--surf-2);border:1px solid var(--line);border-radius:6px;color:var(--ink)"></label>
+        <label style="font-size:.74rem;color:var(--dim)">Fijo $ <input type="number" data-pp="${tipo}" data-k="fijo" value="${c.fijo}" style="width:80px;padding:6px;background:var(--surf-2);border:1px solid var(--line);border-radius:6px;color:var(--ink)"></label>
+        <label style="font-size:.74rem;color:var(--dim)">ppFactor <input type="number" step="0.01" data-pp="${tipo}" data-k="ppFactor" value="${c.ppFactor}" style="width:80px;padding:6px;background:var(--surf-2);border:1px solid var(--line);border-radius:6px;color:var(--ink)"></label>
+        <label style="font-size:.74rem;color:var(--dim)">ppFijo $ <input type="number" data-pp="${tipo}" data-k="ppFijo" value="${c.ppFijo}" style="width:80px;padding:6px;background:var(--surf-2);border:1px solid var(--line);border-radius:6px;color:var(--ink)"></label>
+        <label style="font-size:.74rem;color:var(--dim)">Pagos <input type="number" data-pp="${tipo}" data-k="pagos" value="${c.pagos}" style="width:70px;padding:6px;background:var(--surf-2);border:1px solid var(--line);border-radius:6px;color:var(--ink)"></label>
+      </div></div>`;
+  });
   html+=`<div style="margin-bottom:6px"><div style="font-weight:600;font-size:.85rem;margin-bottom:6px">Pago único</div>
     <div style="font-size:.76rem;color:var(--dim);margin-bottom:6px">Total = monto + días × (base + monto × factor)</div>
     <div style="display:flex;gap:10px;flex-wrap:wrap">
@@ -1612,6 +1640,8 @@ function leerTarifasEditor(){
     t[tipo][i]=t[tipo][i]||{}; t[tipo][i][k]=+inp.value;
   });
   t.unico={base:+document.getElementById('u-base').value||0,factor:+document.getElementById('u-factor').value||0};
+  t.s16={}; t.s17={};
+  document.querySelectorAll('#tarifas-editor input[data-pp]').forEach(inp=>{ t[inp.dataset.pp][inp.dataset.k]=+inp.value; });
   return t;
 }
 async function guardarTarifas(){

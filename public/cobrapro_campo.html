@@ -233,7 +233,7 @@ function uuid(){return 'cp-'+Date.now()+'-'+Math.random().toString(36).slice(2,8
 async function api(method,path,body){
   const r=await fetch(path,{method,headers:{'Content-Type':'application/json',Authorization:'Bearer '+TOKEN},body:body?JSON.stringify(body):undefined});
   if(r.status===401){ salir(); throw new Error('Sesión'); }
-  const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||('Error '+r.status)); return d;
+  const d=await r.json().catch(()=>({})); if(!r.ok){ const err=new Error(d.error||('Error '+r.status)); err.status=r.status; throw err; } return d;
 }
 let cola=(()=>{try{return JSON.parse(localStorage.getItem('cobrapro_cola')||'[]')}catch(e){return []}})();
 queue=cola.length;
@@ -301,7 +301,17 @@ async function flush(){
       if(it.kind==='pago') await api('POST','/api/sales/'+it.saleId+'/pago',{monto:it.monto,forma:it.forma,idempotencyKey:it.idem});
       else await api('POST','/api/sales/'+it.saleId+'/gestion',{tipo:it.tipo,detalle:it.detalle,idempotencyKey:it.idem});
       cola.shift(); saveCola();
-    }catch(e){ break; }
+    }catch(e){
+      // Error permanente del servidor (4xx que no es timeout/rate-limit): el movimiento no se puede aplicar.
+      // Lo sacamos de la cola para no bloquear los demás cobros y avisamos al cobrador.
+      if(e.status && e.status>=400 && e.status<500 && e.status!==408 && e.status!==429){
+        cola.shift(); saveCola();
+        const quien=(clientes.find(c=>c.id===it.saleId)||{}).nombre||('crédito '+it.saleId);
+        toast('No se registró un cobro de '+quien+': '+e.message);
+        continue;
+      }
+      break; // error transitorio (sin conexión / servidor caído): se reintenta después
+    }
   } } finally { _flushing=false; queue=cola.length; render(); }
 }
 window.addEventListener('online', flush);
@@ -400,10 +410,31 @@ function abrirCobro(id){
       <button onclick="setForma('deposito',this)">🧾 Depósito</button>
     </div>
     <div class="sheet-actions"><button class="sa cancel" onclick="cerrar()">Cancelar</button><button class="sa ok" onclick="confirmarCobro()">Registrar cobro</button></div>
+    <button onclick="estadoCuenta(${id})" style="width:100%;margin-top:8px;background:var(--surf-2);border:1px solid var(--line-2);color:var(--txt);padding:10px;border-radius:9px;font-family:'Sora';font-weight:600;cursor:pointer">🧾 Estado de cuenta del cliente</button>
   </div>`;
   document.getElementById('overlay').classList.add('on');
 }
 function setAmt(v,el){document.getElementById('amt').value=v;document.querySelectorAll('#quick button').forEach(b=>b.classList.remove('on'));el.classList.add('on');}
+async function estadoCuenta(saleId){
+  const c=clientes.find(x=>x.id===saleId)||{};
+  let d;
+  try{ d=await api('GET','/api/sales/'+saleId+'/movimientos'); }
+  catch(e){ toast('No se pudo cargar el estado de cuenta: '+e.message); return; }
+  let brand='CobraPro'; try{ const b=JSON.parse(localStorage.getItem('cobrapro_brand')||'null'); if(b&&b.nombre) brand=b.nombre; }catch(e){}
+  const filas=(d.movimientos||[]).map(m=>`<tr><td>${m.fecha||''}</td><td>${m.concepto||(m.abono>0?'Abono':'Cargo')}</td><td style="text-align:right">${m.cargo>0?'$'+Math.round(m.cargo).toLocaleString('es-MX'):''}</td><td style="text-align:right">${m.abono>0?'$'+Math.round(m.abono).toLocaleString('es-MX'):''}</td><td style="text-align:right">$${Math.round(m.saldo).toLocaleString('es-MX')}</td></tr>`).join('');
+  const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Estado de cuenta</title>
+  <style>body{font-family:Arial,sans-serif;color:#1b2330;padding:24px;max-width:760px;margin:auto}h1{font-size:18px;margin:0}.h{border-bottom:2px solid #d99a0f;padding-bottom:10px;margin-bottom:14px}.muted{color:#5b6675;font-size:13px}table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}th,td{border-bottom:1px solid #dde3ec;padding:7px 8px;text-align:left}th{background:#f1f4f9;font-size:11px;text-transform:uppercase;letter-spacing:.04em}tfoot td{font-weight:bold;border-top:2px solid #1b2330}@media print{button{display:none}}</style></head>
+  <body><div class="h"><h1>${brand}</h1><div class="muted">Estado de cuenta del cliente</div></div>
+  <div class="muted"><b>Cliente:</b> ${c.nombre||'—'} &nbsp; <b>Crédito:</b> ${c.folio||('#'+saleId)} &nbsp; <b>Fecha:</b> ${new Date().toLocaleDateString('es-MX')}</div>
+  <table><thead><tr><th>Fecha</th><th>Concepto</th><th style="text-align:right">Cargo</th><th style="text-align:right">Abono</th><th style="text-align:right">Saldo</th></tr></thead>
+  <tbody>${filas||'<tr><td colspan=5>Sin movimientos</td></tr>'}</tbody>
+  <tfoot><tr><td colspan="4">Saldo actual</td><td style="text-align:right">$${Math.round(d.saldo).toLocaleString('es-MX')}</td></tr></tfoot></table>
+  <p class="muted" style="margin-top:18px">Documento informativo generado por ${brand}. Conserve este comprobante.</p>
+  <button onclick="window.print()" style="margin-top:14px;padding:10px 18px;background:#d99a0f;color:#1b2330;border:none;border-radius:8px;font-weight:bold;cursor:pointer">🖨 Imprimir / Guardar PDF</button>
+  </body></html>`;
+  const w=window.open('','_blank'); if(!w){ toast('Permite las ventanas emergentes para ver el estado de cuenta'); return; }
+  w.document.write(html); w.document.close();
+}
 function confirmarCobro(){
   const monto=parseFloat(document.getElementById('amt').value)||0;
   if(monto<=0){toast('Monto inválido');return;}
