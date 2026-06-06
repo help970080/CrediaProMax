@@ -222,8 +222,9 @@
   <!-- RESUMEN -->
   <section class="view on" id="resumen">
     <div class="kpis">
-      <div class="kpi g"><div class="l">Cobrado</div><div class="v" id="k-cob">$0</div><div class="s"><b>+11%</b> vs periodo previo</div></div>
-      <div class="kpi b"><div class="l">Colocado (sucursales)</div><div class="v" id="k-col">$0</div><div class="s" id="k-ncred">0 créditos nuevos</div></div>
+      <div class="kpi g"><div class="l">Dinero cobrado</div><div class="v" id="k-cob">$0</div><div class="s" id="k-cob-s">en el periodo</div></div>
+      <div class="kpi b"><div class="l">Dinero colocado</div><div class="v" id="k-col">$0</div><div class="s" id="k-ncred">0 créditos nuevos</div></div>
+      <div class="kpi g"><div class="l">Utilidad (interés cobrado)</div><div class="v" id="k-util">$0</div><div class="s">ganancia del periodo</div></div>
       <div class="kpi v"><div class="l">Cartera activa</div><div class="v" id="k-cart">$0</div><div class="s" id="k-ncli">0 créditos vigentes</div></div>
       <div class="kpi r"><div class="l">Cartera vencida</div><div class="v" id="k-ven">$0</div><div class="s"><b class="n" id="k-ven-p">0%</b> de la cartera</div></div>
       <div class="kpi"><div class="l">Efectivo por entregar</div><div class="v" id="k-ef">$0</div><div class="s">cobradores + cajas</div></div>
@@ -632,7 +633,9 @@ async function cargarDashboard(){
 
 function pintaResumen(d){
   const t=d.totales;
-  $('k-cob').textContent=fmt(t.recuperado_periodo);
+  $('k-cob').textContent=fmt(t.cobrado_periodo!=null?t.cobrado_periodo:t.recuperado_periodo);
+  const _cs=$('k-cob-s'); if(_cs) _cs.textContent=t.npagos_periodo+' pagos en el periodo';
+  const _u=$('k-util'); if(_u) _u.textContent=fmt(t.utilidad_periodo||0);
   $('k-col').textContent=fmt(t.monto_colocado_periodo);
   $('k-ncred').textContent=t.nuevos_creditos_periodo+' créditos nuevos';
   $('k-cart').textContent=fmt(t.saldo_pendiente);
@@ -948,43 +951,89 @@ function rpAbrir(titulo, html, opts){
   $('rp-output').scrollIntoView({behavior:'smooth',block:'start'});
 }
 
-let _gerPeriodo='semana';
+let _gerPeriodo='semana', _gerDesde='', _gerHasta='';
+function _gerQS(){ return (_gerDesde||_gerHasta) ? ('desde='+_gerDesde+'&hasta='+_gerHasta) : ('periodo='+_gerPeriodo); }
+function rpGerRango(){ _gerDesde=document.getElementById('ger-desde').value; _gerHasta=document.getElementById('ger-hasta').value; if(!_gerDesde||!_gerHasta){alert('Indica fecha inicio y fin');return;} rpVerGerencial(); }
 async function rpVerGerencial(p){
-  _gerPeriodo = p || _gerPeriodo;
+  if(p){ _gerPeriodo=p; _gerDesde=''; _gerHasta=''; }
   try{
-    const d=await apiU('GET','/api/reports/gerencial?periodo='+_gerPeriodo);
+    const d=await apiU('GET','/api/reports/gerencial?'+_gerQS());
     _rpActual='gerencial'; _rpData=d;
     const pLbl={hoy:'Hoy',semana:'Semana operativa',mes:'Mes'};
-    const sel=['hoy','semana','mes'].map(x=>`<button class="btn ${x===_gerPeriodo?'gold':''}" style="padding:6px 12px" onclick="rpVerGerencial('${x}')">${pLbl[x]}</button>`).join(' ');
+    const rango=(_gerDesde||_gerHasta);
+    const sel=['hoy','semana','mes'].map(x=>`<button class="btn ${(!rango&&x===_gerPeriodo)?'gold':''}" style="padding:6px 12px" onclick="rpVerGerencial('${x}')">${pLbl[x]}</button>`).join(' ');
     const e=d.empresa;
-    const kpi=(l,v,s,c)=>`<div class="kpi ${c||''}" style="min-width:0"><div class="l">${l}</div><div class="v" style="font-size:1.2rem">${v}</div><div class="s">${s}</div></div>`;
-    const empBlock=`<div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+    const kpi=(l,v,s,c)=>`<div class="kpi ${c||''}" style="min-width:0"><div class="l">${l}</div><div class="v" style="font-size:1.18rem">${v}</div><div class="s">${s}</div></div>`;
+    const empBlock=`<div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">
       ${kpi('Cartera activa',fmt(e.cartera),e.creditosActivos+' créditos · '+e.clientes+' clientes')}
-      ${kpi('Cobrado',fmt(e.cobrado),e.npagos+' pagos en el periodo','g')}
-      ${kpi('Colocado',fmt(e.colocado),e.ncoloc+' créditos nuevos','b')}
-      ${kpi('Atraso',fmt(e.atrasoMonto),e.atrasoClientes+' clientes en mora')}
+      ${kpi('Dinero colocado',fmt(e.colocado),e.ncoloc+' créditos nuevos','b')}
+      ${kpi('Dinero cobrado',fmt(e.cobrado),e.npagos+' pagos en el periodo','g')}
+      ${kpi('Utilidad (interés cobrado)',fmt(e.utilidad),'ganancia del periodo','g')}
+      ${kpi('Vencido / atraso',fmt(e.vencido),e.atrasoClientes+' clientes en mora')}
       ${kpi('Morosidad',e.morosidad+'%','atraso ÷ cartera')}
     </div>`;
     const sucBlocks=d.sucursales.map(s=>{
-      const proms=s.promotores.length? s.promotores.map(p=>`<tr>
-        <td>${p.promotor}</td><td class="n">${fmt(p.cartera)}</td><td class="n">${fmt(p.cobrado)}</td>
-        <td class="n">${p.ncoloc}·${fmt(p.colocado)}</td><td class="n">${fmt(p.atrasoMonto)}</td><td class="n">${p.morosidad}%</td></tr>`).join('')
-        : '<tr><td colspan="6" style="color:var(--faint);padding:8px">Sin promotores con cartera</td></tr>';
+      const proms=s.promotores.length? s.promotores.map(p=>`<tr style="cursor:pointer" onclick="drillClientes(${s.id},'${(p.promotor||'').replace(/'/g,"\\'")}','Promotor: ${(p.promotor||'').replace(/'/g,"\\'")}')" title="Ver clientes de este promotor">
+        <td>👤 ${p.promotor}</td><td class="n">${fmt(p.cartera)}</td><td class="n">${fmt(p.cobrado)}</td>
+        <td class="n">${p.ncoloc}·${fmt(p.colocado)}</td><td class="n" style="color:var(--grn)">${fmt(p.utilidad)}</td><td class="n">${fmt(p.vencido)}</td><td class="n">${p.morosidad}%</td></tr>`).join('')
+        : '<tr><td colspan="7" style="color:var(--faint);padding:8px">Sin promotores con cartera</td></tr>';
       return `<div class="panel" style="margin-top:12px">
-        <div class="ph"><h3>🏪 ${s.sucursal} <span style="font-weight:400;color:var(--dim);font-size:.85rem">· Gerente: ${s.gerente}</span></h3>
-          <span class="hint" style="margin-left:auto">Cartera ${fmt(s.cartera)} · Cobrado ${fmt(s.cobrado)} · Mora ${s.morosidad}%</span></div>
-        <table class="rp-table"><thead><tr><th>Promotor</th><th class="n">Cartera</th><th class="n">Cobrado</th><th class="n">Colocación</th><th class="n">Atraso</th><th class="n">Mora</th></tr></thead><tbody>${proms}</tbody></table>
+        <div class="ph"><h3 style="cursor:pointer" onclick="drillClientes(${s.id},'','Sucursal: ${(s.sucursal||'').replace(/'/g,"\\'")}')" title="Ver todos los clientes de la sucursal">🏪 ${s.sucursal} <span style="font-weight:400;color:var(--dim);font-size:.85rem">· Gerente: ${s.gerente}</span> <span style="color:var(--blu);font-size:.78rem">▸ ver clientes</span></h3>
+          <span class="hint" style="margin-left:auto">Cartera ${fmt(s.cartera)} · Cobrado ${fmt(s.cobrado)} · Utilidad ${fmt(s.utilidad)} · Mora ${s.morosidad}%</span></div>
+        <table class="rp-table"><thead><tr><th>Promotor (clic ▸ clientes)</th><th class="n">Cartera</th><th class="n">Cobrado</th><th class="n">Colocación</th><th class="n">Utilidad</th><th class="n">Vencido</th><th class="n">Mora</th></tr></thead><tbody>${proms}</tbody></table>
       </div>`;
     }).join('');
     rpAbrir(`🏢 Reporte gerencial`,`
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
         <span style="font-size:.8rem;color:var(--dim)">Periodo:</span> ${sel}
-        <span style="margin-left:auto;font-size:.74rem;color:var(--faint)">${d.nivel==='empresa'?'Vista empresa (todas las sucursales)':'Vista de tu sucursal'} · ${pLbl[_gerPeriodo]}</span>
+        <span style="margin-left:auto;font-size:.74rem;color:var(--faint)">${d.nivel==='empresa'?'Vista empresa (todas las sucursales)':'Vista de tu sucursal'} · ${rango?d.rango:pLbl[_gerPeriodo]}</span>
       </div>
-      <div style="font-size:.78rem;color:var(--dim);margin-bottom:6px;font-weight:600">NIVEL EMPRESA</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center;font-size:.78rem;color:var(--dim)">
+        <span>Rango exacto:</span>
+        <input type="date" id="ger-desde" value="${_gerDesde}" style="padding:5px 8px;background:var(--surf-2);border:1px solid var(--line);border-radius:6px;color:var(--ink)">
+        <span>a</span>
+        <input type="date" id="ger-hasta" value="${_gerHasta}" style="padding:5px 8px;background:var(--surf-2);border:1px solid var(--line);border-radius:6px;color:var(--ink)">
+        <button class="btn ${rango?'gold':''}" style="padding:5px 12px" onclick="rpGerRango()">Aplicar rango</button>
+      </div>
+      <div style="font-size:.78rem;color:var(--dim);margin-bottom:6px;font-weight:600">NIVEL EMPRESA — CARTERA TOTAL</div>
       ${empBlock}
-      <div style="font-size:.78rem;color:var(--dim);margin:6px 0 0;font-weight:600">NIVEL SUCURSAL (GERENTE) Y PROMOTOR</div>
+      <div style="font-size:.78rem;color:var(--dim);margin:6px 0 0;font-weight:600">NIVEL SUCURSAL (GERENTE) Y PROMOTOR — clic para ver clientes</div>
       ${sucBlocks||'<div style="color:var(--faint);padding:10px">Sin sucursales.</div>'}`, {});
+  }catch(e){ alert(e.message); }
+}
+async function drillClientes(sucursalId, promotor, titulo){
+  let qs=_gerQS()+'&sucursalId='+sucursalId; if(promotor) qs+='&promotor='+encodeURIComponent(promotor);
+  try{
+    const d=await apiU('GET','/api/reports/gerencial-clientes?'+qs);
+    const estCls={corriente:'var(--grn)',atraso:'var(--acc)',vencido:'var(--red)',liquidado:'var(--dim)'};
+    const filas=d.clientes.map(c=>`<tr>
+      <td>${c.cliente}<div style="font-size:.7rem;color:var(--dim)">${c.folio} · ${c.prom}</div></td>
+      <td class="n">${fmt(c.saldo)}</td><td class="n" style="color:var(--grn)">${fmt(c.cobradoPeriodo)}</td>
+      <td class="n">${fmt(c.vencido)}</td>
+      <td><span style="color:${estCls[c.estado]||'var(--dim)'};font-weight:600;font-size:.78rem">${c.estado}</span></td>
+      <td><button class="btn" style="padding:3px 8px;font-size:.72rem" onclick="estadoCuentaSale(${c.saleId},'${(c.cliente||'').replace(/'/g,'')}','${c.folio}')">🧾</button></td></tr>`).join('');
+    const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'; ov.onclick=ev=>{if(ev.target===ov)ov.remove();};
+    ov.innerHTML=`<div style="background:var(--surf-1);border:1px solid var(--line);border-radius:14px;padding:18px;width:min(820px,96vw);max-height:90vh;overflow:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><h3 style="margin:0">👥 ${titulo}</h3><button class="btn" onclick="this.closest('div[style*=fixed]').remove()">✕</button></div>
+      <div style="font-size:.8rem;color:var(--dim);margin-bottom:12px">${d.total} clientes · Saldo total ${fmt(d.sumSaldo)} · Cobrado en el periodo ${fmt(d.sumCobrado)}</div>
+      <table class="rp-table"><thead><tr><th>Cliente</th><th class="n">Saldo</th><th class="n">Cobrado periodo</th><th class="n">Vencido</th><th>Estado</th><th>Edo. cuenta</th></tr></thead>
+      <tbody>${filas||'<tr><td colspan="6" style="color:var(--faint);padding:10px">Sin clientes en este nivel.</td></tr>'}</tbody></table></div>`;
+    document.body.appendChild(ov);
+  }catch(e){ alert(e.message); }
+}
+async function estadoCuentaSale(saleId, nombre, folio){
+  try{
+    const d=await apiU('GET','/api/sales/'+saleId+'/movimientos');
+    let brand='CobraPro'; try{ const b=JSON.parse(localStorage.getItem('cobrapro_brand')||'null'); if(b&&b.nombre) brand=b.nombre; }catch(e){}
+    const filas=(d.movimientos||[]).map(m=>`<tr><td>${m.fecha||''}</td><td>${m.concepto||(m.abono>0?'Abono':'Cargo')}</td><td style="text-align:right">${m.cargo>0?'$'+Math.round(m.cargo).toLocaleString('es-MX'):''}</td><td style="text-align:right">${m.abono>0?'$'+Math.round(m.abono).toLocaleString('es-MX'):''}</td><td style="text-align:right">$${Math.round(m.saldo).toLocaleString('es-MX')}</td></tr>`).join('');
+    const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Estado de cuenta</title><style>body{font-family:Arial,sans-serif;color:#1b2330;padding:24px;max-width:760px;margin:auto}h1{font-size:18px;margin:0}.h{border-bottom:2px solid #d99a0f;padding-bottom:10px;margin-bottom:14px}.muted{color:#5b6675;font-size:13px}table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}th,td{border-bottom:1px solid #dde3ec;padding:7px 8px;text-align:left}th{background:#f1f4f9;font-size:11px;text-transform:uppercase}tfoot td{font-weight:bold;border-top:2px solid #1b2330}@media print{button{display:none}}</style></head>
+    <body><div class="h"><h1>${brand}</h1><div class="muted">Estado de cuenta del cliente</div></div>
+    <div class="muted"><b>Cliente:</b> ${nombre} &nbsp; <b>Crédito:</b> ${folio} &nbsp; <b>Fecha:</b> ${new Date().toLocaleDateString('es-MX')}</div>
+    <table><thead><tr><th>Fecha</th><th>Concepto</th><th style="text-align:right">Cargo</th><th style="text-align:right">Abono</th><th style="text-align:right">Saldo</th></tr></thead>
+    <tbody>${filas||'<tr><td colspan=5>Sin movimientos</td></tr>'}</tbody>
+    <tfoot><tr><td colspan="4">Saldo actual</td><td style="text-align:right">$${Math.round(d.saldo).toLocaleString('es-MX')}</td></tr></tfoot></table>
+    <button onclick="window.print()" style="margin-top:14px;padding:10px 18px;background:#d99a0f;color:#1b2330;border:none;border-radius:8px;font-weight:bold;cursor:pointer">🖨 Imprimir / Guardar PDF</button></body></html>`;
+    const w=window.open('','_blank'); if(!w){alert('Permite ventanas emergentes');return;} w.document.write(html); w.document.close();
   }catch(e){ alert(e.message); }
 }
 async function rpVerColocacion(){
