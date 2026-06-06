@@ -77,6 +77,7 @@ function normalizeTenant(b) {
   b.cortes = b.cortes || []; b.gestiones = b.gestiones || []; b.transferencias = b.transferencias || [];
   b.recolecciones = b.recolecciones || []; b.caja = b.caja || {}; b.porEntregar = b.porEntregar || [];
   b.jcEntregas = b.jcEntregas || []; b.jcCierres = b.jcCierres || [];
+  b.flujo = b.flujo || [];
   b.config = b.config || {}; if (!b.config.corteAutoHora) b.config.corteAutoHora = '19:00';
   if (!b.config.corteAutoDias) b.config.corteAutoDias = [1, 2, 3, 4, 5, 6];
   b.config.brand = b.config.brand || { nombre: 'CobraPro' };
@@ -1094,6 +1095,7 @@ app.post('/api/cortes/:id/recibir', auth, rol('admin', 'supervisor'), (req, res)
   if (!c) return res.status(404).json({ error: 'Corte no encontrado' });
   if (c.estado === 'recibido') return res.status(409).json({ error: 'Ese corte ya estaba recibido' });
   c.estado = 'recibido'; c.recibidoAt = new Date().toISOString(); c.recibidoBy = req.user.nombre;
+  if (c.tipo === 'sucursal' && c.totalEfectivo > 0) flujoAgregar('entrada', 'cierre', `Cierre de caja · ${c.prom}`, c.totalEfectivo, null, req.user.nombre);
   saveDB();
   res.json({ ok: true });
 });
@@ -1271,6 +1273,62 @@ app.get('/api/reports/recoleccion', auth, rol('admin', 'supervisor'), (req, res)
     totalGeneral: porCobrador.reduce((a, c) => a + c.monto, 0) + porSucursal.reduce((a, s) => a + s.efectivo, 0) + porJC.reduce((a, j) => a + j.monto, 0),
   });
 });
+// ===== TESORERÍA / FLUJO DEL ADMIN =====
+function flujoAgregar(tipo, clase, concepto, monto, destino, by) {
+  db.flujo = db.flujo || [];
+  db.flujo.push({ id: nextId('flujo'), fecha: new Date().toISOString(), fechaTxt: fechaMxHoyDDMM(), tipo, clase, concepto, monto: Math.round(monto), destino: destino || null, by: by || 'admin' });
+}
+function flujoSaldo() { return (db.flujo || []).reduce((a, m) => a + (m.tipo === 'entrada' ? m.monto : -m.monto), 0); }
+app.get('/api/flujo', auth, rol('admin', 'supervisor'), (req, res) => {
+  const movs = (db.flujo || []).slice().sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+  let run = 0; const conSaldo = movs.map(m => { run += (m.tipo === 'entrada' ? m.monto : -m.monto); return { ...m, saldo: run }; }).reverse();
+  const T = { recibido: 0, inyectado: 0, dotado: 0, egresos: 0 };
+  (db.flujo || []).forEach(m => {
+    if (m.clase === 'recoleccion' || m.clase === 'cierre') T.recibido += m.monto;
+    else if (m.clase === 'inyeccion') T.inyectado += m.monto;
+    else if (m.clase === 'dotacion') T.dotado += m.monto;
+    else if (m.clase === 'egreso') T.egresos += m.monto;
+  });
+  const dotadoPor = {};
+  (db.flujo || []).filter(m => m.clase === 'dotacion' && m.destino).forEach(m => { const k = m.destino.tipo + ':' + m.destino.id; dotadoPor[k] = (dotadoPor[k] || 0) + m.monto; });
+  const sucursales = db.sucursales.filter(s => s.activo !== false).map(s => { const c = db.caja[String(s.id)] || {}; return { id: s.id, nombre: s.nombre, caja: Math.round((c.inicial || 0) + (c.efectivo || 0) + (c.entregas || 0) - (c.retiros || 0)), dotado: dotadoPor['sucursal:' + s.id] || 0 }; });
+  const jcs = db.users.filter(u => u.rol === 'jc' && u.activo).map(u => ({ id: u.id, nombre: u.nombre, caja: Math.round(jcCajaDe(u.id).saldo), dotado: dotadoPor['jc:' + u.id] || 0 }));
+  const supervisores = db.users.filter(u => u.rol === 'supervisor' && u.activo).map(u => ({ id: u.id, nombre: u.nombre, dotado: dotadoPor['supervisor:' + u.id] || 0 }));
+  res.json({ saldo: flujoSaldo(), totales: T, destinos: { sucursales, jcs, supervisores }, movimientos: conSaldo.slice(0, 120) });
+});
+app.post('/api/flujo/inyeccion', auth, rol('admin'), (req, res) => {
+  const monto = +req.body.monto; if (!(monto > 0)) return res.status(400).json({ error: 'Monto inválido' });
+  flujoAgregar('entrada', 'inyeccion', 'Inyección de capital' + (req.body.nota ? ' · ' + req.body.nota : ''), monto, null, req.user.nombre);
+  saveDB(); res.json({ ok: true, saldo: flujoSaldo() });
+});
+app.post('/api/flujo/egreso', auth, rol('admin'), (req, res) => {
+  const monto = +req.body.monto; if (!(monto > 0)) return res.status(400).json({ error: 'Monto inválido' });
+  const tipos = { nomina_empleados: 'Nómina empleados', nomina_admin: 'Nómina ADMIN', otro: 'Otro gasto' };
+  const base = tipos[req.body.tipo] || 'Otro gasto';
+  const concepto = base + (req.body.detalle ? ' · ' + req.body.detalle : '');
+  flujoAgregar('salida', 'egreso', concepto, monto, null, req.user.nombre);
+  saveDB(); res.json({ ok: true, saldo: flujoSaldo() });
+});
+app.post('/api/flujo/dotacion', auth, rol('admin'), (req, res) => {
+  const monto = +req.body.monto; const { destinoTipo, destinoId, nota } = req.body;
+  if (!(monto > 0)) return res.status(400).json({ error: 'Monto inválido' });
+  let nombre = '', destino = null;
+  if (destinoTipo === 'sucursal') {
+    const s = db.sucursales.find(x => x.id == destinoId); if (!s) return res.status(404).json({ error: 'Sucursal no encontrada' });
+    const sid = String(s.id); db.caja[sid] = db.caja[sid] || { inicial: 0, efectivo: 0, banco: 0, entregas: 0, retiros: 0 };
+    db.caja[sid].inicial = (db.caja[sid].inicial || 0) + monto;
+    nombre = s.nombre; destino = { tipo: 'sucursal', id: s.id, nombre };
+  } else if (destinoTipo === 'jc') {
+    const jc = db.users.find(u => u.id == destinoId && u.rol === 'jc'); if (!jc) return res.status(404).json({ error: 'JC no encontrado' });
+    db.jcEntregas.push({ id: nextId('jcEntregas'), cobradorId: req.user.id, cobradorNombre: 'Admin · dotación', jcId: jc.id, jcNombre: jc.nombre, monto: Math.round(monto), nota: nota || '', estado: 'recibido', sucursalId: jc.sucursalId || null, fechaDDMM: fechaMxHoyDDMM(), creadoEn: new Date().toISOString(), origen: 'dotacion-admin', recibidoEn: new Date().toISOString() });
+    nombre = jc.nombre; destino = { tipo: 'jc', id: jc.id, nombre };
+  } else if (destinoTipo === 'supervisor') {
+    const sv = db.users.find(u => u.id == destinoId && u.rol === 'supervisor'); if (!sv) return res.status(404).json({ error: 'Supervisor no encontrado' });
+    nombre = sv.nombre; destino = { tipo: 'supervisor', id: sv.id, nombre };
+  } else return res.status(400).json({ error: 'Destino inválido' });
+  flujoAgregar('salida', 'dotacion', `Dotación a ${destino.tipo === 'jc' ? 'JC ' : destino.tipo === 'supervisor' ? 'Supervisor ' : ''}${nombre}` + (nota ? ' · ' + nota : ''), monto, destino, req.user.nombre);
+  saveDB(); res.json({ ok: true, saldo: flujoSaldo(), destino });
+});
 app.post('/api/recoleccion', auth, rol('admin', 'supervisor'), (req, res) => {
   const { tipo, ref, motivo } = req.body;
   const fecha = new Date().toISOString();
@@ -1303,7 +1361,9 @@ app.post('/api/recoleccion', auth, rol('admin', 'supervisor'), (req, res) => {
   } else return res.status(400).json({ error: 'Tipo inválido' });
   db.recolecciones = db.recolecciones || [];
   const reg = { id: nextId('recolecciones'), tipo, ref, nombre, monto, fecha, por: req.user.nombre, motivo: motivo || '' };
-  db.recolecciones.push(reg); saveDB();
+  db.recolecciones.push(reg);
+  flujoAgregar('entrada', 'recoleccion', `Recolección · ${nombre} (${tipo})`, monto, null, req.user.nombre);
+  saveDB();
   res.json({ ok: true, registro: reg });
 });
 app.get('/api/recolecciones', auth, rol('admin', 'supervisor'), (req, res) => {
