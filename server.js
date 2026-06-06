@@ -1410,6 +1410,132 @@ app.get('/api/reports/gerencial-clientes', auth, rol('admin', 'supervisor', 'suc
   res.json({ total: rows.length, sumSaldo: Math.round(rows.reduce((a, r) => a + r.saldo, 0)), sumCobrado: Math.round(rows.reduce((a, r) => a + r.cobradoPeriodo, 0)), clientes: rows });
 });
 
+// ===== DESGLOSE DE CARTERA SEMANAL (modelo de control por sucursal/promotor) =====
+function _isoWeek(ms) {
+  const d = new Date(ms); const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const day = t.getUTCDay() || 7; t.setUTCDate(t.getUTCDate() + 4 - day);
+  const yStart = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+  return Math.ceil((((t - yStart) / 86400000) + 1) / 7);
+}
+function _ultimasSemanas(n) {
+  const now = nowMx();
+  const base = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const day = new Date(base).getUTCDay(); const diff = (day === 0 ? 6 : day - 1);
+  const lunEsta = base - diff * 86400000;
+  const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  const out = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const lun = lunEsta - i * 7 * 86400000;
+    const dom = lun + 7 * 86400000 - 1;
+    const dl = new Date(lun);
+    out.push({ iso: _isoWeek(lun), desde: lun, hasta: dom, label: 'Sem ' + _isoWeek(lun), fecha: `${String(dl.getUTCDate()).padStart(2, '0')} ${meses[dl.getUTCMonth()]}` });
+  }
+  return out;
+}
+app.get('/api/reports/desglose', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
+  const n = Math.min(Math.max(+req.query.semanas || 12, 1), 26);
+  const semanas = _ultimasSemanas(n);
+  const esGerente = req.user.rol === 'sucursal';
+  const miSuc = esGerente ? (db.users.find(u => u.id === req.user.id) || {}).sucursalId : null;
+  let sucursales = db.sucursales.filter(s => s.activo !== false).map(s => ({ id: s.id, nombre: s.nombre }));
+  if (esGerente) sucursales = sucursales.filter(s => s.id === miSuc);
+  const sucursalId = esGerente ? miSuc : (req.query.sucursalId ? +req.query.sucursalId : (sucursales[0] ? sucursales[0].id : null));
+  if (esGerente && req.query.sucursalId && +req.query.sucursalId !== miSuc) return res.status(403).json({ error: 'Fuera de tu sucursal' });
+  const suc = db.sucursales.find(s => s.id === sucursalId) || { id: sucursalId, nombre: '—' };
+  // promotores de la sucursal (cobradores dados de alta + cualquiera con ventas)
+  const cobs = db.users.filter(u => u.rol === 'cobrador' && u.sucursalId === sucursalId).map(u => u.nombre);
+  const enVentas = [...new Set(db.sales.filter(s => s.sucursalId === sucursalId).map(s => s.prom).filter(Boolean))];
+  const promotores = [...new Set([...cobs, ...enVentas])].sort();
+  const promotor = req.query.promotor || null;
+
+  // ventas del alcance (sucursal completa o un promotor)
+  let sales = db.sales.filter(s => s.sucursalId === sucursalId);
+  if (promotor) sales = sales.filter(s => s.prom === promotor);
+  // precomputar movimientos por venta con timestamp
+  const movsPorVenta = new Map();
+  sales.forEach(s => {
+    const ms = db.movimientos.filter(m => m.saleId === s.id).map(m => ({ ts: _parseFechaMx(m.fecha), cargo: m.cargo || 0, abono: m.abono || 0, forma: m.forma }));
+    movsPorVenta.set(s.id, ms);
+  });
+  const clienteActivo = id => { const c = db.clients.find(x => x.id === id); return c ? c.activo !== false : true; };
+  const expSemanal = s => s.tipo === 'diario' ? (s.cuota || 0) * 6 : (s.tipo === 'unico' ? 0 : (s.cuota || 0));
+
+  const F = {
+    valorCartera: [], debito: [], totalClientes: [], sinPago: [], pctSinPago: [], debitoSinPago: [], pctDebitoSinPago: [],
+    carteraSinPago: [], pctCarteraSinPago: [], liquidados: [], eliminados: [], ventas: [], valorVentas: [], debitoVentas: [], cobranza: [], pctCobranzaDebito: []
+  };
+  semanas.forEach(w => {
+    let valorCartera = 0, debito = 0, totalClientes = 0, sinPago = 0, debitoSinPago = 0, carteraSinPago = 0, liquidados = 0, ventas = 0, valorVentas = 0, debitoVentas = 0, cobranza = 0;
+    sales.forEach(s => {
+      const createdTs = new Date(s.createdAt).getTime();
+      const existed = createdTs <= w.hasta;
+      const createdEsta = createdTs >= w.desde && createdTs <= w.hasta;
+      const ms = movsPorVenta.get(s.id) || [];
+      let saldoIni = 0, saldoFin = 0, abonoSem = 0;
+      ms.forEach(m => {
+        if (m.ts < w.desde) saldoIni += m.cargo - m.abono;
+        if (m.ts <= w.hasta) saldoFin += m.cargo - m.abono;
+        if (m.ts >= w.desde && m.ts <= w.hasta && m.forma !== 'descuento') abonoSem += m.abono;
+      });
+      // cobranza: todo abono real de la semana sobre créditos existentes
+      if (existed) cobranza += abonoSem;
+      // ventas de la semana
+      if (createdEsta) { ventas++; valorVentas += s.monto || 0; debitoVentas += s.cuota || 0; }
+      const vigente = existed && (saldoIni > 0.5 || createdEsta) && clienteActivo(s.clientId);
+      if (vigente) {
+        totalClientes++;
+        valorCartera += Math.max(0, saldoFin);
+        const exp = expSemanal(s);
+        debito += exp;
+        // sin pago: vigente que NO es venta nueva de la semana, con cobro esperado, y no abonó
+        if (!createdEsta && exp > 0 && abonoSem < 0.5) { sinPago++; debitoSinPago += exp; carteraSinPago += Math.max(0, saldoFin); }
+      }
+      // liquidados: tenía saldo al inicio y quedó en cero esta semana
+      if (existed && saldoIni > 0.5 && saldoFin < 0.5) liquidados++;
+    });
+    const eliminados = 0; // sin fecha de baja por crédito; se reporta 0 hasta tener marca temporal
+    F.valorCartera.push(Math.round(valorCartera));
+    F.debito.push(Math.round(debito));
+    F.totalClientes.push(totalClientes);
+    F.sinPago.push(sinPago);
+    F.pctSinPago.push(totalClientes ? sinPago / totalClientes : 0);
+    F.debitoSinPago.push(Math.round(debitoSinPago));
+    F.pctDebitoSinPago.push(debito ? debitoSinPago / debito : 0);
+    F.carteraSinPago.push(Math.round(carteraSinPago));
+    F.pctCarteraSinPago.push(valorCartera ? carteraSinPago / valorCartera : 0);
+    F.liquidados.push(liquidados);
+    F.eliminados.push(eliminados);
+    F.ventas.push(ventas);
+    F.valorVentas.push(Math.round(valorVentas));
+    F.debitoVentas.push(Math.round(debitoVentas));
+    F.cobranza.push(Math.round(cobranza));
+    F.pctCobranzaDebito.push(debito ? cobranza / debito : 0);
+  });
+  const filas = [
+    { k: 'valorCartera', lbl: 'Valor de la cartera', fmt: 'money' },
+    { k: 'debito', lbl: 'Débito (cobranza esperada)', fmt: 'money' },
+    { k: 'totalClientes', lbl: 'Total de clientes', fmt: 'int' },
+    { k: 'sinPago', lbl: 'Clientes sin pago', fmt: 'int' },
+    { k: 'pctSinPago', lbl: '% de clientes sin pago', fmt: 'pct' },
+    { k: 'debitoSinPago', lbl: 'Débito clientes sin pago', fmt: 'money' },
+    { k: 'pctDebitoSinPago', lbl: '% débito no pagos', fmt: 'pct' },
+    { k: 'carteraSinPago', lbl: 'Cartera clientes sin pago', fmt: 'money' },
+    { k: 'pctCarteraSinPago', lbl: '% cartera sin pago', fmt: 'pct' },
+    { k: 'liquidados', lbl: 'Clientes liquidados', fmt: 'int' },
+    { k: 'eliminados', lbl: 'Clientes eliminados', fmt: 'int' },
+    { k: 'ventas', lbl: 'Número de ventas', fmt: 'int' },
+    { k: 'valorVentas', lbl: 'Valor de ventas', fmt: 'money' },
+    { k: 'debitoVentas', lbl: 'Débito de ventas', fmt: 'money' },
+    { k: 'cobranza', lbl: 'Cobranza total', fmt: 'money' },
+    { k: 'pctCobranzaDebito', lbl: 'Cobranza / débito', fmt: 'pct' }
+  ].map(f => ({ ...f, vals: F[f.k] }));
+  res.json({
+    sucursal: { id: suc.id, nombre: suc.nombre }, sucursales, promotores,
+    scope: promotor || 'TOTAL', generado: new Date().toISOString(),
+    semanas: semanas.map(w => ({ label: w.label, fecha: w.fecha, iso: w.iso })), filas
+  });
+});
+
 app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, res) => {
   const promFilter = req.query.prom;
   const cobradores = db.users.filter(u => u.rol === 'cobrador' && u.activo);
