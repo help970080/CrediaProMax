@@ -459,11 +459,12 @@ app.post('/api/sales/:id/entregar', auth, rol('jc'), (req, res) => {
   const s = db.sales.find(x => x.id == req.params.id);
   if (!s) return res.status(404).json({ error: 'Crédito no encontrado' });
   if (s.entregado === true || s.entrega) return res.status(409).json({ error: 'Ese crédito ya fue entregado' });
-  const { lat, lng, fotoCasa, fotoCliente } = req.body;
+  const { lat, lng, fotoCasa, fotoCliente, firma } = req.body;
   if (!fotoCasa || !fotoCliente) return res.status(400).json({ error: 'Sube la foto de la casa y la foto del cliente' });
+  if (!firma) return res.status(400).json({ error: 'Falta la firma del pagaré del cliente' });
   s.entregado = true;
   s.entrega = { jcId: req.user.id, jcNombre: req.user.nombre, fecha: new Date().toISOString(),
-    lat: typeof lat === 'number' ? lat : null, lng: typeof lng === 'number' ? lng : null, fotoCasa, fotoCliente };
+    lat: typeof lat === 'number' ? lat : null, lng: typeof lng === 'number' ? lng : null, fotoCasa, fotoCliente, firma };
   // si el cliente no tiene ubicación, usar la de la entrega
   const cli = db.clients.find(c => c.id === s.clientId);
   if (cli && (typeof cli.lat !== 'number') && typeof lat === 'number') { cli.lat = lat; cli.lng = lng; cli.geoSrc = 'entrega-jc'; }
@@ -490,6 +491,27 @@ app.get('/api/sales/:id/entrega', auth, (req, res) => {
   if (!allowed) return res.status(403).json({ error: 'Sin permiso' });
   const cli = db.clients.find(c => c.id === s.clientId) || {};
   res.json({ entrega: s.entrega || null, cliente: cli.nombre, folio: s.folio });
+});
+// Datos para el pagaré (cliente + importe), usado por sucursal (PDF) y JC (firma)
+app.get('/api/sales/:id/pagare', auth, (req, res) => {
+  const s = db.sales.find(x => x.id == req.params.id);
+  if (!s) return res.status(404).json({ error: 'Crédito no encontrado' });
+  const role = req.user.rol;
+  const allowed = ['admin', 'supervisor', 'jc', 'sucursal'].includes(role) || (role === 'cobrador' && s.prom === req.user.nombre);
+  if (!allowed) return res.status(403).json({ error: 'Sin permiso' });
+  const c = db.clients.find(x => x.id === s.clientId) || {};
+  const brand = (db.config && db.config.brand && db.config.brand.nombre) || 'CobraPro';
+  const suc = db.sucursales.find(x => x.id === s.sucursalId);
+  const freq = s.tipo === 'diario' ? 'diarios' : (s.tipo === 'unico' ? 'único' : 'semanales');
+  const pagos = s.tipo === 'unico' ? 1 : s.plazo;
+  res.json({
+    folio: s.folio, fecha: s.createdAt, acreedor: brand,
+    lugar: [c.ciudad, c.estado].filter(Boolean).join(', ') || (suc ? suc.nombre : ''),
+    cliente: { nombre: c.nombre || '—', domicilio: [c.calle, c.col, c.ciudad, c.estado].filter(Boolean).join(', ') || '—', curp: c.curp || '', tel: c.tel || '' },
+    monto: s.monto, total: s.total, cuota: s.cuota, pagos, freq, tipo: s.tipo,
+    primerPago: s.primerPago || 0, descuentaPP: !!s.descuentaPP, entregaMonto: s.entregaMonto != null ? s.entregaMonto : s.monto,
+    firma: !!(s.entrega && s.entrega.firma)
+  });
 });
 // Resumen para admin
 app.get('/api/jc/resumen', auth, rol('admin', 'supervisor'), (req, res) => {
