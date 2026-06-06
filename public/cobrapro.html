@@ -400,7 +400,7 @@
     <div class="panel"><div class="ph"><h3>Corte por cobrador</h3><span class="hint">esperado − entregado</span></div><div id="rc-prom"></div></div>
     <div class="panel"><div class="ph"><h3>Corte por sucursal</h3></div><div id="rc-suc"></div></div>
     <div class="panel">
-      <div class="ph"><h3>Cortes de cobrador · hoy</h3><span class="hint">qué entregó cada quien y cuándo</span></div>
+      <div class="ph"><h3>Cortes y cierres · hoy</h3><span class="hint">cobradores y sucursales · qué entregó cada quien</span></div>
       <div id="cortes-list"></div>
     </div>
     <div class="panel">
@@ -1428,11 +1428,11 @@ async function cargarCortes(){
     const fecha=new Date().toISOString().slice(0,10);
     const cortes=await apiU('GET','/api/cortes?fecha='+fecha);
     $('cortes-list').innerHTML= cortes.length? cortes.map(c=>`<div class="recon">
-      <div class="lf"><div class="ava" style="background:var(--surf-3)">${(c.prom||'·').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase()}</div>
-        <div><div class="nm">${c.prom} ${c.auto?'<span class="pill w" style="font-size:.6rem">AUTO</span>':'<span class="pill ok" style="font-size:.6rem">MANUAL</span>'}</div>
-          <div class="sn">${c.npagos} pagos · ${c.horaEntrega} · efectivo ${fmt(c.totalEfectivo)} · banco ${fmt(c.totalBanco)}${c.entregadoAlJC>0?` · <span style="color:var(--vio)">cobró ${fmt(c.efectivoBruto)}, dio ${fmt(c.entregadoAlJC)} al JC</span>`:''}</div></div></div>
+      <div class="lf"><div class="ava" style="background:var(--surf-3)">${c.tipo==='sucursal'?'🏪':(c.prom||'·').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase()}</div>
+        <div><div class="nm">${c.prom} ${c.tipo==='sucursal'?'<span class="pill" style="font-size:.6rem;background:rgba(124,92,224,.15);color:var(--vio)">SUCURSAL</span>':(c.auto?'<span class="pill w" style="font-size:.6rem">AUTO</span>':'<span class="pill ok" style="font-size:.6rem">MANUAL</span>')} ${c.estado==='recibido'?'<span class="pill ok" style="font-size:.6rem">✓ recibido</span>':'<span class="pill w" style="font-size:.6rem">pendiente</span>'}</div>
+          <div class="sn">${c.tipo==='sucursal'?'Cierre de caja':c.npagos+' pagos'} · ${c.horaEntrega} · efectivo ${fmt(c.totalEfectivo)} · banco ${fmt(c.totalBanco)}${c.entregadoAlJC>0?` · <span style="color:var(--vio)">cobró ${fmt(c.efectivoBruto)}, dio ${fmt(c.entregadoAlJC)} al JC</span>`:''}</div></div></div>
       <div style="text-align:right"><div class="mono doc" style="font-weight:600">${fmt(c.totalEfectivo+c.totalBanco)}</div>
-        <button class="btn" style="padding:4px 9px;font-size:.72rem;margin-top:4px" onclick="borrarCorte(${c.id})">Borrar</button></div></div>`).join('') : '<div style="color:var(--faint);padding:12px;font-size:.85rem">Sin cortes registrados hoy.</div>';
+        ${c.estado!=='recibido' && c.totalEfectivo>0?`<button class="btn gold" style="padding:4px 9px;font-size:.72rem;margin-top:4px" onclick="recibirCorte(${c.id})">✓ Recibir</button> `:''}<button class="btn" style="padding:4px 9px;font-size:.72rem;margin-top:4px" onclick="borrarCorte(${c.id})">Borrar</button></div></div>`).join('') : '<div style="color:var(--faint);padding:12px;font-size:.85rem">Sin cortes registrados hoy.</div>';
   }catch(e){ $('cortes-list').innerHTML='<div style="color:var(--red);padding:12px">'+e.message+'</div>'; }
 }
 async function guardarConfigCorte(){
@@ -1456,6 +1456,10 @@ async function forzarCorte(){
 async function borrarCorte(id){
   if(!confirm('¿Borrar este corte? El cobrador podrá hacer uno nuevo hoy.')) return;
   try{ await apiU('DELETE','/api/cortes/'+id); await cargarCortes(); }catch(e){ alert(e.message); }
+}
+async function recibirCorte(id){
+  if(!confirm('¿Confirmar que recibiste este efectivo? El corte quedará marcado como recibido.')) return;
+  try{ await apiU('POST','/api/cortes/'+id+'/recibir'); await cargarCortes(); }catch(e){ alert(e.message); }
 }
 function ecImprimir(){
   if(!ecActual||!_ecLib) return; const c=ecActual, L=_ecLib;

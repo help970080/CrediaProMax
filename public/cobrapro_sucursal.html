@@ -152,6 +152,7 @@
         <div class="ph-sub" style="margin-top:-6px">El crédito que el cliente firma en sucursal. Se asigna a un cobrador y entra a su ruta de inmediato.</div>
         <div class="sect-lbl">Datos del cliente</div>
         <div class="field"><label>Nombre completo <span class="req">*</span></label><input id="n-cli" placeholder="Nombre del acreditado"></div>
+        <div class="field"><label>CURP (del INE) <span class="req">*</span></label><input id="n-curp" placeholder="18 caracteres" maxlength="18" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></div>
         <div class="frow">
           <div class="field"><label>Teléfono</label><input id="n-tel" placeholder="10 dígitos" inputmode="numeric"></div>
           <div class="field"><label>Cobrador / ruta <span class="req">*</span></label><select id="n-prom"><option>Ana Reyes</option><option>Raúl Cárdenas</option></select></div>
@@ -160,6 +161,10 @@
         <div class="frow">
           <div class="field"><label>Colonia / localidad <span class="req">*</span></label><input id="n-col" placeholder="Colonia"></div>
           <div class="field"><label>Referencias</label><input id="n-ref" placeholder="Entre calles, seña"></div>
+        </div>
+        <div class="frow">
+          <div class="field"><label>Ciudad / municipio <span class="req">*</span></label><input id="n-ciudad" placeholder="Ciudad o municipio"></div>
+          <div class="field"><label>Estado <span class="req">*</span></label><input id="n-estado" placeholder="Estado"></div>
         </div>
         <div class="sect-lbl">Producto de crédito</div>
         <div class="frow">
@@ -180,6 +185,16 @@
           <tr><td style="color:var(--dim)">Pagos por banco (transf./depósito)*</td><td class="n" id="ct-banco" style="color:var(--dim)">$0</td></tr>
         </tbody></table>
         <div style="font-size:.72rem;color:var(--faint);margin-top:8px">*No es efectivo en caja: entró directo a banco.</div>
+        <button onclick="hacerCierreCaja(this)" style="width:100%;margin-top:12px;background:var(--acc);color:#1b2330;border:none;padding:12px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">🔒 Hacer cierre de caja</button>
+        <div style="font-size:.72rem;color:var(--faint);margin-top:6px;line-height:1.4">Cierra el corte: el efectivo pasa al administrador (lo verá en Conciliación) y tu caja queda en ceros para empezar de nuevo.</div>
+
+        <div class="sect-lbl">💵 Entregar efectivo al JC</div>
+        <div style="font-size:.78rem;color:var(--dim);margin-bottom:8px;line-height:1.4">Asigna efectivo de la caja al Jefe de Crédito para que entregue créditos. Se descuenta de tu caja y el JC lo confirma.</div>
+        <div id="jc-wrap-suc">
+          <select id="jc-sel-suc" style="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--txt);font-family:'Sora';font-size:.92rem;padding:10px 12px;border-radius:9px;margin-bottom:8px"></select>
+          <input id="jc-monto-suc" type="number" inputmode="numeric" placeholder="Monto a entregar $" style="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--txt);font-family:'Sora';font-size:.95rem;padding:10px 12px;border-radius:9px;margin-bottom:8px">
+          <button onclick="entregarJCSuc(this)" style="width:100%;background:var(--vio);color:#fff;border:none;padding:10px;border-radius:9px;font-family:'Sora';font-weight:600;cursor:pointer">Entregar efectivo al JC</button>
+        </div>
 
         <div class="sect-lbl">Movimientos de hoy</div>
         <table><thead><tr><th>Hora</th><th>Concepto</th><th class="n">Monto</th></tr></thead><tbody id="movs"></tbody></table>
@@ -248,13 +263,13 @@ function pintar(){
     return `<div class="cli ${sel===c.id?'sel':''}" onclick="selCli(${c.id})">
       <div class="cli-top"><div class="cli-ava" style="background:${color}">${ini}</div>
         <div style="flex:1;min-width:0"><div class="cli-nm">${c.nombre||'—'}</div><div class="cli-sub">${c.tel||''} · ${c.prom||''}</div>
-          <div class="cli-addr">📍 ${[c.calle,c.col].filter(Boolean).join(', ')}</div></div>
+          <div class="cli-addr">📍 ${[c.calle,c.col,c.ciudad,c.estado].filter(Boolean).join(', ')}</div></div>
         <div class="cli-saldo"><div class="k">Saldo total</div><div class="v">${fmt(tot)}</div></div></div>
-      <div class="credits">${creds.map(cr=>`<div class="crow">
+      <div class="credits">${creds.map(cr=>{const liq=cr.saldo<1; return `<div class="crow">
         <span class="tipo ${tipoCls[cr.tipo]||'sem'}">${tipoLbl[cr.tipo]||cr.tipo}</span>
         <div class="cdata"><div class="l1">${cr.folio} · cuota ${fmt(cr.cuota)}</div><div class="l2">saldo ${fmt(cr.saldo)}</div></div>
-        <span class="pill ${cr.saldo<=0?'ok':'w'}">${cr.saldo<=0?'Liquidado':'Activo'}</span>
-        <button class="pay" onclick="event.stopPropagation();abrirPago(${c.id},${cr.id})">Cobrar</button></div>`).join('')}</div>
+        <span class="pill ${liq?'ok':'w'}">${liq?'Liquidado':'Activo'}</span>
+        ${liq?'':`<button class="pay" onclick="event.stopPropagation();abrirPago(${c.id},${cr.id})">Cobrar</button>`}</div>`;}).join('')}</div>
     </div>`;
   }).join('') || '<div style="color:var(--faint);font-size:.85rem;padding:14px">Sin coincidencias.</div>';
 }
@@ -441,25 +456,60 @@ async function agregarCreditoExistente(clienteId){
     caja.ncred++; caja.coloc+=monto;
     const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
     movs.unshift({hora,txt:`Crédito ${d.folio} — ${d.cliente} (${prom}) · 2º crédito`,monto:0});
-    ['n-cli','n-tel','n-calle','n-col','n-ref'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    ['n-cli','n-tel','n-calle','n-col','n-ref','n-curp','n-ciudad','n-estado'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
     render(); _buscar();
     toast(`✓ ${d.folio} agregado a ${d.cliente} · ahora tiene ${d.totalCreditosCliente} créditos · cuota ${fmt(d.cuota)}`);
   }catch(e){ toast(e.message); }
+}
+async function hacerCierreCaja(btn){
+  const efectivoReal=caja.inicial+caja.efectivo+caja.entregasConfirmadas-(caja.retiros||0);
+  if(!confirm(`¿Hacer el cierre de caja?\n\nEfectivo real en caja: ${fmt(efectivoReal)}\n\nEste efectivo pasa al administrador (lo verá en Conciliación para recibirlo) y tu caja queda en CEROS. Esta acción no se puede deshacer.`)) return;
+  btn.disabled=true; btn.textContent='Cerrando…';
+  try{
+    const r=await api('POST','/api/caja/cierre');
+    toast('✓ Caja cerrada · '+fmt(r.efectivoCerrado)+' enviado al administrador');
+    await cargarCaja();
+  }catch(e){ toast(e.message); }
+  finally{ btn.disabled=false; btn.textContent='🔒 Hacer cierre de caja'; }
+}
+async function cargarJCSuc(){
+  try{
+    const jcs=await api('GET','/api/jc/lista');
+    const sel=document.getElementById('jc-sel-suc'); if(!sel) return;
+    if(!jcs.length){ document.getElementById('jc-wrap-suc').innerHTML='<div style="color:var(--faint);font-size:.82rem">No hay un JC en tu sucursal todavía.</div>'; }
+    else sel.innerHTML=jcs.map(j=>`<option value="${j.id}">${j.nombre}</option>`).join('');
+  }catch(e){}
+}
+async function entregarJCSuc(btn){
+  const sel=document.getElementById('jc-sel-suc'); const jcId=+(sel&&sel.value); const monto=+document.getElementById('jc-monto-suc').value;
+  if(!jcId){toast('No hay JC disponible');return;}
+  if(!(monto>0)){toast('Indica un monto válido');return;}
+  btn.disabled=true; btn.textContent='Entregando…';
+  try{ await api('POST','/api/jc-entregas',{jcId,monto}); document.getElementById('jc-monto-suc').value=''; toast('Efectivo asignado al JC'); cargarCaja(); }
+  catch(e){ toast(e.message); }
+  finally{ btn.disabled=false; btn.textContent='Entregar efectivo al JC'; }
 }
 async function crearCredito(){
   const nombre=document.getElementById('n-cli').value.trim();
   const calle=document.getElementById('n-calle').value.trim();
   const col=document.getElementById('n-col').value.trim();
+  const curp=(document.getElementById('n-curp').value||'').trim().toUpperCase();
+  const ciudad=document.getElementById('n-ciudad').value.trim();
+  const estado=document.getElementById('n-estado').value.trim();
   if(!nombre){toast('Captura el nombre del cliente');return;}
+  if(!curp){toast('Captura la CURP del cliente (del INE)');return;}
+  if(!/^[A-Z]{4}\d{6}[A-Z0-9]{8}$/.test(curp)){toast('La CURP no tiene formato válido (18 caracteres)');return;}
   if(!calle||!col){toast('El domicilio es obligatorio para la venta a crédito');return;}
+  if(!ciudad||!estado){toast('Captura ciudad/municipio y estado del cliente');return;}
   const t=document.getElementById('n-tipo').value; const monto=+document.getElementById('n-monto').value||0;
   const plazo=+(document.getElementById('n-plazo')?.value||0);
   const tel=document.getElementById('n-tel').value||''; const prom=document.getElementById('n-prom').value;
   if(!prom){toast('Esta sucursal no tiene cobradores dados de alta. Pídele al admin que cree el usuario cobrador y lo asigne a tu sucursal.');return;}
   // fetch directo para poder leer el 409 estructurado de validación
   try{
-    const r=await fetch('/api/sales',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+TOKEN},body:JSON.stringify({nombre,tel,calle,col,prom,tipo:t,plazo,monto,dias:plazo})});
+    const r=await fetch('/api/sales',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+TOKEN},body:JSON.stringify({nombre,tel,calle,col,ciudad,estado,curp,prom,tipo:t,plazo,monto,dias:plazo})});
     const d=await r.json().catch(()=>({}));
+    if(r.status===400 && d.error==='curp_invalida'){ toast(d.detalle); return; }
     if(r.status===409 && d.error==='cliente_duplicado'){
       const ex=d.clienteExistente||{};
       const puedeAgregar=d.puedeAgregar && ex.mismaSucursal;
@@ -483,7 +533,7 @@ async function crearCredito(){
     caja.ncred++; caja.coloc+=monto;
     const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
     movs.unshift({hora,txt:`Crédito ${d.folio} — ${nombre} (${prom})`,monto:0});
-    ['n-cli','n-tel','n-calle','n-col','n-ref'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    ['n-cli','n-tel','n-calle','n-col','n-ref','n-curp','n-ciudad','n-estado'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
     render(); _buscar();
     toast(`✓ ${d.folio} capturado · cuota ${fmt(d.cuota)} · en ruta de ${prom.split(' ')[0]}`);
   }catch(e){ toast(e.message); }
@@ -515,7 +565,7 @@ async function _init(){
       ? cob.map(c=>`<option>${c.nombre}</option>`).join('')
       : '<option value="">— sin cobradores en esta sucursal —</option>';
   }catch(e){}
-  fillPlazos(); calc(); _buscar(); cargarCaja();
+  fillPlazos(); calc(); _buscar(); cargarCaja(); cargarJCSuc();
 }
 _init();
 </script>

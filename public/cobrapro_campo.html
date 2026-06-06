@@ -336,8 +336,9 @@ function render(){
     const e=estado[c.id];
     const done=e&&e.status==='pagado';
     const visited=e&&e.status;
-    const sem = c.atraso>0 ? (c.diasAtraso>14?'bad':'w') : 'ok';
-    const semL = sem==='bad'?'Vencido':sem==='w'?'Atrasado':'Al corriente';
+    const liq = c.saldo < 1;
+    const sem = liq ? 'ok' : (c.atraso>0 ? (c.diasAtraso>14?'bad':'w') : 'ok');
+    const semL = liq ? 'Liquidado' : (sem==='bad'?'Vencido':sem==='w'?'Atrasado':'Al corriente');
     return `<div class="card ${done?'done':''}">
       <div class="ctop">
         <div class="cnum">${i+1}</div>
@@ -350,7 +351,8 @@ function render(){
         <div><div class="k">Saldo</div><div class="v">${fmt(e&&e.status==='pagado'?Math.max(0,c.saldo-e.monto):c.saldo)}</div></div>
         ${c.atraso>0?`<div><div class="k">Atraso</div><div class="v" style="color:var(--red)">${fmt(c.atraso)} · ${c.diasAtraso}d</div></div>`:''}
       </div>
-      ${done?`<div class="done-tag">✓ Cobrado ${fmt(e.monto)} · ${formaLbl[e.forma]||''} · ${e.hora}</div>`
+      ${liq?`<div class="done-tag" style="color:var(--grn)">✓ Liquidado · sin saldo por cobrar</div>`
+       : done?`<div class="done-tag">✓ Cobrado ${fmt(e.monto)} · ${formaLbl[e.forma]||''} · ${e.hora}</div>`
        : visited?`<div class="done-tag" style="color:var(--acc)">● ${e.statusLbl} · ${e.hora}</div>`
        : _miCorte?`<div class="done-tag" style="color:var(--faint)">🔒 Corte entregado · cobro cerrado por hoy</div>`
        :`<div class="cact">
