@@ -81,6 +81,8 @@ function normalizeTenant(b) {
   if (!b.config.corteAutoDias) b.config.corteAutoDias = [1, 2, 3, 4, 5, 6];
   b.config.brand = b.config.brand || { nombre: 'CobraPro' };
   b.config.tarifas = b.config.tarifas || JSON.parse(JSON.stringify(DEFAULT_TARIFAS));
+  if (!b.config.tarifas.s16) b.config.tarifas.s16 = JSON.parse(JSON.stringify(DEFAULT_TARIFAS.s16));
+  if (!b.config.tarifas.s17) b.config.tarifas.s17 = JSON.parse(JSON.stringify(DEFAULT_TARIFAS.s17));
   b._idem = b._idem || {};
   (b.cortes || []).forEach(c => { if (c.estado === 'pendiente' && !(c.totalEfectivo > 0)) { c.estado = 'recibido'; c.recibidoAt = c.recibidoAt || new Date().toISOString(); c.recibidoBy = c.recibidoBy || 'sin efectivo'; } });
   return b;
@@ -110,11 +112,21 @@ const DEFAULT_TARIFAS = {
   diario:  [{ p: 10, f: 1.17, fijo: 30 }, { p: 20, f: 1.23, fijo: 60 }, { p: 30, f: 1.33, fijo: 90 }],
   semanal: [{ p: 4, f: 1.35, fijo: 60 }, { p: 8, f: 1.43, fijo: 120 }, { p: 12, f: 1.53, fijo: 180 }, { p: 16, f: 1.63, fijo: 240 }, { p: 20, f: 1.83, fijo: 300 }],
   p17:     [{ p: 17, f: 1.73, fijo: 270 }],
+  s16:     { factor: 1.6, fijo: 100, ppFactor: 0.1, ppFijo: 100, pagos: 16 },
+  s17:     { factor: 1.7, fijo: 200, ppFactor: 0.1, ppFijo: 200, pagos: 17 },
   unico:   { base: 2, factor: 0.0183 }
 };
 function tarifasActuales() { return (db && db.config && db.config.tarifas) ? db.config.tarifas : DEFAULT_TARIFAS; }
 function calcCredito(tipo, plazo, monto, dias) {
   const T = tarifasActuales();
+  if (tipo === 's16' || tipo === 's17') {
+    const c = T[tipo] || DEFAULT_TARIFAS[tipo];
+    const total = monto * c.factor + c.fijo;
+    const pagos = c.pagos;
+    const primerPago = monto * c.ppFactor + c.ppFijo;
+    const cuota = (total - primerPago) / (pagos - 1); // pagos 2..N (Tarifa 2)
+    return { total, pagos, cuota, primerPago, descuentaPP: true, entregaCliente: monto - primerPago };
+  }
   if (tipo === 'unico') { const u = T.unico || DEFAULT_TARIFAS.unico; const tap = monto + (dias || 15) * ((u.base||0) + monto * (u.factor||0)); return { total: tap, pagos: 1, cuota: tap }; }
   const arr = T[tipo] || T.semanal || DEFAULT_TARIFAS.semanal; const it = arr.find(x => x.p === plazo) || arr[0];
   const total = monto * it.f + it.fijo; return { total, pagos: it.p, cuota: total / it.p };
@@ -358,7 +370,7 @@ app.post('/api/clients/:id/ubicar', auth, rol('admin', 'supervisor'), (req, res)
 /* ---------- Flujo JC (Jefe de Crédito): efectivo y entrega de créditos ---------- */
 function jcCajaDe(jcId) {
   const recibido = db.jcEntregas.filter(e => e.jcId == jcId && e.estado === 'recibido').reduce((a, e) => a + (e.monto || 0), 0);
-  const entregado = db.sales.filter(s => s.entrega && s.entrega.jcId == jcId).reduce((a, s) => a + (s.monto || 0), 0);
+  const entregado = db.sales.filter(s => s.entrega && s.entrega.jcId == jcId).reduce((a, s) => a + (s.entregaMonto != null ? s.entregaMonto : (s.monto || 0)), 0);
   const recolectado = (db.recolecciones || []).filter(r => r.tipo === 'jc' && r.ref == jcId).reduce((a, r) => a + (r.monto || 0), 0);
   return { recibido, entregado, recolectado, saldo: recibido - entregado - recolectado };
 }
@@ -559,8 +571,13 @@ app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) 
   const promFinal = prom || client.prom || '';
   const sucCred = req.user.rol === 'sucursal' ? (req.user.sucursalId || 1) : (clienteExistenteId ? client.sucursalId : (sucursalId || req.user.sucursalId || 1));
   const sale = { id: nextId('sales'), folio, clientId: client.id, tipo, plazo: +plazo, monto: +monto, cuota: r.cuota, total: r.total, prom: promFinal, sucursalId: sucCred, entregado: false, createdAt: new Date().toISOString() };
+  if (r.descuentaPP) { sale.primerPago = r.primerPago; sale.descuentaPP = true; sale.entregaMonto = r.entregaCliente; }
   db.sales.push(sale);
   db.movimientos.push({ id: nextId('movimientos'), saleId: sale.id, fecha: fechaMxHoyDDMM(), concepto: 'Disposición de crédito', origen: 'Sucursal', cargo: r.total, abono: 0 });
+  // Productos que descuentan el primer pago: se registra de inmediato como abono (el cliente recibe monto − primer pago)
+  if (r.descuentaPP && r.primerPago > 0) {
+    db.movimientos.push({ id: nextId('movimientos'), saleId: sale.id, fecha: fechaMxHoyDDMM(), concepto: 'Primer pago descontado al inicio', origen: 'Origen del crédito', cargo: 0, abono: r.primerPago, forma: 'descuento', sucursalCobro: sucCred, sucursalCredito: sucCred });
+  }
   saveDB();
   const nCreditos = db.sales.filter(s => s.clientId === client.id).length;
   res.status(201).json({ ...sale, saldo: saldoDe(sale.id), cliente: client.nombre, agregadoAExistente: !!clienteExistenteId, totalCreditosCliente: nCreditos });
@@ -1010,8 +1027,10 @@ app.put('/api/tarifas', auth, rol('admin'), (req, res) => {
   const okArr = a => Array.isArray(a) && a.every(x => typeof x.p === 'number' && typeof x.f === 'number' && typeof x.fijo === 'number');
   if (!okArr(t.diario) || !okArr(t.semanal) || !okArr(t.p17) || !t.unico || typeof t.unico.base !== 'number' || typeof t.unico.factor !== 'number')
     return res.status(400).json({ error: 'Estructura de tarifas inválida' });
+  const okPP = s => s && typeof s.factor === 'number' && typeof s.fijo === 'number' && typeof s.ppFactor === 'number' && typeof s.ppFijo === 'number' && typeof s.pagos === 'number';
   db.config = db.config || {};
-  db.config.tarifas = { diario: t.diario, semanal: t.semanal, p17: t.p17, unico: { base: t.unico.base, factor: t.unico.factor } };
+  db.config.tarifas = { diario: t.diario, semanal: t.semanal, p17: t.p17, unico: { base: t.unico.base, factor: t.unico.factor },
+    s16: okPP(t.s16) ? t.s16 : DEFAULT_TARIFAS.s16, s17: okPP(t.s17) ? t.s17 : DEFAULT_TARIFAS.s17 };
   saveDB();
   res.json(db.config.tarifas);
 });
