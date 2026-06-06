@@ -375,6 +375,27 @@ function jcCajaDe(jcId) {
   const recolectado = (db.recolecciones || []).filter(r => r.tipo === 'jc' && r.ref == jcId).reduce((a, r) => a + (r.monto || 0), 0);
   return { recibido, entregado, recolectado, saldo: recibido - entregado - recolectado };
 }
+// ===== Posición de efectivo de quien entrega (nadie usa dinero propio: usa lo recibido/dotado) =====
+function entregaMontoDe(s) { return s.entregaMonto != null ? s.entregaMonto : (s.monto || 0); }
+function cajaRealDe(sid) { const c = db.caja[String(sid)] || {}; return (c.inicial || 0) + (c.efectivo || 0) + (c.entregas || 0) - (c.retiros || 0); }
+function supervisorCajaDe(uid) {
+  const dot = (db.flujo || []).filter(m => m.clase === 'dotacion' && m.destino && m.destino.tipo === 'supervisor' && m.destino.id == uid).reduce((a, m) => a + m.monto, 0);
+  const entregado = db.sales.filter(s => s.entrega && s.entrega.por && s.entrega.por.rol === 'supervisor' && s.entrega.por.id == uid).reduce((a, s) => a + entregaMontoDe(s), 0);
+  return dot - entregado;
+}
+function sucDeUser(user) { const me = db.users.find(u => u.id === user.id); return me ? me.sucursalId : (user.sucursalId || null); }
+function posicionCash(user) {
+  if (user.rol === 'admin') return flujoSaldo();
+  if (user.rol === 'supervisor') return supervisorCajaDe(user.id);
+  if (user.rol === 'jc') return jcCajaDe(user.id).saldo;
+  if (user.rol === 'sucursal') return cajaRealDe(sucDeUser(user));
+  return 0;
+}
+function reservadoPor(user) {
+  return db.sales.filter(s => s.entregado !== true && s.tomadoPor && s.tomadoPor.rol === user.rol && s.tomadoPor.id === user.id).reduce((a, s) => a + entregaMontoDe(s), 0);
+}
+function disponibleEntrega(user) { return posicionCash(user) - reservadoPor(user); }
+function scopeSucDe(user) { return (user.rol === 'admin' || user.rol === 'supervisor') ? null : sucDeUser(user); }
 // JC disponibles en la sucursal (para que el cobrador elija a quién entregar)
 app.get('/api/jc/lista', auth, (req, res) => {
   let jcs = db.users.filter(u => u.rol === 'jc' && u.activo);
@@ -436,7 +457,7 @@ app.get('/api/jc/panel', auth, rol('jc'), (req, res) => {
   const pendientes = db.jcEntregas.filter(e => e.jcId === req.user.id && e.estado === 'pendiente').reverse();
   const recibidas = db.jcEntregas.filter(e => e.jcId === req.user.id && e.estado === 'recibido').reverse();
   // créditos por entregar: de su sucursal, no entregados
-  const porEntregar = db.sales.filter(s => s.entregado === false && (sucId == null || s.sucursalId === sucId)).map(s => {
+  const porEntregar = db.sales.filter(s => s.entregado === false && (sucId == null || s.sucursalId === sucId) && (!s.tomadoPor || (s.tomadoPor.rol === 'jc' && s.tomadoPor.id === req.user.id))).map(s => {
     const cli = db.clients.find(c => c.id === s.clientId) || {};
     return { id: s.id, folio: s.folio, cliente: cli.nombre, tel: cli.tel || '', dir: [cli.calle, cli.col].filter(Boolean).join(', '), monto: s.monto, cobrador: s.prom, sucursal: sucMap[s.sucursalId] || '—', createdAt: s.createdAt };
   }).reverse();
@@ -456,21 +477,80 @@ app.post('/api/sales/:id/pendiente-entrega', auth, rol('admin', 'supervisor', 's
   res.json({ ok: true });
 });
 // JC entrega un crédito al cliente con evidencia
-app.post('/api/sales/:id/entregar', auth, rol('jc'), (req, res) => {
+app.post('/api/sales/:id/entregar', auth, rol('admin', 'supervisor', 'sucursal', 'jc'), (req, res) => {
   const s = db.sales.find(x => x.id == req.params.id);
   if (!s) return res.status(404).json({ error: 'Crédito no encontrado' });
   if (s.entregado === true || s.entrega) return res.status(409).json({ error: 'Ese crédito ya fue entregado' });
   const { lat, lng, fotoCasa, fotoCliente, firma } = req.body;
   if (!fotoCasa || !fotoCliente) return res.status(400).json({ error: 'Sube la foto de la casa y la foto del cliente' });
   if (!firma) return res.status(400).json({ error: 'Falta la firma del pagaré del cliente' });
+  const esJefe = req.user.rol === 'admin' || req.user.rol === 'supervisor';
+  // si lo tomó alguien más, no permitir entregarlo (salvo admin/supervisor)
+  if (s.tomadoPor && !(s.tomadoPor.rol === req.user.rol && s.tomadoPor.id === req.user.id) && !esJefe)
+    return res.status(409).json({ error: 'Ese crédito lo tomó ' + s.tomadoPor.nombre });
+  const scope = scopeSucDe(req.user);
+  if (scope != null && s.sucursalId !== scope) return res.status(403).json({ error: 'Ese crédito no es de tu sucursal' });
+  const monto = entregaMontoDe(s);
+  // efectivo disponible (liberando la reserva de ESTE crédito si ya lo tenías tomado)
+  let disp = posicionCash(req.user) - reservadoPor(req.user);
+  if (s.tomadoPor && s.tomadoPor.rol === req.user.rol && s.tomadoPor.id === req.user.id) disp += monto;
+  if (disp < monto - 0.5) return res.status(409).json({ error: `No tienes suficiente efectivo para entregar este crédito. Disponible $${Math.round(disp).toLocaleString('es-MX')}, este crédito entrega $${Math.round(monto).toLocaleString('es-MX')} al cliente. Pide que te doten o recibe efectivo de un promotor.` });
+  const cli = db.clients.find(c => c.id === s.clientId) || {};
   s.entregado = true;
-  s.entrega = { jcId: req.user.id, jcNombre: req.user.nombre, fecha: new Date().toISOString(),
-    lat: typeof lat === 'number' ? lat : null, lng: typeof lng === 'number' ? lng : null, fotoCasa, fotoCliente, firma };
-  // si el cliente no tiene ubicación, usar la de la entrega
-  const cli = db.clients.find(c => c.id === s.clientId);
-  if (cli && (typeof cli.lat !== 'number') && typeof lat === 'number') { cli.lat = lat; cli.lng = lng; cli.geoSrc = 'entrega-jc'; }
+  s.entrega = {
+    por: { rol: req.user.rol, id: req.user.id, nombre: req.user.nombre },
+    jcId: req.user.rol === 'jc' ? req.user.id : null, jcNombre: req.user.nombre,
+    fecha: new Date().toISOString(), lat: typeof lat === 'number' ? lat : null, lng: typeof lng === 'number' ? lng : null, fotoCasa, fotoCliente, firma
+  };
+  delete s.tomadoPor;
+  // descuento por posición del que entrega (el JC y el supervisor se descuentan solos vía jcCajaDe / supervisorCajaDe)
+  if (req.user.rol === 'sucursal') {
+    const sid = String(sucDeUser(req.user));
+    db.caja[sid] = db.caja[sid] || { inicial: 0, efectivo: 0, banco: 0, entregas: 0, retiros: 0 };
+    db.caja[sid].retiros = (db.caja[sid].retiros || 0) + monto;
+  } else if (req.user.rol === 'admin') {
+    flujoAgregar('salida', 'entrega', `Entrega de crédito ${s.folio} · ${cli.nombre || ''}`, monto, null, req.user.nombre);
+  }
+  if (cli && (typeof cli.lat !== 'number') && typeof lat === 'number') { cli.lat = lat; cli.lng = lng; cli.geoSrc = 'entrega'; }
   saveDB();
-  res.json({ ok: true, caja: jcCajaDe(req.user.id) });
+  res.json({ ok: true, posicion: Math.round(posicionCash(req.user)), caja: req.user.rol === 'jc' ? jcCajaDe(req.user.id) : undefined });
+});
+// ===== BANDEJA DE ENTREGAS (cola común; todos menos el promotor) =====
+app.get('/api/entregas/bandeja', auth, rol('admin', 'supervisor', 'sucursal', 'jc'), (req, res) => {
+  const scope = scopeSucDe(req.user);
+  const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
+  const map = s => { const c = db.clients.find(x => x.id === s.clientId) || {}; return { saleId: s.id, folio: s.folio, cliente: c.nombre || '—', dir: [c.calle, c.col, c.ciudad].filter(Boolean).join(', '), tel: c.tel || '', prom: s.prom, sucursal: sucMap[s.sucursalId] || '—', tipo: s.tipo, monto: s.monto, entregaMonto: entregaMontoDe(s), createdAt: s.createdAt, tomadoPor: s.tomadoPor || null }; };
+  const pend = db.sales.filter(s => s.entregado !== true && (scope == null || s.sucursalId === scope));
+  const mine = s => s.tomadoPor && s.tomadoPor.rol === req.user.rol && s.tomadoPor.id === req.user.id;
+  res.json({
+    rol: req.user.rol, posicion: Math.round(posicionCash(req.user)), disponible: Math.round(disponibleEntrega(req.user)),
+    bandeja: pend.filter(s => !s.tomadoPor).map(map).reverse(),
+    mias: pend.filter(mine).map(map).reverse(),
+    deOtros: pend.filter(s => s.tomadoPor && !mine(s)).map(map).reverse()
+  });
+});
+app.post('/api/entregas/:id/tomar', auth, rol('admin', 'supervisor', 'sucursal', 'jc'), (req, res) => {
+  const s = db.sales.find(x => x.id == req.params.id);
+  if (!s) return res.status(404).json({ error: 'Crédito no encontrado' });
+  if (s.entregado === true) return res.status(409).json({ error: 'Ese crédito ya fue entregado' });
+  if (s.tomadoPor && !(s.tomadoPor.rol === req.user.rol && s.tomadoPor.id === req.user.id)) return res.status(409).json({ error: 'Ese crédito ya lo tomó ' + s.tomadoPor.nombre });
+  const scope = scopeSucDe(req.user);
+  if (scope != null && s.sucursalId !== scope) return res.status(403).json({ error: 'Ese crédito no es de tu sucursal' });
+  const monto = entregaMontoDe(s);
+  if (disponibleEntrega(req.user) < monto - 0.5) return res.status(409).json({ error: `No tienes suficiente efectivo para tomar este crédito. Disponible $${Math.round(disponibleEntrega(req.user)).toLocaleString('es-MX')}, entrega $${Math.round(monto).toLocaleString('es-MX')}. Pide que te doten o recibe efectivo de un promotor.` });
+  s.tomadoPor = { rol: req.user.rol, id: req.user.id, nombre: req.user.nombre, at: new Date().toISOString() };
+  saveDB();
+  res.json({ ok: true });
+});
+app.post('/api/entregas/:id/soltar', auth, rol('admin', 'supervisor', 'sucursal', 'jc'), (req, res) => {
+  const s = db.sales.find(x => x.id == req.params.id);
+  if (!s) return res.status(404).json({ error: 'Crédito no encontrado' });
+  if (!s.tomadoPor) return res.json({ ok: true });
+  const mine = s.tomadoPor.rol === req.user.rol && s.tomadoPor.id === req.user.id;
+  const esJefe = req.user.rol === 'admin' || req.user.rol === 'supervisor';
+  if (!mine && !esJefe) return res.status(403).json({ error: 'Ese crédito lo tomó ' + s.tomadoPor.nombre });
+  delete s.tomadoPor; saveDB();
+  res.json({ ok: true });
 });
 // JC hace su cierre del día (deja registro; el efectivo puede quedarse o recolectarse aparte)
 app.post('/api/jc/cierre', auth, rol('jc'), (req, res) => {
@@ -1499,18 +1579,24 @@ app.get('/api/reports/desglose', auth, rol('admin', 'supervisor', 'sucursal'), (
   const miSuc = esGerente ? (db.users.find(u => u.id === req.user.id) || {}).sucursalId : null;
   let sucursales = db.sucursales.filter(s => s.activo !== false).map(s => ({ id: s.id, nombre: s.nombre }));
   if (esGerente) sucursales = sucursales.filter(s => s.id === miSuc);
-  const sucursalId = esGerente ? miSuc : (req.query.sucursalId ? +req.query.sucursalId : (sucursales[0] ? sucursales[0].id : null));
-  if (esGerente && req.query.sucursalId && +req.query.sucursalId !== miSuc) return res.status(403).json({ error: 'Fuera de tu sucursal' });
-  const suc = db.sucursales.find(s => s.id === sucursalId) || { id: sucursalId, nombre: '—' };
-  // promotores de la sucursal (cobradores dados de alta + cualquiera con ventas)
-  const cobs = db.users.filter(u => u.rol === 'cobrador' && u.sucursalId === sucursalId).map(u => u.nombre);
-  const enVentas = [...new Set(db.sales.filter(s => s.sucursalId === sucursalId).map(s => s.prom).filter(Boolean))];
-  const promotores = [...new Set([...cobs, ...enVentas])].sort();
+  const qSuc = req.query.sucursalId ? +req.query.sucursalId : null;
+  if (esGerente && qSuc && qSuc !== miSuc) return res.status(403).json({ error: 'Fuera de tu sucursal' });
+  // admin/supervisor sin sucursal elegida => nivel EMPRESA (todas las sucursales juntas)
+  const empresa = !esGerente && !qSuc;
+  const sucursalId = esGerente ? miSuc : qSuc;
   const promotor = req.query.promotor || null;
-
-  // ventas del alcance (sucursal completa o un promotor)
-  let sales = db.sales.filter(s => s.sucursalId === sucursalId);
-  if (promotor) sales = sales.filter(s => s.prom === promotor);
+  let suc = null, promotores = [], sales;
+  if (empresa) {
+    sales = db.sales.slice();
+  } else {
+    suc = db.sucursales.find(s => s.id === sucursalId) || { id: sucursalId, nombre: '—' };
+    const cobs = db.users.filter(u => u.rol === 'cobrador' && u.sucursalId === sucursalId).map(u => u.nombre);
+    const enVentas = [...new Set(db.sales.filter(s => s.sucursalId === sucursalId).map(s => s.prom).filter(Boolean))];
+    promotores = [...new Set([...cobs, ...enVentas])].sort();
+    sales = db.sales.filter(s => s.sucursalId === sucursalId);
+    if (promotor) sales = sales.filter(s => s.prom === promotor);
+  }
+  const nivel = empresa ? 'empresa' : (promotor ? 'promotor' : 'sucursal');
   // precomputar movimientos por venta con timestamp
   const movsPorVenta = new Map();
   sales.forEach(s => {
@@ -1590,8 +1676,8 @@ app.get('/api/reports/desglose', auth, rol('admin', 'supervisor', 'sucursal'), (
     { k: 'pctCobranzaDebito', lbl: 'Cobranza / débito', fmt: 'pct' }
   ].map(f => ({ ...f, vals: F[f.k] }));
   res.json({
-    sucursal: { id: suc.id, nombre: suc.nombre }, sucursales, promotores,
-    scope: promotor || 'TOTAL', generado: new Date().toISOString(),
+    nivel, sucursal: suc ? { id: suc.id, nombre: suc.nombre } : null, sucursales, promotores,
+    scope: empresa ? 'EMPRESA' : (promotor || 'TOTAL'), generado: new Date().toISOString(),
     semanas: semanas.map(w => ({ label: w.label, fecha: w.fecha, iso: w.iso })), filas
   });
 });
