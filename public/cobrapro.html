@@ -194,6 +194,7 @@
     <button class="navitem on" data-v="resumen"><span class="ic">▣</span> Resumen</button>
     <button class="navitem" data-v="cartera"><span class="ic">≣</span> Cartera de crédito</button>
     <button class="navitem" data-v="estado"><span class="ic">🧾</span> Estado de cuenta</button>
+    <button class="navitem" data-v="bandeja"><span class="ic">📦</span> Bandeja de entregas</button>
     <button class="navitem" data-v="promotores"><span class="ic">⛬</span> Cobradores</button>
     <button class="navitem" data-v="transferencias"><span class="ic">⇆</span> Transferencias</button>
     <button class="navitem" data-v="sucursales"><span class="ic">🏪</span> Sucursales</button>
@@ -420,6 +421,30 @@
       </div>
     </div>
     <div class="note" style="margin-top:-6px">El corte deja de ser un Excel nocturno: el sistema ya sabe cuánto cobró cada quien, entonces sabe cuánto debe entregar. El admin solo revisa las diferencias marcadas.</div>
+  </section>
+
+  <!-- BANDEJA DE ENTREGAS -->
+  <section class="view" id="bandeja">
+    <div class="panel" style="background:linear-gradient(135deg,var(--surf-2),var(--surf))">
+      <div class="ph"><h3>📦 Bandeja de entregas</h3><span class="hint">Créditos por entregar · cualquiera (menos el promotor) los toma y entrega, si tiene efectivo</span></div>
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:6px 4px 4px">
+        <div><div style="font-size:.76rem;color:var(--dim)">Tu efectivo disponible para entregar</div><div id="bd-disp" style="font-size:1.9rem;font-weight:800;color:var(--grn)">$0</div></div>
+        <div style="font-size:.76rem;color:var(--faint);max-width:380px;line-height:1.4">No se usa dinero propio: usas lo que el promotor te entrega o lo que el admin te dota. Si no te alcanza, pide dotación o recibe efectivo de un promotor.</div>
+        <button class="btn" style="margin-left:auto" onclick="cargarBandeja()">↻ Actualizar</button>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="ph"><h3>Mis entregas por hacer</h3><span class="hint">créditos que tomaste · entrégalos con evidencia</span></div>
+      <div id="bd-mias" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;padding:8px"></div>
+    </div>
+    <div class="panel">
+      <div class="ph"><h3>Por entregar (bandeja común)</h3><span class="hint">tómalos para entregarlos · se descuenta de tu efectivo al entregar</span></div>
+      <div id="bd-cola" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;padding:8px"></div>
+    </div>
+    <div class="panel">
+      <div class="ph"><h3>Tomados por otros</h3><span class="hint">ya los está entregando alguien más</span></div>
+      <div id="bd-otros" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;padding:8px"></div>
+    </div>
   </section>
 
   <!-- FLUJO / TESORERÍA -->
@@ -990,24 +1015,30 @@ function rpAbrir(titulo, html, opts){
 }
 
 let _gerPeriodo='semana', _gerDesde='', _gerHasta='';
-function _dgQS(){ return 'semanas=12'+(_dgSuc?'&sucursalId='+_dgSuc:'')+(_dgProm?'&promotor='+encodeURIComponent(_dgProm):''); }
+function _dgQS(){ return 'semanas=12'+(_dgSuc?'&sucursalId='+_dgSuc:'')+(_dgSuc&&_dgProm?'&promotor='+encodeURIComponent(_dgProm):''); }
 let _dgSuc=null, _dgProm='';
 async function rpVerDesglose(sucId, prom){
-  if(sucId!==undefined && sucId!==null) _dgSuc=sucId;
+  if(sucId!==undefined) _dgSuc=sucId; // null = empresa (todas)
   _dgProm = prom||'';
   let d; try{ d=await apiU('GET','/api/reports/desglose?'+_dgQS()); }catch(e){ alert(e.message); return; }
-  _dgSuc=d.sucursal.id; _rpActual='desglose'; _rpData=d;
+  _rpActual='desglose'; _rpData=d;
   const esc=s=>String(s||'').replace(/'/g,"\\'");
-  const sucSel = d.sucursales.length>1
-    ? `<select onchange="rpVerDesglose(+this.value,'')" style="padding:6px 10px;background:var(--surf-2);border:1px solid var(--line);border-radius:7px;color:var(--ink);font-family:'Sora';font-size:.85rem">${d.sucursales.map(s=>`<option value="${s.id}" ${s.id===d.sucursal.id?'selected':''}>${s.nombre}</option>`).join('')}</select>`
-    : `<b>${d.sucursal.nombre}</b>`;
+  // nivel 1: empresa / sucursales
+  const chip=(lbl,sid,active)=>`<button class="btn ${active?'gold':''}" style="padding:6px 12px" onclick="rpVerDesglose(${sid===null?'null':sid},'')">${lbl}</button>`;
+  const nivel1 = chip('🏢 EMPRESA (todas)', null, d.nivel==='empresa')
+    + ' ' + d.sucursales.map(s=>chip('🏪 '+s.nombre, s.id, d.sucursal && d.sucursal.id===s.id)).join(' ');
+  // nivel 2: promotores (solo cuando hay sucursal elegida)
   const tab=(lbl,val,active)=>`<button class="btn ${active?'gold':''}" style="padding:6px 12px" onclick="rpVerDesglose(${d.sucursal.id},'${esc(val)}')">${lbl}</button>`;
-  const tabs = tab('🏪 TOTAL sucursal','', _dgProm==='') + ' ' + (d.promotores.length? d.promotores.map(p=>tab('👤 '+p,p,_dgProm===p)).join(' ') : '<span style="color:var(--faint);font-size:.8rem;align-self:center">Sin promotores dados de alta</span>');
+  const nivel2 = d.nivel!=='empresa'
+    ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;border-top:1px solid var(--line);padding-top:10px">`
+      + tab('🏪 TOTAL sucursal','', d.nivel==='sucursal')
+      + ' ' + (d.promotores.length? d.promotores.map(p=>tab('👤 '+p,p,_dgProm===p)).join(' ') : '<span style="color:var(--faint);font-size:.8rem;align-self:center">Sin promotores</span>')
+      + `</div>` : '';
   const cellTxt=(f,v)=> f.fmt==='money'?fmt(v) : f.fmt==='pct'?((Math.round(v*1000)/10).toFixed(1)+'%') : v.toLocaleString('es-MX');
   const head=`<tr><th class="lbl">Concepto</th>${d.semanas.map(w=>`<th class="n">${w.label}<div style="font-weight:400;font-size:.64rem;color:var(--faint)">${w.fecha}</div></th>`).join('')}</tr>`;
   const body=d.filas.map(f=>{
-    const sep = (f.k==='liquidados'||f.k==='ventas'||f.k==='cobranza')?' sep':'';
-    return `<tr class="${sep.trim()}"><td class="lbl">${f.lbl}</td>${f.vals.map(v=>{
+    const sep=(f.k==='liquidados'||f.k==='ventas'||f.k==='cobranza')?'sep':'';
+    return `<tr class="${sep}"><td class="lbl">${f.lbl}</td>${f.vals.map(v=>{
       let color='';
       if(f.k==='pctCobranzaDebito') color = v>=0.95?'color:var(--grn)':(v>=0.8?'color:var(--acc)':(v>0?'color:var(--red)':''));
       else if(f.k==='pctSinPago'||f.k==='pctCarteraSinPago'||f.k==='pctDebitoSinPago') color = v>0.10?'color:var(--red)':(v>0.05?'color:var(--acc)':'');
@@ -1015,11 +1046,13 @@ async function rpVerDesglose(sucId, prom){
       return `<td class="n" style="${color}">${cellTxt(f,v)}</td>`;
     }).join('')}</tr>`;
   }).join('');
+  const titScope = d.nivel==='empresa' ? 'Toda la empresa · TODAS las sucursales y créditos'
+    : (d.nivel==='promotor' ? (d.sucursal.nombre+' · promotor '+_dgProm) : (d.sucursal.nombre+' · total de la sucursal'));
   rpAbrir('📋 Desglose de cartera',`
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px"><span style="font-size:.8rem;color:var(--dim)">Sucursal:</span> ${sucSel}<span style="margin-left:auto;font-size:.74rem;color:var(--faint)">Últimas ${d.semanas.length} semanas · ${_dgProm?('Promotor: '+_dgProm):'Total de la sucursal (suma de sus promotores)'}</span></div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${tabs}</div>
-    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:10px"><table class="rp-table dg-table" style="min-width:max-content;border:none">${''}<thead>${head}</thead><tbody>${body}</tbody></table></div>
-    <div style="font-size:.72rem;color:var(--faint);margin-top:8px">Cambia entre <b>TOTAL sucursal</b> y cada <b>promotor</b> con los botones de arriba. Desliza la tabla para ver más semanas.</div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><span style="font-size:.8rem;color:var(--dim)">Nivel:</span> ${nivel1}<span style="margin-left:auto;font-size:.74rem;color:var(--faint)">Últimas ${d.semanas.length} semanas · ${titScope}</span></div>
+    ${nivel2}
+    <div style="font-size:.74rem;color:var(--dim);margin-bottom:8px">${d.nivel==='empresa'?'Vista consolidada de todos los créditos y saldos. Haz clic en una sucursal para bajar el detalle, y dentro de ella en un promotor.':''}</div>
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:10px"><table class="rp-table dg-table" style="min-width:max-content;border:none"><thead>${head}</thead><tbody>${body}</tbody></table></div>
   `);
 }
 function _gerQS(){ return (_gerDesde||_gerHasta) ? ('desde='+_gerDesde+'&hasta='+_gerHasta) : ('periodo='+_gerPeriodo); }
@@ -1612,6 +1645,116 @@ async function flDotarOK(b){ const sel=document.getElementById('fl-do-d').value,
   if(!sel){ alert('Elige un destino'); return; } if(!(monto>0)){ alert('Indica un monto válido'); return; }
   const [destinoTipo,destinoId]=sel.split(':'); b.disabled=true;
   try{ await apiU('POST','/api/flujo/dotacion',{destinoTipo,destinoId:+destinoId,monto,nota}); b.closest('.flmodal').remove(); await cargarFlujo(); }catch(e){ alert(e.message); b.disabled=false; } }
+
+// ===== BANDEJA DE ENTREGAS =====
+function _bdCard(c, modo){
+  const f=new Date(c.createdAt).toLocaleDateString('es-MX',{day:'2-digit',month:'short'});
+  const esc=(c.cliente||'').replace(/'/g,"\\'");
+  const acc = modo==='cola'
+    ? `<button class="btn gold" style="width:100%;margin-top:8px" onclick="tomarCredito(${c.saleId})">📥 Tomar para entregar</button>`
+    : modo==='mias'
+    ? `<button class="btn gold" style="width:100%;margin-top:8px" onclick="abrirEntrega(${c.saleId},'${esc}',${c.entregaMonto})">📦 Entregar + evidencia</button><button class="btn" style="width:100%;margin-top:6px" onclick="soltarCredito(${c.saleId})">↩ Soltar</button>`
+    : `<div style="font-size:.74rem;color:var(--acc);margin-top:8px">🔒 Lo está entregando ${c.tomadoPor?c.tomadoPor.nombre:'—'}</div>`;
+  return `<div style="background:var(--surf-1);border:1px solid var(--line);border-radius:10px;padding:13px">
+    <div style="font-weight:600">${c.cliente}</div>
+    <div style="font-size:.72rem;color:var(--faint)">${c.folio} · ${c.sucursal} · ruta ${c.prom||'—'} · ${f}</div>
+    <div style="font-size:.74rem;color:var(--dim);margin-top:4px">📍 ${c.dir||'—'}</div>
+    <div style="margin-top:6px;font-size:.82rem">Entrega al cliente: <b style="color:var(--grn)">${fmt(c.entregaMonto)}</b></div>${acc}</div>`;
+}
+async function cargarBandeja(){
+  try{
+    const d=await apiU('GET','/api/entregas/bandeja');
+    $('bd-disp').textContent=fmt(d.disponible);
+    $('bd-disp').style.color = d.disponible>0?'var(--grn)':'var(--faint)';
+    $('bd-mias').innerHTML = d.mias.length? d.mias.map(c=>_bdCard(c,'mias')).join('') : '<div style="color:var(--faint);padding:10px;font-size:.85rem">No has tomado créditos todavía.</div>';
+    $('bd-cola').innerHTML = d.bandeja.length? d.bandeja.map(c=>_bdCard(c,'cola')).join('') : '<div style="color:var(--faint);padding:10px;font-size:.85rem">No hay créditos por entregar.</div>';
+    $('bd-otros').innerHTML = d.deOtros.length? d.deOtros.map(c=>_bdCard(c,'otros')).join('') : '<div style="color:var(--faint);padding:10px;font-size:.85rem">Nada tomado por otros.</div>';
+  }catch(e){ $('bd-cola').innerHTML='<div style="color:var(--red);padding:10px">'+e.message+'</div>'; }
+}
+async function tomarCredito(id){ try{ await apiU('POST','/api/entregas/'+id+'/tomar'); await cargarBandeja(); }catch(e){ alert(e.message); } }
+async function soltarCredito(id){ try{ await apiU('POST','/api/entregas/'+id+'/soltar'); await cargarBandeja(); }catch(e){ alert(e.message); } }
+function numeroALetras(num){
+  const u=['','UNO','DOS','TRES','CUATRO','CINCO','SEIS','SIETE','OCHO','NUEVE','DIEZ','ONCE','DOCE','TRECE','CATORCE','QUINCE','DIECISÉIS','DIECISIETE','DIECIOCHO','DIECINUEVE'];
+  const d=['','','VEINTE','TREINTA','CUARENTA','CINCUENTA','SESENTA','SETENTA','OCHENTA','NOVENTA'];
+  const ce=['','CIENTO','DOSCIENTOS','TRESCIENTOS','CUATROCIENTOS','QUINIENTOS','SEISCIENTOS','SETECIENTOS','OCHOCIENTOS','NOVECIENTOS'];
+  function cent(n){ if(n===0)return''; if(n===100)return'CIEN'; let r='';const c=Math.floor(n/100),resto=n%100,de=Math.floor(resto/10),un=resto%10; if(c)r+=ce[c]+' '; if(resto<20)r+=u[resto]; else if(resto<30)r+=(resto===20?'VEINTE':'VEINTI'+u[un]); else {r+=d[de]; if(un)r+=' Y '+u[un];} return r.trim(); }
+  function mil(n){ if(n<1000)return cent(n); const m=Math.floor(n/1000),r=n%1000; let t=m===1?'MIL':cent(m)+' MIL'; if(r)t+=' '+cent(r); return t; }
+  function mill(n){ if(n<1000000)return mil(n); const m=Math.floor(n/1000000),r=n%1000000; let t=m===1?'UN MILLÓN':mil(m)+' MILLONES'; if(r)t+=' '+mil(r); return t; }
+  const e=Math.floor(num),c=Math.round((num-e)*100);
+  return (e===0?'CERO':mill(e))+' PESOS '+String(c).padStart(2,'0')+'/100 M.N.';
+}
+let _ent={saleId:null,fotoCasa:null,fotoCliente:null,lat:null,lng:null,firma:null}, _firmaCanvas=null;
+function _entOv(html){ const ov=document.createElement('div'); ov.className='entov'; ov.style.cssText='position:fixed;inset:0;background:rgba(10,15,25,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:14px;overflow:auto'; ov.onclick=e=>{if(e.target===ov)ov.remove();}; ov.innerHTML=`<div style="background:var(--surf-1);border:1px solid var(--line);border-radius:14px;padding:18px;width:min(460px,96vw)">${html}</div>`; document.body.appendChild(ov); return ov; }
+const _fbtn='display:flex;align-items:center;gap:10px;width:100%;padding:12px;margin-bottom:8px;background:var(--surf-2);border:1px dashed var(--line-2);border-radius:10px;color:var(--dim);font-family:Sora;font-size:.85rem;cursor:pointer;text-align:left';
+function abrirEntrega(saleId,cliente,monto){
+  _ent={saleId,fotoCasa:null,fotoCliente:null,lat:null,lng:null,firma:null};
+  const ov=_entOv(`<h3 style="margin:0 0 2px">Entregar crédito</h3>
+    <div style="font-size:.82rem;color:var(--dim);margin-bottom:12px">${cliente} · entrega ${fmt(monto)}</div>
+    <label id="fb-casa" style="${_fbtn}">🏠 <span id="fb-casa-t">Foto de la casa</span><input type="file" accept="image/*" capture="environment" style="display:none" onchange="leerFoto(this,'casa')"></label>
+    <label id="fb-cli" style="${_fbtn}">🧍 <span id="fb-cli-t">Foto del cliente</span><input type="file" accept="image/*" capture="environment" style="display:none" onchange="leerFoto(this,'cliente')"></label>
+    <button class="btn" style="width:100%;margin-bottom:8px" id="geo-btn" onclick="capturarGeo()">📍 Capturar ubicación GPS</button>
+    <div id="geo-txt" style="font-size:.76rem;color:var(--faint);margin-bottom:8px">Ubicación: sin capturar</div>
+    <button id="fb-pag" style="${_fbtn}" onclick="abrirPagareFirma()">📄 <span id="fb-pag-t">Pagaré — firma del cliente</span></button>
+    <button class="btn gold" style="width:100%;margin-top:4px" id="ent-ok" onclick="confirmarEntrega(this)">Confirmar entrega</button>
+    <button class="btn" style="width:100%;margin-top:8px" onclick="this.closest('.entov').remove()">Cancelar</button>`);
+}
+function leerFoto(input,cual){
+  const f=input.files&&input.files[0]; if(!f) return;
+  const rd=new FileReader();
+  rd.onload=()=>{ const img=new Image(); img.onload=()=>{
+    const max=900; let w=img.width,h=img.height; if(w>max||h>max){ if(w>h){h=Math.round(h*max/w);w=max;}else{w=Math.round(w*max/h);h=max;} }
+    const cv=document.createElement('canvas'); cv.width=w; cv.height=h; cv.getContext('2d').drawImage(img,0,0,w,h);
+    const data=cv.toDataURL('image/jpeg',0.55);
+    if(cual==='casa'){ _ent.fotoCasa=data; $('fb-casa').style.borderColor='var(--grn)'; $('fb-casa-t').textContent='✓ Foto de la casa lista'; }
+    else { _ent.fotoCliente=data; $('fb-cli').style.borderColor='var(--grn)'; $('fb-cli-t').textContent='✓ Foto del cliente lista'; }
+  }; img.src=rd.result; };
+  rd.readAsDataURL(f);
+}
+function capturarGeo(){
+  const t=$('geo-txt'); if(!navigator.geolocation){ t.textContent='Este dispositivo no tiene GPS'; return; }
+  t.textContent='Obteniendo ubicación…';
+  navigator.geolocation.getCurrentPosition(p=>{ _ent.lat=p.coords.latitude; _ent.lng=p.coords.longitude; t.textContent='✓ Ubicación capturada'; t.style.color='var(--grn)'; },err=>{ t.textContent='No se pudo obtener la ubicación'; },{enableHighAccuracy:true,timeout:10000});
+}
+async function abrirPagareFirma(){
+  let d; try{ d=await apiU('GET','/api/sales/'+_ent.saleId+'/pagare'); }catch(e){ alert(e.message); return; }
+  const f=d.fecha?new Date(d.fecha):new Date(); const fechaTxt=f.toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
+  const M=n=>'$'+Math.round(n||0).toLocaleString('es-MX');
+  const ppTxt=d.descuentaPP?` El primer pago de ${M(d.primerPago)} se descuenta al inicio; el cliente recibe ${M(d.entregaMonto)}.`:'';
+  const ov=_entOv(`<h3 style="margin:0 0 8px">📄 Pagaré</h3>
+    <div style="background:#fff;color:#1b2330;border:1px solid var(--line);border-radius:10px;padding:13px;font-size:.78rem;line-height:1.5;max-height:42vh;overflow:auto">
+      <div style="text-align:center;font-weight:700;letter-spacing:.04em">PAGARÉ</div>
+      <div style="display:flex;justify-content:space-between;margin:6px 0;font-size:.72rem"><span><b>Folio:</b> ${d.folio}</span><span><b>Bueno por:</b> ${M(d.total)}</span></div>
+      <div style="font-size:.72rem;margin-bottom:6px">${d.lugar||''}, a ${fechaTxt}</div>
+      <p style="margin:6px 0">Debo y pagaré incondicionalmente a la orden de <b>${d.acreedor}</b> la cantidad de <b>${M(d.total)}</b> (${numeroALetras(d.total)}), que me obligo a cubrir en <b>${d.pagos}</b> pagos ${d.freq} de <b>${M(d.cuota)}</b> cada uno.${ppTxt}</p>
+      <div style="margin-top:8px;font-size:.72rem"><b>Suscriptor:</b> ${d.cliente.nombre}<br><b>Domicilio:</b> ${d.cliente.domicilio}<br><b>CURP:</b> ${d.cliente.curp||'—'} · <b>Tel:</b> ${d.cliente.tel||'—'}</div>
+    </div>
+    <div style="font-size:.78rem;color:var(--dim);margin:12px 0 5px">Firma del cliente (firme con el dedo o mouse):</div>
+    <canvas id="firma-pad" width="600" height="220" style="width:100%;height:160px;background:#fff;border:1.5px dashed var(--line-2);border-radius:10px;touch-action:none"></canvas>
+    <div style="display:flex;gap:8px;margin-top:10px"><button class="btn" style="flex:1" onclick="limpiarFirma()">Borrar</button><button class="btn gold" style="flex:1" onclick="guardarFirma()">✓ Guardar firma</button></div>
+    <button class="btn" style="width:100%;margin-top:8px" onclick="this.closest('.entov').remove()">Cerrar</button>`);
+  initFirmaPad(document.getElementById('firma-pad'));
+}
+function initFirmaPad(canvas){
+  _firmaCanvas=canvas; const ctx=canvas.getContext('2d'); ctx.lineWidth=2.5; ctx.lineCap='round'; ctx.strokeStyle='#111';
+  let drawing=false,last=null;
+  const pos=e=>{ const r=canvas.getBoundingClientRect(); const t=e.touches?e.touches[0]:e; return {x:(t.clientX-r.left)*(canvas.width/r.width),y:(t.clientY-r.top)*(canvas.height/r.height)}; };
+  const start=e=>{drawing=true;last=pos(e);e.preventDefault();};
+  const move=e=>{ if(!drawing)return; const p=pos(e); ctx.beginPath(); ctx.moveTo(last.x,last.y); ctx.lineTo(p.x,p.y); ctx.stroke(); last=p; e.preventDefault(); };
+  const end=()=>{drawing=false;};
+  canvas.addEventListener('mousedown',start); canvas.addEventListener('mousemove',move); window.addEventListener('mouseup',end);
+  canvas.addEventListener('touchstart',start,{passive:false}); canvas.addEventListener('touchmove',move,{passive:false}); canvas.addEventListener('touchend',end);
+  canvas._empty=()=>{ const px=ctx.getImageData(0,0,canvas.width,canvas.height).data; for(let i=3;i<px.length;i+=4){ if(px[i]>0) return false; } return true; };
+}
+function limpiarFirma(){ if(_firmaCanvas) _firmaCanvas.getContext('2d').clearRect(0,0,_firmaCanvas.width,_firmaCanvas.height); }
+function guardarFirma(){ if(!_firmaCanvas||_firmaCanvas._empty()){ alert('El cliente debe firmar primero'); return; } _ent.firma=_firmaCanvas.toDataURL('image/png'); $('fb-pag').style.borderColor='var(--grn)'; $('fb-pag-t').textContent='✓ Pagaré firmado'; _firmaCanvas.closest('.entov').remove(); }
+async function confirmarEntrega(btn){
+  if(!_ent.fotoCasa||!_ent.fotoCliente){ alert('Faltan las fotos: casa y cliente'); return; }
+  if(!_ent.firma){ alert('Falta la firma del pagaré del cliente'); return; }
+  btn.disabled=true; btn.textContent='Enviando…';
+  try{ await apiU('POST','/api/sales/'+_ent.saleId+'/entregar',{lat:_ent.lat,lng:_ent.lng,fotoCasa:_ent.fotoCasa,fotoCliente:_ent.fotoCliente,firma:_ent.firma});
+    document.querySelectorAll('.entov').forEach(o=>o.remove()); await cargarBandeja();
+  }catch(e){ alert(e.message); btn.disabled=false; btn.textContent='Confirmar entrega'; }
+}
 function ecImprimir(){
   if(!ecActual||!_ecLib) return; const c=ecActual, L=_ecLib;
   const filas=L.rows.map(m=>`<tr><td>${m.fecha}</td><td>${m.concepto}</td><td style="text-align:right">${m.cargo?fmt(m.cargo):''}</td><td style="text-align:right">${m.abono?fmt(m.abono):''}</td><td style="text-align:right">${fmt(m.saldo)}</td></tr>`).join('');
@@ -1710,7 +1853,7 @@ function sim(){const t=$('s-tipo').value,monto=+$('s-monto').value||0,plazo=+$('
 }
 
 /* NAV + EVENTOS */
-const titles={resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],flujo:['Flujo / Tesorería','Efectivo del admin · dotación a la operación, nómina y capital'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo']};
+const titles={resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],bandeja:['Bandeja de entregas','Créditos por entregar · toma y entrega con evidencia'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],flujo:['Flujo / Tesorería','Efectivo del admin · dotación a la operación, nómina y capital'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo']};
 document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
   document.querySelectorAll('.navitem').forEach(x=>x.classList.remove('on'));
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
@@ -1724,6 +1867,7 @@ document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
   if(n.dataset.v==='conciliacion') cargarCortes();
   if(n.dataset.v==='reportes') renderReportesLive();
   if(n.dataset.v==='flujo') cargarFlujo();
+  if(n.dataset.v==='bandeja') cargarBandeja();
   if(n.dataset.v==='transferencias'){ _trSel.clear(); trInit(); $('tr-resultados').innerHTML='<div style="color:var(--faint);padding:12px;font-size:.85rem">Elige un cobrador o busca un cliente para empezar.</div>'; $('tr-toolbar').style.display='none'; $('tr-batchbar').style.display='none'; trCargarLog(); }
   if(n.dataset.v==='simulador') initTarifas();
   if(n.dataset.v==='mapa') initMapa();

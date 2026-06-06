@@ -129,6 +129,11 @@
   .dg-table tbody tr:nth-child(even) td:not(.lbl){background:var(--surf-2)}
   .dg-tab{background:var(--surf-2);border:1px solid var(--line);color:var(--dim);font-family:'Sora';font-weight:600;font-size:.78rem;padding:6px 12px;border-radius:8px;cursor:pointer}
   .dg-tab.on{background:var(--acc);border-color:var(--acc);color:#1b2330}
+
+  .bd-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+  .bd-card{background:var(--surf-1);border:1px solid var(--line);border-radius:10px;padding:12px}
+  .bd-b{width:100%;margin-top:8px;background:var(--surf-2);border:1px solid var(--line);color:var(--dim);padding:9px;border-radius:8px;font-family:'Sora';font-weight:600;font-size:.78rem;cursor:pointer}
+  .bd-b.gold{background:var(--acc);border-color:var(--acc);color:#1b2330}
 </style>
 </head>
 <body>
@@ -138,6 +143,7 @@
   <div class="hmeta">
     <div class="live"><span class="dot"></span> Sincronizado en vivo</div>
     <div class="clock mono" id="clock"></div>
+    <button onclick="abrirBandeja()" style="background:var(--vio);border:1px solid var(--vio);color:#fff;font-family:'Sora';font-weight:700;font-size:.78rem;padding:7px 12px;border-radius:8px;cursor:pointer">📦 Entregas</button>
     <button onclick="abrirDesglose()" style="background:var(--acc);border:1px solid var(--acc);color:#1b2330;font-family:'Sora';font-weight:700;font-size:.78rem;padding:7px 12px;border-radius:8px;cursor:pointer">📋 Desglose</button>
     <button onclick="salir()" style="background:var(--surf-3);border:1px solid var(--line-2);color:var(--dim);font-family:'Sora';font-size:.78rem;padding:7px 12px;border-radius:8px;cursor:pointer">Salir</button>
   </div>
@@ -589,6 +595,92 @@ async function abrirDesglose(prom){
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${tabs}</div>
     <div style="overflow:auto;border:1px solid var(--line);border-radius:10px;flex:1"><table class="dg-table">${''}<thead>${head}</thead><tbody>${body}</tbody></table></div>
   </div>`;
+}
+async function abrirBandeja(){
+  let d; try{ d=await api('GET','/api/entregas/bandeja'); }catch(e){ toast(e.message); return; }
+  const esc=s=>String(s||'').replace(/'/g,"\\'");
+  const card=(c,modo)=>{
+    const f=new Date(c.createdAt).toLocaleDateString('es-MX',{day:'2-digit',month:'short'});
+    const acc = modo==='cola'
+      ? `<button class="bd-b gold" onclick="bdTomar(${c.saleId})">📥 Tomar</button>`
+      : modo==='mias'
+      ? `<button class="bd-b gold" onclick="abrirEntrega(${c.saleId},'${esc(c.cliente)}',${c.entregaMonto})">📦 Entregar + evidencia</button><button class="bd-b" onclick="bdSoltar(${c.saleId})">↩ Soltar</button>`
+      : `<div style="font-size:.72rem;color:var(--acc)">🔒 Lo entrega ${c.tomadoPor?c.tomadoPor.nombre:'—'}</div>`;
+    return `<div class="bd-card"><div style="font-weight:600">${c.cliente}</div>
+      <div style="font-size:.7rem;color:var(--faint)">${c.folio} · ruta ${c.prom||'—'} · ${f}</div>
+      <div style="font-size:.72rem;color:var(--dim);margin-top:3px">📍 ${c.dir||'—'}</div>
+      <div style="margin-top:5px;font-size:.8rem">Entrega: <b style="color:var(--grn)">${fmt(c.entregaMonto)}</b></div>${acc}</div>`;
+  };
+  const sec=(t,arr,modo,vacio)=>`<div style="font-size:.76rem;color:var(--dim);font-weight:600;margin:12px 0 6px">${t}</div><div class="bd-grid">${arr.length?arr.map(c=>card(c,modo)).join(''):'<div style="color:var(--faint);font-size:.82rem;padding:6px">'+vacio+'</div>'}</div>`;
+  let ov=document.getElementById('bd-ov');
+  if(!ov){ ov=document.createElement('div'); ov.id='bd-ov'; ov.className='dgov'; ov.onclick=e=>{if(e.target===ov)ov.remove();}; document.body.appendChild(ov); }
+  ov.innerHTML=`<div class="dgbox">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px"><h3 style="margin:0;font-size:1.1rem">📦 Bandeja de entregas</h3>
+      <button onclick="document.getElementById('bd-ov').remove()" style="margin-left:auto;background:var(--surf-3);border:1px solid var(--line-2);color:var(--dim);border-radius:8px;padding:6px 12px;cursor:pointer;font-family:'Sora'">✕</button></div>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px"><div><span style="font-size:.74rem;color:var(--dim)">Tu efectivo disponible: </span><b style="color:var(--grn);font-size:1.05rem">${fmt(d.disponible)}</b></div>
+      <span style="font-size:.72rem;color:var(--faint);flex:1;min-width:200px">Usas lo que recibes del promotor o lo que te dota el admin. Si no alcanza, pide dotación.</span></div>
+    ${sec('Mis entregas por hacer',d.mias,'mias','No has tomado créditos.')}
+    ${sec('Por entregar (bandeja común)',d.bandeja,'cola','No hay créditos por entregar.')}
+    ${d.deOtros.length?sec('Tomados por otros',d.deOtros,'otros',''):''}
+  </div>`;
+}
+async function bdTomar(id){ try{ await api('POST','/api/entregas/'+id+'/tomar'); abrirBandeja(); }catch(e){ toast(e.message); } }
+async function bdSoltar(id){ try{ await api('POST','/api/entregas/'+id+'/soltar'); abrirBandeja(); }catch(e){ toast(e.message); } }
+let _ent={saleId:null,fotoCasa:null,fotoCliente:null,lat:null,lng:null,firma:null}, _firmaCanvas=null;
+function _entOv(html){ const ov=document.createElement('div'); ov.className='entov'; ov.style.cssText='position:fixed;inset:0;background:rgba(10,15,25,.6);z-index:10000;display:flex;align-items:flex-start;justify-content:center;padding:14px;overflow:auto'; ov.onclick=e=>{if(e.target===ov)ov.remove();}; ov.innerHTML=`<div style="background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:18px;width:min(460px,96vw)">${html}</div>`; document.body.appendChild(ov); return ov; }
+const _fbtn="display:flex;align-items:center;gap:10px;width:100%;padding:12px;margin-bottom:8px;background:var(--surf-2);border:1px dashed var(--line-2);border-radius:10px;color:var(--dim);font-family:Sora;font-size:.85rem;cursor:pointer;text-align:left";
+function abrirEntrega(saleId,cliente,monto){
+  _ent={saleId,fotoCasa:null,fotoCliente:null,lat:null,lng:null,firma:null};
+  _entOv(`<h3 style="margin:0 0 2px">Entregar crédito</h3><div style="font-size:.82rem;color:var(--dim);margin-bottom:12px">${cliente} · entrega ${fmt(monto)}</div>
+    <label id="fb-casa" style="${_fbtn}">🏠 <span id="fb-casa-t">Foto de la casa</span><input type="file" accept="image/*" capture="environment" style="display:none" onchange="leerFotoE(this,'casa')"></label>
+    <label id="fb-cli" style="${_fbtn}">🧍 <span id="fb-cli-t">Foto del cliente</span><input type="file" accept="image/*" capture="environment" style="display:none" onchange="leerFotoE(this,'cliente')"></label>
+    <button class="btn" style="width:100%;margin-bottom:8px;background:var(--surf-2);border:1px solid var(--line);color:var(--dim);padding:11px;border-radius:9px;font-family:Sora;cursor:pointer" id="geo-btn" onclick="capturarGeoE()">📍 Capturar ubicación GPS</button>
+    <div id="geo-txt" style="font-size:.76rem;color:var(--faint);margin-bottom:8px">Ubicación: sin capturar</div>
+    <button id="fb-pag" style="${_fbtn}" onclick="abrirPagareFirmaE()">📄 <span id="fb-pag-t">Pagaré — firma del cliente</span></button>
+    <button id="ent-ok" onclick="confirmarEntregaE(this)" style="width:100%;margin-top:4px;background:var(--acc);color:#1b2330;border:none;padding:12px;border-radius:9px;font-family:Sora;font-weight:700;cursor:pointer">Confirmar entrega</button>
+    <button onclick="this.closest('.entov').remove()" style="width:100%;margin-top:8px;background:var(--surf-2);border:1px solid var(--line);color:var(--dim);padding:10px;border-radius:9px;font-family:Sora;cursor:pointer">Cancelar</button>`);
+}
+function leerFotoE(input,cual){ const f=input.files&&input.files[0]; if(!f)return; const rd=new FileReader();
+  rd.onload=()=>{ const img=new Image(); img.onload=()=>{ const max=900; let w=img.width,h=img.height; if(w>max||h>max){ if(w>h){h=Math.round(h*max/w);w=max;}else{w=Math.round(w*max/h);h=max;} }
+    const cv=document.createElement('canvas'); cv.width=w; cv.height=h; cv.getContext('2d').drawImage(img,0,0,w,h); const data=cv.toDataURL('image/jpeg',0.55);
+    if(cual==='casa'){ _ent.fotoCasa=data; const el=document.getElementById('fb-casa'); el.style.borderColor='var(--grn)'; document.getElementById('fb-casa-t').textContent='✓ Foto de la casa lista'; }
+    else { _ent.fotoCliente=data; const el=document.getElementById('fb-cli'); el.style.borderColor='var(--grn)'; document.getElementById('fb-cli-t').textContent='✓ Foto del cliente lista'; } }; img.src=rd.result; };
+  rd.readAsDataURL(f); }
+function capturarGeoE(){ const t=document.getElementById('geo-txt'); if(!navigator.geolocation){ t.textContent='Sin GPS'; return; } t.textContent='Obteniendo ubicación…';
+  navigator.geolocation.getCurrentPosition(p=>{ _ent.lat=p.coords.latitude; _ent.lng=p.coords.longitude; t.textContent='✓ Ubicación capturada'; t.style.color='var(--grn)'; },()=>{ t.textContent='No se pudo obtener la ubicación'; },{enableHighAccuracy:true,timeout:10000}); }
+async function abrirPagareFirmaE(){
+  let d; try{ d=await api('GET','/api/sales/'+_ent.saleId+'/pagare'); }catch(e){ toast(e.message); return; }
+  const f=d.fecha?new Date(d.fecha):new Date(); const fechaTxt=f.toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'}); const M=n=>'$'+Math.round(n||0).toLocaleString('es-MX');
+  const ppTxt=d.descuentaPP?` El primer pago de ${M(d.primerPago)} se descuenta al inicio; el cliente recibe ${M(d.entregaMonto)}.`:'';
+  _entOv(`<h3 style="margin:0 0 8px">📄 Pagaré</h3>
+    <div style="background:#fff;color:#1b2330;border:1px solid var(--line);border-radius:10px;padding:13px;font-size:.78rem;line-height:1.5;max-height:42vh;overflow:auto">
+      <div style="text-align:center;font-weight:700">PAGARÉ</div>
+      <div style="display:flex;justify-content:space-between;margin:6px 0;font-size:.72rem"><span><b>Folio:</b> ${d.folio}</span><span><b>Bueno por:</b> ${M(d.total)}</span></div>
+      <div style="font-size:.72rem;margin-bottom:6px">${d.lugar||''}, a ${fechaTxt}</div>
+      <p style="margin:6px 0">Debo y pagaré incondicionalmente a la orden de <b>${d.acreedor}</b> la cantidad de <b>${M(d.total)}</b> (${numeroALetras(d.total)}), en <b>${d.pagos}</b> pagos ${d.freq} de <b>${M(d.cuota)}</b>.${ppTxt}</p>
+      <div style="font-size:.72rem"><b>Suscriptor:</b> ${d.cliente.nombre}<br><b>Domicilio:</b> ${d.cliente.domicilio}<br><b>CURP:</b> ${d.cliente.curp||'—'} · <b>Tel:</b> ${d.cliente.tel||'—'}</div>
+    </div>
+    <div style="font-size:.78rem;color:var(--dim);margin:12px 0 5px">Firma del cliente:</div>
+    <canvas id="firma-pad" width="600" height="220" style="width:100%;height:160px;background:#fff;border:1.5px dashed var(--line-2);border-radius:10px;touch-action:none"></canvas>
+    <div style="display:flex;gap:8px;margin-top:10px"><button onclick="limpiarFirmaE()" style="flex:1;background:var(--surf-2);border:1px solid var(--line);color:var(--dim);padding:10px;border-radius:9px;font-family:Sora;cursor:pointer">Borrar</button><button onclick="guardarFirmaE()" style="flex:1;background:var(--grn);border:none;color:#fff;padding:10px;border-radius:9px;font-family:Sora;font-weight:600;cursor:pointer">✓ Guardar firma</button></div>
+    <button onclick="this.closest('.entov').remove()" style="width:100%;margin-top:8px;background:var(--surf-2);border:1px solid var(--line);color:var(--dim);padding:10px;border-radius:9px;font-family:Sora;cursor:pointer">Cerrar</button>`);
+  initFirmaPadE(document.getElementById('firma-pad'));
+}
+function initFirmaPadE(canvas){ _firmaCanvas=canvas; const ctx=canvas.getContext('2d'); ctx.lineWidth=2.5; ctx.lineCap='round'; ctx.strokeStyle='#111'; let dr=false,last=null;
+  const pos=e=>{ const r=canvas.getBoundingClientRect(); const t=e.touches?e.touches[0]:e; return {x:(t.clientX-r.left)*(canvas.width/r.width),y:(t.clientY-r.top)*(canvas.height/r.height)}; };
+  const st=e=>{dr=true;last=pos(e);e.preventDefault();}; const mv=e=>{ if(!dr)return; const p=pos(e); ctx.beginPath(); ctx.moveTo(last.x,last.y); ctx.lineTo(p.x,p.y); ctx.stroke(); last=p; e.preventDefault(); }; const en=()=>{dr=false;};
+  canvas.addEventListener('mousedown',st); canvas.addEventListener('mousemove',mv); window.addEventListener('mouseup',en);
+  canvas.addEventListener('touchstart',st,{passive:false}); canvas.addEventListener('touchmove',mv,{passive:false}); canvas.addEventListener('touchend',en);
+  canvas._empty=()=>{ const px=ctx.getImageData(0,0,canvas.width,canvas.height).data; for(let i=3;i<px.length;i+=4){ if(px[i]>0) return false; } return true; }; }
+function limpiarFirmaE(){ if(_firmaCanvas) _firmaCanvas.getContext('2d').clearRect(0,0,_firmaCanvas.width,_firmaCanvas.height); }
+function guardarFirmaE(){ if(!_firmaCanvas||_firmaCanvas._empty()){ toast('El cliente debe firmar primero'); return; } _ent.firma=_firmaCanvas.toDataURL('image/png'); const p=document.getElementById('fb-pag'); p.style.borderColor='var(--grn)'; document.getElementById('fb-pag-t').textContent='✓ Pagaré firmado'; _firmaCanvas.closest('.entov').remove(); }
+async function confirmarEntregaE(btn){
+  if(!_ent.fotoCasa||!_ent.fotoCliente){ toast('Faltan las fotos: casa y cliente'); return; }
+  if(!_ent.firma){ toast('Falta la firma del pagaré'); return; }
+  btn.disabled=true; btn.textContent='Enviando…';
+  try{ await api('POST','/api/sales/'+_ent.saleId+'/entregar',{lat:_ent.lat,lng:_ent.lng,fotoCasa:_ent.fotoCasa,fotoCliente:_ent.fotoCliente,firma:_ent.firma});
+    document.querySelectorAll('.entov').forEach(o=>o.remove()); toast('Crédito entregado · pagaré firmado'); cargarCaja(); abrirBandeja();
+  }catch(e){ toast(e.message); btn.disabled=false; btn.textContent='Confirmar entrega'; }
 }
 function numeroALetras(num){
   const u=['','UNO','DOS','TRES','CUATRO','CINCO','SEIS','SIETE','OCHO','NUEVE','DIEZ','ONCE','DOCE','TRECE','CATORCE','QUINCE','DIECISÉIS','DIECISIETE','DIECIOCHO','DIECINUEVE'];
