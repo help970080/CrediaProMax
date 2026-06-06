@@ -907,6 +907,8 @@ app.get('/api/dashboard', auth, (req,res)=>{
     npagos_periodo: abonos.length,
     nuevos_creditos_periodo: nuevos.length,
     monto_colocado_periodo: nuevos.reduce((a,s)=>a+s.monto,0),
+    cobrado_periodo: abonos.filter(m=>m.forma!=='descuento').reduce((a,m)=>a+m.abono,0),
+    utilidad_periodo: Math.round(abonos.filter(m=>m.forma!=='descuento').reduce((a,m)=>{ const s=sales.find(x=>x.id===m.saleId); return a + (s&&s.total>0 ? m.abono*((s.total-s.monto)/s.total) : 0); },0)),
     en_caja_efectivo: Object.values(db.caja).reduce((a,c)=>a+((c.inicial||0)+(c.efectivo||0)+(c.entregas||0)),0),
     en_caja_banco: Object.values(db.caja).reduce((a,c)=>a+(c.banco||0),0),
     por_entregar: db.porEntregar.reduce((a,p)=>a+p.monto,0),
@@ -1247,38 +1249,74 @@ app.get('/api/reports/comisiones', auth, rol('admin','supervisor'), (req, res) =
   }});
 });
 
-/* ---------- Reporte gerencial (rollup por niveles) ---------- */
+/* ---------- Reporte gerencial (rollup por niveles, con rango y utilidad) ---------- */
+function _rangoReporte(q) {
+  // desde/hasta en YYYY-MM-DD tienen prioridad; si no, usa periodo
+  if (q.desde || q.hasta) {
+    const d = q.desde ? new Date(q.desde + 'T00:00:00') : new Date(2000, 0, 1);
+    const h = q.hasta ? new Date(q.hasta + 'T23:59:59') : new Date();
+    return { desde: d.getTime(), hasta: h.getTime(), modo: 'rango', label: `${q.desde || '—'} a ${q.hasta || 'hoy'}` };
+  }
+  const periodo = q.periodo || 'semana';
+  return { desde: _desdePeriodo(periodo), hasta: Date.now(), modo: periodo, label: periodo };
+}
+function _kpisVentas(sales, desde, hasta) {
+  let cartera = 0, creditosAct = 0, atrasoMonto = 0, atrasoCli = 0, colocado = 0, ncoloc = 0, cobrado = 0, npagos = 0, utilidad = 0;
+  const cliSet = new Set(), ratio = {};
+  function atrasoDe(s) { const totAb = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0).reduce((a, m) => a + m.abono, 0); return calcAtraso(s, totAb); }
+  sales.forEach(s => {
+    ratio[s.id] = s.total > 0 ? (s.total - s.monto) / s.total : 0;
+    const saldo = saldoDe(s.id);
+    if (saldo > 0) { cartera += saldo; creditosAct++; cliSet.add(s.clientId); const at = atrasoDe(s); if (at.montoAtraso > 0) { atrasoMonto += at.montoAtraso; atrasoCli++; } }
+    if (s.createdAt) { const t = new Date(s.createdAt).getTime(); if (t >= desde && t <= hasta) { colocado += s.monto; ncoloc++; } }
+  });
+  const ids = new Set(sales.map(s => s.id));
+  db.movimientos.filter(m => m.abono > 0 && m.forma !== 'descuento' && ids.has(m.saleId)).forEach(m => {
+    const t = _parseFechaMx(m.fecha); if (t >= desde && t <= hasta) { cobrado += m.abono; npagos++; utilidad += m.abono * (ratio[m.saleId] || 0); }
+  });
+  return { cartera, clientes: cliSet.size, creditosActivos: creditosAct, atrasoMonto, vencido: atrasoMonto, atrasoClientes: atrasoCli,
+    morosidad: cartera > 0 ? +(atrasoMonto / cartera * 100).toFixed(1) : 0, colocado, ncoloc, cobrado, npagos, utilidad: Math.round(utilidad) };
+}
 app.get('/api/reports/gerencial', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
-  const periodo = req.query.periodo || 'semana';
-  const desde = _desdePeriodo(periodo);
+  const { desde, hasta, label, modo } = _rangoReporte(req.query);
   const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
   const esGerente = req.user.rol === 'sucursal';
   const miSuc = esGerente ? (db.users.find(u => u.id === req.user.id) || {}).sucursalId : null;
   let sucursales = db.sucursales.filter(s => s.activo !== false);
   if (esGerente) sucursales = sucursales.filter(s => s.id === miSuc);
-  function atrasoDe(s) { const totAb = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0).reduce((a, m) => a + m.abono, 0); return calcAtraso(s, totAb); }
-  function kpisDe(sales) {
-    let cartera = 0, creditosAct = 0, atrasoMonto = 0, atrasoCli = 0, colocado = 0, ncoloc = 0, cobrado = 0, npagos = 0;
-    const cliSet = new Set();
-    sales.forEach(s => {
-      const saldo = saldoDe(s.id);
-      if (saldo > 0) { cartera += saldo; creditosAct++; cliSet.add(s.clientId); const at = atrasoDe(s); if (at.montoAtraso > 0) { atrasoMonto += at.montoAtraso; atrasoCli++; } }
-      if (s.createdAt && new Date(s.createdAt).getTime() >= desde) { colocado += s.monto; ncoloc++; }
-    });
-    const ids = new Set(sales.map(s => s.id));
-    db.movimientos.filter(m => m.abono > 0 && ids.has(m.saleId) && _parseFechaMx(m.fecha) >= desde).forEach(m => { cobrado += m.abono; npagos++; });
-    return { cartera, clientes: cliSet.size, creditosActivos: creditosAct, atrasoMonto, atrasoClientes: atrasoCli,
-      morosidad: cartera > 0 ? +(atrasoMonto / cartera * 100).toFixed(1) : 0, colocado, ncoloc, cobrado, npagos };
-  }
+  const kp = sales => _kpisVentas(sales, desde, hasta);
   const porSucursal = sucursales.map(suc => {
     const ventasSuc = db.sales.filter(s => s.sucursalId === suc.id && activos.has(s.clientId));
     const enc = db.users.find(u => u.rol === 'sucursal' && u.sucursalId === suc.id);
     const cobradores = db.users.filter(u => u.rol === 'cobrador' && u.activo && u.sucursalId === suc.id);
-    const promotores = cobradores.map(cob => ({ promotor: cob.nombre, ...kpisDe(ventasSuc.filter(s => s.prom === cob.nombre)) }));
-    return { id: suc.id, sucursal: suc.nombre, gerente: enc ? enc.nombre : '—', ...kpisDe(ventasSuc), promotores };
+    const promotores = cobradores.map(cob => ({ promotor: cob.nombre, ...kp(ventasSuc.filter(s => s.prom === cob.nombre)) }));
+    return { id: suc.id, sucursal: suc.nombre, gerente: enc ? enc.nombre : '—', ...kp(ventasSuc), promotores };
   });
   const todas = db.sales.filter(s => (esGerente ? s.sucursalId === miSuc : true) && activos.has(s.clientId));
-  res.json({ periodo, generado: new Date().toISOString(), nivel: esGerente ? 'sucursal' : 'empresa', empresa: kpisDe(todas), sucursales: porSucursal });
+  res.json({ periodo: modo, rango: label, generado: new Date().toISOString(), nivel: esGerente ? 'sucursal' : 'empresa', empresa: kp(todas), sucursales: porSucursal });
+});
+// Drill-down: clientes de una sucursal o de un promotor (con cobrado/vencido en el rango)
+app.get('/api/reports/gerencial-clientes', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
+  const { desde, hasta } = _rangoReporte(req.query);
+  const sucursalId = req.query.sucursalId ? +req.query.sucursalId : null;
+  const promotor = req.query.promotor || null;
+  if (req.user.rol === 'sucursal') { const me = db.users.find(u => u.id === req.user.id); if (!me || (sucursalId && sucursalId !== me.sucursalId)) return res.status(403).json({ error: 'Fuera de tu sucursal' }); }
+  const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
+  let sales = db.sales.filter(s => activos.has(s.clientId));
+  if (sucursalId) sales = sales.filter(s => s.sucursalId === sucursalId);
+  if (promotor) sales = sales.filter(s => s.prom === promotor);
+  const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
+  const rows = sales.map(s => {
+    const c = db.clients.find(x => x.id === s.clientId) || {};
+    const totAb = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0).reduce((a, m) => a + m.abono, 0);
+    const at = calcAtraso(s, totAb);
+    const cobradoPeriodo = db.movimientos.filter(m => m.abono > 0 && m.forma !== 'descuento' && m.saleId === s.id && _parseFechaMx(m.fecha) >= desde && _parseFechaMx(m.fecha) <= hasta).reduce((a, m) => a + m.abono, 0);
+    const saldo = saldoDe(s.id);
+    return { saleId: s.id, folio: s.folio, cliente: c.nombre || '—', tel: c.tel || '', prom: s.prom, sucursal: sucMap[s.sucursalId] || '—',
+      monto: s.monto, total: s.total, saldo, cobradoPeriodo, vencido: at.montoAtraso, diasAtraso: at.diasAtraso,
+      estado: saldo <= 0 ? 'liquidado' : (at.montoAtraso > 0 ? (at.diasAtraso > 30 ? 'vencido' : 'atraso') : 'corriente') };
+  }).sort((a, b) => b.saldo - a.saldo);
+  res.json({ total: rows.length, sumSaldo: Math.round(rows.reduce((a, r) => a + r.saldo, 0)), sumCobrado: Math.round(rows.reduce((a, r) => a + r.cobradoPeriodo, 0)), clientes: rows });
 });
 
 app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, res) => {
