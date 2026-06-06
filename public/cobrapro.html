@@ -200,6 +200,7 @@
     <div class="nav-lbl">Finanzas</div>
     <button class="navitem" data-v="comisiones"><span class="ic">%</span> Comisiones</button>
     <button class="navitem" data-v="conciliacion"><span class="ic">⇄</span> Conciliación</button>
+    <button class="navitem" data-v="flujo" id="nav-flujo"><span class="ic">🏦</span> Flujo / Tesorería</button>
     <button class="navitem" data-v="reportes"><span class="ic">📑</span> Reportes</button>
     <button class="navitem" data-v="usuarios"><span class="ic">👤</span> Usuarios</button>
     <button class="navitem" data-v="mapa"><span class="ic">🗺️</span> Mapa de clientes</button>
@@ -419,6 +420,37 @@
       </div>
     </div>
     <div class="note" style="margin-top:-6px">El corte deja de ser un Excel nocturno: el sistema ya sabe cuánto cobró cada quien, entonces sabe cuánto debe entregar. El admin solo revisa las diferencias marcadas.</div>
+  </section>
+
+  <!-- FLUJO / TESORERÍA -->
+  <section class="view" id="flujo">
+    <div class="panel" style="background:linear-gradient(135deg,var(--surf-2),var(--surf));border:1px solid var(--line)">
+      <div class="ph"><h3>🏦 Tesorería · efectivo del administrador</h3><span class="hint">Todo el dinero recolectado llega aquí. Desde aquí se dota a sucursales, JC y supervisores para poder operar.</span></div>
+      <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;padding:6px 4px 14px">
+        <div style="flex:1;min-width:220px"><div style="font-size:.78rem;color:var(--dim)">Efectivo disponible en flujo</div><div id="fl-saldo" style="font-size:2.3rem;font-weight:800;letter-spacing:-.02em;color:var(--acc)">$0</div><div id="fl-saldo-warn" style="font-size:.76rem;color:var(--red);display:none">⚠ Flujo en negativo · inyecta capital para seguir operando</div></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn gold" style="padding:11px 16px" onclick="flDotar()">💵 Dotar efectivo para operar</button>
+          <button class="btn" style="padding:11px 16px" onclick="flEgreso()">🧾 Registrar egreso / nómina</button>
+          <button class="btn" style="padding:11px 16px" onclick="flInyectar()">➕ Inyectar capital</button>
+        </div>
+      </div>
+      <div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+        <div class="kpi g"><div class="l">Recibido (cierres/recolección)</div><div class="v" id="fl-t-rec" style="font-size:1.2rem">$0</div></div>
+        <div class="kpi b"><div class="l">Capital inyectado</div><div class="v" id="fl-t-iny" style="font-size:1.2rem">$0</div></div>
+        <div class="kpi v"><div class="l">Dotado a operación</div><div class="v" id="fl-t-dot" style="font-size:1.2rem">$0</div></div>
+        <div class="kpi r"><div class="l">Egresos / nómina</div><div class="v" id="fl-t-egr" style="font-size:1.2rem">$0</div></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><h3>Efectivo en manos de la operación</h3><span class="hint">cuánto tiene cada quien para entregar créditos · y cuánto se le ha dotado</span></div>
+      <div id="fl-destinos" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;padding:8px"></div>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><h3>Movimientos del flujo</h3><span class="hint">entradas y salidas · saldo corriente</span></div>
+      <table class="rp-table"><thead><tr><th>Fecha</th><th>Concepto</th><th class="n">Monto</th><th class="n">Saldo</th></tr></thead><tbody id="fl-movs"></tbody></table>
+    </div>
   </section>
 
   <!-- REPORTES -->
@@ -1499,6 +1531,87 @@ async function recibirCorte(id){
   if(!confirm('¿Confirmar que recibiste este efectivo? El corte quedará marcado como recibido.')) return;
   try{ await apiU('POST','/api/cortes/'+id+'/recibir'); await cargarCortes(); }catch(e){ alert(e.message); }
 }
+let _flData=null;
+async function cargarFlujo(){
+  try{
+    const d=await apiU('GET','/api/flujo'); _flData=d;
+    $('fl-saldo').textContent=fmt(d.saldo);
+    $('fl-saldo').style.color = d.saldo<0?'var(--red)':'var(--acc)';
+    $('fl-saldo-warn').style.display = d.saldo<0?'block':'none';
+    $('fl-t-rec').textContent=fmt(d.totales.recibido);
+    $('fl-t-iny').textContent=fmt(d.totales.inyectado);
+    $('fl-t-dot').textContent=fmt(d.totales.dotado);
+    $('fl-t-egr').textContent=fmt(d.totales.egresos);
+    const card=(ic,nombre,sub,caja,dot)=>`<div style="background:var(--surf-1);border:1px solid var(--line);border-radius:10px;padding:13px">
+      <div style="font-weight:600;font-size:.92rem">${ic} ${nombre}</div><div style="font-size:.72rem;color:var(--faint);margin-bottom:6px">${sub}</div>
+      ${caja!=null?`<div style="font-size:.74rem;color:var(--dim)">En su caja ahora</div><div style="font-size:1.25rem;font-weight:700;color:var(--grn)">${fmt(caja)}</div>`:''}
+      <div style="font-size:.72rem;color:var(--faint);margin-top:4px">Dotado acumulado: ${fmt(dot)}</div></div>`;
+    const D=d.destinos;
+    $('fl-destinos').innerHTML =
+      D.sucursales.map(s=>card('🏪',s.nombre,'Sucursal',s.caja,s.dotado)).join('')
+      + D.jcs.map(j=>card('📦',j.nombre,'Jefe de Crédito (JC)',j.caja,j.dotado)).join('')
+      + D.supervisores.map(s=>card('👔',s.nombre,'Supervisor (efectivo físico)',null,s.dotado)).join('')
+      || '<div style="color:var(--faint);padding:12px;font-size:.85rem">Sin sucursales, JC o supervisores dados de alta.</div>';
+    $('fl-movs').innerHTML = d.movimientos.length? d.movimientos.map(m=>{
+      const f=new Date(m.fecha).toLocaleDateString('es-MX',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+      const ent=m.tipo==='entrada';
+      return `<tr><td style="white-space:nowrap;font-size:.78rem;color:var(--dim)">${f}</td><td>${m.concepto}</td>
+        <td class="n" style="color:${ent?'var(--grn)':'var(--red)'};font-weight:600">${ent?'+':'−'}${fmt(m.monto)}</td>
+        <td class="n mono">${fmt(m.saldo)}</td></tr>`;
+    }).join('') : '<tr><td colspan="4" style="color:var(--faint);padding:12px;font-size:.85rem">Aún no hay movimientos. Inyecta capital o recibe un corte para empezar.</td></tr>';
+  }catch(e){ $('fl-movs').innerHTML='<tr><td colspan="4" style="color:var(--red);padding:12px">'+e.message+'</td></tr>'; }
+}
+function _flModal(html){ const ov=document.createElement('div'); ov.className='flmodal'; ov.style.cssText='position:fixed;inset:0;background:rgba(10,15,25,.55);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'; ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.innerHTML=`<div style="background:var(--surf-1);border:1px solid var(--line);border-radius:14px;padding:20px;width:min(440px,96vw)">${html}</div>`; document.body.appendChild(ov); return ov; }
+function flInyectar(){
+  const ov=_flModal(`<h3 style="margin:0 0 4px">➕ Inyectar capital al flujo</h3>
+    <p style="font-size:.82rem;color:var(--dim);margin:0 0 12px">Usa esto cuando las ventas superan el efectivo disponible y necesitas meter dinero para seguir colocando.</p>
+    <label style="font-size:.78rem;color:var(--dim)">Monto</label>
+    <input id="fl-iny-m" type="number" inputmode="numeric" placeholder="$" style="width:100%;padding:10px;margin:4px 0 10px;background:var(--surf-2);border:1px solid var(--line);border-radius:8px;color:var(--ink);font-family:'Sora'">
+    <label style="font-size:.78rem;color:var(--dim)">Nota (opcional)</label>
+    <input id="fl-iny-n" placeholder="Ej. aporte de socio" style="width:100%;padding:10px;margin:4px 0 14px;background:var(--surf-2);border:1px solid var(--line);border-radius:8px;color:var(--ink);font-family:'Sora'">
+    <div style="display:flex;gap:10px"><button class="btn" style="flex:1" onclick="this.closest('.flmodal').remove()">Cancelar</button><button class="btn gold" style="flex:1" onclick="flInyectarOK(this)">Inyectar</button></div>`);
+}
+async function flInyectarOK(b){ const monto=+document.getElementById('fl-iny-m').value, nota=document.getElementById('fl-iny-n').value;
+  if(!(monto>0)){ alert('Indica un monto válido'); return; } b.disabled=true;
+  try{ await apiU('POST','/api/flujo/inyeccion',{monto,nota}); b.closest('.flmodal').remove(); await cargarFlujo(); }catch(e){ alert(e.message); b.disabled=false; } }
+function flEgreso(){
+  const ov=_flModal(`<h3 style="margin:0 0 4px">🧾 Registrar egreso / nómina</h3>
+    <p style="font-size:.82rem;color:var(--dim);margin:0 0 12px">Sale del flujo y no regresa. Afecta el efectivo disponible.</p>
+    <label style="font-size:.78rem;color:var(--dim)">Concepto</label>
+    <select id="fl-eg-t" style="width:100%;padding:10px;margin:4px 0 10px;background:var(--surf-2);border:1px solid var(--line);border-radius:8px;color:var(--ink);font-family:'Sora'">
+      <option value="nomina_empleados">Nómina empleados</option>
+      <option value="nomina_admin">Nómina ADMIN</option>
+      <option value="otro">Otro gasto</option></select>
+    <label style="font-size:.78rem;color:var(--dim)">Detalle (opcional)</label>
+    <input id="fl-eg-d" placeholder="Ej. quincena cobradores, renta, papelería" style="width:100%;padding:10px;margin:4px 0 10px;background:var(--surf-2);border:1px solid var(--line);border-radius:8px;color:var(--ink);font-family:'Sora'">
+    <label style="font-size:.78rem;color:var(--dim)">Monto</label>
+    <input id="fl-eg-m" type="number" inputmode="numeric" placeholder="$" style="width:100%;padding:10px;margin:4px 0 14px;background:var(--surf-2);border:1px solid var(--line);border-radius:8px;color:var(--ink);font-family:'Sora'">
+    <div style="display:flex;gap:10px"><button class="btn" style="flex:1" onclick="this.closest('.flmodal').remove()">Cancelar</button><button class="btn gold" style="flex:1" onclick="flEgresoOK(this)">Registrar egreso</button></div>`);
+}
+async function flEgresoOK(b){ const tipo=document.getElementById('fl-eg-t').value, detalle=document.getElementById('fl-eg-d').value, monto=+document.getElementById('fl-eg-m').value;
+  if(!(monto>0)){ alert('Indica un monto válido'); return; } b.disabled=true;
+  try{ await apiU('POST','/api/flujo/egreso',{tipo,detalle,monto}); b.closest('.flmodal').remove(); await cargarFlujo(); }catch(e){ alert(e.message); b.disabled=false; } }
+function flDotar(){
+  const D=_flData?_flData.destinos:{sucursales:[],jcs:[],supervisores:[]};
+  const opt=(g,arr,t)=>arr.length?`<optgroup label="${g}">${arr.map(x=>`<option value="${t}:${x.id}">${x.nombre}</option>`).join('')}</optgroup>`:'';
+  const ov=_flModal(`<h3 style="margin:0 0 4px">💵 Dotar efectivo para operar</h3>
+    <p style="font-size:.82rem;color:var(--dim);margin:0 0 12px">El dinero sale del flujo y queda disponible en la caja del destino para entregar créditos. Para JC y sucursal aparece de inmediato en su app.</p>
+    <label style="font-size:.78rem;color:var(--dim)">¿A quién?</label>
+    <select id="fl-do-d" style="width:100%;padding:10px;margin:4px 0 10px;background:var(--surf-2);border:1px solid var(--line);border-radius:8px;color:var(--ink);font-family:'Sora'">
+      ${opt('Sucursales',D.sucursales,'sucursal')}${opt('Jefes de Crédito (JC)',D.jcs,'jc')}${opt('Supervisores',D.supervisores,'supervisor')}
+    </select>
+    <label style="font-size:.78rem;color:var(--dim)">Monto</label>
+    <input id="fl-do-m" type="number" inputmode="numeric" placeholder="$" style="width:100%;padding:10px;margin:4px 0 10px;background:var(--surf-2);border:1px solid var(--line);border-radius:8px;color:var(--ink);font-family:'Sora'">
+    <label style="font-size:.78rem;color:var(--dim)">Nota (opcional)</label>
+    <input id="fl-do-n" placeholder="Ej. dotación para entregas del día" style="width:100%;padding:10px;margin:4px 0 14px;background:var(--surf-2);border:1px solid var(--line);border-radius:8px;color:var(--ink);font-family:'Sora'">
+    <div style="display:flex;gap:10px"><button class="btn" style="flex:1" onclick="this.closest('.flmodal').remove()">Cancelar</button><button class="btn gold" style="flex:1" onclick="flDotarOK(this)">Dotar efectivo</button></div>`);
+  if(!D.sucursales.length&&!D.jcs.length&&!D.supervisores.length){ document.getElementById('fl-do-d').innerHTML='<option value="">No hay destinos dados de alta</option>'; }
+}
+async function flDotarOK(b){ const sel=document.getElementById('fl-do-d').value, monto=+document.getElementById('fl-do-m').value, nota=document.getElementById('fl-do-n').value;
+  if(!sel){ alert('Elige un destino'); return; } if(!(monto>0)){ alert('Indica un monto válido'); return; }
+  const [destinoTipo,destinoId]=sel.split(':'); b.disabled=true;
+  try{ await apiU('POST','/api/flujo/dotacion',{destinoTipo,destinoId:+destinoId,monto,nota}); b.closest('.flmodal').remove(); await cargarFlujo(); }catch(e){ alert(e.message); b.disabled=false; } }
 function ecImprimir(){
   if(!ecActual||!_ecLib) return; const c=ecActual, L=_ecLib;
   const filas=L.rows.map(m=>`<tr><td>${m.fecha}</td><td>${m.concepto}</td><td style="text-align:right">${m.cargo?fmt(m.cargo):''}</td><td style="text-align:right">${m.abono?fmt(m.abono):''}</td><td style="text-align:right">${fmt(m.saldo)}</td></tr>`).join('');
@@ -1597,7 +1710,7 @@ function sim(){const t=$('s-tipo').value,monto=+$('s-monto').value||0,plazo=+$('
 }
 
 /* NAV + EVENTOS */
-const titles={resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo']};
+const titles={resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],flujo:['Flujo / Tesorería','Efectivo del admin · dotación a la operación, nómina y capital'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo']};
 document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
   document.querySelectorAll('.navitem').forEach(x=>x.classList.remove('on'));
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
@@ -1610,6 +1723,7 @@ document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
   if(n.dataset.v==='estado') ecInit();
   if(n.dataset.v==='conciliacion') cargarCortes();
   if(n.dataset.v==='reportes') renderReportesLive();
+  if(n.dataset.v==='flujo') cargarFlujo();
   if(n.dataset.v==='transferencias'){ _trSel.clear(); trInit(); $('tr-resultados').innerHTML='<div style="color:var(--faint);padding:12px;font-size:.85rem">Elige un cobrador o busca un cliente para empezar.</div>'; $('tr-toolbar').style.display='none'; $('tr-batchbar').style.display='none'; trCargarLog(); }
   if(n.dataset.v==='simulador') initTarifas();
   if(n.dataset.v==='mapa') initMapa();
@@ -1760,6 +1874,7 @@ document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{
 const rolLbl = {admin:'Administrador',supervisor:'Supervisor',sucursal:'Sucursal',cobrador:'Cobrador',jc:'JC (Jefe de Crédito)'};
 let _sucursales = [];
 if(ME) document.getElementById('meName').textContent = ME.nombre + ' · ' + (rolLbl[ME.rol]||ME.rol);
+if(ME && ME.rol!=='admin'){ var _nf=document.getElementById('nav-flujo'); if(_nf) _nf.style.display='none'; }
 async function cargarUsuarios(){
   try{
     _sucursales = await apiU('GET','/api/sucursales');
