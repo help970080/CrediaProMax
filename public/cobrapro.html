@@ -25,17 +25,17 @@
 
   /* SIDEBAR */
   aside{width:236px;flex-shrink:0;background:linear-gradient(180deg,var(--surf),var(--bg));border-right:1px solid var(--line);padding:20px 14px;display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
-  .logo{display:flex;align-items:center;gap:11px;padding:4px 8px 20px;border-bottom:1px solid var(--line);margin-bottom:14px}
+  .logo{display:flex;align-items:center;gap:11px;padding:4px 8px 20px;border-bottom:1px solid var(--line);margin-bottom:14px;flex-shrink:0}
   .logo .mk{width:38px;height:38px;border-radius:10px;background:linear-gradient(140deg,var(--acc),var(--acc-d));display:grid;place-items:center;font-weight:700;color:#1a1408;font-size:19px;box-shadow:0 4px 16px rgba(240,180,41,.28)}
   .logo h1{font-size:1.08rem;font-weight:700;line-height:1}
   .logo span{font-size:.66rem;color:var(--faint);letter-spacing:.08em;text-transform:uppercase}
-  nav{display:flex;flex-direction:column;gap:2px;flex:1}
+  nav{display:flex;flex-direction:column;gap:2px;flex:1;overflow-y:auto;min-height:0}
   .nav-lbl{font-size:.64rem;color:var(--faint);text-transform:uppercase;letter-spacing:.1em;padding:14px 12px 6px}
   .navitem{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:9px;color:var(--dim);font-size:.88rem;font-weight:500;cursor:pointer;border:none;background:none;text-align:left;width:100%;transition:.13s}
   .navitem:hover{background:var(--surf-2);color:var(--txt)}
   .navitem.on{background:var(--acc);color:#1a1408;font-weight:600}
   .navitem .ic{width:18px;text-align:center;font-size:1rem}
-  .side-foot{border-top:1px solid var(--line);padding-top:12px;font-size:.74rem;color:var(--faint)}
+  .side-foot{border-top:1px solid var(--line);padding-top:12px;margin-top:10px;font-size:.74rem;color:var(--faint);flex-shrink:0}
   .live{display:flex;align-items:center;gap:7px;color:var(--dim)}
   .dot{width:8px;height:8px;border-radius:50%;background:var(--grn);animation:pulse 2s infinite}
   @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(62,207,142,.5)}70%{box-shadow:0 0 0 7px rgba(62,207,142,0)}100%{box-shadow:0 0 0 0 rgba(62,207,142,0)}}
@@ -205,8 +205,8 @@
     <div class="live"><span class="dot"></span> Sincronizado en vivo</div>
     <div class="mono" id="clock" style="margin-top:6px;font-size:.72rem"></div>
     <div id="meBox" style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;gap:8px">
-      <span id="meName" style="color:var(--dim);font-size:.74rem"></span>
-      <button onclick="salir()" style="background:none;border:1px solid var(--line-2);color:var(--faint);font-family:'Sora';font-size:.72rem;padding:4px 9px;border-radius:7px;cursor:pointer">Salir</button>
+      <span id="meName" style="color:var(--dim);font-size:.74rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+      <button onclick="salir()" style="flex-shrink:0;background:var(--surf-2);border:1px solid var(--line-2);color:var(--dim);font-family:'Sora';font-weight:600;font-size:.74rem;padding:7px 14px;border-radius:8px;cursor:pointer">↩ Salir</button>
     </div>
   </div>
 </aside>
@@ -797,6 +797,7 @@ async function verEvidencia(saleId){
         <div><div style="font-size:.72rem;color:var(--dim);margin-bottom:5px">🏠 Fachada / casa</div>${e.fotoCasa?`<img src="${e.fotoCasa}" style="width:100%;border-radius:10px;border:1px solid var(--line);cursor:zoom-in" onclick="window.open().document.write('<img src=\\''+this.src+'\\' style=max-width:100%>')">`:'<div style="color:var(--faint);font-size:.8rem">Sin foto</div>'}</div>
         <div><div style="font-size:.72rem;color:var(--dim);margin-bottom:5px">🧍 Cliente</div>${e.fotoCliente?`<img src="${e.fotoCliente}" style="width:100%;border-radius:10px;border:1px solid var(--line);cursor:zoom-in" onclick="window.open().document.write('<img src=\\''+this.src+'\\' style=max-width:100%>')">`:'<div style="color:var(--faint);font-size:.8rem">Sin foto</div>'}</div>
       </div>
+      ${e.firma?`<div style="margin-top:14px"><div style="font-size:.72rem;color:var(--dim);margin-bottom:5px">✍️ Firma del pagaré (cliente)</div><img src="${e.firma}" style="width:100%;max-height:170px;object-fit:contain;background:#fff;border-radius:10px;border:1px solid var(--line)"></div>`:'<div style="margin-top:14px;font-size:.78rem;color:var(--faint)">Sin firma de pagaré registrada</div>'}
       <div style="margin-top:14px">${ubic}</div></div>`;
     document.body.appendChild(ov);
   }catch(e){ alert(e.message); }

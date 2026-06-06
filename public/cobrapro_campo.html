@@ -265,6 +265,7 @@ async function verEvidencia(saleId){
       <div style="font-size:.78rem;color:var(--dim);margin-bottom:12px">${d.cliente} · ${d.folio}${e.fecha?' · '+new Date(e.fecha).toLocaleDateString('es-MX'):''}</div>
       <div style="font-size:.72rem;color:var(--dim);margin-bottom:4px">🏠 Fachada / casa</div>${e.fotoCasa?`<img src="${e.fotoCasa}" style="width:100%;border-radius:10px;margin-bottom:12px">`:'<div style="color:var(--faint);font-size:.8rem;margin-bottom:12px">Sin foto</div>'}
       <div style="font-size:.72rem;color:var(--dim);margin-bottom:4px">🧍 Cliente</div>${e.fotoCliente?`<img src="${e.fotoCliente}" style="width:100%;border-radius:10px;margin-bottom:12px">`:'<div style="color:var(--faint);font-size:.8rem;margin-bottom:12px">Sin foto</div>'}
+      ${e.firma?`<div style="font-size:.72rem;color:var(--dim);margin-bottom:4px">✍️ Firma del pagaré</div><img src="${e.firma}" style="width:100%;max-height:150px;object-fit:contain;background:#fff;border-radius:10px;margin-bottom:12px;border:1px solid var(--line)">`:''}
       <div>${ubic}</div></div>`;
     document.body.appendChild(ov);
   }catch(e){ toast(e.message); }

@@ -536,7 +536,63 @@ async function crearCredito(){
     ['n-cli','n-tel','n-calle','n-col','n-ref','n-curp','n-ciudad','n-estado'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
     render(); _buscar();
     toast(`✓ ${d.folio} capturado · cuota ${fmt(d.cuota)} · en ruta de ${prom.split(' ')[0]}`);
+    mostrarPagareCapturado(d.id, d.folio);
   }catch(e){ toast(e.message); }
+}
+function mostrarPagareCapturado(saleId, folio){
+  document.getElementById('overlay').innerHTML=`<div class="modal">
+    <h3 style="color:var(--grn)">✓ Crédito ${folio} capturado</h3>
+    <div style="font-size:.85rem;line-height:1.6;color:var(--dim);margin:10px 0 4px">El crédito entró a la ruta y a la cola de entrega del JC. Imprime el pagaré para que el cliente lo firme físicamente.</div>
+    <div class="modal-actions" style="margin-top:14px">
+      <button class="ma" onclick="cerrar()">Listo</button>
+      <button class="ma ok" style="background:var(--acc);border-color:var(--acc);color:#1b2330" onclick="imprimirPagare(${saleId})">🖨 Imprimir pagaré</button>
+    </div>
+  </div>`;
+  document.getElementById('overlay').classList.add('on');
+}
+function numeroALetras(num){
+  const u=['','UNO','DOS','TRES','CUATRO','CINCO','SEIS','SIETE','OCHO','NUEVE','DIEZ','ONCE','DOCE','TRECE','CATORCE','QUINCE','DIECISÉIS','DIECISIETE','DIECIOCHO','DIECINUEVE'];
+  const d=['','','VEINTE','TREINTA','CUARENTA','CINCUENTA','SESENTA','SETENTA','OCHENTA','NOVENTA'];
+  const ce=['','CIENTO','DOSCIENTOS','TRESCIENTOS','CUATROCIENTOS','QUINIENTOS','SEISCIENTOS','SETECIENTOS','OCHOCIENTOS','NOVECIENTOS'];
+  function cent(n){ if(n===0)return''; if(n===100)return'CIEN'; let r=''; const c=Math.floor(n/100),resto=n%100,de=Math.floor(resto/10),un=resto%10; if(c)r+=ce[c]+' '; if(resto<20)r+=u[resto]; else if(resto<30)r+=(resto===20?'VEINTE':'VEINTI'+u[un]); else {r+=d[de]; if(un)r+=' Y '+u[un];} return r.trim(); }
+  function mil(n){ if(n<1000)return cent(n); const m=Math.floor(n/1000),r=n%1000; let t=m===1?'MIL':cent(m)+' MIL'; if(r)t+=' '+cent(r); return t; }
+  function mill(n){ if(n<1000000)return mil(n); const m=Math.floor(n/1000000),r=n%1000000; let t=m===1?'UN MILLÓN':mil(m)+' MILLONES'; if(r)t+=' '+mil(r); return t; }
+  const e=Math.floor(num),c=Math.round((num-e)*100);
+  return (e===0?'CERO':mill(e))+' PESOS '+String(c).padStart(2,'0')+'/100 M.N.';
+}
+async function imprimirPagare(saleId){
+  let d; try{ d=await api('GET','/api/sales/'+saleId+'/pagare'); }catch(e){ toast(e.message); return; }
+  const f=d.fecha?new Date(d.fecha):new Date();
+  const fechaTxt=f.toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
+  const M=n=>'$'+Math.round(n||0).toLocaleString('es-MX');
+  const ppTxt=d.descuentaPP?` El primer pago de ${M(d.primerPago)} se descuenta al inicio; el cliente recibe ${M(d.entregaMonto)}.`:'';
+  const html=`<html><head><title>Pagaré ${d.folio}</title><style>
+    @page{margin:18mm}
+    body{font-family:'Times New Roman',Georgia,serif;color:#111;font-size:13px;line-height:1.7;max-width:720px;margin:0 auto;padding:10px}
+    .tit{text-align:center;font-size:22px;font-weight:bold;letter-spacing:3px;margin:0 0 4px}
+    .top{display:flex;justify-content:space-between;font-size:13px;margin:14px 0;border-bottom:2px solid #111;padding-bottom:6px}
+    .bueno{border:2px solid #111;padding:4px 10px;font-weight:bold}
+    .lugar{font-size:12px;margin:10px 0;text-align:right}
+    p{margin:12px 0;text-align:justify}
+    .susc{margin-top:20px;font-size:12.5px;line-height:1.9}
+    .firma{margin-top:60px;text-align:center}
+    .firma .l{border-top:1px solid #111;width:300px;margin:0 auto;padding-top:6px;font-size:12px}
+    @media print{button{display:none}}
+  </style></head><body onload="window.print()">
+    <div class="tit">PAGARÉ</div>
+    <div class="top"><span><b>Folio:</b> ${d.folio}</span><span class="bueno">Bueno por ${M(d.total)} M.N.</span></div>
+    <div class="lugar">${d.lugar||''}, a ${fechaTxt}.</div>
+    <p>Debo y pagaré incondicionalmente a la orden de <b>${d.acreedor}</b>, en esta ciudad o en el lugar que se me requiera, la cantidad de <b>${M(d.total)}</b> (<b>${numeroALetras(d.total)}</b>), valor recibido a mi entera satisfacción, que me obligo a cubrir en <b>${d.pagos}</b> pagos ${d.freq} de <b>${M(d.cuota)}</b> cada uno, a partir de la fecha de suscripción del presente.${ppTxt}</p>
+    <p style="font-size:12px;color:#333">En caso de mora, este pagaré causará intereses moratorios a la tasa pactada, desde la fecha de vencimiento hasta su total liquidación, conforme a los artículos 170 y demás relativos de la Ley General de Títulos y Operaciones de Crédito.</p>
+    <div class="susc"><b>SUSCRIPTOR (DEUDOR):</b><br>
+      Nombre: ${d.cliente.nombre}<br>
+      Domicilio: ${d.cliente.domicilio}<br>
+      CURP: ${d.cliente.curp||'________________'} &nbsp; Teléfono: ${d.cliente.tel||'____________'}</div>
+    <div class="firma"><div class="l">Firma del suscriptor</div></div>
+  </body></html>`;
+  const w=window.open('','_blank'); if(!w){ toast('Permite las ventanas emergentes para imprimir'); return; }
+  w.document.write(html); w.document.close();
+  cerrar();
 }
 function render(){
   document.getElementById('k-cob').textContent=fmt(caja.efectivo+caja.banco);

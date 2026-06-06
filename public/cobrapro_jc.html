@@ -139,9 +139,9 @@ function verFoto(src){ const ov=document.createElement('div'); ov.className='ov'
   ov.innerHTML=`<img src="${src}" style="max-width:92%;max-height:88vh;border-radius:12px">`; document.body.appendChild(ov); }
 
 /* ===== Entrega con evidencia ===== */
-let _ent={saleId:null,fotoCasa:null,fotoCliente:null,lat:null,lng:null};
+let _ent={saleId:null,fotoCasa:null,fotoCliente:null,lat:null,lng:null,firma:null};
 function abrirEntrega(saleId,cliente,monto){
-  _ent={saleId,fotoCasa:null,fotoCliente:null,lat:null,lng:null};
+  _ent={saleId,fotoCasa:null,fotoCliente:null,lat:null,lng:null,firma:null};
   const ov=document.createElement('div'); ov.className='ov'; ov.id='ent-ov';
   ov.innerHTML=`<div class="sheet">
     <h3>Entregar crédito</h3>
@@ -152,6 +152,7 @@ function abrirEntrega(saleId,cliente,monto){
       <input type="file" accept="image/*" capture="environment" style="display:none" onchange="leerFoto(this,'cliente')"></label>
     <button class="btn full" id="geo-btn" onclick="capturarGeo()">📍 Capturar ubicación GPS</button>
     <div class="geo" id="geo-txt">Ubicación: sin capturar</div>
+    <button class="foto-btn" id="fb-pag" style="width:100%;justify-content:flex-start" onclick="abrirPagareFirma()"><span class="ic">📄</span><span id="fb-pag-t">Pagaré — firma del cliente</span></button>
     <button class="btn vio full" id="ent-ok" onclick="confirmarEntrega(this)">Confirmar entrega</button>
     <button class="btn full" onclick="document.getElementById('ent-ov').remove()">Cancelar</button>
   </div>`;
@@ -181,11 +182,69 @@ function capturarGeo(){
 }
 async function confirmarEntrega(btn){
   if(!_ent.fotoCasa||!_ent.fotoCliente){ toast('Faltan las fotos: casa y cliente'); return; }
+  if(!_ent.firma){ toast('Falta la firma del pagaré del cliente'); return; }
   btn.disabled=true; btn.textContent='Enviando…';
   try{
-    await api('POST','/api/sales/'+_ent.saleId+'/entregar',{lat:_ent.lat,lng:_ent.lng,fotoCasa:_ent.fotoCasa,fotoCliente:_ent.fotoCliente});
-    document.getElementById('ent-ov').remove(); toast('Crédito entregado con evidencia'); await cargar();
+    await api('POST','/api/sales/'+_ent.saleId+'/entregar',{lat:_ent.lat,lng:_ent.lng,fotoCasa:_ent.fotoCasa,fotoCliente:_ent.fotoCliente,firma:_ent.firma});
+    document.getElementById('ent-ov').remove(); toast('Crédito entregado · pagaré firmado'); await cargar();
   }catch(e){ toast(e.message); btn.disabled=false; btn.textContent='Confirmar entrega'; }
+}
+function numeroALetras(num){
+  const u=['','UNO','DOS','TRES','CUATRO','CINCO','SEIS','SIETE','OCHO','NUEVE','DIEZ','ONCE','DOCE','TRECE','CATORCE','QUINCE','DIECISÉIS','DIECISIETE','DIECIOCHO','DIECINUEVE'];
+  const d=['','','VEINTE','TREINTA','CUARENTA','CINCUENTA','SESENTA','SETENTA','OCHENTA','NOVENTA'];
+  const ce=['','CIENTO','DOSCIENTOS','TRESCIENTOS','CUATROCIENTOS','QUINIENTOS','SEISCIENTOS','SETECIENTOS','OCHOCIENTOS','NOVECIENTOS'];
+  function cent(n){ if(n===0)return''; if(n===100)return'CIEN'; let r=''; const c=Math.floor(n/100),resto=n%100,de=Math.floor(resto/10),un=resto%10; if(c)r+=ce[c]+' '; if(resto<20)r+=u[resto]; else if(resto<30)r+=(resto===20?'VEINTE':'VEINTI'+u[un]); else {r+=d[de]; if(un)r+=' Y '+u[un];} return r.trim(); }
+  function mil(n){ if(n<1000)return cent(n); const m=Math.floor(n/1000),r=n%1000; let t=m===1?'MIL':cent(m)+' MIL'; if(r)t+=' '+cent(r); return t; }
+  function mill(n){ if(n<1000000)return mil(n); const m=Math.floor(n/1000000),r=n%1000000; let t=m===1?'UN MILLÓN':mil(m)+' MILLONES'; if(r)t+=' '+mil(r); return t; }
+  const e=Math.floor(num),c=Math.round((num-e)*100);
+  return (e===0?'CERO':mill(e))+' PESOS '+String(c).padStart(2,'0')+'/100 M.N.';
+}
+async function abrirPagareFirma(){
+  let d; try{ d=await api('GET','/api/sales/'+_ent.saleId+'/pagare'); }catch(e){ toast(e.message); return; }
+  const f=d.fecha?new Date(d.fecha):new Date();
+  const fechaTxt=f.toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
+  const M=n=>'$'+Math.round(n||0).toLocaleString('es-MX');
+  const ppTxt = d.descuentaPP ? ` El primer pago de ${M(d.primerPago)} se descuenta al inicio; el cliente recibe ${M(d.entregaMonto)}.` : '';
+  const ov=document.createElement('div'); ov.className='ov'; ov.id='pag-ov'; ov.style.alignItems='flex-start';
+  ov.innerHTML=`<div class="sheet" style="max-height:96vh">
+    <h3>📄 Pagaré</h3>
+    <div style="background:#fff;color:#1b2330;border:1px solid var(--line);border-radius:10px;padding:14px;font-size:.8rem;line-height:1.5;max-height:46vh;overflow:auto">
+      <div style="text-align:center;font-weight:700;letter-spacing:.04em">PAGARÉ</div>
+      <div style="display:flex;justify-content:space-between;margin:6px 0;font-size:.74rem"><span><b>Folio:</b> ${d.folio}</span><span><b>Bueno por:</b> ${M(d.total)}</span></div>
+      <div style="font-size:.74rem;margin-bottom:6px">${d.lugar||''}, a ${fechaTxt}</div>
+      <p style="margin:6px 0">Debo y pagaré incondicionalmente a la orden de <b>${d.acreedor}</b> la cantidad de <b>${M(d.total)}</b> (${numeroALetras(d.total)}), valor recibido a mi entera satisfacción, que me obligo a cubrir en <b>${d.pagos}</b> pagos ${d.freq} de <b>${M(d.cuota)}</b> cada uno.${ppTxt}</p>
+      <p style="margin:6px 0;font-size:.72rem;color:#5b6675">En caso de mora, este pagaré causará intereses moratorios a la tasa pactada hasta su total liquidación.</p>
+      <div style="margin-top:8px;font-size:.74rem"><b>Suscriptor:</b> ${d.cliente.nombre}<br><b>Domicilio:</b> ${d.cliente.domicilio}<br><b>CURP:</b> ${d.cliente.curp||'—'} · <b>Tel:</b> ${d.cliente.tel||'—'}</div>
+    </div>
+    <div style="font-size:.78rem;color:var(--dim);margin:12px 0 5px">Firma del cliente (firme con el dedo):</div>
+    <canvas id="firma-pad" width="600" height="220" style="width:100%;height:160px;background:#fff;border:1.5px dashed var(--line);border-radius:10px;touch-action:none"></canvas>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn full" onclick="limpiarFirma()">Borrar firma</button>
+      <button class="btn grn full" onclick="guardarFirma()">✓ Guardar firma</button>
+    </div>
+    <button class="btn full" style="margin-top:8px" onclick="document.getElementById('pag-ov').remove()">Cerrar</button>
+  </div>`;
+  document.body.appendChild(ov);
+  initFirmaPad(document.getElementById('firma-pad'));
+}
+let _firmaCanvas=null;
+function initFirmaPad(canvas){
+  _firmaCanvas=canvas; const ctx=canvas.getContext('2d'); ctx.lineWidth=2.5; ctx.lineCap='round'; ctx.strokeStyle='#111';
+  let drawing=false,last=null;
+  const pos=e=>{ const r=canvas.getBoundingClientRect(); const t=e.touches?e.touches[0]:e; return {x:(t.clientX-r.left)*(canvas.width/r.width),y:(t.clientY-r.top)*(canvas.height/r.height)}; };
+  const start=e=>{drawing=true;last=pos(e);e.preventDefault();};
+  const move=e=>{ if(!drawing)return; const p=pos(e); ctx.beginPath(); ctx.moveTo(last.x,last.y); ctx.lineTo(p.x,p.y); ctx.stroke(); last=p; e.preventDefault(); };
+  const end=()=>{drawing=false;};
+  canvas.addEventListener('mousedown',start); canvas.addEventListener('mousemove',move); window.addEventListener('mouseup',end);
+  canvas.addEventListener('touchstart',start,{passive:false}); canvas.addEventListener('touchmove',move,{passive:false}); canvas.addEventListener('touchend',end);
+  canvas._empty=()=>{ const px=ctx.getImageData(0,0,canvas.width,canvas.height).data; for(let i=3;i<px.length;i+=4){ if(px[i]>0) return false; } return true; };
+}
+function limpiarFirma(){ if(_firmaCanvas){ _firmaCanvas.getContext('2d').clearRect(0,0,_firmaCanvas.width,_firmaCanvas.height); } }
+function guardarFirma(){
+  if(!_firmaCanvas || _firmaCanvas._empty()){ toast('El cliente debe firmar primero'); return; }
+  _ent.firma=_firmaCanvas.toDataURL('image/png');
+  document.getElementById('fb-pag').classList.add('ok'); document.getElementById('fb-pag-t').textContent='✓ Pagaré firmado';
+  document.getElementById('pag-ov').remove(); toast('Firma guardada');
 }
 cargar();
 setInterval(cargar,30000);
