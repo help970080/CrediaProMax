@@ -399,6 +399,13 @@ app.post('/api/jc-entregas', auth, rol('cobrador', 'sucursal'), (req, res) => {
     let restante = m;
     for (const pe of mis) { if (restante <= 0) break; const take = Math.min(pe.monto, restante); pe.monto -= take; restante -= take; }
     db.porEntregar = db.porEntregar.filter(p => p.monto > 0.5);
+  } else if (req.user.rol === 'sucursal') {
+    // sale de la caja física de la sucursal
+    const sid = String(me ? me.sucursalId : (req.user.sucursalId || 1));
+    db.caja[sid] = db.caja[sid] || { inicial: 0, efectivo: 0, banco: 0, entregas: 0, retiros: 0 };
+    const disp = (db.caja[sid].inicial || 0) + (db.caja[sid].efectivo || 0) + (db.caja[sid].entregas || 0) - (db.caja[sid].retiros || 0);
+    if (m > disp + 0.5) return res.status(409).json({ error: `La caja solo tiene $${Math.round(disp).toLocaleString('es-MX')} en efectivo; no puedes asignar $${Math.round(m).toLocaleString('es-MX')} al JC.` });
+    db.caja[sid].retiros = (db.caja[sid].retiros || 0) + m;
   }
   const ent = { id: nextId('jcEntregas'), cobradorId: req.user.id, cobradorNombre: req.user.nombre, jcId: jc.id, jcNombre: jc.nombre, monto: m, nota: nota || '', estado: 'pendiente', sucursalId: me ? me.sucursalId : null, fechaDDMM: fechaMxHoyDDMM(), creadoEn: new Date().toISOString() };
   db.jcEntregas.push(ent); saveDB();
@@ -505,7 +512,15 @@ app.patch('/api/clients/:id', auth, rol('admin', 'supervisor'), (req, res) => {
   const id = +req.params.id;
   const c = db.clients.find(x => x.id === id);
   if (!c) return res.status(404).json({ error: 'Cliente no encontrado' });
-  const { nombre, tel, calle, col, prom, sucursalId } = req.body;
+  const { nombre, tel, calle, col, ciudad, estado, curp, prom, sucursalId } = req.body;
+  if (ciudad !== undefined) c.ciudad = ciudad;
+  if (estado !== undefined) c.estado = estado;
+  if (curp !== undefined) {
+    const cn = String(curp || '').trim().toUpperCase();
+    if (cn && !/^[A-Z]{4}\d{6}[A-Z0-9]{8}$/.test(cn)) return res.status(400).json({ error: 'La CURP no tiene formato válido (18 caracteres).' });
+    if (cn) { const dupC = db.clients.find(x => x.id !== id && x.activo !== false && (x.curp || '').trim().toUpperCase() === cn); if (dupC) return res.status(409).json({ error: `La CURP ${cn} ya pertenece a "${dupC.nombre}".` }); }
+    c.curp = cn;
+  }
   // si cambia el teléfono, validar que no choque con otro cliente activo
   if (tel !== undefined && tel !== c.tel) {
     const telNorm = String(tel || '').replace(/\D/g, '');
@@ -532,7 +547,7 @@ app.patch('/api/clients/:id', auth, rol('admin', 'supervisor'), (req, res) => {
   res.json({ ok: true, cliente: c });
 });
 app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
-  const { nombre, tel, calle, col, sucursalId, prom, tipo, plazo, monto, dias, force, clienteExistenteId } = req.body;
+  const { nombre, tel, calle, col, ciudad, estado, curp, sucursalId, prom, tipo, plazo, monto, dias, force, clienteExistenteId } = req.body;
 
   let client;
   if (clienteExistenteId) {
@@ -543,6 +558,26 @@ app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) 
       return res.status(403).json({ error: `Ese cliente pertenece a otra sucursal. No puedes agregarle créditos desde aquí.` });
   } else {
     if (!nombre || !calle || !col) return res.status(400).json({ error: 'Domicilio (calle y colonia) obligatorio en la venta' });
+    const curpNorm = String(curp || '').trim().toUpperCase();
+    // Validación por CURP: evita registrar dos veces a la misma persona
+    if (curpNorm && !force) {
+      if (!/^[A-Z]{4}\d{6}[A-Z0-9]{8}$/.test(curpNorm))
+        return res.status(400).json({ error: 'curp_invalida', detalle: 'La CURP no tiene el formato válido (18 caracteres del INE). Verifícala.' });
+      const dupC = db.clients.find(c => c.activo !== false && (c.curp || '').trim().toUpperCase() === curpNorm);
+      if (dupC) {
+        const sucDup = db.sucursales.find(s => s.id === dupC.sucursalId);
+        const credAct = db.sales.find(s => s.clientId === dupC.id && saldoDe(s.id) > 0);
+        const mismaSuc = String(dupC.sucursalId) === String(sucursalId || req.user.sucursalId || 1);
+        return res.status(409).json({
+          error: 'cliente_duplicado', porCurp: true,
+          detalle: `La CURP ${curpNorm} ya está registrada a nombre de "${dupC.nombre}"${sucDup ? ' (sucursal ' + sucDup.nombre + ')' : ''}.` +
+            (credAct ? ` Tiene un crédito ACTIVO ${credAct.folio} con saldo $${Math.round(saldoDe(credAct.id))}${!mismaSuc ? ' en OTRA sucursal' : ''}.` : ' Sin crédito activo.'),
+          clienteExistente: { id: dupC.id, nombre: dupC.nombre, sucursalId: dupC.sucursalId, sucursal: sucDup ? sucDup.nombre : null, tieneCreditoActivo: !!credAct, folioActivo: credAct ? credAct.folio : null, otraSucursal: !mismaSuc, mismaSucursal: mismaSuc },
+          puedeForzar: req.user.rol === 'admin' || req.user.rol === 'supervisor',
+          puedeAgregar: req.user.rol !== 'sucursal' || mismaSuc
+        });
+      }
+    }
     // Validación: teléfono ya ocupado por otro cliente / crédito activo
     const telNorm = String(tel || '').replace(/\D/g, '');
     if (telNorm.length >= 10 && !force) {
@@ -562,7 +597,7 @@ app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) 
       }
     }
     const sucFinal = req.user.rol === 'sucursal' ? (req.user.sucursalId || 1) : (sucursalId || req.user.sucursalId || 1);
-    client = { id: nextId('clients'), nombre, tel: tel || '', calle, col, sucursalId: sucFinal, prom: prom || '' };
+    client = { id: nextId('clients'), nombre, tel: tel || '', calle, col, ciudad: ciudad || '', estado: estado || '', curp: String(curp || '').trim().toUpperCase(), sucursalId: sucFinal, prom: prom || '' };
     db.clients.push(client);
   }
 
@@ -1005,6 +1040,40 @@ app.get('/api/mi-corte', auth, (req, res) => {
   const fecha = fechaMxHoyISO();
   const corte = db.cortes.find(c => c.prom === req.user.nombre && c.fecha === fecha);
   res.json({ corte: corte || null });
+});
+// Cierre de caja de la SUCURSAL: cierra el corte, manda el efectivo al admin y deja la caja en ceros
+app.post('/api/caja/cierre', auth, rol('sucursal'), (req, res) => {
+  const me = db.users.find(u => u.id === req.user.id);
+  const sid = String(me ? me.sucursalId : (req.user.sucursalId || 1));
+  const suc = db.sucursales.find(s => String(s.id) === sid);
+  const c = db.caja[sid] || { inicial: 0, efectivo: 0, banco: 0, entregas: 0, retiros: 0 };
+  c.retiros = c.retiros || 0;
+  const efectivoReal = Math.max(0, (c.inicial || 0) + (c.efectivo || 0) + (c.entregas || 0) - c.retiros);
+  const banco = c.banco || 0;
+  const fecha = fechaMxHoyISO();
+  const tiene = efectivoReal > 0;
+  const corte = {
+    id: nextId('cortes'), tipo: 'sucursal', prom: (suc ? suc.nombre : 'Sucursal'), sucursalId: +sid,
+    fecha, totalEfectivo: efectivoReal, efectivoBruto: efectivoReal, entregadoAlJC: 0, totalBanco: banco, npagos: 0,
+    horaEntrega: horaMxHHMM(), by: 'sucursal',
+    estado: tiene ? 'pendiente' : 'recibido',
+    recibidoAt: tiene ? null : new Date().toISOString(), recibidoBy: tiene ? null : 'sin efectivo',
+    createdAt: new Date().toISOString()
+  };
+  db.cortes.push(corte);
+  // dejar la caja en ceros (el efectivo cerrado ya quedó en el corte para el admin)
+  db.caja[sid] = { inicial: 0, efectivo: 0, banco: 0, entregas: 0, retiros: 0 };
+  saveDB();
+  res.json({ ok: true, corte, efectivoCerrado: efectivoReal, banco });
+});
+// El admin/supervisor recibe (confirma) un corte pendiente — sirve para cobradores y sucursales
+app.post('/api/cortes/:id/recibir', auth, rol('admin', 'supervisor'), (req, res) => {
+  const c = db.cortes.find(x => x.id == req.params.id);
+  if (!c) return res.status(404).json({ error: 'Corte no encontrado' });
+  if (c.estado === 'recibido') return res.status(409).json({ error: 'Ese corte ya estaba recibido' });
+  c.estado = 'recibido'; c.recibidoAt = new Date().toISOString(); c.recibidoBy = req.user.nombre;
+  saveDB();
+  res.json({ ok: true });
 });
 app.get('/api/cortes', auth, (req, res) => {
   const { fecha, prom } = req.query;
