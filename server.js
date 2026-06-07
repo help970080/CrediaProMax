@@ -1465,6 +1465,24 @@ app.get('/api/ubicacion/equipo', auth, rol('admin', 'supervisor'), (req, res) =>
 });
 
 // ===== REPORTE DE ENTREGAS (de todos) — fin =====
+// Limpia los datos de PRUEBA de la agencia actual (conserva usuarios, sucursales y configuración)
+app.post('/api/admin/reset-datos', auth, rol('admin'), (req, res) => {
+  if (req.body.confirmar !== 'BORRAR') return res.status(400).json({ error: "Para confirmar envía { confirmar: 'BORRAR' }" });
+  db.clients = [];
+  db.sales = [];
+  db.movimientos = [];
+  db.caja = {};
+  db.porEntregar = [];
+  db.cortes = [];
+  db.recolecciones = [];
+  db.jcEntregas = [];
+  db.jcCierres = [];
+  db.flujo = [];
+  db.transferencias = [];
+  db.ubicaciones = {};
+  saveDB();
+  res.json({ ok: true, mensaje: 'Datos de prueba borrados. Se conservaron usuarios, sucursales y configuración.' });
+});
 app.post('/api/recoleccion', auth, rol('admin', 'supervisor'), (req, res) => {
   const { tipo, ref, motivo } = req.body;
   const fecha = new Date().toISOString();
