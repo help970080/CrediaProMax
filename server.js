@@ -17,7 +17,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'cobrapro_dev_secret_cambiame';
 const DB_FILE = path.join(__dirname, 'db.json');
 
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json());
+app.use(express.json({ limit: '12mb' }));
 const PUBLIC_DIR = path.join(__dirname, 'public');
 app.use(express.static(PUBLIC_DIR, {
   setHeaders: (res, path) => {
@@ -1483,6 +1483,76 @@ app.post('/api/admin/reset-datos', auth, rol('admin'), (req, res) => {
   saveDB();
   res.json({ ok: true, mensaje: 'Datos de prueba borrados. Se conservaron usuarios, sucursales y configuración.' });
 });
+// ===== IMPORTACIÓN MASIVA (migración de base existente) =====
+// body: { commit:bool, confirmar:'IMPORTAR', password:'cobra2026', items:[{suc,sucCode,ruta,nombre,tel,domicilio,monto,total,cuota,saldo}] }
+function _slug(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''); }
+app.post('/api/admin/import-bulk', auth, rol('admin'), (req, res) => {
+  const items = Array.isArray(req.body.items) ? req.body.items : [];
+  if (!items.length) return res.status(400).json({ error: 'No se recibieron registros (items vacío).' });
+  const sucNames = [...new Set(items.map(i => i.suc).filter(Boolean))];
+  const rutas = [...new Set(items.map(i => i.suc + '||' + i.ruta))];
+  const sumaSaldo = items.reduce((a, i) => a + (+i.saldo || 0), 0);
+  const sucNuevas = sucNames.filter(n => !db.sucursales.find(s => (s.nombre || '').toLowerCase() === n.toLowerCase()));
+
+  if (!req.body.commit) {
+    return res.json({
+      preview: true,
+      sucursales: sucNames.length, sucursalesNuevas: sucNuevas.length,
+      cobradores: rutas.length, creditos: items.length, sumaSaldo,
+      porSucursal: sucNames.map(n => ({ sucursal: n, creditos: items.filter(i => i.suc === n).length, saldo: items.filter(i => i.suc === n).reduce((a, i) => a + (+i.saldo || 0), 0) })),
+      muestra: items.slice(0, 3)
+    });
+  }
+  if (req.body.confirmar !== 'IMPORTAR') return res.status(400).json({ error: "Para ejecutar envía commit:true y confirmar:'IMPORTAR'." });
+  const pass = (req.body.password && req.body.password.length >= 4) ? req.body.password : 'cobra2026';
+  const tid = als.getStore().tenantId;
+  SYS.userIndex = SYS.userIndex || {};
+
+  // 1) sucursales (find-or-create)
+  const sucId = {};
+  sucNames.forEach(n => {
+    let s = db.sucursales.find(x => (x.nombre || '').toLowerCase() === n.toLowerCase());
+    if (!s) { s = { id: nextId('sucursales'), nombre: n }; db.sucursales.push(s); }
+    sucId[n] = s.id;
+  });
+  // 2) cobradores (uno por ruta) — reutiliza si ya existe (permite carga por lotes)
+  const usados = new Set(Object.keys(SYS.userIndex).concat(db.users.map(u => u.usuario)));
+  const logins = [];
+  rutas.forEach(key => {
+    const [suc, ruta] = key.split('||');
+    let u = db.users.find(x => x.rol === 'cobrador' && x.nombre === ruta && x.sucursalId === sucId[suc]);
+    if (!u) {
+      let base = 'lf_' + _slug(ruta); let usuario = base, k = 1;
+      while (usados.has(usuario)) { usuario = base + (++k); }
+      usados.add(usuario);
+      u = { id: nextId('users'), nombre: ruta, usuario, rol: 'cobrador', sucursalId: sucId[suc], passwordHash: bcrypt.hashSync(pass, 8), activo: true, createdAt: new Date().toISOString() };
+      db.users.push(u); SYS.userIndex[usuario] = tid;
+    }
+    logins.push({ ruta, sucursal: suc, usuario: u.usuario });
+  });
+  // 3) clientes + créditos + saldo de apertura (folio continúa donde quedó por sucursal)
+  const seq = {}; let creados = 0;
+  const hoy = fechaMxHoyDDMM();
+  items.forEach(it => {
+    const sid = sucId[it.suc];
+    const client = { id: nextId('clients'), nombre: it.nombre, tel: it.tel || '', calle: it.domicilio || '—', col: '', ciudad: '', estado: '', curp: '', sucursalId: sid, prom: it.ruta };
+    db.clients.push(client);
+    const code = it.sucCode || 'GEN';
+    if (seq[code] == null) seq[code] = db.sales.filter(s => String(s.folio || '').startsWith('IMP-' + code + '-')).length;
+    seq[code]++;
+    const folio = 'IMP-' + code + '-' + String(seq[code]).padStart(4, '0');
+    const cuota = +it.cuota || 0, total = +it.total || +it.saldo || 0, saldo = +it.saldo || 0;
+    const plazo = cuota > 0 ? Math.max(1, Math.round(total / cuota)) : 1;
+    const sale = { id: nextId('sales'), folio, clientId: client.id, tipo: 'semanal', plazo, monto: +it.monto || 0, cuota, total, prom: it.ruta, sucursalId: sid, entregado: true, importado: true, createdAt: new Date().toISOString() };
+    db.sales.push(sale);
+    // saldo de apertura = saldo actual (snapshot). saldoDe() = cargo - abono = saldo
+    db.movimientos.push({ id: nextId('movimientos'), saleId: sale.id, fecha: hoy, concepto: 'Saldo inicial (migración)', origen: 'Importación', cargo: saldo, abono: 0 });
+    creados++;
+  });
+  saveDB(); saveSystem();
+  res.json({ ok: true, sucursales: sucNames.length, cobradores: rutas.length, creditos: creados, sumaSaldo, passwordCobradores: pass, logins });
+});
+
 app.post('/api/recoleccion', auth, rol('admin', 'supervisor'), (req, res) => {
   const { tipo, ref, motivo } = req.body;
   const fecha = new Date().toISOString();
@@ -1800,7 +1870,7 @@ app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, 
   res.json({ generadoEn: new Date().toISOString(), reportes });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'import-v2', importBulk: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
