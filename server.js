@@ -373,8 +373,6 @@ app.post('/api/clients/:id/ubicar', auth, rol('admin', 'supervisor'), (req, res)
    mandar User-Agent (header prohibido) y OSM bloquea el uso masivo => 0 ubicados.
    Aquí se hace en el backend con User-Agent válido, 1 req/seg, guardando el avance
    cada 10 clientes (reanudable si Render reinicia). ----------------------------- */
-const _geoJobs = {};   // {tenantId: {corriendo,total,hechos,ok,fail,mensaje}}
-const _sleep = ms => new Promise(r => setTimeout(r, ms));
 function _limpiaSuc(n) { return String(n || '').replace(/\s*\b(I{1,3}|IV|V|VI|\d+)\b\s*$/i, '').trim(); }
 async function _geocode(q) {
   try {
@@ -394,60 +392,58 @@ function _extraeColonia(s) {
   if (parts.length >= 2) { const last = parts[parts.length - 1]; if (last && !/^\d/.test(last)) return last; }
   return '';
 }
-async function _geoJob(tid, blob) {
-  const J = _geoJobs[tid] = { corriendo: true, total: 0, hechos: 0, ok: 0, fail: 0, mensaje: 'Preparando…' };
-  blob.geoCache = blob.geoCache || {};
-  const sucMap = {}; (blob.sucursales || []).forEach(s => sucMap[s.id] = s.nombre);
-  const pend = (blob.clients || []).filter(c =>
-    c.activo !== false && typeof c.lat !== 'number' &&
-    [c.calle, c.col, c.ciudad].filter(Boolean).length);
-  J.total = pend.length;
-  if (!J.total) { J.corriendo = false; J.mensaje = 'No hay clientes pendientes con dirección.'; return; }
-
-  // Agrupar por (colonia | municipio): geocodificamos solo zonas únicas, no cliente por cliente
+function _zonaKey(col, muni) { return (String(col || '') + '|' + String(muni || '')).toLowerCase(); }
+function _gruposPendientes() {
+  const sucMap = {}; (db.sucursales || []).forEach(s => sucMap[s.id] = s.nombre);
   const grupos = {};
-  for (const c of pend) {
+  for (const c of (db.clients || [])) {
+    if (c.activo === false || typeof c.lat === 'number') continue;
+    if (![c.calle, c.col, c.ciudad].filter(Boolean).length) continue;
     const muni = _limpiaSuc(sucMap[c.sucursalId] || '');
     const col = c.col || _extraeColonia(c.calle);
-    const key = (col + '|' + muni).toLowerCase();
+    const key = _zonaKey(col, muni);
     (grupos[key] = grupos[key] || { col, muni, clientes: [] }).clientes.push(c);
   }
-  const keys = Object.keys(grupos);
-  let zonasHechas = 0;
-  for (const key of keys) {
-    const g = grupos[key];
-    let r = blob.geoCache[key];
-    if (!r) {                                   // solo llamamos a OSM por zona nueva
-      r = await _geocode([g.col, g.muni, 'México'].filter(Boolean).join(', '));
-      if (!r && g.muni) r = await _geocode([g.muni, 'México'].join(', '));   // fallback al municipio
-      if (r) blob.geoCache[key] = r;
-      await _sleep(1100);                        // respeta 1/seg solo en zonas nuevas
-    }
-    for (const c of g.clientes) {
-      if (r) {
-        c.lat = r.lat + (Math.random() - 0.5) * 0.006;   // ~±300 m para que no se encimen
-        c.lng = r.lng + (Math.random() - 0.5) * 0.006;
-        c.geoSrc = 'zona'; J.ok++;
-      } else J.fail++;
-      J.hechos++;
-    }
-    zonasHechas++; J.mensaje = `Ubicando zonas ${zonasHechas}/${keys.length} · ${J.ok} clientes`;
-    try { saveRow(tid, blob); } catch (e) {}
-  }
-  try { saveRow(tid, blob); } catch (e) {}
-  J.corriendo = false; J.mensaje = `Listo: ${J.ok} ubicados, ${J.fail} sin ubicar (${keys.length} zonas).`;
+  return grupos;
 }
-app.post('/api/mapa/geocodificar/iniciar', auth, rol('admin', 'supervisor'), async (req, res) => {
-  const tid = req.user.tenantId;
-  if (tid == null) return res.status(400).json({ error: 'Sin agencia' });
-  if (_geoJobs[tid] && _geoJobs[tid].corriendo) return res.json({ ya: true, ..._geoJobs[tid] });
-  const blob = await getTenant(tid);
-  _geoJob(tid, blob);   // background, no await
-  res.json({ iniciado: true });
+function _asignaZona(clientes, r) {
+  let n = 0;
+  for (const c of clientes) {
+    c.lat = r.lat + (Math.random() - 0.5) * 0.006;   // ~±300 m para que no se encimen
+    c.lng = r.lng + (Math.random() - 0.5) * 0.006;
+    c.geoSrc = 'zona'; n++;
+  }
+  return n;
+}
+// Paso 1: coloca al instante las zonas ya cacheadas y devuelve las que faltan por geocodificar
+app.post('/api/mapa/geocode/preparar', auth, rol('admin', 'supervisor'), (req, res) => {
+  db.geoCache = db.geoCache || {};
+  const grupos = _gruposPendientes();
+  const zonas = []; let yaUbicados = 0;
+  for (const key of Object.keys(grupos)) {
+    const g = grupos[key]; const r = db.geoCache[key];
+    if (r) yaUbicados += _asignaZona(g.clientes, r);
+    else zonas.push({ col: g.col, muni: g.muni, count: g.clientes.length });
+  }
+  if (yaUbicados) saveDB();
+  res.json({ yaUbicados, zonas, totalZonas: Object.keys(grupos).length });
 });
-app.get('/api/mapa/geocodificar/estado', auth, rol('admin', 'supervisor'), (req, res) => {
-  const tid = req.user.tenantId;
-  res.json(_geoJobs[tid] || { corriendo: false, total: 0, hechos: 0, ok: 0, fail: 0, mensaje: '' });
+// Paso 2: geocodifica UNA zona (User-Agent del servidor) y la reparte a sus clientes pendientes
+app.post('/api/mapa/geocode/zona', auth, rol('admin', 'supervisor'), async (req, res) => {
+  const { col, muni } = req.body || {};
+  db.geoCache = db.geoCache || {};
+  const key = _zonaKey(col, muni);
+  let r = db.geoCache[key];
+  if (!r) {
+    r = await _geocode([col, muni, 'México'].filter(Boolean).join(', '));
+    if (!r && muni) r = await _geocode([muni, 'México'].join(', '));   // fallback al municipio
+    if (r) db.geoCache[key] = r;
+  }
+  if (!r) return res.json({ ok: false, ubicados: 0 });
+  const g = _gruposPendientes()[key];
+  const n = g ? _asignaZona(g.clientes, r) : 0;
+  saveDB();
+  res.json({ ok: true, ubicados: n });
 });
 
 /* ---------- Flujo JC (Jefe de Crédito): efectivo y entrega de créditos ---------- */
@@ -1952,7 +1948,7 @@ app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, 
   res.json({ generadoEn: new Date().toISOString(), reportes });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'geo-v2', importBulk: true, geoServer: true, geoZonas: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'geo-v3', importBulk: true, geoZonas: true, geoNavegador: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
