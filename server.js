@@ -1409,6 +1409,62 @@ app.post('/api/flujo/dotacion', auth, rol('admin'), (req, res) => {
   flujoAgregar('salida', 'dotacion', `Dotación a ${destino.tipo === 'jc' ? 'JC ' : destino.tipo === 'supervisor' ? 'Supervisor ' : ''}${nombre}` + (nota ? ' · ' + nota : ''), monto, destino, req.user.nombre);
   saveDB(); res.json({ ok: true, saldo: flujoSaldo(), destino });
 });
+// ===== REPORTE DE ENTREGAS (de todos) =====
+app.get('/api/reports/entregas', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
+  const scope = scopeSucDe(req.user);
+  const r = _rangoReporte(req.query);
+  const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
+  const rolLbl = { admin: 'Admin', supervisor: 'Supervisor', sucursal: 'Sucursal', jc: 'JC' };
+  let ent = db.sales.filter(s => s.entrega && (scope == null || s.sucursalId === scope));
+  ent = ent.filter(s => { const t = new Date(s.entrega.fecha).getTime(); return (!r.desde || t >= r.desde) && (!r.hasta || t <= r.hasta); });
+  const lista = ent.map(s => {
+    const c = db.clients.find(x => x.id === s.clientId) || {};
+    const por = s.entrega.por || { rol: 'jc', nombre: s.entrega.jcNombre || '—' };
+    return { folio: s.folio, cliente: c.nombre || '—', sucursal: sucMap[s.sucursalId] || '—', ruta: s.prom || '—', entregadoPor: por.nombre, rolEntrega: rolLbl[por.rol] || por.rol, fecha: s.entrega.fecha, monto: entregaMontoDe(s), tieneEvidencia: !!(s.entrega.fotoCasa || s.entrega.firma), saleId: s.id };
+  }).sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+  const porPersona = {};
+  lista.forEach(e => { const k = e.entregadoPor + ' (' + e.rolEntrega + ')'; porPersona[k] = porPersona[k] || { quien: e.entregadoPor, rol: e.rolEntrega, n: 0, monto: 0 }; porPersona[k].n++; porPersona[k].monto += e.monto; });
+  res.json({ total: lista.length, montoTotal: lista.reduce((a, e) => a + e.monto, 0), porPersona: Object.values(porPersona).sort((a, b) => b.monto - a.monto), entregas: lista.slice(0, 300) });
+});
+// ===== ALERTA: QUIÉN NO HA VENDIDO =====
+app.get('/api/reports/sin-ventas', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
+  const scope = scopeSucDe(req.user);
+  const inicio = (req.query.inicio != null && req.query.inicio !== '') ? Math.min(Math.max(+req.query.inicio, 0), 6) : 4;
+  const sem = _ultimasSemanas(4, inicio); // últimas 4 semanas operativas
+  const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
+  let cobs = db.users.filter(u => u.rol === 'cobrador' && u.activo && (scope == null || u.sucursalId === scope));
+  const lista = cobs.map(u => {
+    const ventas = db.sales.filter(s => s.prom === u.nombre && s.sucursalId === u.sucursalId);
+    const porSemana = sem.map(w => ventas.filter(s => { const t = new Date(s.createdAt).getTime(); return t >= w.desde && t <= w.hasta; }).length);
+    const ultima = ventas.length ? Math.max(...ventas.map(s => new Date(s.createdAt).getTime())) : null;
+    // semanas consecutivas sin vender (desde la más reciente hacia atrás)
+    let sinVender = 0; for (let i = porSemana.length - 1; i >= 0; i--) { if (porSemana[i] === 0) sinVender++; else break; }
+    return { cobrador: u.nombre, sucursal: sucMap[u.sucursalId] || '—', ventasSemana: porSemana[porSemana.length - 1], porSemana, semanasSinVender: sinVender, ultimaVenta: ultima ? new Date(ultima).toISOString() : null, totalVentas: ventas.length };
+  }).sort((a, b) => b.semanasSinVender - a.semanasSinVender);
+  res.json({ semanas: sem.map(w => ({ label: w.label, rango: w.rango })), inicio, cobradores: lista, sinVenderEstaSemana: lista.filter(c => c.ventasSemana === 0).length, total: lista.length });
+});
+// ===== RASTREO DE EQUIPO (ubicación de la gente en campo) =====
+app.post('/api/ubicacion/ping', auth, rol('cobrador', 'jc', 'sucursal', 'supervisor'), (req, res) => {
+  const lat = +req.body.lat, lng = +req.body.lng;
+  if (!isFinite(lat) || !isFinite(lng)) return res.status(400).json({ error: 'coords inválidas' });
+  db.ubicaciones = db.ubicaciones || {};
+  const me = db.users.find(u => u.id === req.user.id) || {};
+  db.ubicaciones[req.user.id] = { userId: req.user.id, nombre: req.user.nombre, rol: req.user.rol, sucursalId: me.sucursalId || null, lat, lng, at: new Date().toISOString() };
+  saveDB();
+  res.json({ ok: true });
+});
+app.get('/api/ubicacion/equipo', auth, rol('admin', 'supervisor'), (req, res) => {
+  db.ubicaciones = db.ubicaciones || {};
+  const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
+  const rolLbl = { cobrador: 'Promotor', jc: 'JC', sucursal: 'Sucursal', supervisor: 'Supervisor' };
+  const ahora = Date.now();
+  const gente = Object.values(db.ubicaciones).map(u => ({ ...u, sucursal: sucMap[u.sucursalId] || '—', rolLbl: rolLbl[u.rol] || u.rol, minutos: Math.round((ahora - new Date(u.at).getTime()) / 60000) }))
+    .filter(u => isFinite(u.lat) && isFinite(u.lng))
+    .sort((a, b) => a.minutos - b.minutos);
+  res.json({ gente });
+});
+
+// ===== REPORTE DE ENTREGAS (de todos) — fin =====
 app.post('/api/recoleccion', auth, rol('admin', 'supervisor'), (req, res) => {
   const { tipo, ref, motivo } = req.body;
   const fecha = new Date().toISOString();
@@ -1557,24 +1613,28 @@ function _isoWeek(ms) {
   const yStart = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
   return Math.ceil((((t - yStart) / 86400000) + 1) / 7);
 }
-function _ultimasSemanas(n) {
+function _ultimasSemanas(n, inicioDia) {
+  inicioDia = (inicioDia == null ? 4 : inicioDia); // 0=dom..6=sab · 4=jueves (ciclo típico jue→mié)
   const now = nowMx();
   const base = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const day = new Date(base).getUTCDay(); const diff = (day === 0 ? 6 : day - 1);
-  const lunEsta = base - diff * 86400000;
+  const day = new Date(base).getUTCDay();
+  const diff = (day - inicioDia + 7) % 7;
+  const iniEsta = base - diff * 86400000;
   const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  const dias = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
   const out = [];
   for (let i = n - 1; i >= 0; i--) {
-    const lun = lunEsta - i * 7 * 86400000;
-    const dom = lun + 7 * 86400000 - 1;
-    const dl = new Date(lun);
-    out.push({ iso: _isoWeek(lun), desde: lun, hasta: dom, label: 'Sem ' + _isoWeek(lun), fecha: `${String(dl.getUTCDate()).padStart(2, '0')} ${meses[dl.getUTCMonth()]}` });
+    const ini = iniEsta - i * 7 * 86400000;
+    const fin = ini + 7 * 86400000 - 1;
+    const di = new Date(ini), df = new Date(fin);
+    out.push({ iso: _isoWeek(ini), desde: ini, hasta: fin, label: 'Sem ' + _isoWeek(ini), fecha: `${dias[di.getUTCDay()]} ${String(di.getUTCDate()).padStart(2, '0')} ${meses[di.getUTCMonth()]}`, rango: `${String(di.getUTCDate()).padStart(2,'0')}/${String(di.getUTCMonth()+1).padStart(2,'0')}–${String(df.getUTCDate()).padStart(2,'0')}/${String(df.getUTCMonth()+1).padStart(2,'0')}` });
   }
   return out;
 }
 app.get('/api/reports/desglose', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
   const n = Math.min(Math.max(+req.query.semanas || 12, 1), 26);
-  const semanas = _ultimasSemanas(n);
+  const inicio = (req.query.inicio != null && req.query.inicio !== '') ? Math.min(Math.max(+req.query.inicio, 0), 6) : 4;
+  const semanas = _ultimasSemanas(n, inicio);
   const esGerente = req.user.rol === 'sucursal';
   const miSuc = esGerente ? (db.users.find(u => u.id === req.user.id) || {}).sucursalId : null;
   let sucursales = db.sucursales.filter(s => s.activo !== false).map(s => ({ id: s.id, nombre: s.nombre }));
@@ -1678,7 +1738,7 @@ app.get('/api/reports/desglose', auth, rol('admin', 'supervisor', 'sucursal'), (
   res.json({
     nivel, sucursal: suc ? { id: suc.id, nombre: suc.nombre } : null, sucursales, promotores,
     scope: empresa ? 'EMPRESA' : (promotor || 'TOTAL'), generado: new Date().toISOString(),
-    semanas: semanas.map(w => ({ label: w.label, fecha: w.fecha, iso: w.iso })), filas
+    semanas: semanas.map(w => ({ label: w.label, fecha: w.fecha, iso: w.iso, rango: w.rango })), filas
   });
 });
 
