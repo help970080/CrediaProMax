@@ -1464,7 +1464,7 @@ function ecPinta(d){
   document.getElementById('ec-sem').className='pill '+(liq?'ok':'w'); document.getElementById('ec-sem').textContent=(liq?'Liquidado':'Activo');
   document.getElementById('ec-folio').textContent=c.folio;
   document.getElementById('ec-mod').textContent=(_tipoLbl[c.tipo]||c.tipo)+' · '+fmt(c.cuota);
-  document.getElementById('ec-dom').textContent='—';
+  document.getElementById('ec-dom').textContent=([c.calle,c.col].filter(Boolean).join(', ')||'—')+(c.tel?(' · 📞 '+c.tel):'');
   document.getElementById('ec-venc').textContent='—';
   document.getElementById('ec-prom').textContent=c.prom||'—';
   document.getElementById('ec-mora-alert').innerHTML='';
