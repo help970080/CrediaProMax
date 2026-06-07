@@ -1999,30 +1999,20 @@ async function initRastreo(){
     clearInterval(_rTimer); _rTimer=setInterval(()=>{ if(document.getElementById('rastreo').classList.contains('on')) initRastreo(); else clearInterval(_rTimer); }, 30000);
   }catch(e){ document.getElementById('rastreo-stat').textContent=e.message; }
 }
+let _geoPoll=null;
 async function mapaGeocodificar(){
-  const pend=_mapaData.filter(c=>c.lat==null);
-  if(!pend.length){ alert('Todos los clientes con dirección ya están ubicados.'); return; }
   const btn=document.getElementById('mapa-geo-btn'); const prog=document.getElementById('mapa-geo-prog');
-  btn.disabled=true; prog.style.display='block';
-  let ok=0,fail=0;
-  for(let i=0;i<pend.length;i++){
-    const c=pend[i];
-    prog.textContent=`Ubicando ${i+1} de ${pend.length}… (${ok} ubicados) — puedes seguir trabajando, esto corre en segundo plano.`;
-    try{
-      const q=encodeURIComponent([c.dir,c.sucursal,'México'].filter(Boolean).join(', '));
-      const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+q,{headers:{'Accept':'application/json'}});
-      const arr=await r.json();
-      if(arr&&arr[0]){
-        const lat=parseFloat(arr[0].lat),lng=parseFloat(arr[0].lon);
-        await apiU('POST','/api/clients/'+c.id+'/ubicar',{lat,lng,src:'nominatim'});
-        c.lat=lat;c.lng=lng; ok++; pintarMapa();
-      } else fail++;
-    }catch(e){ fail++; }
-    await new Promise(res=>setTimeout(res,1100)); // respeta el límite de OpenStreetMap (1/seg)
-  }
-  prog.textContent=`✓ Listo: ${ok} clientes ubicados${fail?`, ${fail} no se pudieron ubicar (dirección incompleta)`:''}.`;
-  btn.disabled=false;
-  initMapa();
+  prog.style.display='block'; btn.disabled=true; prog.textContent='Iniciando ubicación en el servidor…';
+  try{ await apiU('POST','/api/mapa/geocodificar/iniciar',{}); }
+  catch(e){ prog.textContent='No se pudo iniciar: '+(e.message||e); btn.disabled=false; return; }
+  if(_geoPoll) clearInterval(_geoPoll);
+  _geoPoll=setInterval(async()=>{
+    let s; try{ s=await apiU('GET','/api/mapa/geocodificar/estado'); }catch(e){ return; }
+    if(s.corriendo) prog.textContent=`Ubicando ${s.hechos}/${s.total}… (${s.ok} ubicados, ${s.fail} sin ubicar) — puedes seguir trabajando.`;
+    else prog.textContent='✓ '+(s.mensaje||'Listo.');
+    try{ const d=await apiU('GET','/api/mapa'); _mapaData=d.clientes||[]; pintarMapa(); }catch(e){}
+    if(!s.corriendo){ clearInterval(_geoPoll); _geoPoll=null; btn.disabled=false; initMapa(); }
+  },3000);
 }
 const _tLbl={diario:'Diario',semanal:'Semanal',p17:'Celulares 17 pagos'};
 async function initTarifas(){
