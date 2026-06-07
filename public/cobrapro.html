@@ -1999,20 +1999,26 @@ async function initRastreo(){
     clearInterval(_rTimer); _rTimer=setInterval(()=>{ if(document.getElementById('rastreo').classList.contains('on')) initRastreo(); else clearInterval(_rTimer); }, 30000);
   }catch(e){ document.getElementById('rastreo-stat').textContent=e.message; }
 }
-let _geoPoll=null;
 async function mapaGeocodificar(){
   const btn=document.getElementById('mapa-geo-btn'); const prog=document.getElementById('mapa-geo-prog');
-  prog.style.display='block'; btn.disabled=true; prog.textContent='Iniciando ubicación en el servidor…';
-  try{ await apiU('POST','/api/mapa/geocodificar/iniciar',{}); }
-  catch(e){ prog.textContent='No se pudo iniciar: '+(e.message||e); btn.disabled=false; return; }
-  if(_geoPoll) clearInterval(_geoPoll);
-  _geoPoll=setInterval(async()=>{
-    let s; try{ s=await apiU('GET','/api/mapa/geocodificar/estado'); }catch(e){ return; }
-    if(s.corriendo) prog.textContent=`Ubicando ${s.hechos}/${s.total}… (${s.ok} ubicados, ${s.fail} sin ubicar) — puedes seguir trabajando.`;
-    else prog.textContent='✓ '+(s.mensaje||'Listo.');
-    try{ const d=await apiU('GET','/api/mapa'); _mapaData=d.clientes||[]; pintarMapa(); }catch(e){}
-    if(!s.corriendo){ clearInterval(_geoPoll); _geoPoll=null; btn.disabled=false; initMapa(); }
-  },3000);
+  prog.style.display='block'; btn.disabled=true; prog.textContent='Preparando zonas…';
+  let prep;
+  try{ prep=await apiU('POST','/api/mapa/geocode/preparar',{}); }
+  catch(e){ prog.textContent='No se pudo preparar: '+(e.message||e); btn.disabled=false; return; }
+  try{ const d=await apiU('GET','/api/mapa'); _mapaData=d.clientes||[]; pintarMapa(); }catch(e){}
+  const zonas=prep.zonas||[];
+  if(!zonas.length){ prog.textContent=`✓ Listo: todo ubicado (${prep.yaUbicados||0} desde caché).`; btn.disabled=false; initMapa(); return; }
+  let ok=prep.yaUbicados||0, fail=0;
+  for(let i=0;i<zonas.length;i++){
+    const z=zonas[i];
+    prog.textContent=`Ubicando zona ${i+1}/${zonas.length} (${z.muni||z.col||'—'})… ${ok} clientes ubicados — NO cierres esta pestaña.`;
+    try{ const r=await apiU('POST','/api/mapa/geocode/zona',{col:z.col,muni:z.muni}); if(r.ok) ok+=r.ubicados; else fail+=z.count; }
+    catch(e){ fail+=z.count; }
+    if(i%3===0){ try{ const d=await apiU('GET','/api/mapa'); _mapaData=d.clientes||[]; pintarMapa(); }catch(e){} }
+    await new Promise(res=>setTimeout(res,1100)); // respeta el límite de OpenStreetMap (1/seg)
+  }
+  prog.textContent=`✓ Listo: ${ok} clientes ubicados${fail?`, ${fail} sin ubicar (zona no encontrada)`:''}.`;
+  btn.disabled=false; initMapa();
 }
 const _tLbl={diario:'Diario',semanal:'Semanal',p17:'Celulares 17 pagos'};
 async function initTarifas(){
