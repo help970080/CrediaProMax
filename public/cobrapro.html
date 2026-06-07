@@ -195,6 +195,7 @@
     <button class="navitem" data-v="cartera"><span class="ic">≣</span> Cartera de crédito</button>
     <button class="navitem" data-v="estado"><span class="ic">🧾</span> Estado de cuenta</button>
     <button class="navitem" data-v="bandeja"><span class="ic">📦</span> Bandeja de entregas</button>
+    <button class="navitem" data-v="rastreo"><span class="ic">📡</span> Rastreo de equipo</button>
     <button class="navitem" data-v="promotores"><span class="ic">⛬</span> Cobradores</button>
     <button class="navitem" data-v="transferencias"><span class="ic">⇆</span> Transferencias</button>
     <button class="navitem" data-v="sucursales"><span class="ic">🏪</span> Sucursales</button>
@@ -423,6 +424,21 @@
     <div class="note" style="margin-top:-6px">El corte deja de ser un Excel nocturno: el sistema ya sabe cuánto cobró cada quien, entonces sabe cuánto debe entregar. El admin solo revisa las diferencias marcadas.</div>
   </section>
 
+  <!-- RASTREO DE EQUIPO -->
+  <section class="view" id="rastreo">
+    <div class="top"><h1>Rastreo de equipo</h1></div>
+    <div class="panel" style="padding:14px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+        <span style="font-size:.82rem;color:var(--dim)">Ubicación de tu gente en campo mientras tienen la app abierta. Para seguridad y operación.</span>
+        <span id="rastreo-stat" style="font-size:.8rem;color:var(--dim);margin-left:auto"></span>
+        <button class="btn" onclick="initRastreo()">↻ Actualizar</button>
+      </div>
+      <div id="rastreo-map" style="height:60vh;min-height:400px;width:100%;border-radius:10px;border:1px solid var(--line);background:var(--surf-2)"></div>
+      <div id="rastreo-lista" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-top:12px"></div>
+      <div style="font-size:.74rem;color:var(--faint);margin-top:8px">La ubicación se actualiza mientras cada persona tiene su app abierta. "Hace X min" indica qué tan reciente es el último reporte.</div>
+    </div>
+  </section>
+
   <!-- BANDEJA DE ENTREGAS -->
   <section class="view" id="bandeja">
     <div class="panel" style="background:linear-gradient(135deg,var(--surf-2),var(--surf))">
@@ -495,6 +511,8 @@
       <div id="rp-menu" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;padding:8px">
         <div class="rp-card" onclick="rpVerGerencial()"><div class="rp-ic">🏢</div><div class="rp-tt">Reporte gerencial</div><div class="rp-ds">Empresa → sucursal (gerente) → promotor · cartera, cobranza, colocación y mora</div><button class="btn gold" style="margin-top:8px">Ver</button></div>
         <div class="rp-card" onclick="rpVerDesglose()"><div class="rp-ic">📋</div><div class="rp-tt">Desglose de cartera</div><div class="rp-ds">Control semanal por sucursal y por promotor · cartera, débito, sin pago, ventas y cobranza</div><button class="btn gold" style="margin-top:8px">Ver</button></div>
+        <div class="rp-card" onclick="rpVerEntregas()"><div class="rp-ic">📦</div><div class="rp-tt">Reporte de entregas</div><div class="rp-ds">Quién entregó cada crédito (JC, sucursal, supervisor, admin), monto y evidencia</div><button class="btn gold" style="margin-top:8px">Ver</button></div>
+        <div class="rp-card" onclick="rpVerSinVentas()"><div class="rp-ic">🚨</div><div class="rp-tt">Alerta: sin ventas</div><div class="rp-ds">Promotores que no han vendido esta semana o llevan varias semanas sin colocar</div><button class="btn gold" style="margin-top:8px">Ver</button></div>
         <div class="rp-card" onclick="abrirImprimirCartera()"><div class="rp-ic">📄</div><div class="rp-tt">Cartera por cobrador</div><div class="rp-ds">PDF imprimible · 16 últimas cuotas por cliente</div><button class="btn gold" style="margin-top:8px">Imprimir PDF</button></div>
         <div class="rp-card" onclick="rpVerColocacion()"><div class="rp-ic">📊</div><div class="rp-tt">Colocación día/semana</div><div class="rp-ds">Tendencia de créditos otorgados · monto y volumen</div><button class="btn" style="margin-top:8px">Ver</button></div>
         <div class="rp-card" onclick="rpVerRefin()"><div class="rp-ic">🔄</div><div class="rp-tt">REFIN del periodo</div><div class="rp-ds">Refinanciamientos · liquidación + nuevo crédito + neto</div><button class="btn" style="margin-top:8px">Ver</button></div>
@@ -1015,8 +1033,30 @@ function rpAbrir(titulo, html, opts){
 }
 
 let _gerPeriodo='semana', _gerDesde='', _gerHasta='';
-function _dgQS(){ return 'semanas=12'+(_dgSuc?'&sucursalId='+_dgSuc:'')+(_dgSuc&&_dgProm?'&promotor='+encodeURIComponent(_dgProm):''); }
-let _dgSuc=null, _dgProm='';
+function _dgQS(){ return 'semanas=12&inicio='+_dgInicio+(_dgSuc?'&sucursalId='+_dgSuc:'')+(_dgSuc&&_dgProm?'&promotor='+encodeURIComponent(_dgProm):''); }
+let _dgSuc=null, _dgProm='', _dgInicio=(function(){ try{ return localStorage.getItem('dg_inicio')||'4'; }catch(e){ return '4'; } })();
+function dgSetInicio(v){ _dgInicio=v; try{ localStorage.setItem('dg_inicio',v); }catch(e){} rpVerDesglose(_dgSuc===null?null:_dgSuc, _dgProm); }
+async function rpVerEntregas(){
+  let d; try{ d=await apiU('GET','/api/reports/entregas'); }catch(e){ alert(e.message); return; }
+  const resumen = d.porPersona.length? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${d.porPersona.map(p=>`<div style="background:var(--surf-1);border:1px solid var(--line);border-radius:9px;padding:9px 12px"><div style="font-weight:600;font-size:.85rem">${p.quien} <span style="color:var(--faint);font-weight:400">· ${p.rol}</span></div><div style="font-size:.78rem;color:var(--dim)">${p.n} entregas · <b style="color:var(--grn)">${fmt(p.monto)}</b></div></div>`).join('')}</div>` : '';
+  const filas = d.entregas.map(e=>{
+    const f=new Date(e.fecha).toLocaleDateString('es-MX',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+    return `<tr><td style="white-space:nowrap;font-size:.78rem;color:var(--dim)">${f}</td><td>${e.cliente}<div style="font-size:.7rem;color:var(--faint)">${e.folio} · ${e.sucursal} · ${e.ruta}</div></td><td>${e.entregadoPor}<div style="font-size:.7rem;color:var(--faint)">${e.rolEntrega}</div></td><td class="n">${fmt(e.monto)}</td><td class="n">${e.tieneEvidencia?`<button class="btn" style="padding:3px 8px;font-size:.72rem" onclick="verEvidencia(${e.saleId})">📷</button>`:'—'}</td></tr>`;
+  }).join('');
+  rpAbrir('📦 Reporte de entregas',`<div style="font-size:.82rem;color:var(--dim);margin-bottom:10px">${d.total} entregas · monto entregado <b style="color:var(--grn)">${fmt(d.montoTotal)}</b></div>${resumen}
+    <table class="rp-table"><thead><tr><th>Fecha</th><th>Cliente</th><th>Entregó</th><th class="n">Monto</th><th class="n">Evid.</th></tr></thead><tbody>${filas||'<tr><td colspan="5" style="color:var(--faint);padding:12px">Aún no hay entregas registradas.</td></tr>'}</tbody></table>`);
+}
+async function rpVerSinVentas(){
+  let d; try{ d=await apiU('GET','/api/reports/sin-ventas?inicio='+_dgInicio); }catch(e){ alert(e.message); return; }
+  const filas = d.cobradores.map(c=>{
+    const alerta = c.semanasSinVender>=2 ? 'color:var(--red);font-weight:600' : c.semanasSinVender===1 ? 'color:var(--acc)' : 'color:var(--grn)';
+    const ult = c.ultimaVenta? new Date(c.ultimaVenta).toLocaleDateString('es-MX',{day:'2-digit',month:'short'}) : 'nunca';
+    const spark = c.porSemana.map(v=>`<span style="display:inline-block;width:11px;height:14px;margin:0 1px;border-radius:2px;background:${v>0?'var(--grn)':'var(--line-2)'}" title="${v} ventas"></span>`).join('');
+    return `<tr><td>${c.cobrador}<div style="font-size:.7rem;color:var(--faint)">${c.sucursal}</div></td><td class="n">${c.ventasSemana}</td><td>${spark}</td><td class="n" style="${alerta}">${c.semanasSinVender===0?'Vendiendo':c.semanasSinVender+' sem sin vender'}</td><td class="n" style="font-size:.78rem;color:var(--dim)">${ult}</td></tr>`;
+  }).join('');
+  rpAbrir('🚨 Alerta: promotores sin ventas',`<div style="font-size:.82rem;color:var(--dim);margin-bottom:10px"><b style="color:${d.sinVenderEstaSemana?'var(--red)':'var(--grn)'}">${d.sinVenderEstaSemana}</b> de ${d.total} promotores no han vendido esta semana. Las barras son las últimas 4 semanas (${d.semanas.map(s=>s.rango).join(' · ')}).</div>
+    <table class="rp-table"><thead><tr><th>Promotor</th><th class="n">Ventas sem.</th><th>Últimas 4 sem</th><th class="n">Estado</th><th class="n">Última venta</th></tr></thead><tbody>${filas||'<tr><td colspan="5" style="color:var(--faint);padding:12px">No hay promotores dados de alta.</td></tr>'}</tbody></table>`);
+}
 async function rpVerDesglose(sucId, prom){
   if(sucId!==undefined) _dgSuc=sucId; // null = empresa (todas)
   _dgProm = prom||'';
@@ -1035,7 +1075,7 @@ async function rpVerDesglose(sucId, prom){
       + ' ' + (d.promotores.length? d.promotores.map(p=>tab('👤 '+p,p,_dgProm===p)).join(' ') : '<span style="color:var(--faint);font-size:.8rem;align-self:center">Sin promotores</span>')
       + `</div>` : '';
   const cellTxt=(f,v)=> f.fmt==='money'?fmt(v) : f.fmt==='pct'?((Math.round(v*1000)/10).toFixed(1)+'%') : v.toLocaleString('es-MX');
-  const head=`<tr><th class="lbl">Concepto</th>${d.semanas.map(w=>`<th class="n">${w.label}<div style="font-weight:400;font-size:.64rem;color:var(--faint)">${w.fecha}</div></th>`).join('')}</tr>`;
+  const head=`<tr><th class="lbl">Concepto</th>${d.semanas.map(w=>`<th class="n" title="${w.rango||''}">${w.label}<div style="font-weight:400;font-size:.62rem;color:var(--faint)">${w.rango||w.fecha}</div></th>`).join('')}</tr>`;
   const body=d.filas.map(f=>{
     const sep=(f.k==='liquidados'||f.k==='ventas'||f.k==='cobranza')?'sep':'';
     return `<tr class="${sep}"><td class="lbl">${f.lbl}</td>${f.vals.map(v=>{
@@ -1048,8 +1088,11 @@ async function rpVerDesglose(sucId, prom){
   }).join('');
   const titScope = d.nivel==='empresa' ? 'Toda la empresa · TODAS las sucursales y créditos'
     : (d.nivel==='promotor' ? (d.sucursal.nombre+' · promotor '+_dgProm) : (d.sucursal.nombre+' · total de la sucursal'));
+  const dias=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+  const selIni=`<select onchange="dgSetInicio(this.value)" style="padding:5px 8px;background:var(--surf-2);border:1px solid var(--line);border-radius:7px;color:var(--ink);font-family:'Sora';font-size:.78rem">${dias.map((dn,i)=>`<option value="${i}" ${(''+i)===_dgInicio?'selected':''}>Semana inicia ${dn}</option>`).join('')}</select>`;
   rpAbrir('📋 Desglose de cartera',`
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><span style="font-size:.8rem;color:var(--dim)">Nivel:</span> ${nivel1}<span style="margin-left:auto;font-size:.74rem;color:var(--faint)">Últimas ${d.semanas.length} semanas · ${titScope}</span></div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><span style="font-size:.8rem;color:var(--dim)">Nivel:</span> ${nivel1}<span style="margin-left:auto;display:flex;gap:8px;align-items:center">${selIni}</span></div>
+    <div style="font-size:.74rem;color:var(--faint);margin-bottom:8px">Últimas ${d.semanas.length} semanas · ${titScope}</div>
     ${nivel2}
     <div style="font-size:.74rem;color:var(--dim);margin-bottom:8px">${d.nivel==='empresa'?'Vista consolidada de todos los créditos y saldos. Haz clic en una sucursal para bajar el detalle, y dentro de ella en un promotor.':''}</div>
     <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:10px"><table class="rp-table dg-table" style="min-width:max-content;border:none"><thead>${head}</thead><tbody>${body}</tbody></table></div>
@@ -1853,14 +1896,15 @@ function sim(){const t=$('s-tipo').value,monto=+$('s-monto').value||0,plazo=+$('
 }
 
 /* NAV + EVENTOS */
-const titles={resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],bandeja:['Bandeja de entregas','Créditos por entregar · toma y entrega con evidencia'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],flujo:['Flujo / Tesorería','Efectivo del admin · dotación a la operación, nómina y capital'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo']};
+const titles={resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],bandeja:['Bandeja de entregas','Créditos por entregar · toma y entrega con evidencia'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],flujo:['Flujo / Tesorería','Efectivo del admin · dotación a la operación, nómina y capital'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo'],mapa:['Mapa de clientes','Ubicación geográfica de la cartera'],rastreo:['Rastreo de equipo','Dónde está tu gente en campo · seguridad y operación']};
 document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
   document.querySelectorAll('.navitem').forEach(x=>x.classList.remove('on'));
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
   n.classList.add('on');document.getElementById(n.dataset.v).classList.add('on');
   document.body.classList.remove('nav-open');
-  document.getElementById('title').textContent=titles[n.dataset.v][0];
-  document.getElementById('subtitle').textContent=titles[n.dataset.v][1];
+  const _tt=titles[n.dataset.v]||[n.dataset.v,''];
+  document.getElementById('title').textContent=_tt[0];
+  document.getElementById('subtitle').textContent=_tt[1];
   if(n.dataset.v==='usuarios') cargarUsuarios();
   if(n.dataset.v==='cartera') cargarCartera();
   if(n.dataset.v==='estado') ecInit();
@@ -1868,6 +1912,7 @@ document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
   if(n.dataset.v==='reportes') renderReportesLive();
   if(n.dataset.v==='flujo') cargarFlujo();
   if(n.dataset.v==='bandeja') cargarBandeja();
+  if(n.dataset.v==='rastreo') initRastreo();
   if(n.dataset.v==='transferencias'){ _trSel.clear(); trInit(); $('tr-resultados').innerHTML='<div style="color:var(--faint);padding:12px;font-size:.85rem">Elige un cobrador o busca un cliente para empezar.</div>'; $('tr-toolbar').style.display='none'; $('tr-batchbar').style.display='none'; trCargarLog(); }
   if(n.dataset.v==='simulador') initTarifas();
   if(n.dataset.v==='mapa') initMapa();
@@ -1887,13 +1932,16 @@ async function initMapa(){
   // espera a que el contenedor sea visible y tenga tamaño (evita el mapa en blanco)
   if(!cont || cont.offsetWidth===0 || cont.offsetHeight===0){ setTimeout(initMapa,200); return; }
   try{
-    const d=await apiU('GET','/api/mapa'); _mapaData=d.clientes;
+    const d=await apiU('GET','/api/mapa'); _mapaData=d.clientes||[];
+    const centro=(d.centro&&d.centro.length===2&&typeof d.centro[0]==='number')?d.centro:[19.4326,-99.1332];
     if(!_map){
-      _map=L.map('leaflet-map',{center:d.centro,zoom:12,preferCanvas:true});
+      _map=L.map('leaflet-map',{center:centro,zoom:12,preferCanvas:true});
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(_map);
-      _cluster=L.markerClusterGroup({chunkedLoading:true,maxClusterRadius:50,showCoverageOnHover:false});
+      _cluster = (typeof L.markerClusterGroup==='function')
+        ? L.markerClusterGroup({chunkedLoading:true,maxClusterRadius:50,showCoverageOnHover:false})
+        : L.layerGroup();
       _map.addLayer(_cluster);
-    } else { _map.setView(d.centro); }
+    } else { _map.setView(centro); }
     pintarMapa();
     document.getElementById('mapa-stat').textContent=`${d.ubicados} de ${d.total} clientes ubicados · ${d.pendientes} por ubicar`;
     // fuerza el repintado de baldosas tras hacerse visible
@@ -1914,9 +1962,38 @@ function pintarMapa(){
       <span style="display:inline-block;margin-top:4px;padding:2px 8px;border-radius:10px;font-size:11px;color:#fff;background:${ESTADO_COLOR[c.estado]}">${ESTADO_NOM[c.estado]}</span></div>`);
     return m;
   });
-  _cluster.addLayers(markers);
+  if(_cluster.addLayers) _cluster.addLayers(markers); else markers.forEach(m=>_cluster.addLayer(m));
 }
 function mapaFiltro(f){ _mapaFiltro=f; document.querySelectorAll('#mapa-chips .mapa-chip').forEach(b=>b.classList.toggle('on',b.dataset.f===f)); pintarMapa(); }
+// ===== Rastreo de equipo =====
+let _rmap=null,_rlayer=null,_rTimer=null;
+const ROL_COLOR={cobrador:'#2563eb',jc:'#7c5ce0',sucursal:'#178a55',supervisor:'#e0a012'};
+async function initRastreo(){
+  if(typeof L==='undefined') return;
+  const cont=document.getElementById('rastreo-map');
+  if(!cont||cont.offsetWidth===0){ setTimeout(initRastreo,200); return; }
+  try{
+    const d=await apiU('GET','/api/ubicacion/equipo');
+    if(!_rmap){ _rmap=L.map('rastreo-map',{center:[19.4326,-99.1332],zoom:11,preferCanvas:true}); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(_rmap); _rlayer=L.layerGroup().addTo(_rmap); }
+    _rlayer.clearLayers();
+    const pts=[];
+    d.gente.forEach(g=>{
+      const col=ROL_COLOR[g.rol]||'#888';
+      const stale=g.minutos>30;
+      const m=L.circleMarker([g.lat,g.lng],{radius:8,fillColor:col,color:'#fff',weight:2,opacity:stale?0.5:1,fillOpacity:stale?0.4:0.9});
+      m.bindPopup(`<div style="min-width:160px"><b>${g.nombre}</b><br><span style="color:#666">${g.rolLbl} · ${g.sucursal}</span><br><span style="color:${stale?'#d6432d':'#178a55'};font-size:12px">📍 hace ${g.minutos} min</span><br><a href="https://maps.google.com/?q=${g.lat},${g.lng}" target="_blank" style="font-size:12px">Ver en Google Maps</a></div>`);
+      _rlayer.addLayer(m); pts.push([g.lat,g.lng]);
+    });
+    if(pts.length) _rmap.fitBounds(pts,{padding:[40,40],maxZoom:14});
+    document.getElementById('rastreo-stat').textContent=`${d.gente.length} en línea`;
+    document.getElementById('rastreo-lista').innerHTML = d.gente.length? d.gente.map(g=>{
+      const stale=g.minutos>30;
+      return `<div style="background:var(--surf-1);border:1px solid var(--line);border-radius:9px;padding:10px"><div style="display:flex;align-items:center;gap:7px"><span style="width:10px;height:10px;border-radius:50%;background:${ROL_COLOR[g.rol]||'#888'};display:inline-block"></span><b style="font-size:.86rem">${g.nombre}</b></div><div style="font-size:.72rem;color:var(--faint);margin-top:3px">${g.rolLbl} · ${g.sucursal}</div><div style="font-size:.74rem;color:${stale?'var(--red)':'var(--grn)'};margin-top:3px">📍 hace ${g.minutos} min</div></div>`;
+    }).join('') : '<div style="color:var(--faint);padding:10px;font-size:.85rem;grid-column:1/-1">Nadie ha reportado ubicación aún. Aparecerán cuando tu gente abra su app en campo.</div>';
+    [80,400,900].forEach(t=>setTimeout(()=>{ if(_rmap) _rmap.invalidateSize(); },t));
+    clearInterval(_rTimer); _rTimer=setInterval(()=>{ if(document.getElementById('rastreo').classList.contains('on')) initRastreo(); else clearInterval(_rTimer); }, 30000);
+  }catch(e){ document.getElementById('rastreo-stat').textContent=e.message; }
+}
 async function mapaGeocodificar(){
   const pend=_mapaData.filter(c=>c.lat==null);
   if(!pend.length){ alert('Todos los clientes con dirección ya están ubicados.'); return; }

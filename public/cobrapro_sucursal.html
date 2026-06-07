@@ -754,6 +754,10 @@ async function _init(){
       : '<option value="">— sin cobradores en esta sucursal —</option>';
   }catch(e){}
   fillPlazos(); calc(); _buscar(); cargarCaja(); cargarJCSuc();
+// Ping de ubicación para el rastreo del admin/supervisor (mientras la app está abierta)
+function _pingUbic(){ if(!navigator.geolocation) return; navigator.geolocation.getCurrentPosition(function(p){ try{ api('POST','/api/ubicacion/ping',{lat:p.coords.latitude,lng:p.coords.longitude}); }catch(e){} }, function(){}, {enableHighAccuracy:false,timeout:8000,maximumAge:120000}); }
+_pingUbic(); setInterval(_pingUbic, 180000);
+
 }
 _init();
 </script>

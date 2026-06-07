@@ -248,6 +248,10 @@ function guardarFirma(){
 }
 cargar();
 setInterval(cargar,30000);
+// Ping de ubicación para el rastreo del admin/supervisor (mientras la app está abierta)
+function _pingUbic(){ if(!navigator.geolocation) return; navigator.geolocation.getCurrentPosition(function(p){ try{ api('POST','/api/ubicacion/ping',{lat:p.coords.latitude,lng:p.coords.longitude}); }catch(e){} }, function(){}, {enableHighAccuracy:false,timeout:8000,maximumAge:120000}); }
+_pingUbic(); setInterval(_pingUbic, 180000);
+
 async function cerrarDia(btn){
   const c=DATA.caja||{};
   if(!confirm(`¿Hacer tu cierre del día?\n\nRecibido: ${money(c.recibido)}\nEntregado en créditos: ${money(c.entregado)}\nEn caja: ${money(c.saldo)}\n\nEl efectivo en caja se queda contigo para seguir entregando créditos, salvo que el admin lo recolecte. Solo queda el registro del cierre.`)) return;
