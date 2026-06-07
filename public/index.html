@@ -1,6 +1,11 @@
 <!DOCTYPE html>
 <html lang="es-MX">
 <head>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#caa23a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="CobraPro">
+<link rel="apple-touch-icon" href="/icon-192.png">
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CobraPro · Acceso</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -39,7 +44,7 @@
     <div class="field"><label>Contraseña</label><input id="p" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')entrar()"></div>
     <button class="enter" id="btn" onclick="entrar()">Entrar</button>
     <div class="err" id="err"></div>
-    <div class="hint">Primer acceso: <b>admin</b> / <b>admin123</b><br>Cada usuario entra a su panel según su rol.</div>
+    <div class="hint">Cada usuario entra a su panel según su rol.</div>
   </div>
 <script>
   const dest = { admin:'cobrapro.html', supervisor:'cobrapro.html', sucursal:'cobrapro_sucursal.html', cobrador:'cobrapro_campo.html', jc:'cobrapro_jc.html', super:'super.html' };
@@ -59,5 +64,6 @@
     }
   }
 </script>
+<script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){});});}</script>
 </body>
 </html>
