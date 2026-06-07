@@ -374,6 +374,23 @@ app.post('/api/clients/:id/ubicar', auth, rol('admin', 'supervisor'), (req, res)
    Aquí se hace en el backend con User-Agent válido, 1 req/seg, guardando el avance
    cada 10 clientes (reanudable si Render reinicia). ----------------------------- */
 function _limpiaSuc(n) { return String(n || '').replace(/\s*\b(I{1,3}|IV|V|VI|\d+)\b\s*$/i, '').trim(); }
+function _normMuni(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim(); }
+// Coordenadas fijas de respaldo por municipio (cuando Nominatim falla, nadie se queda sin pin)
+const MUNI_COORDS = {
+  'puebla': { lat: 19.0414, lng: -98.2063 },
+  'apizaco': { lat: 19.4131, lng: -98.1453 },
+  'cholula': { lat: 19.0630, lng: -98.3030 },
+  'san pedro cholula': { lat: 19.0633, lng: -98.3072 },
+  'san andres cholula': { lat: 19.0530, lng: -98.3010 },
+  'cuautla': { lat: 18.8125, lng: -98.9536 },
+  'tlaxcala': { lat: 19.3139, lng: -98.2404 }
+};
+function _muniFijo(muni) {
+  const k = _normMuni(muni);
+  if (MUNI_COORDS[k]) return MUNI_COORDS[k];
+  for (const m in MUNI_COORDS) { if (k.includes(m) || m.includes(k)) return MUNI_COORDS[m]; }
+  return null;
+}
 async function _geocode(q) {
   try {
     const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=mx&q=' + encodeURIComponent(q);
@@ -436,7 +453,8 @@ app.post('/api/mapa/geocode/zona', auth, rol('admin', 'supervisor'), async (req,
   let r = db.geoCache[key];
   if (!r) {
     r = await _geocode([col, muni, 'México'].filter(Boolean).join(', '));
-    if (!r && muni) r = await _geocode([muni, 'México'].join(', '));   // fallback al municipio
+    if (!r && muni) r = await _geocode([muni, 'México'].join(', '));   // fallback al municipio (Nominatim)
+    if (!r && muni) r = _muniFijo(muni);                                // último recurso: tabla fija
     if (r) db.geoCache[key] = r;
   }
   if (!r) return res.json({ ok: false, ubicados: 0 });
@@ -1948,7 +1966,7 @@ app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, 
   res.json({ generadoEn: new Date().toISOString(), reportes });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'geo-v3', importBulk: true, geoZonas: true, geoNavegador: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'geo-v4', importBulk: true, geoZonas: true, geoNavegador: true, muniFallback: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
