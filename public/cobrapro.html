@@ -212,6 +212,7 @@
     <button class="navitem" data-v="usuarios"><span class="ic">👤</span> Usuarios</button>
     <button class="navitem" data-v="mapa"><span class="ic">🗺️</span> Mapa de clientes</button>
     <button class="navitem" data-v="simulador"><span class="ic">🖩</span> Simulador de crédito</button>
+    <button class="navitem" data-v="extras" id="nav-extras"><span class="ic">🕵️</span> Extras · Prestanombres</button>
   </nav>
   <div class="side-foot">
     <div class="live"><span class="dot"></span> Sincronizado en vivo</div>
@@ -377,7 +378,7 @@
 
   <section class="view" id="sucursales">
     <div class="kpis" id="suc-kpis"></div>
-    <div class="panel"><div class="ph"><h3>Sucursales</h3><div style="display:flex;gap:6px;margin-left:auto"><button class="btn gold" onclick="nuevaSucursal()">＋ Nueva sucursal</button><button class="btn" onclick="exportCSV('suc')">⬇ CSV</button></div></div>
+    <div class="panel"><div class="ph"><h3>Sucursales</h3><div style="display:flex;gap:6px;margin-left:auto"><button class="btn gold" onclick="nuevaSucursal()">＋ Nueva sucursal</button><button class="btn" onclick="exportCSV('suc')">⬇ CSV</button><button class="btn" onclick="descargarRespaldo()" title="Descarga todos los datos de la agencia como respaldo">🛟 Descargar respaldo</button></div></div>
       <table><thead><tr><th>Sucursal</th><th>Encargada</th><th class="n">Pagos recibidos</th><th class="n"># Pagos</th><th class="n">Créditos captados</th><th class="n">Cartera total</th><th class="n">Atraso</th><th class="n">Efectivo en caja</th><th>Conciliación</th><th></th></tr></thead><tbody id="tb-suc"></tbody></table>
       <div class="note">La encargada captura los créditos nuevos; ese movimiento aparece de inmediato en la cartera del cobrador asignado, sin listas ni esperas al día siguiente.</div>
     </div>
@@ -616,6 +617,39 @@
       </div>
     </div>
   </section>
+  <section class="view" id="extras">
+    <style>
+      .ex-chk{display:inline-flex;align-items:center;gap:6px;cursor:pointer;color:var(--dim);user-select:none}
+      .ex-chk input{accent-color:var(--acc);cursor:pointer}
+      .ex-rk{display:inline-block;padding:2px 8px;border-radius:20px;font-size:.7rem;font-weight:700}
+      .ex-rk.alta{background:rgba(214,67,45,.16);color:#e8624d}
+      .ex-rk.media{background:rgba(224,160,18,.16);color:#e0a012}
+      .ex-rk.baja{background:rgba(151,162,178,.16);color:#9aa6b6}
+      .ex-card{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:9px;background:var(--surf-1)}
+      .ex-card>summary{cursor:pointer;list-style:none;display:flex;flex-wrap:wrap;align-items:center;gap:9px;font-size:.85rem}
+      .ex-card>summary::-webkit-details-marker{display:none}
+      .ex-mem{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-top:1px dotted var(--line);font-size:.8rem}
+      .ex-mem .mc{color:var(--faint);font-size:.72rem}
+    </style>
+    <div class="panel">
+      <div class="ph"><h3>🕵️ Detector de prestanombres</h3><span class="hint">Agrupa clientes que comparten teléfono, domicilio o apellidos. Sirve para detectar identidades recicladas, créditos cruzados o cartera inflada por un cobrador.</span></div>
+      <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;padding:8px 2px 14px;font-size:.85rem">
+        <label class="ex-chk"><input type="checkbox" id="ex-tel" checked> 📞 Teléfono</label>
+        <label class="ex-chk"><input type="checkbox" id="ex-dom" checked> 🏠 Domicilio</label>
+        <label class="ex-chk"><input type="checkbox" id="ex-ape" checked> 👪 Apellidos</label>
+        <span style="width:1px;height:22px;background:var(--line)"></span>
+        <label class="ex-chk"><input type="checkbox" id="ex-cruces"> 🔀 Solo cruces entre cobradores</label>
+        <label class="ex-chk"><input type="checkbox" id="ex-ph" checked> 🧹 Ocultar APARTADO / ENGANCHE</label>
+        <label class="ex-chk">Mínimo <select id="ex-min" style="background:var(--surf);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:3px 6px;margin:0 4px"><option value="2">2</option><option value="3">3+</option></select> en el grupo</label>
+      </div>
+      <div id="ex-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px"></div>
+    </div>
+    <div class="panel">
+      <div class="ph"><h3>Mapa de relaciones</h3><span class="hint">Cada estrella = un grupo vinculado. Color del nodo = cobrador · borde = nivel de riesgo.</span></div>
+      <div id="ex-graph" style="overflow:auto;border:1px solid var(--line);border-radius:10px;background:var(--surf-1);min-height:120px"></div>
+    </div>
+    <div class="panel"><div class="ph"><h3>Grupos detectados</h3><span class="hint" id="ex-count"></span></div><div id="ex-list"></div></div>
+  </section>
 </main>
 
 <script>
@@ -633,6 +667,17 @@ async function apiU(method, path, body){
   return d;
 }
 function salir(){ try{localStorage.removeItem('cobrapro_token');localStorage.removeItem('cobrapro_user');}catch(e){} location.replace('index.html'); }
+async function descargarRespaldo(){
+  try{
+    const r = await fetch('/api/admin/backup', { headers:{ Authorization:'Bearer '+TOKEN } });
+    if(!r.ok){ alert('No se pudo generar el respaldo (¿sesión de admin?)'); return; }
+    const blob = await r.blob();
+    const cd = r.headers.get('Content-Disposition')||''; const m = cd.match(/filename="(.+?)"/);
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = m ? m[1] : 'respaldo.json'; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+  }catch(e){ alert('Error al respaldar: '+(e.message||e)); }
+}
 const $=id=>document.getElementById(id);
 
 /* ===== FUENTE ÚNICA DE VERDAD: créditos ===== */
@@ -1901,7 +1946,7 @@ function sim(){const t=$('s-tipo').value,monto=+$('s-monto').value||0,plazo=+$('
 }
 
 /* NAV + EVENTOS */
-const titles={resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],bandeja:['Bandeja de entregas','Créditos por entregar · toma y entrega con evidencia'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],flujo:['Flujo / Tesorería','Efectivo del admin · dotación a la operación, nómina y capital'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo'],mapa:['Mapa de clientes','Ubicación geográfica de la cartera'],rastreo:['Rastreo de equipo','Dónde está tu gente en campo · seguridad y operación']};
+const titles={resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],bandeja:['Bandeja de entregas','Créditos por entregar · toma y entrega con evidencia'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],flujo:['Flujo / Tesorería','Efectivo del admin · dotación a la operación, nómina y capital'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo'],mapa:['Mapa de clientes','Ubicación geográfica de la cartera'],rastreo:['Rastreo de equipo','Dónde está tu gente en campo · seguridad y operación'],extras:['Extras · Detector de prestanombres','Coincidencias por teléfono, domicilio y apellidos']};
 document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
   document.querySelectorAll('.navitem').forEach(x=>x.classList.remove('on'));
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
@@ -1921,6 +1966,7 @@ document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
   if(n.dataset.v==='transferencias'){ _trSel.clear(); trInit(); $('tr-resultados').innerHTML='<div style="color:var(--faint);padding:12px;font-size:.85rem">Elige un cobrador o busca un cliente para empezar.</div>'; $('tr-toolbar').style.display='none'; $('tr-batchbar').style.display='none'; trCargarLog(); }
   if(n.dataset.v==='simulador') initTarifas();
   if(n.dataset.v==='mapa') initMapa();
+  if(n.dataset.v==='extras') initExtras();
 });
 document.querySelectorAll('#period button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#period button').forEach(x=>x.classList.remove('on'));b.classList.add('on');period=b.dataset.p;render();});
 ['c-cob','c-meta','c-bono','c-mora','c-coloc'].forEach(id=>document.getElementById(id).oninput=render);
@@ -2093,10 +2139,116 @@ function exportCSV(t){let rows=[],name=t;const D=CRED.map(deriva);
 setInterval(()=>document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'}),1000);
 document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'});
 /* ===== USUARIOS (conectado al backend) ===== */
+/* ===== Extras · Detector de prestanombres ===== */
+let _exData=null;
+function exNorm(s){ return String(s||'').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z0-9 ]/g,' ').replace(/\s+/g,' ').trim(); }
+function exTel(t){ const d=String(t||'').replace(/\D/g,''); return d.length>=10?d.slice(-10):''; }
+function exDom(d){ let s=exNorm(d).replace(/\b(CALLE|C|AV|AVENIDA|BLVD|COL|COLONIA|FRACC|FRACCIONAMIENTO|BARRIO|MZ|MANZANA|LT|LOTE|NO|NUM|NUMERO|SN|S N|DOMICILIO|CONOCIDO|DEL|DE|LA|LOS|LAS|EL)\b/g,'').replace(/\s+/g,' ').trim(); return s.length>=6?s:''; }
+const EX_STOP=['SHOP','SHOPX3','APART','APARTADO','AD','APT','CONV','ADS','A','B','C','EL','LA','DE','DEL','LOS','LAS'];
+function exApellidos(nombre){ const toks=exNorm(nombre).split(' ').filter(w=>w.length>2 && EX_STOP.indexOf(w)<0); if(toks.length<2) return ''; return toks.slice(-2).join(' '); }
+function exEsPlaceholder(nombre){ const s=exNorm(nombre); return s.length<4 || /\b(APARTADO|ENGANCHE|VENTA DE CONTADO|CONTADO|BICICLETA|AUDIFONOS|BOSE)\b/.test(s); }
+function exColorCob(name){ let h=0; const s=String(name||'-'); for(let i=0;i<s.length;i++){h=(h*31+s.charCodeAt(i))|0;} return 'hsl('+(((h%360)+360)%360)+' 60% 55%)'; }
+const EX_RKCOLOR={alta:'#d6432d',media:'#e0a012',baja:'#97a2b2'};
+
+async function initExtras(){
+  const k=document.getElementById('ex-kpis');
+  if(!_exData){
+    k.innerHTML='<div style="color:var(--faint);padding:8px">Analizando cartera…</div>';
+    try{ const d=await apiU('GET','/api/mapa'); _exData=(d.clientes||[]); }
+    catch(e){ k.innerHTML='<div style="color:#d6432d;padding:8px">No se pudo cargar: '+(e.message||e)+'</div>'; return; }
+    ['ex-tel','ex-dom','ex-ape','ex-cruces','ex-ph','ex-min'].forEach(id=>{ const el=document.getElementById(id); if(el) el.onchange=exRender; });
+  }
+  exRender();
+}
+function exFiltros(){ return { tel:document.getElementById('ex-tel').checked, dom:document.getElementById('ex-dom').checked, ape:document.getElementById('ex-ape').checked, cruces:document.getElementById('ex-cruces').checked, ph:document.getElementById('ex-ph').checked, min:+document.getElementById('ex-min').value }; }
+function exClusters(){
+  const F=exFiltros();
+  const cs=(_exData||[]).filter(c=> !(F.ph && exEsPlaceholder(c.nombre))).map(c=>({...c,_t:F.tel?exTel(c.tel):'',_d:F.dom?exDom(c.dir):'',_a:F.ape?exApellidos(c.nombre):''}));
+  const parent=cs.map((_,i)=>i);
+  const find=x=>{ while(parent[x]!==x){ parent[x]=parent[parent[x]]; x=parent[x]; } return x; };
+  const uni=(a,b)=>{ parent[find(a)]=find(b); };
+  const idx=(key)=>{ const m={}; cs.forEach((c,i)=>{ const v=c[key]; if(v){ (m[v]=m[v]||[]).push(i); } }); for(const v in m){ const a=m[v]; for(let j=1;j<a.length;j++) uni(a[0],a[j]); } };
+  idx('_t'); idx('_d'); idx('_a');
+  const groups={}; cs.forEach((c,i)=>{ const r=find(i); (groups[r]=groups[r]||[]).push(c); });
+  let cl=Object.values(groups).filter(g=>g.length>=2).map(g=>{
+    const dup=(key)=>{ const m={}; g.forEach(c=>{ if(c[key]) m[c[key]]=(m[c[key]]||0)+1; }); return Object.keys(m).filter(v=>m[v]>1); };
+    const telDup=dup('_t'), domDup=dup('_d');
+    const apes=new Set(g.map(c=>c._a).filter(Boolean));
+    const cobs=[...new Set(g.map(c=>c.cobrador||'—'))];
+    const saldo=g.reduce((a,c)=>a+(c.saldo||0),0);
+    const sharedTel=telDup.length>0, sharedDom=domDup.length>0;
+    const cruza=cobs.length>1;
+    let risk='baja';
+    if((sharedTel||sharedDom) && apes.size>=2) risk='alta';
+    else if(sharedTel||sharedDom) risk='media';
+    return {g,saldo,cobs,cruza,sharedTel,sharedDom,apes:apes.size,risk};
+  });
+  if(F.cruces) cl=cl.filter(c=>c.cruza);
+  cl=cl.filter(c=>c.g.length>=F.min);
+  const ro={alta:0,media:1,baja:2};
+  cl.sort((a,b)=> (ro[a.risk]-ro[b.risk]) || (b.saldo-a.saldo) || (b.g.length-a.g.length));
+  return cl;
+}
+function exTipos(c){ let s=''; if(c.sharedTel)s+='📞'; if(c.sharedDom)s+='🏠'; if(!c.sharedTel&&!c.sharedDom)s+='👪'; return s; }
+function exRender(){
+  const cl=exClusters();
+  const alta=cl.filter(c=>c.risk==='alta');
+  const involucrados=cl.reduce((a,c)=>a+c.g.length,0);
+  const saldoAlta=alta.reduce((a,c)=>a+c.saldo,0);
+  const cruces=cl.filter(c=>c.cruza).length;
+  const kpi=(l,v,col)=>'<div class="kpi"><div style="font-size:.72rem;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">'+l+'</div><div style="font-size:1.5rem;font-weight:700;'+(col?'color:'+col:'')+'">'+v+'</div></div>';
+  document.getElementById('ex-kpis').innerHTML =
+    kpi('Grupos detectados',cl.length)+kpi('Riesgo alto',alta.length,'#e8624d')+kpi('Clientes involucrados',involucrados)+kpi('Cruces entre cobradores',cruces,'#e0a012')+kpi('Saldo en riesgo alto',fmt(saldoAlta),'#e8624d');
+  document.getElementById('ex-count').textContent = cl.length? (cl.length+' grupos · ordenados por riesgo y saldo') : '';
+  exGraph(cl);
+  exList(cl);
+}
+function exGraph(cl){
+  const cont=document.getElementById('ex-graph');
+  if(!cl.length){ cont.innerHTML='<div style="padding:20px;color:var(--faint)">Sin coincidencias con los filtros actuales. 👍</div>'; return; }
+  const top=cl.slice(0,48);
+  const cols=4, cw=240, ch=210, R=60, nr=12;
+  const rows=Math.ceil(top.length/cols);
+  const W=cols*cw, H=rows*ch;
+  let s='<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg" font-family="inherit">';
+  top.forEach((c,gi)=>{
+    const col=gi%cols, row=Math.floor(gi/cols);
+    const cx=col*cw+cw/2, cy=row*ch+ch/2-8;
+    const mem=c.g.slice(0,10); const n=mem.length;
+    const rk=EX_RKCOLOR[c.risk];
+    // edges hub
+    mem.forEach((m,i)=>{ const ang=(i/n)*Math.PI*2-Math.PI/2; const x=cx+Math.cos(ang)*R, y=cy+Math.sin(ang)*R; s+='<line x1="'+cx+'" y1="'+cy+'" x2="'+x+'" y2="'+y+'" stroke="'+rk+'" stroke-width="1.2" opacity=".45"/>'; });
+    // center
+    s+='<circle cx="'+cx+'" cy="'+cy+'" r="6" fill="'+rk+'"/>';
+    // nodes
+    mem.forEach((m,i)=>{ const ang=(i/n)*Math.PI*2-Math.PI/2; const x=cx+Math.cos(ang)*R, y=cy+Math.sin(ang)*R;
+      const tt=(m.nombre||'')+' · '+(m.cobrador||'—')+' · '+(m.tel||'s/tel')+' · '+fmt(m.saldo||0);
+      s+='<circle cx="'+x+'" cy="'+y+'" r="'+nr+'" fill="'+exColorCob(m.cobrador)+'" stroke="'+rk+'" stroke-width="2.5"><title>'+tt.replace(/[<>&]/g,'')+'</title></circle>'; });
+    if(c.g.length>10){ s+='<text x="'+cx+'" y="'+(cy+4)+'" text-anchor="middle" font-size="9" fill="#fff">+'+(c.g.length-10)+'</text>'; }
+    // label
+    s+='<text x="'+cx+'" y="'+(row*ch+ch-26)+'" text-anchor="middle" font-size="11" fill="var(--txt)">'+exTipos(c)+' '+c.g.length+' · '+c.cobs.length+' cob.</text>';
+    s+='<text x="'+cx+'" y="'+(row*ch+ch-11)+'" text-anchor="middle" font-size="10" fill="'+rk+'">'+c.risk.toUpperCase()+' · '+fmt(c.saldo)+'</text>';
+  });
+  s+='</svg>';
+  cont.innerHTML=s;
+}
+function exList(cl){
+  const wrap=document.getElementById('ex-list');
+  if(!cl.length){ wrap.innerHTML='<div style="color:var(--faint);padding:8px">Sin grupos.</div>'; return; }
+  wrap.innerHTML = cl.slice(0,200).map(c=>{
+    const head='<span class="ex-rk '+c.risk+'">'+c.risk.toUpperCase()+'</span> <b>'+exTipos(c)+' '+c.g.length+' clientes</b>'
+      +'<span class="mc" style="color:var(--faint)">· '+c.cobs.length+' cobrador'+(c.cobs.length>1?'es':'')+(c.cruza?' 🔀 cruce':'')+'</span>'
+      +'<span style="margin-left:auto;color:var(--acc);font-weight:700">'+fmt(c.saldo)+'</span>';
+    const mems=c.g.map(m=>'<div class="ex-mem"><div>'+(m.nombre||'')+'<div class="mc">'+(m.cobrador||'—')+' · '+(m.sucursal||'')+'</div></div><div style="text-align:right">'+(m.tel||'s/tel')+'<div class="mc">'+fmt(m.saldo||0)+'</div></div></div>').join('');
+    return '<details class="ex-card"><summary>'+head+'</summary><div style="margin-top:6px">'+mems+'</div></details>';
+  }).join('');
+}
+
 const rolLbl = {admin:'Administrador',supervisor:'Supervisor',sucursal:'Sucursal',cobrador:'Cobrador',jc:'JC (Jefe de Crédito)'};
 let _sucursales = [];
 if(ME) document.getElementById('meName').textContent = ME.nombre + ' · ' + (rolLbl[ME.rol]||ME.rol);
 if(ME && ME.rol!=='admin'){ var _nf=document.getElementById('nav-flujo'); if(_nf) _nf.style.display='none'; }
+if(ME && !(ME.rol==='admin'||ME.rol==='supervisor')){ var _ne=document.getElementById('nav-extras'); if(_ne) _ne.style.display='none'; }
 async function cargarUsuarios(){
   try{
     _sucursales = await apiU('GET','/api/sucursales');
