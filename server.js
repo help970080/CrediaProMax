@@ -368,6 +368,58 @@ app.post('/api/clients/:id/ubicar', auth, rol('admin', 'supervisor'), (req, res)
   res.json({ ok: true });
 });
 
+/* ---------- Geocodificación masiva por dirección (corre en el servidor) ----------
+   El navegador NO puede geocodificar 914 direcciones contra Nominatim: no puede
+   mandar User-Agent (header prohibido) y OSM bloquea el uso masivo => 0 ubicados.
+   Aquí se hace en el backend con User-Agent válido, 1 req/seg, guardando el avance
+   cada 10 clientes (reanudable si Render reinicia). ----------------------------- */
+const _geoJobs = {};   // {tenantId: {corriendo,total,hechos,ok,fail,mensaje}}
+const _sleep = ms => new Promise(r => setTimeout(r, ms));
+function _limpiaSuc(n) { return String(n || '').replace(/\s*\b(I{1,3}|IV|V|VI|\d+)\b\s*$/i, '').trim(); }
+async function _geocode(q) {
+  try {
+    const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=mx&q=' + encodeURIComponent(q);
+    const r = await fetch(url, { headers: { 'User-Agent': 'CobraPro/1.0 (soporte@legaxia.uk)', 'Accept': 'application/json', 'Accept-Language': 'es' } });
+    if (!r.ok) return null;
+    const a = await r.json();
+    if (a && a[0] && a[0].lat) return { lat: parseFloat(a[0].lat), lng: parseFloat(a[0].lon) };
+  } catch (e) {}
+  return null;
+}
+async function _geoJob(tid, blob) {
+  const J = _geoJobs[tid] = { corriendo: true, total: 0, hechos: 0, ok: 0, fail: 0, mensaje: 'Preparando…' };
+  const sucMap = {}; (blob.sucursales || []).forEach(s => sucMap[s.id] = s.nombre);
+  const pend = (blob.clients || []).filter(c =>
+    c.activo !== false && typeof c.lat !== 'number' &&
+    [c.calle, c.col, c.ciudad].filter(Boolean).length);
+  J.total = pend.length;
+  if (!J.total) { J.corriendo = false; J.mensaje = 'No hay clientes pendientes con dirección.'; return; }
+  for (const c of pend) {
+    const dir = [c.calle, c.col, c.ciudad].filter(Boolean).join(', ');
+    const ciudad = _limpiaSuc(sucMap[c.sucursalId] || '');
+    let r = await _geocode([dir, ciudad, 'México'].filter(Boolean).join(', '));
+    if (!r && ciudad) r = await _geocode([ciudad, 'México'].join(', '));   // fallback: centro del municipio
+    if (r) { c.lat = r.lat; c.lng = r.lng; c.geoSrc = 'nominatim'; J.ok++; } else J.fail++;
+    J.hechos++; J.mensaje = `Ubicando ${J.hechos}/${J.total}…`;
+    if (J.hechos % 10 === 0) { try { saveRow(tid, blob); } catch (e) {} }
+    await _sleep(1100);   // respeta el límite de OpenStreetMap (1/seg)
+  }
+  try { saveRow(tid, blob); } catch (e) {}
+  J.corriendo = false; J.mensaje = `Listo: ${J.ok} ubicados, ${J.fail} sin ubicar.`;
+}
+app.post('/api/mapa/geocodificar/iniciar', auth, rol('admin', 'supervisor'), async (req, res) => {
+  const tid = req.user.tenantId;
+  if (tid == null) return res.status(400).json({ error: 'Sin agencia' });
+  if (_geoJobs[tid] && _geoJobs[tid].corriendo) return res.json({ ya: true, ..._geoJobs[tid] });
+  const blob = await getTenant(tid);
+  _geoJob(tid, blob);   // background, no await
+  res.json({ iniciado: true });
+});
+app.get('/api/mapa/geocodificar/estado', auth, rol('admin', 'supervisor'), (req, res) => {
+  const tid = req.user.tenantId;
+  res.json(_geoJobs[tid] || { corriendo: false, total: 0, hechos: 0, ok: 0, fail: 0, mensaje: '' });
+});
+
 /* ---------- Flujo JC (Jefe de Crédito): efectivo y entrega de créditos ---------- */
 function jcCajaDe(jcId) {
   const recibido = db.jcEntregas.filter(e => e.jcId == jcId && e.estado === 'recibido').reduce((a, e) => a + (e.monto || 0), 0);
@@ -1870,7 +1922,7 @@ app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, 
   res.json({ generadoEn: new Date().toISOString(), reportes });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'import-v2', importBulk: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'geo-v1', importBulk: true, geoServer: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
