@@ -386,26 +386,56 @@ async function _geocode(q) {
   } catch (e) {}
   return null;
 }
+function _extraeColonia(s) {
+  s = String(s || '');
+  const m = s.match(/\b(?:col(?:onia)?\.?|barrio|barr?\.?|fracc(?:ionamiento)?\.?|u\.?\s?h\.?|unidad\s+hab\w*|ampliaci[oó]n|secc(?:i[oó]n)?\.?)\s+([^,;]+)/i);
+  if (m && m[1]) return m[1].replace(/\s+\d.*$/, '').trim();          // "Col Centro 12" -> "Centro"
+  const parts = s.split(',').map(x => x.trim()).filter(Boolean);
+  if (parts.length >= 2) { const last = parts[parts.length - 1]; if (last && !/^\d/.test(last)) return last; }
+  return '';
+}
 async function _geoJob(tid, blob) {
   const J = _geoJobs[tid] = { corriendo: true, total: 0, hechos: 0, ok: 0, fail: 0, mensaje: 'Preparando…' };
+  blob.geoCache = blob.geoCache || {};
   const sucMap = {}; (blob.sucursales || []).forEach(s => sucMap[s.id] = s.nombre);
   const pend = (blob.clients || []).filter(c =>
     c.activo !== false && typeof c.lat !== 'number' &&
     [c.calle, c.col, c.ciudad].filter(Boolean).length);
   J.total = pend.length;
   if (!J.total) { J.corriendo = false; J.mensaje = 'No hay clientes pendientes con dirección.'; return; }
+
+  // Agrupar por (colonia | municipio): geocodificamos solo zonas únicas, no cliente por cliente
+  const grupos = {};
   for (const c of pend) {
-    const dir = [c.calle, c.col, c.ciudad].filter(Boolean).join(', ');
-    const ciudad = _limpiaSuc(sucMap[c.sucursalId] || '');
-    let r = await _geocode([dir, ciudad, 'México'].filter(Boolean).join(', '));
-    if (!r && ciudad) r = await _geocode([ciudad, 'México'].join(', '));   // fallback: centro del municipio
-    if (r) { c.lat = r.lat; c.lng = r.lng; c.geoSrc = 'nominatim'; J.ok++; } else J.fail++;
-    J.hechos++; J.mensaje = `Ubicando ${J.hechos}/${J.total}…`;
-    if (J.hechos % 10 === 0) { try { saveRow(tid, blob); } catch (e) {} }
-    await _sleep(1100);   // respeta el límite de OpenStreetMap (1/seg)
+    const muni = _limpiaSuc(sucMap[c.sucursalId] || '');
+    const col = c.col || _extraeColonia(c.calle);
+    const key = (col + '|' + muni).toLowerCase();
+    (grupos[key] = grupos[key] || { col, muni, clientes: [] }).clientes.push(c);
+  }
+  const keys = Object.keys(grupos);
+  let zonasHechas = 0;
+  for (const key of keys) {
+    const g = grupos[key];
+    let r = blob.geoCache[key];
+    if (!r) {                                   // solo llamamos a OSM por zona nueva
+      r = await _geocode([g.col, g.muni, 'México'].filter(Boolean).join(', '));
+      if (!r && g.muni) r = await _geocode([g.muni, 'México'].join(', '));   // fallback al municipio
+      if (r) blob.geoCache[key] = r;
+      await _sleep(1100);                        // respeta 1/seg solo en zonas nuevas
+    }
+    for (const c of g.clientes) {
+      if (r) {
+        c.lat = r.lat + (Math.random() - 0.5) * 0.006;   // ~±300 m para que no se encimen
+        c.lng = r.lng + (Math.random() - 0.5) * 0.006;
+        c.geoSrc = 'zona'; J.ok++;
+      } else J.fail++;
+      J.hechos++;
+    }
+    zonasHechas++; J.mensaje = `Ubicando zonas ${zonasHechas}/${keys.length} · ${J.ok} clientes`;
+    try { saveRow(tid, blob); } catch (e) {}
   }
   try { saveRow(tid, blob); } catch (e) {}
-  J.corriendo = false; J.mensaje = `Listo: ${J.ok} ubicados, ${J.fail} sin ubicar.`;
+  J.corriendo = false; J.mensaje = `Listo: ${J.ok} ubicados, ${J.fail} sin ubicar (${keys.length} zonas).`;
 }
 app.post('/api/mapa/geocodificar/iniciar', auth, rol('admin', 'supervisor'), async (req, res) => {
   const tid = req.user.tenantId;
@@ -1922,7 +1952,7 @@ app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, 
   res.json({ generadoEn: new Date().toISOString(), reportes });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'geo-v1', importBulk: true, geoServer: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'geo-v2', importBulk: true, geoServer: true, geoZonas: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
