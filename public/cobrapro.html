@@ -152,6 +152,7 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
 <style>
@@ -645,8 +646,9 @@
       <div id="ex-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px"></div>
     </div>
     <div class="panel">
-      <div class="ph"><h3>Mapa de relaciones</h3><span class="hint">Cada estrella = un grupo vinculado. Color del nodo = cobrador · borde = nivel de riesgo.</span></div>
-      <div id="ex-graph" style="overflow:auto;border:1px solid var(--line);border-radius:10px;background:var(--surf-1);min-height:120px"></div>
+      <div class="ph"><h3>Mapa de relaciones</h3><span class="hint">Cada nodo = cliente · línea = coincidencia · relleno = cobrador · borde = riesgo. Arrastra para mover · rueda para zoom.</span></div>
+      <div id="ex-chips" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px"></div>
+      <div id="ex-graph" style="position:relative;border:1px solid var(--line);border-radius:10px;background:var(--surf-1);height:540px;overflow:hidden"></div>
     </div>
     <div class="panel"><div class="ph"><h3>Grupos detectados</h3><span class="hint" id="ex-count"></span></div><div id="ex-list"></div></div>
   </section>
@@ -1077,7 +1079,7 @@ function rpAbrir(titulo, html, opts){
   $('rp-out-tt').textContent=titulo;
   $('rp-out-body').innerHTML=html;
   $('rp-out-print').style.display = opts && opts.print ? '' : 'none';
-  $('rp-out-csv').style.display = opts && opts.csv ? '' : 'none';
+  $('rp-out-csv').style.display = (opts && opts.csv) || _rpActual==='desglose' || _rpActual==='gerencial' ? '' : 'none';
   $('rp-output').style.display='block';
   $('rp-output').scrollIntoView({behavior:'smooth',block:'start'});
 }
@@ -1087,6 +1089,7 @@ function _dgQS(){ return 'semanas=12&inicio='+_dgInicio+(_dgSuc?'&sucursalId='+_
 let _dgSuc=null, _dgProm='', _dgInicio=(function(){ try{ return localStorage.getItem('dg_inicio')||'4'; }catch(e){ return '4'; } })();
 function dgSetInicio(v){ _dgInicio=v; try{ localStorage.setItem('dg_inicio',v); }catch(e){} rpVerDesglose(_dgSuc===null?null:_dgSuc, _dgProm); }
 async function rpVerEntregas(){
+  _rpActual=null;
   let d; try{ d=await apiU('GET','/api/reports/entregas'); }catch(e){ alert(e.message); return; }
   const resumen = d.porPersona.length? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${d.porPersona.map(p=>`<div style="background:var(--surf-1);border:1px solid var(--line);border-radius:9px;padding:9px 12px"><div style="font-weight:600;font-size:.85rem">${p.quien} <span style="color:var(--faint);font-weight:400">· ${p.rol}</span></div><div style="font-size:.78rem;color:var(--dim)">${p.n} entregas · <b style="color:var(--grn)">${fmt(p.monto)}</b></div></div>`).join('')}</div>` : '';
   const filas = d.entregas.map(e=>{
@@ -1097,6 +1100,7 @@ async function rpVerEntregas(){
     <table class="rp-table"><thead><tr><th>Fecha</th><th>Cliente</th><th>Entregó</th><th class="n">Monto</th><th class="n">Evid.</th></tr></thead><tbody>${filas||'<tr><td colspan="5" style="color:var(--faint);padding:12px">Aún no hay entregas registradas.</td></tr>'}</tbody></table>`);
 }
 async function rpVerSinVentas(){
+  _rpActual=null;
   let d; try{ d=await apiU('GET','/api/reports/sin-ventas?inicio='+_dgInicio); }catch(e){ alert(e.message); return; }
   const filas = d.cobradores.map(c=>{
     const alerta = c.semanasSinVender>=2 ? 'color:var(--red);font-weight:600' : c.semanasSinVender===1 ? 'color:var(--acc)' : 'color:var(--grn)';
@@ -1311,16 +1315,30 @@ async function rpVerAtraso(){
 }
 
 function rpExportCSV(){
-  if(!_rpActual||!_rpData) return;
-  let rows=[];
-  if(_rpActual==='colocacion'){ rows=[['fecha','creditos','monto']].concat(_rpData.serie.map(s=>[s.fecha,s.creditos,s.monto])); }
-  else if(_rpActual==='refin'){ rows=[['fecha','cliente','cobrador','sucursal','folio_viejo','folio_nuevo','saldo_liquidado','nuevo_monto','neto']].concat(_rpData.refins.map(r=>[r.fecha,r.cliente,r.cobrador,r.sucursal,r.oldFolio,r.nuevoFolio||'',r.saldoLiquidado,r.nuevoMonto,r.neto])); }
-  else if(_rpActual==='comisiones'){ rows=[['cobrador','sucursal','efectivo','transferencia','deposito','refin','total','comision']].concat(_rpData.cobradores.map(c=>[c.nombre,c.sucursal,c.efectivo,c.transferencia,c.deposito,c.refin,c.total,c.comision])); }
-  else if(_rpActual==='atraso'){ rows=[['cobrador','sucursal','clientes','cartera','atraso','clientes_mora']].concat(_rpData.por_cobrador.map(c=>[c.nombre,c.sucursal,c.clientes,c.cartera,c.atraso_monto||0,c.atraso_clientes||0])); }
-  else if(_rpActual==='recoleccion'){ rows=[['tipo','nombre','sucursal','monto']].concat(_rpData.porCobrador.map(c=>['cobrador',c.cobrador,c.sucursal,c.monto])).concat(_rpData.porSucursal.map(s=>['sucursal_caja',s.sucursal,s.encargada,s.efectivo])); }
-  const csv = rows.map(r=>r.map(x=>typeof x==='string'&&x.includes(',')?`"${x}"`:x).join(',')).join('\n');
-  const blob = new Blob([csv],{type:'text/csv'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`reporte_${_rpActual}_${new Date().toISOString().slice(0,10)}.csv`; a.click();
+  if(!_rpActual||!_rpData){ alert('Abre un reporte primero.'); return; }
+  const d=_rpData, fn='reporte_'+_rpActual+'_'+new Date().toISOString().slice(0,10);
+  let sheets=null;
+  if(_rpActual==='desglose'){
+    const head=['Concepto'].concat((d.semanas||[]).map(w=>w.label+(w.rango?(' ('+w.rango+')'):(w.fecha?(' ('+w.fecha+')'):''))));
+    const rows=(d.filas||[]).map(f=>[f.lbl].concat(f.vals));
+    sheets=[{name:'Desglose',aoa:[head].concat(rows)}];
+  } else if(_rpActual==='gerencial'){
+    const e=d.empresa||{};
+    const emp=[['NIVEL EMPRESA'],['Cartera activa',e.cartera],['Créditos activos',e.creditosActivos],['Clientes',e.clientes],['Dinero colocado',e.colocado],['Créditos nuevos',e.ncoloc],['Dinero cobrado',e.cobrado],['Pagos',e.npagos],['Utilidad',e.utilidad],['Vencido',e.vencido],['Clientes en mora',e.atrasoClientes],['Morosidad %',e.morosidad],[]];
+    const head=['Sucursal','Gerente','Promotor','Cartera','Cobrado','Créditos colocados','Monto colocado','Utilidad','Vencido','Mora %'];
+    const rows=[];
+    (d.sucursales||[]).forEach(s=>{
+      rows.push([s.sucursal,s.gerente,'(total sucursal)',s.cartera,s.cobrado,'',s.colocado!=null?s.colocado:'',s.utilidad,s.vencido,s.morosidad]);
+      (s.promotores||[]).forEach(p=>rows.push([s.sucursal,s.gerente,p.promotor,p.cartera,p.cobrado,p.ncoloc,p.colocado,p.utilidad,p.vencido,p.morosidad]));
+    });
+    sheets=[{name:'Gerencial',aoa:emp.concat([head]).concat(rows)}];
+  } else if(_rpActual==='colocacion'){ sheets=[{name:'Colocación',aoa:[['fecha','creditos','monto']].concat((d.serie||[]).map(s=>[s.fecha,s.creditos,s.monto]))}]; }
+  else if(_rpActual==='refin'){ sheets=[{name:'Refinanciamientos',aoa:[['fecha','cliente','cobrador','sucursal','folio_viejo','folio_nuevo','saldo_liquidado','nuevo_monto','neto']].concat((d.refins||[]).map(r=>[r.fecha,r.cliente,r.cobrador,r.sucursal,r.oldFolio,r.nuevoFolio||'',r.saldoLiquidado,r.nuevoMonto,r.neto]))}]; }
+  else if(_rpActual==='comisiones'){ sheets=[{name:'Comisiones',aoa:[['cobrador','sucursal','efectivo','transferencia','deposito','refin','total','comision']].concat((d.cobradores||[]).map(c=>[c.nombre,c.sucursal,c.efectivo,c.transferencia,c.deposito,c.refin,c.total,c.comision]))}]; }
+  else if(_rpActual==='atraso'){ sheets=[{name:'Atraso',aoa:[['cobrador','sucursal','clientes','cartera','atraso','clientes_mora']].concat((d.por_cobrador||[]).map(c=>[c.nombre,c.sucursal,c.clientes,c.cartera,c.atraso_monto||0,c.atraso_clientes||0]))}]; }
+  else if(_rpActual==='recoleccion'){ sheets=[{name:'Recolección',aoa:[['tipo','nombre','sucursal','monto']].concat((d.porCobrador||[]).map(c=>['cobrador',c.cobrador,c.sucursal,c.monto])).concat((d.porSucursal||[]).map(s=>['sucursal_caja',s.sucursal,s.encargada,s.efectivo]))}]; }
+  if(!sheets){ alert('Este reporte aún no soporta exportación.'); return; }
+  xlsxDL(fn, sheets);
 }
 function rpImprimirActual(){ window.print(); }
 
@@ -2130,17 +2148,47 @@ async function resetTarifas(){
 }
 // f-suc se llena con sucursales reales al abrir Cartera (ver cargarCartera)
 
-function exportCSV(t){let rows=[],name=t;const D=CRED.map(deriva);
-  if(t==='pagos'){rows.push(['Hora','Cliente','Folio','CobradoPor','FormaPago','Monto']);PAGOS.forEach(p=>rows.push([p.hora,p.cliente,p.folio,p.por,p.forma,p.monto]));}
-  else if(t==='cartera'){rows.push(['Cliente','Sucursal','Cobrador','Modalidad','Monto','Cuota','Plazo','Saldo','Avance%','Estado']);D.forEach(c=>rows.push([c.cliente,c.sucNom,c.promNom,c.tipo,c.monto,Math.round(c.cuota),c.plazo,Math.round(c.saldo),(c.avance*100).toFixed(0),c.sem]));}
-  else{rows.push(['(exporta desde la vista correspondiente)']);}
-  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([rows.map(r=>r.join(',')).join('\n')],{type:'text/csv'}));a.download=name+'_'+period+'.csv';a.click();}
+function xlsxDL(filename, sheets){
+  try{
+    if(window.XLSX){
+      const wb=XLSX.utils.book_new();
+      sheets.forEach((s,i)=>{ const ws=XLSX.utils.aoa_to_sheet(s.aoa); XLSX.utils.book_append_sheet(wb,ws,(s.name||('Hoja'+(i+1))).slice(0,31)); });
+      XLSX.writeFile(wb, filename.replace(/\.(csv|xlsx)$/,'')+'.xlsx'); return;
+    }
+  }catch(e){ console.warn('xlsx falló, uso CSV',e); }
+  const aoa=sheets[0].aoa;
+  const csv='\ufeff'+aoa.map(r=>r.map(x=>{const s=String(x==null?'':x); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}).join(',')).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download=filename.replace(/\.(csv|xlsx)$/,'')+'.csv';a.click();
+}
+function tablaAoa(tableEl){
+  if(!tableEl) return [];
+  const aoa=[], skip=new Set();
+  const heads=[...tableEl.querySelectorAll('thead th')];
+  heads.forEach((th,i)=>{ if(!((th.innerText||th.textContent)||'').trim()) skip.add(i); });
+  const hr=[]; heads.forEach((th,i)=>{ if(!skip.has(i)) hr.push(((th.innerText||th.textContent)||'').trim()); });
+  if(hr.length) aoa.push(hr);
+  [...tableEl.querySelectorAll('tbody tr, tfoot tr')].forEach(tr=>{
+    const tds=[...tr.children];
+    if(tds.length===1 && tds[0].hasAttribute('colspan')) return;
+    const row=[]; tds.forEach((td,i)=>{ if(skip.has(i)) return; let v=((td.innerText||td.textContent)||'').replace(/\s*\n\s*/g,' · ').replace(/\s+/g,' ').trim(); row.push(v); });
+    if(row.some(x=>x)) aoa.push(row);
+  });
+  return aoa;
+}
+function exportCSV(t){
+  const map={cartera:['tb-cart','cartera'],prom:['tb-prom','cobradores'],suc:['tb-suc','sucursales'],com:['tb-com','nomina'],pagos:['rp-pagos','movimientos']};
+  const m=map[t]; if(!m){ alert('Nada que exportar.'); return; }
+  const tb=document.getElementById(m[0]); const table=tb?tb.closest('table'):null;
+  const aoa=tablaAoa(table);
+  if(aoa.length<2){ alert('No hay datos para exportar. Abre esta vista y deja que cargue primero.'); return; }
+  xlsxDL(m[1]+'_'+new Date().toISOString().slice(0,10), [{name:m[1],aoa}]);
+}
 
 setInterval(()=>document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'}),1000);
 document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'});
 /* ===== USUARIOS (conectado al backend) ===== */
 /* ===== Extras · Detector de prestanombres ===== */
-let _exData=null;
+let _exData=null, _exRisk='todos';
 function exNorm(s){ return String(s||'').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z0-9 ]/g,' ').replace(/\s+/g,' ').trim(); }
 function exTel(t){ const d=String(t||'').replace(/\D/g,''); return d.length>=10?d.slice(-10):''; }
 function exDom(d){ let s=exNorm(d).replace(/\b(CALLE|C|AV|AVENIDA|BLVD|COL|COLONIA|FRACC|FRACCIONAMIENTO|BARRIO|MZ|MANZANA|LT|LOTE|NO|NUM|NUMERO|SN|S N|DOMICILIO|CONOCIDO|DEL|DE|LA|LOS|LAS|EL)\b/g,'').replace(/\s+/g,' ').trim(); return s.length>=6?s:''; }
@@ -2191,46 +2239,97 @@ function exClusters(){
 }
 function exTipos(c){ let s=''; if(c.sharedTel)s+='📞'; if(c.sharedDom)s+='🏠'; if(!c.sharedTel&&!c.sharedDom)s+='👪'; return s; }
 function exRender(){
-  const cl=exClusters();
-  const alta=cl.filter(c=>c.risk==='alta');
-  const involucrados=cl.reduce((a,c)=>a+c.g.length,0);
+  const all=exClusters();
+  const cl = _exRisk==='todos' ? all : all.filter(c=>c.risk===_exRisk);
+  const alta=all.filter(c=>c.risk==='alta');
+  const involucrados=all.reduce((a,c)=>a+c.g.length,0);
   const saldoAlta=alta.reduce((a,c)=>a+c.saldo,0);
-  const cruces=cl.filter(c=>c.cruza).length;
+  const cruces=all.filter(c=>c.cruza).length;
   const kpi=(l,v,col)=>'<div class="kpi"><div style="font-size:.72rem;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">'+l+'</div><div style="font-size:1.5rem;font-weight:700;'+(col?'color:'+col:'')+'">'+v+'</div></div>';
   document.getElementById('ex-kpis').innerHTML =
-    kpi('Grupos detectados',cl.length)+kpi('Riesgo alto',alta.length,'#e8624d')+kpi('Clientes involucrados',involucrados)+kpi('Cruces entre cobradores',cruces,'#e0a012')+kpi('Saldo en riesgo alto',fmt(saldoAlta),'#e8624d');
+    kpi('Grupos detectados',all.length)+kpi('Riesgo alto',alta.length,'#e8624d')+kpi('Clientes involucrados',involucrados)+kpi('Cruces entre cobradores',cruces,'#e0a012')+kpi('Saldo en riesgo alto',fmt(saldoAlta),'#e8624d');
   document.getElementById('ex-count').textContent = cl.length? (cl.length+' grupos · ordenados por riesgo y saldo') : '';
+  exChips(all);
   exGraph(cl);
   exList(cl);
+}
+function exChips(all){
+  const c={todos:all.length,alta:0,media:0,baja:0}; all.forEach(x=>c[x.risk]++);
+  const chip=(k,lbl,dot)=>'<button class="btn '+(_exRisk===k?'gold':'')+'" style="padding:5px 11px;font-size:.78rem" onclick="exSetRisk(\''+k+'\')">'+(dot?'<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+dot+';margin-right:5px"></span>':'')+lbl+' '+c[k]+'</button>';
+  document.getElementById('ex-chips').innerHTML = chip('todos','Todos')+chip('alta','Alta',EX_RKCOLOR.alta)+chip('media','Media',EX_RKCOLOR.media)+chip('baja','Baja',EX_RKCOLOR.baja);
+}
+function exSetRisk(k){ _exRisk=k; exRender(); }
+const EX_EDGE={tel:'#e0a012',dom:'#ef476f',ape:'#9b5de5'};
+function exBuildGraph(cl){
+  const nodes=[], edges=[], seen=new Set();
+  cl.forEach(c=>c.g.forEach(m=>{ m.__id=nodes.length; nodes.push({id:m.__id,nombre:m.nombre||'',cob:m.cobrador||'—',saldo:m.saldo||0,tel:m.tel||'',risk:c.risk}); }));
+  cl.forEach(c=>{
+    const clique=(key,type)=>{ const g={}; c.g.forEach(m=>{ const v=m[key]; if(v)(g[v]=g[v]||[]).push(m.__id); }); Object.values(g).forEach(ids=>{ for(let i=0;i<ids.length;i++)for(let j=i+1;j<ids.length;j++){ const a=Math.min(ids[i],ids[j]),b=Math.max(ids[i],ids[j]),k=a+'-'+b; if(!seen.has(k)){ seen.add(k); edges.push({a,b,type}); } } }); };
+    clique('_t','tel'); clique('_d','dom'); clique('_a','ape');
+  });
+  return {nodes,edges};
+}
+function exLayout(nodes,edges,W,H,iters){
+  const n=nodes.length||1;
+  nodes.forEach((nd,i)=>{ const a=i*2.3998; const r=Math.sqrt(i/n)*Math.min(W,H)*0.42; nd.x=W/2+Math.cos(a)*r; nd.y=H/2+Math.sin(a)*r; });
+  const k=Math.sqrt((W*H)/n)*0.8;
+  for(let it=0;it<iters;it++){
+    const t=1-it/iters;
+    for(let i=0;i<n;i++){ const a=nodes[i]; let fx=0,fy=0;
+      for(let j=0;j<n;j++){ if(i===j)continue; const b=nodes[j]; let dx=a.x-b.x,dy=a.y-b.y,d2=dx*dx+dy*dy||0.01,d=Math.sqrt(d2),rep=k*k/d; fx+=dx/d*rep; fy+=dy/d*rep; }
+      a._fx=fx; a._fy=fy;
+    }
+    edges.forEach(e=>{ const a=nodes[e.a],b=nodes[e.b]; let dx=a.x-b.x,dy=a.y-b.y,d=Math.sqrt(dx*dx+dy*dy)||0.01,att=d*d/k,fx=dx/d*att,fy=dy/d*att; a._fx-=fx; a._fy-=fy; b._fx+=fx; b._fy+=fy; });
+    const md=k*(0.12+0.5*t);
+    nodes.forEach(nd=>{ nd._fx+=(W/2-nd.x)*0.012; nd._fy+=(H/2-nd.y)*0.012; let dx=nd._fx,dy=nd._fy,d=Math.sqrt(dx*dx+dy*dy)||0.01,m=Math.min(d,md); nd.x+=dx/d*m; nd.y+=dy/d*m; nd.x=Math.max(24,Math.min(W-24,nd.x)); nd.y=Math.max(24,Math.min(H-24,nd.y)); });
+  }
 }
 function exGraph(cl){
   const cont=document.getElementById('ex-graph');
   if(!cl.length){ cont.innerHTML='<div style="padding:20px;color:var(--faint)">Sin coincidencias con los filtros actuales. 👍</div>'; return; }
-  const top=cl.slice(0,48);
-  const cols=4, cw=240, ch=210, R=60, nr=12;
-  const rows=Math.ceil(top.length/cols);
-  const W=cols*cw, H=rows*ch;
-  let s='<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" xmlns="http://www.w3.org/2000/svg" font-family="inherit">';
-  top.forEach((c,gi)=>{
-    const col=gi%cols, row=Math.floor(gi/cols);
-    const cx=col*cw+cw/2, cy=row*ch+ch/2-8;
-    const mem=c.g.slice(0,10); const n=mem.length;
-    const rk=EX_RKCOLOR[c.risk];
-    // edges hub
-    mem.forEach((m,i)=>{ const ang=(i/n)*Math.PI*2-Math.PI/2; const x=cx+Math.cos(ang)*R, y=cy+Math.sin(ang)*R; s+='<line x1="'+cx+'" y1="'+cy+'" x2="'+x+'" y2="'+y+'" stroke="'+rk+'" stroke-width="1.2" opacity=".45"/>'; });
-    // center
-    s+='<circle cx="'+cx+'" cy="'+cy+'" r="6" fill="'+rk+'"/>';
-    // nodes
-    mem.forEach((m,i)=>{ const ang=(i/n)*Math.PI*2-Math.PI/2; const x=cx+Math.cos(ang)*R, y=cy+Math.sin(ang)*R;
-      const tt=(m.nombre||'')+' · '+(m.cobrador||'—')+' · '+(m.tel||'s/tel')+' · '+fmt(m.saldo||0);
-      s+='<circle cx="'+x+'" cy="'+y+'" r="'+nr+'" fill="'+exColorCob(m.cobrador)+'" stroke="'+rk+'" stroke-width="2.5"><title>'+tt.replace(/[<>&]/g,'')+'</title></circle>'; });
-    if(c.g.length>10){ s+='<text x="'+cx+'" y="'+(cy+4)+'" text-anchor="middle" font-size="9" fill="#fff">+'+(c.g.length-10)+'</text>'; }
-    // label
-    s+='<text x="'+cx+'" y="'+(row*ch+ch-26)+'" text-anchor="middle" font-size="11" fill="var(--txt)">'+exTipos(c)+' '+c.g.length+' · '+c.cobs.length+' cob.</text>';
-    s+='<text x="'+cx+'" y="'+(row*ch+ch-11)+'" text-anchor="middle" font-size="10" fill="'+rk+'">'+c.risk.toUpperCase()+' · '+fmt(c.saldo)+'</text>';
+  const {nodes,edges}=exBuildGraph(cl);
+  const n=nodes.length;
+  const side=Math.max(720, Math.sqrt(n)*150), W=side, H=Math.max(520, Math.sqrt(n)*100);
+  const iters = n>400?70 : n>180?150 : 260;
+  exLayout(nodes,edges,W,H,iters);
+  const esc=s=>String(s||'').replace(/[<>&"]/g,'');
+  let g='';
+  edges.forEach(e=>{ const a=nodes[e.a],b=nodes[e.b]; g+='<line x1="'+a.x.toFixed(1)+'" y1="'+a.y.toFixed(1)+'" x2="'+b.x.toFixed(1)+'" y2="'+b.y.toFixed(1)+'" stroke="'+EX_EDGE[e.type]+'" stroke-width="2" opacity=".55"/>'; });
+  nodes.forEach(nd=>{ const r=9+Math.min(9,(nd.saldo||0)/9000); const rk=EX_RKCOLOR[nd.risk];
+    g+='<circle cx="'+nd.x.toFixed(1)+'" cy="'+nd.y.toFixed(1)+'" r="'+r.toFixed(1)+'" fill="'+exColorCob(nd.cob)+'" stroke="'+rk+'" stroke-width="3"><title>'+esc(nd.nombre+' · '+nd.cob+' · '+(nd.tel||'s/tel')+' · '+fmt(nd.saldo))+'</title></circle>';
+    g+='<text x="'+nd.x.toFixed(1)+'" y="'+(nd.y-r-3).toFixed(1)+'" text-anchor="middle" font-size="9" fill="var(--txt)" style="pointer-events:none">'+esc((nd.nombre||'').split(' ').slice(0,2).join(' '))+'</text>';
   });
-  s+='</svg>';
-  cont.innerHTML=s;
+  const legend='<div style="position:absolute;left:10px;bottom:10px;background:rgba(15,18,24,.78);border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-size:.7rem;color:var(--dim);line-height:1.7">'
+    +'<div style="font-weight:700;color:var(--txt);letter-spacing:.5px;margin-bottom:2px">CONEXIONES</div>'
+    +'<div><span style="display:inline-block;width:16px;height:3px;background:'+EX_EDGE.tel+';vertical-align:middle;margin-right:6px"></span>Mismo teléfono</div>'
+    +'<div><span style="display:inline-block;width:16px;height:3px;background:'+EX_EDGE.dom+';vertical-align:middle;margin-right:6px"></span>Mismo domicilio</div>'
+    +'<div><span style="display:inline-block;width:16px;height:3px;background:'+EX_EDGE.ape+';vertical-align:middle;margin-right:6px"></span>Mismos apellidos</div>'
+    +'<div style="font-weight:700;color:var(--txt);letter-spacing:.5px;margin:5px 0 2px">RIESGO (borde)</div>'
+    +'<div><span style="display:inline-block;width:9px;height:9px;border-radius:50%;border:2px solid '+EX_RKCOLOR.alta+';margin-right:6px"></span>Alta</div>'
+    +'<div><span style="display:inline-block;width:9px;height:9px;border-radius:50%;border:2px solid '+EX_RKCOLOR.media+';margin-right:6px"></span>Media</div>'
+    +'<div><span style="display:inline-block;width:9px;height:9px;border-radius:50%;border:2px solid '+EX_RKCOLOR.baja+';margin-right:6px"></span>Baja</div></div>';
+  const zoom='<div style="position:absolute;right:10px;top:10px;display:flex;flex-direction:column;gap:5px">'
+    +'<button class="btn" id="exz-in" style="padding:4px 10px;font-size:1rem">+</button>'
+    +'<button class="btn" id="exz-out" style="padding:4px 10px;font-size:1rem">−</button>'
+    +'<button class="btn" id="exz-fit" style="padding:4px 8px;font-size:.85rem" title="Centrar">⊙</button></div>';
+  cont.innerHTML='<svg id="ex-svg" width="100%" height="100%" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet" style="cursor:grab;display:block" xmlns="http://www.w3.org/2000/svg" font-family="inherit"><g id="ex-gz">'+g+'</g></svg>'+legend+zoom;
+  exWireZoom(W,H);
+}
+function exWireZoom(W,H){
+  const svg=document.getElementById('ex-svg'), gz=document.getElementById('ex-gz');
+  if(!svg||!gz) return;
+  let st={s:1,tx:0,ty:0}, drag=null;
+  const apply=()=>{ gz.setAttribute('transform','translate('+st.tx+' '+st.ty+') scale('+st.s+')'); };
+  const zoomAt=(factor,cx,cy)=>{ const ns=Math.max(.3,Math.min(6,st.s*factor)); const pt=svg.createSVGPoint(); pt.x=cx; pt.y=cy; const ctm=svg.getScreenCTM(); if(!ctm)return; const loc=pt.matrixTransform(ctm.inverse()); st.tx=loc.x-(loc.x-st.tx)*(ns/st.s); st.ty=loc.y-(loc.y-st.ty)*(ns/st.s); st.s=ns; apply(); };
+  document.getElementById('exz-in').onclick=()=>zoomAt(1.25,svg.clientWidth/2+svg.getBoundingClientRect().left,svg.clientHeight/2+svg.getBoundingClientRect().top);
+  document.getElementById('exz-out').onclick=()=>zoomAt(.8,svg.clientWidth/2+svg.getBoundingClientRect().left,svg.clientHeight/2+svg.getBoundingClientRect().top);
+  document.getElementById('exz-fit').onclick=()=>{ st={s:1,tx:0,ty:0}; apply(); };
+  svg.onwheel=ev=>{ ev.preventDefault(); zoomAt(ev.deltaY<0?1.12:0.89, ev.clientX, ev.clientY); };
+  svg.onmousedown=ev=>{ drag={x:ev.clientX,y:ev.clientY,tx:st.tx,ty:st.ty}; svg.style.cursor='grabbing';
+    const mv=e=>{ if(!drag)return; st.tx=drag.tx+(e.clientX-drag.x); st.ty=drag.ty+(e.clientY-drag.y); apply(); };
+    const up=()=>{ drag=null; svg.style.cursor='grab'; window.removeEventListener('mousemove',mv); window.removeEventListener('mouseup',up); };
+    window.addEventListener('mousemove',mv); window.addEventListener('mouseup',up);
+  };
 }
 function exList(cl){
   const wrap=document.getElementById('ex-list');
