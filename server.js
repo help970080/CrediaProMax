@@ -84,6 +84,8 @@ function normalizeTenant(b) {
   b.config.tarifas = b.config.tarifas || JSON.parse(JSON.stringify(DEFAULT_TARIFAS));
   if (!b.config.tarifas.s16) b.config.tarifas.s16 = JSON.parse(JSON.stringify(DEFAULT_TARIFAS.s16));
   if (!b.config.tarifas.s17) b.config.tarifas.s17 = JSON.parse(JSON.stringify(DEFAULT_TARIFAS.s17));
+  if (!b.config.tarifas.s21) b.config.tarifas.s21 = JSON.parse(JSON.stringify(DEFAULT_TARIFAS.s21));
+  if (!b.config.tarifas.s31) b.config.tarifas.s31 = JSON.parse(JSON.stringify(DEFAULT_TARIFAS.s31));
   b._idem = b._idem || {};
   (b.cortes || []).forEach(c => { if (c.estado === 'pendiente' && !(c.totalEfectivo > 0)) { c.estado = 'recibido'; c.recibidoAt = c.recibidoAt || new Date().toISOString(); c.recibidoBy = c.recibidoBy || 'sin efectivo'; } });
   return b;
@@ -115,18 +117,21 @@ const DEFAULT_TARIFAS = {
   p17:     [{ p: 17, f: 1.73, fijo: 270 }],
   s16:     { factor: 1.6, fijo: 100, ppFactor: 0.1, ppFijo: 100, pagos: 16 },
   s17:     { factor: 1.7, fijo: 200, ppFactor: 0.1, ppFijo: 200, pagos: 17 },
+  s21:     { factor: 1.785, fijo: 200, ppFactor: 0.085, ppFijo: 200, pagos: 21 },
+  s31:     { factor: 1.86, fijo: 200, ppFactor: 0.06, ppFijo: 200, pagos: 31 },
   unico:   { base: 2, factor: 0.0183 }
 };
 function tarifasActuales() { return (db && db.config && db.config.tarifas) ? db.config.tarifas : DEFAULT_TARIFAS; }
 function calcCredito(tipo, plazo, monto, dias) {
   const T = tarifasActuales();
-  if (tipo === 's16' || tipo === 's17') {
+  if (tipo === 's16' || tipo === 's17' || tipo === 's21' || tipo === 's31') {
     const c = T[tipo] || DEFAULT_TARIFAS[tipo];
-    const total = monto * c.factor + c.fijo;
+    const r2 = x => Math.round(x * 100) / 100;
+    const total = r2(monto * c.factor + c.fijo);
     const pagos = c.pagos;
-    const primerPago = monto * c.ppFactor + c.ppFijo;
-    const cuota = (total - primerPago) / (pagos - 1); // pagos 2..N (Tarifa 2)
-    return { total, pagos, cuota, primerPago, descuentaPP: true, entregaCliente: monto - primerPago };
+    const primerPago = r2(monto * c.ppFactor + c.ppFijo);
+    const cuota = r2((total - primerPago) / (pagos - 1)); // pagos 2..N (Tarifa 2)
+    return { total, pagos, cuota, primerPago, descuentaPP: true, entregaCliente: r2(monto - primerPago) };
   }
   if (tipo === 'unico') { const u = T.unico || DEFAULT_TARIFAS.unico; const tap = monto + (dias || 15) * ((u.base||0) + monto * (u.factor||0)); return { total: tap, pagos: 1, cuota: tap }; }
   const arr = T[tipo] || T.semanal || DEFAULT_TARIFAS.semanal; const it = arr.find(x => x.p === plazo) || arr[0];
@@ -462,6 +467,18 @@ app.post('/api/mapa/geocode/zona', auth, rol('admin', 'supervisor'), async (req,
   const n = g ? _asignaZona(g.clientes, r) : 0;
   saveDB();
   res.json({ ok: true, ubicados: n });
+});
+
+// Respaldo: descarga TODO el estado de la agencia como JSON (para no depender solo de Render)
+app.get('/api/admin/backup', auth, rol('admin'), (req, res) => {
+  const s = als.getStore();
+  const blob = (s && s.db) ? s.db : {};
+  const brand = (blob.config && blob.config.brand && blob.config.brand.nombre) || 'cobrapro';
+  const fecha = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+  const nombre = ('respaldo_' + brand + '_' + fecha).replace(/[^a-zA-Z0-9_-]/g, '_') + '.json';
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="' + nombre + '"');
+  res.send(JSON.stringify(blob, null, 2));
 });
 
 /* ---------- Flujo JC (Jefe de Crédito): efectivo y entrega de créditos ---------- */
@@ -834,6 +851,7 @@ function calcAtraso(sale){
   let cuotasDebidas = 0;
   if (sale.tipo === 'diario') cuotasDebidas = Math.min(sale.plazo || 0, dias);
   else if (sale.tipo === 'semanal') cuotasDebidas = Math.min(sale.plazo || 0, Math.floor(dias/7));
+  else if (sale.tipo === 's16' || sale.tipo === 's17' || sale.tipo === 's21' || sale.tipo === 's31') cuotasDebidas = Math.min(sale.plazo || 0, Math.floor(dias/7));
   else if (sale.tipo === 'unico') cuotasDebidas = dias >= (sale.plazo || 0) ? 1 : 0;
   else if (sale.tipo === 'p17') cuotasDebidas = Math.min(17, Math.floor(dias / ((sale.plazo || 270)/17)));
   // saldo base: total original, o el saldo reprogramado si hubo reestructura
@@ -844,7 +862,7 @@ function calcAtraso(sale){
   const cuotasAtraso = cuota > 0 ? Math.round(montoAtraso / cuota) : 0;
   const cuotasPagadas = cuota > 0 ? Math.max(0, Math.round((saldoBase - saldoActual)/cuota)) : 0;
   const diasAtraso = sale.tipo === 'diario' ? cuotasAtraso
-                   : sale.tipo === 'semanal' ? cuotasAtraso*7
+                   : (sale.tipo === 'semanal' || sale.tipo === 's16' || sale.tipo === 's17' || sale.tipo === 's21' || sale.tipo === 's31') ? cuotasAtraso*7
                    : sale.tipo === 'unico' ? Math.max(0, dias - (sale.plazo||0))
                    : cuotasAtraso * Math.round((sale.plazo||270)/17);
   return { cuotasDebidas, cuotasPagadas, cuotasAtraso, montoAtraso, diasAtraso };
@@ -1292,6 +1310,24 @@ app.delete('/api/cortes/:id', auth, rol('admin','supervisor'), (req, res) => {
 });
 app.get('/api/config', auth, (req, res) => res.json(db.config || {}));
 app.get('/api/tarifas', auth, (req, res) => res.json((db.config && db.config.tarifas) || DEFAULT_TARIFAS));
+app.get('/api/config/comisiones', auth, (req, res) => {
+  const c = (db.config && db.config.comisiones) || {};
+  res.json({
+    cob: c.cob != null ? c.cob : ((db.config && db.config.tasaCobrador) || 5),
+    meta: c.meta != null ? c.meta : 85,
+    bono: c.bono != null ? c.bono : 600,
+    mora: c.mora != null ? c.mora : 1.5,
+    coloc: c.coloc != null ? c.coloc : 80
+  });
+});
+app.put('/api/config/comisiones', auth, rol('admin'), (req, res) => {
+  const { cob, meta, bono, mora, coloc } = req.body || {};
+  db.config = db.config || {};
+  db.config.comisiones = { cob: +cob || 0, meta: +meta || 0, bono: +bono || 0, mora: +mora || 0, coloc: +coloc || 0 };
+  db.config.tasaCobrador = +cob || 0; // el reporte de comisiones usa esto
+  saveDB();
+  res.json({ ok: true, comisiones: db.config.comisiones });
+});
 app.put('/api/tarifas', auth, rol('admin'), (req, res) => {
   const t = req.body || {};
   // validación mínima de estructura
@@ -1301,7 +1337,8 @@ app.put('/api/tarifas', auth, rol('admin'), (req, res) => {
   const okPP = s => s && typeof s.factor === 'number' && typeof s.fijo === 'number' && typeof s.ppFactor === 'number' && typeof s.ppFijo === 'number' && typeof s.pagos === 'number';
   db.config = db.config || {};
   db.config.tarifas = { diario: t.diario, semanal: t.semanal, p17: t.p17, unico: { base: t.unico.base, factor: t.unico.factor },
-    s16: okPP(t.s16) ? t.s16 : DEFAULT_TARIFAS.s16, s17: okPP(t.s17) ? t.s17 : DEFAULT_TARIFAS.s17 };
+    s16: okPP(t.s16) ? t.s16 : DEFAULT_TARIFAS.s16, s17: okPP(t.s17) ? t.s17 : DEFAULT_TARIFAS.s17,
+    s21: okPP(t.s21) ? t.s21 : DEFAULT_TARIFAS.s21, s31: okPP(t.s31) ? t.s31 : DEFAULT_TARIFAS.s31 };
   saveDB();
   res.json(db.config.tarifas);
 });
@@ -1966,7 +2003,7 @@ app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, 
   res.json({ generadoEn: new Date().toISOString(), reportes });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'geo-v4', importBulk: true, geoZonas: true, geoNavegador: true, muniFallback: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'tarifas-v2', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
