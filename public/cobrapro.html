@@ -646,7 +646,7 @@
       <div id="ex-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px"></div>
     </div>
     <div class="panel">
-      <div class="ph"><h3>Mapa de relaciones</h3><span class="hint">Cada nodo = cliente · línea = coincidencia · relleno = cobrador · borde = riesgo. Arrastra para mover · rueda para zoom.</span></div>
+      <div class="ph"><h3>Mapa de relaciones</h3><span class="hint">Un grupo a la vez · nodo = cliente · línea = coincidencia · relleno = cobrador · borde = riesgo. Usa ◀ ▶ o la lista de abajo.</span></div>
       <div id="ex-chips" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px"></div>
       <div id="ex-graph" style="position:relative;border:1px solid var(--line);border-radius:10px;background:var(--surf-1);height:540px;overflow:hidden"></div>
     </div>
@@ -2238,9 +2238,11 @@ function exClusters(){
   return cl;
 }
 function exTipos(c){ let s=''; if(c.sharedTel)s+='📞'; if(c.sharedDom)s+='🏠'; if(!c.sharedTel&&!c.sharedDom)s+='👪'; return s; }
+let _exSel=0, _exCL=[];
 function exRender(){
   const all=exClusters();
   const cl = _exRisk==='todos' ? all : all.filter(c=>c.risk===_exRisk);
+  _exCL=cl;
   const alta=all.filter(c=>c.risk==='alta');
   const involucrados=all.reduce((a,c)=>a+c.g.length,0);
   const saldoAlta=alta.reduce((a,c)=>a+c.saldo,0);
@@ -2248,98 +2250,65 @@ function exRender(){
   const kpi=(l,v,col)=>'<div class="kpi"><div style="font-size:.72rem;color:var(--dim);text-transform:uppercase;letter-spacing:.5px">'+l+'</div><div style="font-size:1.5rem;font-weight:700;'+(col?'color:'+col:'')+'">'+v+'</div></div>';
   document.getElementById('ex-kpis').innerHTML =
     kpi('Grupos detectados',all.length)+kpi('Riesgo alto',alta.length,'#e8624d')+kpi('Clientes involucrados',involucrados)+kpi('Cruces entre cobradores',cruces,'#e0a012')+kpi('Saldo en riesgo alto',fmt(saldoAlta),'#e8624d');
-  document.getElementById('ex-count').textContent = cl.length? (cl.length+' grupos · ordenados por riesgo y saldo') : '';
+  document.getElementById('ex-count').textContent = cl.length? (cl.length+' grupos · clic para ver cada uno') : '';
+  if(_exSel>=cl.length) _exSel=0;
   exChips(all);
-  exGraph(cl);
-  exList(cl);
+  exGraph();
+  exList();
 }
 function exChips(all){
   const c={todos:all.length,alta:0,media:0,baja:0}; all.forEach(x=>c[x.risk]++);
   const chip=(k,lbl,dot)=>'<button class="btn '+(_exRisk===k?'gold':'')+'" style="padding:5px 11px;font-size:.78rem" onclick="exSetRisk(\''+k+'\')">'+(dot?'<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+dot+';margin-right:5px"></span>':'')+lbl+' '+c[k]+'</button>';
   document.getElementById('ex-chips').innerHTML = chip('todos','Todos')+chip('alta','Alta',EX_RKCOLOR.alta)+chip('media','Media',EX_RKCOLOR.media)+chip('baja','Baja',EX_RKCOLOR.baja);
 }
-function exSetRisk(k){ _exRisk=k; exRender(); }
+function exSetRisk(k){ _exRisk=k; _exSel=0; exRender(); }
+function exPick(i){ _exSel=i; exGraph(); exList(); }
+function exNav(d){ if(!_exCL.length)return; _exSel=(_exSel+d+_exCL.length)%_exCL.length; exGraph(); exList(); }
 const EX_EDGE={tel:'#e0a012',dom:'#ef476f',ape:'#9b5de5'};
-function exBuildGraph(cl){
-  const nodes=[], edges=[], seen=new Set();
-  cl.forEach(c=>c.g.forEach(m=>{ m.__id=nodes.length; nodes.push({id:m.__id,nombre:m.nombre||'',cob:m.cobrador||'—',saldo:m.saldo||0,tel:m.tel||'',risk:c.risk}); }));
-  cl.forEach(c=>{
-    const clique=(key,type)=>{ const g={}; c.g.forEach(m=>{ const v=m[key]; if(v)(g[v]=g[v]||[]).push(m.__id); }); Object.values(g).forEach(ids=>{ for(let i=0;i<ids.length;i++)for(let j=i+1;j<ids.length;j++){ const a=Math.min(ids[i],ids[j]),b=Math.max(ids[i],ids[j]),k=a+'-'+b; if(!seen.has(k)){ seen.add(k); edges.push({a,b,type}); } } }); };
-    clique('_t','tel'); clique('_d','dom'); clique('_a','ape');
-  });
-  return {nodes,edges};
-}
-function exLayout(nodes,edges,W,H,iters){
-  const n=nodes.length||1;
-  nodes.forEach((nd,i)=>{ const a=i*2.3998; const r=Math.sqrt(i/n)*Math.min(W,H)*0.42; nd.x=W/2+Math.cos(a)*r; nd.y=H/2+Math.sin(a)*r; });
-  const k=Math.sqrt((W*H)/n)*0.8;
-  for(let it=0;it<iters;it++){
-    const t=1-it/iters;
-    for(let i=0;i<n;i++){ const a=nodes[i]; let fx=0,fy=0;
-      for(let j=0;j<n;j++){ if(i===j)continue; const b=nodes[j]; let dx=a.x-b.x,dy=a.y-b.y,d2=dx*dx+dy*dy||0.01,d=Math.sqrt(d2),rep=k*k/d; fx+=dx/d*rep; fy+=dy/d*rep; }
-      a._fx=fx; a._fy=fy;
-    }
-    edges.forEach(e=>{ const a=nodes[e.a],b=nodes[e.b]; let dx=a.x-b.x,dy=a.y-b.y,d=Math.sqrt(dx*dx+dy*dy)||0.01,att=d*d/k,fx=dx/d*att,fy=dy/d*att; a._fx-=fx; a._fy-=fy; b._fx+=fx; b._fy+=fy; });
-    const md=k*(0.12+0.5*t);
-    nodes.forEach(nd=>{ nd._fx+=(W/2-nd.x)*0.012; nd._fy+=(H/2-nd.y)*0.012; let dx=nd._fx,dy=nd._fy,d=Math.sqrt(dx*dx+dy*dy)||0.01,m=Math.min(d,md); nd.x+=dx/d*m; nd.y+=dy/d*m; nd.x=Math.max(24,Math.min(W-24,nd.x)); nd.y=Math.max(24,Math.min(H-24,nd.y)); });
-  }
-}
-function exGraph(cl){
-  const cont=document.getElementById('ex-graph');
-  if(!cl.length){ cont.innerHTML='<div style="padding:20px;color:var(--faint)">Sin coincidencias con los filtros actuales. 👍</div>'; return; }
-  const {nodes,edges}=exBuildGraph(cl);
-  const n=nodes.length;
-  const side=Math.max(720, Math.sqrt(n)*150), W=side, H=Math.max(520, Math.sqrt(n)*100);
-  const iters = n>400?70 : n>180?150 : 260;
-  exLayout(nodes,edges,W,H,iters);
+function exShared(mem,key){ const m={}; mem.forEach(x=>{ const v=x[key]; if(v)m[v]=(m[v]||0)+1; }); return Object.keys(m).filter(k=>m[k]>1); }
+function exClusterEdges(mem){ const E=[],seen=new Set();
+  const clq=(key,type)=>{ const g={}; mem.forEach((m,i)=>{ const v=m[key]; if(v)(g[v]=g[v]||[]).push(i); }); Object.values(g).forEach(ids=>{ for(let a=0;a<ids.length;a++)for(let b=a+1;b<ids.length;b++){ const k=ids[a]+'-'+ids[b]; if(!seen.has(k)){ seen.add(k); E.push({a:ids[a],b:ids[b],type}); } } }); };
+  clq('_t','tel'); clq('_d','dom'); clq('_a','ape'); return E; }
+function exGraph(){
+  const cont=document.getElementById('ex-graph'), cl=_exCL;
+  if(!cl.length){ cont.innerHTML='<div style="padding:24px;color:var(--faint)">Sin coincidencias con los filtros actuales. 👍</div>'; return; }
+  const c=cl[Math.min(_exSel,cl.length-1)];
+  const mem=c.g.slice(0,24), N=mem.length, extra=c.g.length-N, rk=EX_RKCOLOR[c.risk];
   const esc=s=>String(s||'').replace(/[<>&"]/g,'');
+  const W=900,H=540, cx=W/2, cy=H/2+18;
+  const R = N<=1?0 : N===2?165 : Math.min(205, 92+N*9);
+  const pos=mem.map((m,i)=> N===1?{x:cx,y:cy}:{x:cx+Math.cos(i/N*Math.PI*2-Math.PI/2)*R, y:cy+Math.sin(i/N*Math.PI*2-Math.PI/2)*R});
+  const edges=exClusterEdges(mem);
   let g='';
-  edges.forEach(e=>{ const a=nodes[e.a],b=nodes[e.b]; g+='<line x1="'+a.x.toFixed(1)+'" y1="'+a.y.toFixed(1)+'" x2="'+b.x.toFixed(1)+'" y2="'+b.y.toFixed(1)+'" stroke="'+EX_EDGE[e.type]+'" stroke-width="2" opacity=".55"/>'; });
-  nodes.forEach(nd=>{ const r=9+Math.min(9,(nd.saldo||0)/9000); const rk=EX_RKCOLOR[nd.risk];
-    g+='<circle cx="'+nd.x.toFixed(1)+'" cy="'+nd.y.toFixed(1)+'" r="'+r.toFixed(1)+'" fill="'+exColorCob(nd.cob)+'" stroke="'+rk+'" stroke-width="3"><title>'+esc(nd.nombre+' · '+nd.cob+' · '+(nd.tel||'s/tel')+' · '+fmt(nd.saldo))+'</title></circle>';
-    g+='<text x="'+nd.x.toFixed(1)+'" y="'+(nd.y-r-3).toFixed(1)+'" text-anchor="middle" font-size="9" fill="var(--txt)" style="pointer-events:none">'+esc((nd.nombre||'').split(' ').slice(0,2).join(' '))+'</text>';
+  edges.forEach(e=>{ const a=pos[e.a],b=pos[e.b]; g+='<line x1="'+a.x.toFixed(1)+'" y1="'+a.y.toFixed(1)+'" x2="'+b.x.toFixed(1)+'" y2="'+b.y.toFixed(1)+'" stroke="'+EX_EDGE[e.type]+'" stroke-width="3" opacity=".7"/>'; });
+  const nr = N>14?15:22;
+  mem.forEach((m,i)=>{ const p=pos[i];
+    g+='<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="'+(nr+9)+'" fill="'+rk+'" opacity=".13"/>';
+    g+='<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="'+nr+'" fill="'+exColorCob(m.cobrador)+'" stroke="'+rk+'" stroke-width="4"><title>'+esc((m.nombre||'')+' · '+(m.cobrador||'—')+' · '+(m.tel||'s/tel')+' · '+fmt(m.saldo||0))+'</title></circle>';
+    g+='<text x="'+p.x.toFixed(1)+'" y="'+(p.y-nr-11).toFixed(1)+'" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)">'+esc((m.nombre||'').split(' ').slice(0,3).join(' '))+'</text>';
+    g+='<text x="'+p.x.toFixed(1)+'" y="'+(p.y-nr+2).toFixed(1)+'" text-anchor="middle" font-size="10" fill="var(--dim)">'+esc(m.cobrador||'—')+'</text>';
   });
-  const legend='<div style="position:absolute;left:10px;bottom:10px;background:rgba(15,18,24,.78);border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-size:.7rem;color:var(--dim);line-height:1.7">'
-    +'<div style="font-weight:700;color:var(--txt);letter-spacing:.5px;margin-bottom:2px">CONEXIONES</div>'
-    +'<div><span style="display:inline-block;width:16px;height:3px;background:'+EX_EDGE.tel+';vertical-align:middle;margin-right:6px"></span>Mismo teléfono</div>'
-    +'<div><span style="display:inline-block;width:16px;height:3px;background:'+EX_EDGE.dom+';vertical-align:middle;margin-right:6px"></span>Mismo domicilio</div>'
-    +'<div><span style="display:inline-block;width:16px;height:3px;background:'+EX_EDGE.ape+';vertical-align:middle;margin-right:6px"></span>Mismos apellidos</div>'
-    +'<div style="font-weight:700;color:var(--txt);letter-spacing:.5px;margin:5px 0 2px">RIESGO (borde)</div>'
-    +'<div><span style="display:inline-block;width:9px;height:9px;border-radius:50%;border:2px solid '+EX_RKCOLOR.alta+';margin-right:6px"></span>Alta</div>'
-    +'<div><span style="display:inline-block;width:9px;height:9px;border-radius:50%;border:2px solid '+EX_RKCOLOR.media+';margin-right:6px"></span>Media</div>'
-    +'<div><span style="display:inline-block;width:9px;height:9px;border-radius:50%;border:2px solid '+EX_RKCOLOR.baja+';margin-right:6px"></span>Baja</div></div>';
-  const zoom='<div style="position:absolute;right:10px;top:10px;display:flex;flex-direction:column;gap:5px">'
-    +'<button class="btn" id="exz-in" style="padding:4px 10px;font-size:1rem">+</button>'
-    +'<button class="btn" id="exz-out" style="padding:4px 10px;font-size:1rem">−</button>'
-    +'<button class="btn" id="exz-fit" style="padding:4px 8px;font-size:.85rem" title="Centrar">⊙</button></div>';
-  cont.innerHTML='<svg id="ex-svg" width="100%" height="100%" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet" style="cursor:grab;display:block" xmlns="http://www.w3.org/2000/svg" font-family="inherit"><g id="ex-gz">'+g+'</g></svg>'+legend+zoom;
-  exWireZoom(W,H);
+  if(extra>0) g+='<text x="'+cx+'" y="'+(H-14)+'" text-anchor="middle" font-size="11" fill="var(--faint)">+'+extra+' clientes más en este grupo</text>';
+  const st=exShared(mem,'_t'), sd=exShared(mem,'_d');
+  let comparte='';
+  if(st.length) comparte+='<span style="color:'+EX_EDGE.tel+'">📞 '+st.map(esc).join(', ')+'</span> ';
+  if(sd.length) comparte+='<span style="color:'+EX_EDGE.dom+'">🏠 '+esc(sd[0])+(sd.length>1?(' +'+(sd.length-1)):'')+'</span>';
+  const header='<div style="position:absolute;top:10px;left:12px;max-width:58%"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="ex-rk '+c.risk+'">'+c.risk.toUpperCase()+'</span><b style="font-size:.95rem">'+c.g.length+' clientes</b><span style="color:var(--dim);font-size:.8rem">'+c.cobs.length+' cobrador'+(c.cobs.length>1?'es':'')+(c.cruza?' · 🔀 cruce de rutas':'')+'</span><span style="color:var(--acc);font-weight:700">'+fmt(c.saldo)+'</span></div><div style="font-size:.78rem;margin-top:3px">'+(comparte||'<span style="color:var(--faint)">vínculo por apellidos</span>')+'</div></div>';
+  const nav='<div style="position:absolute;top:10px;right:12px;display:flex;gap:6px;align-items:center"><button class="btn" onclick="exNav(-1)" style="padding:4px 11px">◀</button><span style="font-size:.8rem;color:var(--dim)">'+(_exSel+1)+' / '+cl.length+'</span><button class="btn" onclick="exNav(1)" style="padding:4px 11px">▶</button></div>';
+  const legend='<div style="position:absolute;left:12px;bottom:10px;background:rgba(255,255,255,.85);border:1px solid var(--line);border-radius:9px;padding:7px 10px;font-size:.7rem;color:var(--dim)">'
+    +'<b style="color:var(--ink)">Conexiones:</b> <span style="color:'+EX_EDGE.tel+'">▬ teléfono</span> <span style="color:'+EX_EDGE.dom+'">▬ domicilio</span> <span style="color:'+EX_EDGE.ape+'">▬ apellidos</span> · <b style="color:var(--ink)">borde:</b> riesgo</div>';
+  cont.innerHTML='<svg width="100%" height="100%" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet" style="display:block" xmlns="http://www.w3.org/2000/svg" font-family="inherit">'+g+'</svg>'+header+nav+legend;
 }
-function exWireZoom(W,H){
-  const svg=document.getElementById('ex-svg'), gz=document.getElementById('ex-gz');
-  if(!svg||!gz) return;
-  let st={s:1,tx:0,ty:0}, drag=null;
-  const apply=()=>{ gz.setAttribute('transform','translate('+st.tx+' '+st.ty+') scale('+st.s+')'); };
-  const zoomAt=(factor,cx,cy)=>{ const ns=Math.max(.3,Math.min(6,st.s*factor)); const pt=svg.createSVGPoint(); pt.x=cx; pt.y=cy; const ctm=svg.getScreenCTM(); if(!ctm)return; const loc=pt.matrixTransform(ctm.inverse()); st.tx=loc.x-(loc.x-st.tx)*(ns/st.s); st.ty=loc.y-(loc.y-st.ty)*(ns/st.s); st.s=ns; apply(); };
-  document.getElementById('exz-in').onclick=()=>zoomAt(1.25,svg.clientWidth/2+svg.getBoundingClientRect().left,svg.clientHeight/2+svg.getBoundingClientRect().top);
-  document.getElementById('exz-out').onclick=()=>zoomAt(.8,svg.clientWidth/2+svg.getBoundingClientRect().left,svg.clientHeight/2+svg.getBoundingClientRect().top);
-  document.getElementById('exz-fit').onclick=()=>{ st={s:1,tx:0,ty:0}; apply(); };
-  svg.onwheel=ev=>{ ev.preventDefault(); zoomAt(ev.deltaY<0?1.12:0.89, ev.clientX, ev.clientY); };
-  svg.onmousedown=ev=>{ drag={x:ev.clientX,y:ev.clientY,tx:st.tx,ty:st.ty}; svg.style.cursor='grabbing';
-    const mv=e=>{ if(!drag)return; st.tx=drag.tx+(e.clientX-drag.x); st.ty=drag.ty+(e.clientY-drag.y); apply(); };
-    const up=()=>{ drag=null; svg.style.cursor='grab'; window.removeEventListener('mousemove',mv); window.removeEventListener('mouseup',up); };
-    window.addEventListener('mousemove',mv); window.addEventListener('mouseup',up);
-  };
-}
-function exList(cl){
-  const wrap=document.getElementById('ex-list');
+function exList(){
+  const wrap=document.getElementById('ex-list'), cl=_exCL;
   if(!cl.length){ wrap.innerHTML='<div style="color:var(--faint);padding:8px">Sin grupos.</div>'; return; }
-  wrap.innerHTML = cl.slice(0,200).map(c=>{
+  wrap.innerHTML = cl.slice(0,200).map((c,i)=>{
+    const sel=i===_exSel;
     const head='<span class="ex-rk '+c.risk+'">'+c.risk.toUpperCase()+'</span> <b>'+exTipos(c)+' '+c.g.length+' clientes</b>'
-      +'<span class="mc" style="color:var(--faint)">· '+c.cobs.length+' cobrador'+(c.cobs.length>1?'es':'')+(c.cruza?' 🔀 cruce':'')+'</span>'
+      +'<span class="mc" style="color:var(--faint)">· '+c.cobs.length+' cob.'+(c.cruza?' 🔀':'')+'</span>'
       +'<span style="margin-left:auto;color:var(--acc);font-weight:700">'+fmt(c.saldo)+'</span>';
-    const mems=c.g.map(m=>'<div class="ex-mem"><div>'+(m.nombre||'')+'<div class="mc">'+(m.cobrador||'—')+' · '+(m.sucursal||'')+'</div></div><div style="text-align:right">'+(m.tel||'s/tel')+'<div class="mc">'+fmt(m.saldo||0)+'</div></div></div>').join('');
-    return '<details class="ex-card"><summary>'+head+'</summary><div style="margin-top:6px">'+mems+'</div></details>';
+    const mems= sel ? '<div style="margin-top:6px">'+c.g.map(m=>'<div class="ex-mem"><div>'+(m.nombre||'')+'<div class="mc">'+(m.cobrador||'—')+' · '+(m.sucursal||'')+'</div></div><div style="text-align:right">'+(m.tel||'s/tel')+'<div class="mc">'+fmt(m.saldo||0)+'</div></div></div>').join('')+'</div>' : '';
+    return '<div class="ex-card" onclick="exPick('+i+')" style="cursor:pointer'+(sel?';border-color:var(--acc);box-shadow:0 0 0 1px var(--acc) inset':'')+'"><div style="display:flex;flex-wrap:wrap;align-items:center;gap:9px;font-size:.85rem">'+head+'</div>'+mems+'</div>';
   }).join('');
 }
 
