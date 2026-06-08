@@ -153,6 +153,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
 <style>
@@ -646,7 +647,7 @@
       <div id="ex-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px"></div>
     </div>
     <div class="panel">
-      <div class="ph"><h3>Mapa de relaciones</h3><span class="hint">Un grupo a la vez · nodo = cliente · línea = coincidencia · relleno = cobrador · borde = riesgo. Usa ◀ ▶ o la lista de abajo.</span></div>
+      <div class="ph"><h3>Mapa de relaciones</h3><span class="hint">Un grupo a la vez · arrastra los nodos · rueda/botones para zoom · ◀ ▶ o la lista para cambiar de grupo.</span></div>
       <div id="ex-chips" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px"></div>
       <div id="ex-graph" style="position:relative;border:1px solid var(--line);border-radius:10px;background:var(--surf-1);height:540px;overflow:hidden"></div>
     </div>
@@ -2269,35 +2270,54 @@ function exShared(mem,key){ const m={}; mem.forEach(x=>{ const v=x[key]; if(v)m[
 function exClusterEdges(mem){ const E=[],seen=new Set();
   const clq=(key,type)=>{ const g={}; mem.forEach((m,i)=>{ const v=m[key]; if(v)(g[v]=g[v]||[]).push(i); }); Object.values(g).forEach(ids=>{ for(let a=0;a<ids.length;a++)for(let b=a+1;b<ids.length;b++){ const k=ids[a]+'-'+ids[b]; if(!seen.has(k)){ seen.add(k); E.push({a:ids[a],b:ids[b],type}); } } }); };
   clq('_t','tel'); clq('_d','dom'); clq('_a','ape'); return E; }
+let _exSim=null, _exZoom=null;
+function exZoomIn(){ if(_exZoom) _exZoom.svg.transition().duration(220).call(_exZoom.zoom.scaleBy,1.4); }
+function exZoomOut(){ if(_exZoom) _exZoom.svg.transition().duration(220).call(_exZoom.zoom.scaleBy,0.7); }
+function exZoomFit(){ if(_exZoom&&_exZoom.fit) _exZoom.fit(); }
 function exGraph(){
   const cont=document.getElementById('ex-graph'), cl=_exCL;
   if(!cl.length){ cont.innerHTML='<div style="padding:24px;color:var(--faint)">Sin coincidencias con los filtros actuales. 👍</div>'; return; }
   const c=cl[Math.min(_exSel,cl.length-1)];
-  const mem=c.g.slice(0,24), N=mem.length, extra=c.g.length-N, rk=EX_RKCOLOR[c.risk];
+  const mem=c.g, rk=EX_RKCOLOR[c.risk];
   const esc=s=>String(s||'').replace(/[<>&"]/g,'');
-  const W=900,H=540, cx=W/2, cy=H/2+18;
-  const R = N<=1?0 : N===2?165 : Math.min(205, 92+N*9);
-  const pos=mem.map((m,i)=> N===1?{x:cx,y:cy}:{x:cx+Math.cos(i/N*Math.PI*2-Math.PI/2)*R, y:cy+Math.sin(i/N*Math.PI*2-Math.PI/2)*R});
-  const edges=exClusterEdges(mem);
-  let g='';
-  edges.forEach(e=>{ const a=pos[e.a],b=pos[e.b]; g+='<line x1="'+a.x.toFixed(1)+'" y1="'+a.y.toFixed(1)+'" x2="'+b.x.toFixed(1)+'" y2="'+b.y.toFixed(1)+'" stroke="'+EX_EDGE[e.type]+'" stroke-width="3" opacity=".7"/>'; });
-  const nr = N>14?15:22;
-  mem.forEach((m,i)=>{ const p=pos[i];
-    g+='<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="'+(nr+9)+'" fill="'+rk+'" opacity=".13"/>';
-    g+='<circle cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="'+nr+'" fill="'+exColorCob(m.cobrador)+'" stroke="'+rk+'" stroke-width="4"><title>'+esc((m.nombre||'')+' · '+(m.cobrador||'—')+' · '+(m.tel||'s/tel')+' · '+fmt(m.saldo||0))+'</title></circle>';
-    g+='<text x="'+p.x.toFixed(1)+'" y="'+(p.y-nr-11).toFixed(1)+'" text-anchor="middle" font-size="13" font-weight="600" fill="var(--ink)">'+esc((m.nombre||'').split(' ').slice(0,3).join(' '))+'</text>';
-    g+='<text x="'+p.x.toFixed(1)+'" y="'+(p.y-nr+2).toFixed(1)+'" text-anchor="middle" font-size="10" fill="var(--dim)">'+esc(m.cobrador||'—')+'</text>';
-  });
-  if(extra>0) g+='<text x="'+cx+'" y="'+(H-14)+'" text-anchor="middle" font-size="11" fill="var(--faint)">+'+extra+' clientes más en este grupo</text>';
   const st=exShared(mem,'_t'), sd=exShared(mem,'_d');
   let comparte='';
   if(st.length) comparte+='<span style="color:'+EX_EDGE.tel+'">📞 '+st.map(esc).join(', ')+'</span> ';
   if(sd.length) comparte+='<span style="color:'+EX_EDGE.dom+'">🏠 '+esc(sd[0])+(sd.length>1?(' +'+(sd.length-1)):'')+'</span>';
-  const header='<div style="position:absolute;top:10px;left:12px;max-width:58%"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="ex-rk '+c.risk+'">'+c.risk.toUpperCase()+'</span><b style="font-size:.95rem">'+c.g.length+' clientes</b><span style="color:var(--dim);font-size:.8rem">'+c.cobs.length+' cobrador'+(c.cobs.length>1?'es':'')+(c.cruza?' · 🔀 cruce de rutas':'')+'</span><span style="color:var(--acc);font-weight:700">'+fmt(c.saldo)+'</span></div><div style="font-size:.78rem;margin-top:3px">'+(comparte||'<span style="color:var(--faint)">vínculo por apellidos</span>')+'</div></div>';
+  const header='<div style="position:absolute;top:10px;left:12px;max-width:56%;pointer-events:none"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="ex-rk '+c.risk+'">'+c.risk.toUpperCase()+'</span><b style="font-size:.95rem">'+c.g.length+' clientes</b><span style="color:var(--dim);font-size:.8rem">'+c.cobs.length+' cobrador'+(c.cobs.length>1?'es':'')+(c.cruza?' · 🔀 cruce de rutas':'')+'</span><span style="color:var(--acc);font-weight:700">'+fmt(c.saldo)+'</span></div><div style="font-size:.78rem;margin-top:3px">'+(comparte||'<span style="color:var(--faint)">vínculo por apellidos</span>')+'</div></div>';
   const nav='<div style="position:absolute;top:10px;right:12px;display:flex;gap:6px;align-items:center"><button class="btn" onclick="exNav(-1)" style="padding:4px 11px">◀</button><span style="font-size:.8rem;color:var(--dim)">'+(_exSel+1)+' / '+cl.length+'</span><button class="btn" onclick="exNav(1)" style="padding:4px 11px">▶</button></div>';
-  const legend='<div style="position:absolute;left:12px;bottom:10px;background:rgba(255,255,255,.85);border:1px solid var(--line);border-radius:9px;padding:7px 10px;font-size:.7rem;color:var(--dim)">'
+  const legend='<div style="position:absolute;left:12px;bottom:10px;background:rgba(255,255,255,.85);border:1px solid var(--line);border-radius:9px;padding:7px 10px;font-size:.7rem;color:var(--dim);pointer-events:none">'
     +'<b style="color:var(--ink)">Conexiones:</b> <span style="color:'+EX_EDGE.tel+'">▬ teléfono</span> <span style="color:'+EX_EDGE.dom+'">▬ domicilio</span> <span style="color:'+EX_EDGE.ape+'">▬ apellidos</span> · <b style="color:var(--ink)">borde:</b> riesgo</div>';
-  cont.innerHTML='<svg width="100%" height="100%" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet" style="display:block" xmlns="http://www.w3.org/2000/svg" font-family="inherit">'+g+'</svg>'+header+nav+legend;
+  const zoomCtl='<div style="position:absolute;right:12px;bottom:10px;display:flex;flex-direction:column;gap:5px"><button class="btn" onclick="exZoomIn()" style="padding:3px 10px;font-size:1rem">+</button><button class="btn" onclick="exZoomOut()" style="padding:3px 10px;font-size:1rem">−</button><button class="btn" onclick="exZoomFit()" style="padding:3px 8px" title="Encuadrar">⊙</button></div>';
+  cont.innerHTML='<svg id="ex-svg" width="100%" height="100%" style="display:block;cursor:grab"></svg>'+header+nav+legend+zoomCtl;
+  if(!window.d3){ cont.insertAdjacentHTML('afterbegin','<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--faint);padding:20px;text-align:center">No se pudo cargar la librería del grafo (D3). Revisa tu conexión y recarga con Ctrl+F5.</div>'); return; }
+  const nodes=mem.map((m,i)=>({id:i, n:m.nombre||'', a:m.cobrador||'—', t:m.tel||'', s:m.saldo||0, suc:m.sucursal||''}));
+  const links=[], seen=new Set();
+  const clq=(key,type)=>{ const grp={}; mem.forEach((m,idx)=>{ const v=m[key]; if(v)(grp[v]=grp[v]||[]).push(idx); }); Object.values(grp).forEach(ids=>{ for(let a=0;a<ids.length;a++)for(let b=a+1;b<ids.length;b++){ const k=ids[a]+'-'+ids[b]; if(!seen.has(k)){ seen.add(k); links.push({source:ids[a],target:ids[b],type}); } } }); };
+  clq('_t','tel'); clq('_d','dom'); clq('_a','ape');
+  const W=cont.clientWidth||900, H=cont.clientHeight||540;
+  if(_exSim) _exSim.stop();
+  const svg=d3.select('#ex-svg'), g=svg.append('g');
+  const zoom=d3.zoom().scaleExtent([0.2,8]).on('zoom',e=>g.attr('transform',e.transform));
+  svg.call(zoom).on('dblclick.zoom',null);
+  _exSim=d3.forceSimulation(nodes)
+    .force('link',d3.forceLink(links).id(d=>d.id).distance(d=>d.type==='ape'?70:95))
+    .force('charge',d3.forceManyBody().strength(-340))
+    .force('center',d3.forceCenter(W/2,H/2))
+    .force('collision',d3.forceCollide(42));
+  const link=g.append('g').selectAll('line').data(links).join('line').attr('stroke',d=>EX_EDGE[d.type]).attr('stroke-width',3).attr('stroke-opacity',.6);
+  const node=g.append('g').selectAll('g').data(nodes).join('g').attr('cursor','grab')
+    .call(d3.drag().on('start',(e,d)=>{ if(!e.active)_exSim.alphaTarget(.3).restart(); d.fx=d.x; d.fy=d.y; }).on('drag',(e,d)=>{ d.fx=e.x; d.fy=e.y; }).on('end',(e,d)=>{ if(!e.active)_exSim.alphaTarget(0); d.fx=null; d.fy=null; }));
+  node.append('circle').attr('r',30).attr('fill',rk).attr('opacity',.13);
+  node.append('circle').attr('r',22).attr('fill',d=>exColorCob(d.a)).attr('stroke',rk).attr('stroke-width',4)
+    .append('title').text(d=>d.n+' · '+d.a+' · '+(d.t||'s/tel')+' · '+fmt(d.s));
+  node.append('text').text(d=>{ const p=(d.n||'').split(' '); return p.length>3?p.slice(0,3).join(' '):d.n; }).attr('dy',-32).attr('text-anchor','middle').attr('fill','var(--ink)').attr('font-size','12px').attr('font-weight','600').attr('pointer-events','none');
+  node.append('text').text(d=>d.a).attr('dy',-19).attr('text-anchor','middle').attr('fill','var(--dim)').attr('font-size','10px').attr('pointer-events','none');
+  node.on('mouseover',(e,d)=>{ const ci=new Set([d.id]); links.forEach(l=>{ const s=l.source.id??l.source,t=l.target.id??l.target; if(s===d.id)ci.add(t); if(t===d.id)ci.add(s); }); node.style('opacity',x=>ci.has(x.id)?1:.15); link.attr('stroke-opacity',l=>{ const s=l.source.id??l.source,t=l.target.id??l.target; return (s===d.id||t===d.id)?.95:.05; }); }).on('mouseout',()=>{ node.style('opacity',1); link.attr('stroke-opacity',.6); });
+  _exSim.on('tick',()=>{ link.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y).attr('x2',d=>d.target.x).attr('y2',d=>d.target.y); node.attr('transform',d=>'translate('+d.x+','+d.y+')'); });
+  const fit=()=>{ try{ const b=g.node().getBBox(),pad=70; if(!b.width||!b.height)return; const sc=Math.min(W/(b.width+pad*2),H/(b.height+pad*2),2.2); const tx=W/2-(b.x+b.width/2)*sc,ty=H/2-(b.y+b.height/2)*sc; svg.transition().duration(450).call(zoom.transform,d3.zoomIdentity.translate(tx,ty).scale(sc)); }catch(e){} };
+  _exZoom={svg,zoom,fit};
+  setTimeout(fit, 650);
 }
 function exList(){
   const wrap=document.getElementById('ex-list'), cl=_exCL;
