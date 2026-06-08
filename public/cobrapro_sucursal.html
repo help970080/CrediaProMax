@@ -192,7 +192,7 @@
         </div>
         <div class="sect-lbl">Producto de crédito</div>
         <div class="frow">
-          <div class="field"><label>Modalidad</label><select id="n-tipo" onchange="fillPlazos();calc()"><option value="diario">Diario</option><option value="semanal" selected>Semanal</option><option value="s16">Semanal 16 (primer pago)</option><option value="s17">Semanal 17 (primer pago)</option><option value="unico">Pago único</option><option value="p17">Celulares 17 pagos</option></select></div>
+          <div class="field"><label>Modalidad</label><select id="n-tipo" onchange="fillPlazos();calc()"><option value="diario">Diario</option><option value="semanal" selected>Semanal</option><option value="s16">Semanal 16 (primer pago)</option><option value="s17">Semanal 17 (primer pago)</option><option value="s21">21 semanas (primer pago)</option><option value="s31">31 semanas (primer pago)</option><option value="unico">Pago único</option><option value="p17">Celulares 17 pagos</option></select></div>
           <div class="field" id="plazoWrap"><label>Plazo</label><select id="n-plazo" onchange="calc()"></select></div>
         </div>
         <div class="field"><label>Monto del crédito</label><input id="n-monto" type="number" value="5000" step="500" oninput="calc()"></div>
@@ -244,11 +244,13 @@ let PROD={
   p17:[{p:17,f:1.73,fijo:270}],
   s16:{factor:1.6,fijo:100,ppFactor:0.1,ppFijo:100,pagos:16},
   s17:{factor:1.7,fijo:200,ppFactor:0.1,ppFijo:200,pagos:17},
+  s21:{factor:1.785,fijo:200,ppFactor:0.085,ppFijo:200,pagos:21},
+  s31:{factor:1.86,fijo:200,ppFactor:0.06,ppFijo:200,pagos:31},
   unico:{base:2,factor:0.0183}
 };
 let diasUnico=15;
 function calcCredito(tipo,plazo,monto){
-  if(tipo==='s16'||tipo==='s17'){const c=PROD[tipo]||{factor:tipo==='s16'?1.6:1.7,fijo:tipo==='s16'?100:200,ppFactor:0.1,ppFijo:tipo==='s16'?100:200,pagos:tipo==='s16'?16:17};
+  if(tipo==='s16'||tipo==='s17'||tipo==='s21'||tipo==='s31'){const DEF={s16:{factor:1.6,fijo:100,ppFactor:0.1,ppFijo:100,pagos:16},s17:{factor:1.7,fijo:200,ppFactor:0.1,ppFijo:200,pagos:17},s21:{factor:1.785,fijo:200,ppFactor:0.085,ppFijo:200,pagos:21},s31:{factor:1.86,fijo:200,ppFactor:0.06,ppFijo:200,pagos:31}};const c=PROD[tipo]||DEF[tipo];
     const total=monto*c.factor+c.fijo;const primerPago=monto*c.ppFactor+c.ppFijo;const cuota=(total-primerPago)/(c.pagos-1);
     return {total,pagos:c.pagos,cuota,com:(total-monto)/c.pagos,primerPago,descuentaPP:true,entregaCliente:monto-primerPago};}
   if(tipo==='unico'){const u=PROD.unico||{base:2,factor:0.0183};const tap=monto+diasUnico*((u.base||0)+monto*(u.factor||0));const mor=4+tap*0.0183;return {total:tap,pagos:1,cuota:tap,com:0,mor,dias:diasUnico};}
@@ -439,6 +441,8 @@ function fillPlazos(){
   if(t==='p17'){w.innerHTML=`<label>Plazo</label><select id="n-plazo" onchange="calc()"><option value="17">17 pagos fijos</option></select>`;return;}
   if(t==='s16'){w.innerHTML=`<label>Plazo</label><select id="n-plazo" onchange="calc()"><option value="16">16 semanas</option></select>`;return;}
   if(t==='s17'){w.innerHTML=`<label>Plazo</label><select id="n-plazo" onchange="calc()"><option value="17">17 semanas</option></select>`;return;}
+  if(t==='s21'){w.innerHTML=`<label>Plazo</label><select id="n-plazo" onchange="calc()"><option value="21">21 semanas</option></select>`;return;}
+  if(t==='s31'){w.innerHTML=`<label>Plazo</label><select id="n-plazo" onchange="calc()"><option value="31">31 semanas</option></select>`;return;}
   w.innerHTML=`<label>Plazo</label><select id="n-plazo" onchange="calc()"></select>`;
   const sel2=document.getElementById('n-plazo');
   sel2.innerHTML=PROD[t].map(x=>`<option value="${x.p}">${x.p} ${t==='semanal'?'semanas':'días'}</option>`).join('');
@@ -449,7 +453,7 @@ function calc(){
   const monto=+document.getElementById('n-monto').value||0;
   const plazo=+(document.getElementById('n-plazo')?.value||0);
   const r=calcCredito(t,plazo,monto);
-  const freq=t==='diario'?'diaria':t==='semanal'?'semanal':t==='p17'?'(17 pagos)':(t==='s16'||t==='s17')?'semanal':'única';
+  const freq=t==='diario'?'diaria':t==='semanal'?'semanal':t==='p17'?'(17 pagos)':(t==='s16'||t==='s17'||t==='s21'||t==='s31')?'semanal':'única';
   let extra= t==='unico'? `<div class="calc-row"><span>Moratorio por día</span><span class="v" style="color:var(--red)">${fmt(r.mor)}</span></div>` :
              `<div class="calc-row"><span>Comisión por no pago</span><span class="v">${fmt(r.com)}</span></div>`;
   if(r.descuentaPP){
