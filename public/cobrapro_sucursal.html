@@ -884,15 +884,19 @@ async function cargarResumen(){
 }
 function pintaResumen(d){
   const t=d.totales||{};
+  const cob=(d.por_cobrador||[]).slice().sort((a,b)=>(b.comisionable||0)-(a.comisionable||0));
+  // KPIs de la sucursal = SUMA de sus cobradores (cuadra con la tabla de abajo)
+  const sum=(f)=>cob.reduce((a,c)=>a+(c[f]||0),0);
+  const cartera=sum('cartera'), vencida=sum('atraso_monto'), atrClientes=sum('atraso_clientes');
+  const cobrado=sum('comisionable'), npagos=sum('npagos'), porEntregar=sum('por_entregar'), clientes=sum('clientes');
   const per=_periodoSuc==='hoy'?'hoy':(_periodoSuc==='mes'?'mes':'semana');
   document.getElementById('res-kpis').innerHTML=[
-    ['g','Cobrado ('+per+')',fmt(t.cobrado_periodo||0),(t.npagos_periodo||0)+' pagos'],
-    ['','Cartera activa',fmt(t.saldo_pendiente||0),(t.creditos_activos||0)+' créditos vigentes'],
-    ['r','Cartera vencida',fmt(t.atraso_total||0),(t.clientes_atrasados||0)+' clientes en atraso'],
+    ['g','Cobrado ('+per+')',fmt(cobrado),npagos+' pagos'],
+    ['','Cartera activa',fmt(cartera),clientes+' créditos en ruta'],
+    ['r','Cartera vencida',fmt(vencida),atrClientes+' clientes en atraso'],
     ['b','Colocado ('+per+')',fmt(t.monto_colocado_periodo||0),(t.nuevos_creditos_periodo||0)+' créditos nuevos'],
-    ['v','Efectivo por entregar',fmt(t.por_entregar||0),'en ruta de cobradores'],
+    ['v','Efectivo por entregar',fmt(porEntregar),'en ruta de cobradores'],
   ].map(k=>`<div class="kpi ${k[0]}"><div class="l">${k[1]}</div><div class="v">${k[2]}</div><div class="s">${k[3]}</div></div>`).join('');
-  const cob=(d.por_cobrador||[]).slice().sort((a,b)=>(b.comisionable||0)-(a.comisionable||0));
   document.getElementById('res-cob').innerHTML=cob.map(c=>{
     const recup=c.esperado_acum>0?Math.min(100,Math.round((c.comisionable||0)/c.esperado_acum*100)):0;
     return `<tr><td>${c.nombre}</td><td class="n">${c.clientes||0}</td><td class="n">${fmt(c.cartera||0)}</td><td class="n" style="color:${c.atraso_monto>0?'var(--red)':'var(--faint)'}">${fmt(c.atraso_monto||0)}</td><td class="n"><b>${fmt(c.comisionable||0)}</b></td><td class="n">${fmt(c.por_entregar||0)}</td><td class="n" style="color:${recup>=70?'var(--grn)':recup>=40?'var(--acc)':'var(--red)'}">${recup}%</td></tr>`;
