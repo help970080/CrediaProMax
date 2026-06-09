@@ -77,6 +77,7 @@
       <div class="tab on" data-t="recibir" onclick="tab('recibir')">Recibir <span class="n" id="n-rec">0</span></div>
       <div class="tab" data-t="entregar" onclick="tab('entregar')">Entregar <span class="n" id="n-ent">0</span></div>
       <div class="tab" data-t="hist" onclick="tab('hist')">Historial</div>
+      <div class="tab" data-t="asignar" onclick="tab('asignar')">Asignar <span class="n" id="n-asg">0</span></div>
     </div>
     <button class="btn full" style="margin:10px 0 0;background:var(--vio);color:#fff;border-color:var(--vio)" onclick="cerrarDia(this)">🔒 Hacer cierre del día</button>
     <div id="cierre-info" style="font-size:.74rem;color:var(--dim);text-align:center;margin-top:6px"></div>
@@ -100,7 +101,10 @@ let DATA={caja:{},pendientes:[],porEntregar:[],entregados:[]}, _tab='recibir';
 if(ME) document.getElementById('jcName').textContent=ME.nombre;
 if(ME) document.getElementById('ava').textContent=(ME.nombre||'JC').slice(0,2).toUpperCase();
 async function cargar(){
-  try{ DATA=await api('GET','/api/jc/panel'); pintar(); }
+  try{ DATA=await api('GET','/api/jc/panel');
+    try{ DATA.asg=await api('GET','/api/asignaciones'); }catch(e){ DATA.asg={porConfirmar:[],enviadas:[],recibidas:[]}; }
+    try{ DATA.asgDest=(await api('GET','/api/asignaciones/destinos')).destinos||[]; }catch(e){ DATA.asgDest=[]; }
+    pintar(); }
   catch(e){ document.getElementById('main').innerHTML='<div class="empty">'+e.message+'</div>'; }
 }
 function pintar(){
@@ -110,7 +114,21 @@ function pintar(){
   document.getElementById('k-ent').textContent=money(c.entregado);
   document.getElementById('n-rec').textContent=(DATA.pendientes||[]).length;
   document.getElementById('n-ent').textContent=(DATA.porEntregar||[]).length;
+  const _asg=DATA.asg||{porConfirmar:[]}; const _nasg=document.getElementById('n-asg'); if(_nasg) _nasg.textContent=(_asg.porConfirmar||[]).length;
   const m=document.getElementById('main');
+  if(_tab==='asignar'){
+    const dst=DATA.asgDest||[]; const pc=_asg.porConfirmar||[];
+    const hist=((_asg.enviadas||[]).concat(_asg.recibidas||[])).slice(0,20);
+    m.innerHTML=`<div class="card"><div class="nm">💸 Asignar efectivo a un puesto</div>
+      <div class="meta" style="margin:4px 0 8px">Se descuenta de tu caja y el destino confirma. El promotor nunca recibe.</div>
+      <select id="asg-dest-jc" style="width:100%;background:var(--surf-2);border:1px solid var(--bd,#2a3550);color:#fff;padding:10px;border-radius:9px;margin-bottom:8px;font-family:inherit">${dst.map(x=>`<option value="${x.tipo}:${x.id}">${x.nombre}</option>`).join('')||'<option value="">No hay otros puestos</option>'}</select>
+      <input id="asg-monto-jc" type="number" inputmode="numeric" placeholder="Monto $" style="width:100%;background:var(--surf-2);border:1px solid var(--bd,#2a3550);color:#fff;padding:10px;border-radius:9px;margin-bottom:8px">
+      <button class="btn vio full" onclick="asgEnviarJC(this)">Asignar efectivo</button></div>
+      <div class="nm" style="margin:14px 4px 6px">📥 Por confirmar</div>
+      ${pc.length?pc.map(a=>`<div class="card"><div class="top"><div><div class="nm">${a.fromNombre}</div><div class="meta">${a.nota||'Asignación de efectivo'} · ${a.fecha}</div></div><div class="monto">${money(a.monto)}</div></div><div style="display:flex;gap:6px"><button class="btn grn full" onclick="asgConfirmarJC(${a.id})">✓ Confirmar</button><button class="btn full" onclick="asgRechazarJC(${a.id})">Rechazar</button></div></div>`).join(''):'<div class="empty">Nada por confirmar.</div>'}
+      ${hist.length?('<div class="nm" style="margin:14px 4px 6px">Recientes</div>'+hist.map(a=>`<div class="card"><div class="top"><div><div class="meta">${a.estado==='pendiente'?'⏳':a.estado==='recibido'?'✓':'✕'} ${a.fromNombre} → ${a.toNombre} · ${a.estado}</div></div><div class="monto">${money(a.monto)}</div></div></div>`).join('')):''}`;
+    return;
+  }
   if(_tab==='recibir'){
     const ps=DATA.pendientes||[];
     m.innerHTML = ps.length ? ps.map(e=>`<div class="card"><div class="top">
@@ -140,6 +158,16 @@ async function recibir(id,btn){
   try{ await api('POST','/api/jc-entregas/'+id+'/recibir'); toast('Efectivo recibido en tu caja'); await cargar(); }
   catch(e){ toast(e.message); btn.disabled=false; btn.textContent='✓ Recibir en mi caja'; }
 }
+async function asgEnviarJC(btn){
+  const v=document.getElementById('asg-dest-jc').value; if(!v){toast('Elige un destino');return;}
+  const i=v.indexOf(':'); const toTipo=v.slice(0,i), toId=+v.slice(i+1);
+  const monto=+document.getElementById('asg-monto-jc').value; if(!(monto>0)){toast('Monto inválido');return;}
+  btn.disabled=true; btn.textContent='Asignando…';
+  try{ await api('POST','/api/asignaciones',{toTipo,toId,monto}); toast('✓ Asignado · pendiente de confirmación'); await cargar(); }
+  catch(e){ toast(e.message); btn.disabled=false; btn.textContent='Asignar efectivo'; }
+}
+async function asgConfirmarJC(id){ try{ await api('POST','/api/asignaciones/'+id+'/recibir'); toast('✓ Recibido en tu caja'); await cargar(); }catch(e){ toast(e.message); } }
+async function asgRechazarJC(id){ if(!confirm('¿Rechazar? El efectivo regresa a quien lo envió.'))return; try{ await api('POST','/api/asignaciones/'+id+'/rechazar'); toast('Rechazado'); await cargar(); }catch(e){ toast(e.message); } }
 function verFoto(src){ const ov=document.createElement('div'); ov.className='ov'; ov.style.alignItems='center'; ov.onclick=()=>ov.remove();
   ov.innerHTML=`<img src="${src}" style="max-width:92%;max-height:88vh;border-radius:12px">`; document.body.appendChild(ov); }
 

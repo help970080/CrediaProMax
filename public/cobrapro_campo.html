@@ -167,6 +167,11 @@
           <option value="nom">Nombre A-Z</option>
         </select>
       </div>
+      <div style="display:flex;gap:6px;margin-bottom:8px">
+        <button class="filt-chip on" data-f="porcobrar" onclick="setFiltro('porcobrar')" style="flex:1;background:var(--acc);color:#1b2330;border:none;font-family:'Sora';font-weight:700;font-size:.82rem;padding:9px 8px;border-radius:9px;cursor:pointer">Por cobrar</button>
+        <button class="filt-chip" data-f="cobrados" onclick="setFiltro('cobrados')" style="flex:1;background:var(--surf-2);color:var(--txt);border:1px solid var(--line-2);font-family:'Sora';font-size:.82rem;padding:9px 8px;border-radius:9px;cursor:pointer">Cobrados hoy</button>
+        <button class="filt-chip" data-f="todos" onclick="setFiltro('todos')" style="flex:1;background:var(--surf-2);color:var(--txt);border:1px solid var(--line-2);font-family:'Sora';font-size:.82rem;padding:9px 8px;border-radius:9px;cursor:pointer">Todos</button>
+      </div>
       <div class="route-hint" id="route-hint">Tu ruta del día</div>
       <div id="list"></div>
     </section>
@@ -191,6 +196,12 @@
           <button class="corte" style="width:100%;justify-content:center" onclick="entregarJC(this)">Entregar efectivo al JC</button>
         </div>
         <div id="jc-hist" style="margin-top:10px"></div>
+      </div>
+      <div class="res-card"><h3>💸 Asignar efectivo a otro puesto</h3>
+        <div style="font-size:.8rem;color:var(--dim);margin-bottom:10px;line-height:1.4">Entrega tu efectivo en mano a una sucursal, supervisor, JC o admin. El puesto lo confirmará.</div>
+        <select id="asg-dest-cob" style="width:100%;background:var(--surf-2);border:1px solid var(--line-2);color:var(--txt);font-family:'Sora';font-size:.92rem;padding:10px 12px;border-radius:9px;margin-bottom:8px"></select>
+        <input id="asg-monto-cob" type="number" inputmode="numeric" placeholder="Monto $" style="width:100%;background:var(--surf-2);border:1px solid var(--line-2);color:var(--txt);font-family:'Sora';font-size:.95rem;padding:10px 12px;border-radius:9px;margin-bottom:8px">
+        <button class="corte" style="width:100%;justify-content:center" onclick="asgEnviarCob(this)">Asignar efectivo</button>
       </div>
       <div class="res-card"><h3>📷 Evidencias de entrega</h3>
         <div style="font-size:.8rem;color:var(--dim);margin-bottom:8px;line-height:1.4">Fotos y ubicación de los créditos que el JC entregó a tus clientes. Disponibles aunque el cliente se dé de baja.</div>
@@ -229,6 +240,7 @@ const META=5200;
 // cartera asignada a Ana Reyes (en producción: GET /api/sales?collector=me&route=today)
 let clientes=[];
 let estado={}; // id -> {cobrado, status, monto}
+let _filtro='porcobrar';
 let logs=[], queue=0;
 const tipoLbl={diario:'Diario',semanal:'Semanal',unico:'Pago único'};
 const tipoCls={diario:'dia',semanal:'sem',unico:'uni'};
@@ -295,8 +307,23 @@ async function cargarJC(){
     _jcDadoHoy=ents.filter(e=>e.cobradorId===ME.id && new Date(e.creadoEn).toDateString()===hoy).reduce((a,e)=>a+e.monto,0);
     const hist=ents.slice(0,5).map(e=>`<div style="display:flex;justify-content:space-between;font-size:.78rem;color:var(--dim);padding:5px 0;border-top:1px solid var(--line)"><span>${e.jcNombre} · ${e.estado==='recibido'?'✓ recibido':'⏳ pendiente'}</span><span class="mono">$${Math.round(e.monto).toLocaleString('es-MX')}</span></div>`).join('');
     const h=document.getElementById('jc-hist'); if(h) h.innerHTML=hist;
+    asgCargarCob();
     render();
   }catch(e){}
+}
+async function asgCargarCob(){
+  try{ const d=await api('GET','/api/asignaciones/destinos');
+    const sel=document.getElementById('asg-dest-cob'); if(sel) sel.innerHTML=(d.destinos||[]).map(x=>`<option value="${x.tipo}:${x.id}">${x.nombre}</option>`).join('')||'<option value="">No hay puestos</option>';
+  }catch(e){}
+}
+async function asgEnviarCob(btn){
+  const v=document.getElementById('asg-dest-cob').value; if(!v){ toast('Elige un destino'); return; }
+  const i=v.indexOf(':'); const toTipo=v.slice(0,i), toId=+v.slice(i+1);
+  const monto=+document.getElementById('asg-monto-cob').value; if(!(monto>0)){ toast('Monto inválido'); return; }
+  btn.disabled=true; btn.textContent='Asignando…';
+  try{ await api('POST','/api/asignaciones',{toTipo,toId,monto}); document.getElementById('asg-monto-cob').value=''; toast('✓ Asignado · el puesto lo confirmará'); await cargarJC(); }
+  catch(e){ toast(e.message); }
+  finally{ btn.disabled=false; btn.textContent='Asignar efectivo'; }
 }
 async function entregarJC(btn){
   const jcId=+document.getElementById('jc-sel').value, monto=+document.getElementById('jc-monto').value;
@@ -333,12 +360,26 @@ window.addEventListener('online', flush);
 document.getElementById('hdate').textContent=new Date().toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'short'});
 
 function renderRuta(){ render(); }
+function setFiltro(f){
+  _filtro=f;
+  document.querySelectorAll('.filt-chip').forEach(b=>{
+    const on=b.dataset.f===f;
+    b.classList.toggle('on',on);
+    b.style.background=on?'var(--acc)':'var(--surf-2)';
+    b.style.color=on?'#1b2330':'var(--txt)';
+    b.style.fontWeight=on?'700':'400';
+    b.style.border=on?'none':'1px solid var(--line-2)';
+  });
+  render();
+}
 function render(){
   const list=document.getElementById('list');
   // filtrado y ordenamiento
   const q=(document.getElementById('q-ruta')?.value||'').toLowerCase();
   const ord=(document.getElementById('ord-ruta')?.value)||'orden';
   let visibles=clientes.filter(c=>!q || (c.nombre||'').toLowerCase().includes(q) || (c.dir||'').toLowerCase().includes(q));
+  if(_filtro==='porcobrar') visibles=visibles.filter(c=> c.saldo>=1 && !(estado[c.id]&&estado[c.id].status==='pagado'));
+  else if(_filtro==='cobrados') visibles=visibles.filter(c=> estado[c.id]&&estado[c.id].status==='pagado');
   if(ord==='atraso-d') visibles=visibles.slice().sort((a,b)=>(b.atraso||0)-(a.atraso||0));
   else if(ord==='atraso-a') visibles=visibles.slice().sort((a,b)=>(a.atraso||0)-(b.atraso||0));
   else if(ord==='dir') visibles=visibles.slice().sort((a,b)=>(a.dir||'').localeCompare(b.dir||''));

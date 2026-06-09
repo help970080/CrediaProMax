@@ -209,6 +209,7 @@
     <button class="navitem" data-v="comisiones"><span class="ic">%</span> Comisiones</button>
     <button class="navitem" data-v="conciliacion"><span class="ic">⇄</span> Conciliación</button>
     <button class="navitem" data-v="flujo" id="nav-flujo"><span class="ic">🏦</span> Flujo / Tesorería</button>
+    <button class="navitem" data-v="asignar" id="nav-asignar"><span class="ic">💸</span> Asignar efectivo</button>
     <button class="navitem" data-v="reportes"><span class="ic">📑</span> Reportes</button>
     <button class="navitem" data-v="usuarios"><span class="ic">👤</span> Usuarios</button>
     <button class="navitem" data-v="mapa"><span class="ic">🗺️</span> Mapa de clientes</button>
@@ -651,6 +652,19 @@
       <div id="ex-graph" style="overflow:auto;border:1px solid var(--line);border-radius:10px;background:var(--surf-1);min-height:120px"></div>
     </div>
     <div class="panel"><div class="ph"><h3>Grupos detectados</h3><span class="hint" id="ex-count"></span></div><div id="ex-list"></div></div>
+  <section class="view" id="asignar">
+    <div class="panel">
+      <div class="ph"><h3>Asignar efectivo a un puesto</h3><span class="hint">El que recibe debe confirmar. El promotor nunca recibe.</span></div>
+      <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;padding:6px 2px">
+        <div><div style="font-size:.72rem;color:var(--dim);text-transform:uppercase">Disponible</div><div id="asg-disp" style="font-size:1.4rem;font-weight:700;color:var(--acc)">$0</div></div>
+        <div style="flex:1;min-width:200px"><label style="font-size:.74rem;color:var(--dim)">Destino</label><select id="asg-dest" style="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--ink);padding:9px;border-radius:7px;font-family:inherit"></select></div>
+        <div><label style="font-size:.74rem;color:var(--dim)">Monto</label><input id="asg-monto" type="number" step="50" style="width:130px;background:var(--surf-2);border:1px solid var(--line);color:var(--ink);padding:9px;border-radius:7px"></div>
+        <div style="flex:1;min-width:160px"><label style="font-size:.74rem;color:var(--dim)">Nota (opcional)</label><input id="asg-nota" type="text" style="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--ink);padding:9px;border-radius:7px"></div>
+        <button class="btn gold" onclick="asgEnviar()">Asignar</button>
+      </div>
+    </div>
+    <div class="panel"><div class="ph"><h3>Por confirmar (efectivo que te asignaron)</h3></div><div id="asg-inbox"></div></div>
+    <div class="panel"><div class="ph"><h3>Movimientos recientes</h3></div><div id="asg-hist"></div></div>
   </section>
 </main>
 
@@ -1980,7 +1994,7 @@ function sim(){const t=$('s-tipo').value,monto=+$('s-monto').value||0,plazo=+$('
 }
 
 /* NAV + EVENTOS */
-const titles={resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],bandeja:['Bandeja de entregas','Créditos por entregar · toma y entrega con evidencia'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],flujo:['Flujo / Tesorería','Efectivo del admin · dotación a la operación, nómina y capital'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo'],mapa:['Mapa de clientes','Ubicación geográfica de la cartera'],rastreo:['Rastreo de equipo','Dónde está tu gente en campo · seguridad y operación'],extras:['Extras · Detector de prestanombres','Coincidencias por teléfono, domicilio y apellidos']};
+const titles={resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],bandeja:['Bandeja de entregas','Créditos por entregar · toma y entrega con evidencia'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],flujo:['Flujo / Tesorería','Efectivo del admin · dotación a la operación, nómina y capital'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo'],mapa:['Mapa de clientes','Ubicación geográfica de la cartera'],rastreo:['Rastreo de equipo','Dónde está tu gente en campo · seguridad y operación'],extras:['Extras · Detector de prestanombres','Coincidencias por teléfono, domicilio y apellidos'],asignar:['Asignar efectivo','Mueve efectivo entre puestos · el que recibe confirma']};
 document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
   document.querySelectorAll('.navitem').forEach(x=>x.classList.remove('on'));
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
@@ -2001,6 +2015,7 @@ document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
   if(n.dataset.v==='simulador') initTarifas();
   if(n.dataset.v==='mapa') initMapa();
   if(n.dataset.v==='comisiones' && !_comisCargado) cargarComisiones();
+  if(n.dataset.v==='asignar') initAsignar();
   if(n.dataset.v==='extras') initExtras();
 });
 document.querySelectorAll('#period button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#period button').forEach(x=>x.classList.remove('on'));b.classList.add('on');period=b.dataset.p;render();});
@@ -2205,6 +2220,35 @@ function exportCSV(t){
 setInterval(()=>document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'}),1000);
 document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'});
 /* ===== USUARIOS (conectado al backend) ===== */
+/* ===== Asignar efectivo entre puestos ===== */
+async function initAsignar(){ await asgCargarDestinos(); await asgCargarInbox(); }
+async function asgCargarDestinos(){
+  try{ const d=await apiU('GET','/api/asignaciones/destinos');
+    document.getElementById('asg-disp').textContent=fmt(d.disponible||0);
+    document.getElementById('asg-dest').innerHTML=(d.destinos||[]).map(x=>`<option value="${x.tipo}:${x.id}">${x.nombre}${x.caja!=null?(' · caja '+fmt(x.caja)):''}</option>`).join('')||'<option value="">No hay otros puestos</option>';
+  }catch(e){ document.getElementById('asg-dest').innerHTML='<option value="">'+(e.message||e)+'</option>'; }
+}
+async function asgEnviar(){
+  const v=document.getElementById('asg-dest').value; if(!v){alert('Elige un destino');return;}
+  const i=v.indexOf(':'); const toTipo=v.slice(0,i), toId=v.slice(i+1);
+  const monto=+document.getElementById('asg-monto').value||0; if(monto<=0){alert('Monto inválido');return;}
+  const nota=document.getElementById('asg-nota').value||'';
+  try{ await apiU('POST','/api/asignaciones',{toTipo,toId:+toId,monto,nota});
+    document.getElementById('asg-monto').value=''; document.getElementById('asg-nota').value='';
+    alert('✓ Asignado. Queda pendiente hasta que el destino lo confirme.');
+    await asgCargarDestinos(); await asgCargarInbox();
+  }catch(e){ alert(e.message||e); }
+}
+async function asgCargarInbox(){
+  try{ const d=await apiU('GET','/api/asignaciones');
+    document.getElementById('asg-inbox').innerHTML=(d.porConfirmar||[]).map(a=>`<div class="ex-card" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><div><b>${fmt(a.monto)}</b> de <b>${a.fromNombre}</b>${a.nota?(' · '+a.nota):''}<div class="mc" style="color:var(--faint);font-size:.72rem">${a.fecha}</div></div><div style="margin-left:auto;display:flex;gap:6px"><button class="btn gold" onclick="asgConfirmar(${a.id})">Confirmar recibo</button><button class="btn" onclick="asgRechazar(${a.id})">Rechazar</button></div></div>`).join('')||'<div style="color:var(--faint);padding:8px">Nada por confirmar.</div>';
+    const fila=a=>`<div class="ex-mem"><div>${a.estado==='pendiente'?'⏳':a.estado==='recibido'?'✓':'✕'} ${a.fromNombre} → ${a.toNombre}<div class="mc">${a.fecha}${a.nota?(' · '+a.nota):''}</div></div><div style="text-align:right">${fmt(a.monto)}<div class="mc">${a.estado}</div></div></div>`;
+    document.getElementById('asg-hist').innerHTML=((d.enviadas||[]).concat(d.recibidas||[])).slice(0,30).map(fila).join('')||'<div style="color:var(--faint);padding:8px">Sin movimientos.</div>';
+  }catch(e){ document.getElementById('asg-inbox').innerHTML='<div style="color:#d6432d;padding:8px">'+(e.message||e)+'</div>'; }
+}
+async function asgConfirmar(id){ try{ await apiU('POST','/api/asignaciones/'+id+'/recibir',{}); await asgCargarDestinos(); await asgCargarInbox(); }catch(e){ alert(e.message||e); } }
+async function asgRechazar(id){ if(!confirm('¿Rechazar esta asignación? El efectivo regresa a quien la envió.'))return; try{ await apiU('POST','/api/asignaciones/'+id+'/rechazar',{}); await asgCargarInbox(); }catch(e){ alert(e.message||e); } }
+
 /* ===== Extras · Detector de prestanombres ===== */
 let _exData=null, _exRisk='todos';
 function exNorm(s){ return String(s||'').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z0-9 ]/g,' ').replace(/\s+/g,' ').trim(); }

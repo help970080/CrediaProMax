@@ -224,6 +224,15 @@
           <button onclick="entregarJCSuc(this)" style="width:100%;background:var(--vio);color:#fff;border:none;padding:10px;border-radius:9px;font-family:'Sora';font-weight:600;cursor:pointer">Entregar efectivo al JC</button>
         </div>
 
+        <div class="sect-lbl">💸 Asignar efectivo a otro puesto</div>
+        <div style="font-size:.78rem;color:var(--dim);margin-bottom:8px;line-height:1.4">Manda efectivo de tu caja a otra sucursal, supervisor, JC o admin. Se descuenta de tu caja y el destino confirma.</div>
+        <select id="asg-dest-suc" style="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--txt);font-family:'Sora';font-size:.92rem;padding:10px 12px;border-radius:9px;margin-bottom:8px"></select>
+        <input id="asg-monto-suc" type="number" inputmode="numeric" placeholder="Monto $" style="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--txt);font-family:'Sora';font-size:.95rem;padding:10px 12px;border-radius:9px;margin-bottom:8px">
+        <button onclick="asgEnviarSuc(this)" style="width:100%;background:var(--vio);color:#fff;border:none;padding:10px;border-radius:9px;font-family:'Sora';font-weight:600;cursor:pointer">Asignar efectivo</button>
+
+        <div class="sect-lbl">📥 Efectivo por confirmar</div>
+        <div id="asg-inbox-suc" style="font-size:.85rem"></div>
+
         <div class="sect-lbl">Movimientos de hoy</div>
         <table><thead><tr><th>Hora</th><th>Concepto</th><th class="n">Monto</th></tr></thead><tbody id="movs"></tbody></table>
       </section>
@@ -429,6 +438,7 @@ async function cargarCaja(){
     porEntregar=(d.porEntregar||[]).map((p,i)=>({id:p.id,prom:p.prom,monto:p.monto,color:_colors[i%_colors.length]}));
   }catch(e){}
   render();
+  if(typeof asgCargarSuc==='function') asgCargarSuc();
 }
 async function confirmarEntrega(id){
   try{ await api('POST','/api/caja/entrega',{porEntregarId:id});
@@ -522,6 +532,25 @@ async function entregarJCSuc(btn){
   catch(e){ toast(e.message); }
   finally{ btn.disabled=false; btn.textContent='Entregar efectivo al JC'; }
 }
+async function asgCargarSuc(){
+  try{ const d=await api('GET','/api/asignaciones/destinos');
+    const sel=document.getElementById('asg-dest-suc'); if(sel) sel.innerHTML=(d.destinos||[]).map(x=>`<option value="${x.tipo}:${x.id}">${x.nombre}</option>`).join('')||'<option value="">No hay otros puestos</option>';
+  }catch(e){}
+  try{ const d=await api('GET','/api/asignaciones');
+    const box=document.getElementById('asg-inbox-suc'); if(box) box.innerHTML=(d.porConfirmar||[]).map(a=>`<div style="background:var(--surf-2);border:1px solid var(--line);border-radius:9px;padding:10px;margin-bottom:8px"><b>${fmt(a.monto)}</b> de <b>${a.fromNombre}</b>${a.nota?(' · '+a.nota):''}<div style="display:flex;gap:6px;margin-top:8px"><button onclick="asgConfirmarSuc(${a.id})" style="flex:1;background:var(--acc);color:#1b2330;border:none;padding:8px;border-radius:7px;font-family:'Sora';font-weight:700;cursor:pointer">Confirmar</button><button onclick="asgRechazarSuc(${a.id})" style="flex:1;background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:8px;border-radius:7px;font-family:'Sora';cursor:pointer">Rechazar</button></div></div>`).join('')||'<div style="color:var(--faint)">Nada por confirmar.</div>';
+  }catch(e){}
+}
+async function asgEnviarSuc(btn){
+  const v=document.getElementById('asg-dest-suc').value; if(!v){toast('Elige un destino');return;}
+  const i=v.indexOf(':'); const toTipo=v.slice(0,i), toId=+v.slice(i+1);
+  const monto=+document.getElementById('asg-monto-suc').value; if(!(monto>0)){toast('Monto inválido');return;}
+  btn.disabled=true; btn.textContent='Asignando…';
+  try{ await api('POST','/api/asignaciones',{toTipo,toId,monto}); document.getElementById('asg-monto-suc').value=''; toast('✓ Asignado · pendiente de confirmación'); cargarCaja(); asgCargarSuc(); }
+  catch(e){ toast(e.message); }
+  finally{ btn.disabled=false; btn.textContent='Asignar efectivo'; }
+}
+async function asgConfirmarSuc(id){ try{ await api('POST','/api/asignaciones/'+id+'/recibir'); toast('✓ Recibido'); cargarCaja(); asgCargarSuc(); }catch(e){ toast(e.message); } }
+async function asgRechazarSuc(id){ if(!confirm('¿Rechazar? El efectivo regresa a quien lo envió.'))return; try{ await api('POST','/api/asignaciones/'+id+'/rechazar'); toast('Rechazado'); asgCargarSuc(); }catch(e){ toast(e.message); } }
 function addArticulo(v){
   const w=document.getElementById('art-list'); if(!w) return;
   const row=document.createElement('div'); row.style.cssText='display:flex;gap:6px;margin-bottom:6px';
