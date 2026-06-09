@@ -368,11 +368,11 @@ function render(){
     const liq = c.saldo < 1;
     const sem = liq ? 'ok' : (c.atraso>0 ? (c.diasAtraso>14?'bad':'w') : 'ok');
     const semL = liq ? 'Liquidado' : (sem==='bad'?'Vencido':sem==='w'?'Atrasado':'Al corriente');
-    return `<div class="card ${done?'done':''}">
+    return `<div class="card">
       <div class="ctop">
         <div class="cnum">${i+1}</div>
         <div style="flex:1;min-width:0"><div class="cname">${c.nombre}</div><div class="caddr">${c.dir}</div></div>
-        <div class="csem" style="display:flex;align-items:center;gap:6px">${c.tieneEvidencia?`<span onclick="event.stopPropagation();verEvidencia(${c.id})" title="Evidencia de entrega" style="cursor:pointer;font-size:1.05rem">📷</span>`:''}<span class="pill ${sem}">${semL}</span></div>
+        <div class="csem" style="display:flex;align-items:center;gap:6px">${done?'<span class="pill ok">✓ Pagó hoy</span>':''}${c.tieneEvidencia?`<span onclick="event.stopPropagation();verEvidencia(${c.id})" title="Evidencia de entrega" style="cursor:pointer;font-size:1.05rem">📷</span>`:''}<span class="pill ${sem}">${semL}</span></div>
       </div>
       <div class="cinfo">
         <div><div class="k">Modalidad</div><div class="v"><span class="tipo ${tipoCls[c.tipo]||'sem'}">${tipoLbl[c.tipo]||c.tipo}</span></div></div>
@@ -381,10 +381,8 @@ function render(){
         ${c.atraso>0?`<div><div class="k">Atraso</div><div class="v" style="color:var(--red)">${fmt(c.atraso)} · ${c.diasAtraso}d</div></div>`:''}
       </div>
       ${liq?`<div class="done-tag" style="color:var(--grn)">✓ Liquidado · sin saldo por cobrar</div>`
-       : done?`<div class="done-tag">✓ Cobrado ${fmt(e.monto)} · ${formaLbl[e.forma]||''} · ${e.hora}</div>`
-       : visited?`<div class="done-tag" style="color:var(--acc)">● ${e.statusLbl} · ${e.hora}</div>`
-       : _miCorte?`<div class="done-tag" style="color:var(--faint)">🔒 Corte entregado · cobro cerrado por hoy</div>`
-       :`<div class="cact">
+       :`${done?`<div class="done-tag">✓ Cobrado ${fmt(e.monto)} · ${formaLbl[e.forma]||''} · ${e.hora} — puedes volver a cobrar</div>`:(visited?`<div class="done-tag" style="color:var(--acc)">● ${e.statusLbl} · ${e.hora}</div>`:'')}
+        <div class="cact">
           <button class="b cobrar" onclick="abrirCobro(${c.id})">Cobrar</button>
           <button class="b ghost" onclick="whatsapp(${c.id})" title="WhatsApp">✆</button>
           <button class="b ghost" onclick="abrirNoPago(${c.id})" title="Sin pago">⊘</button>
@@ -400,7 +398,7 @@ function render(){
   const vis=Object.values(estado).filter(e=>e.status).length;
   document.getElementById('s-cob').textContent=fmt(totCob);
   document.getElementById('s-vis').textContent=vis+'/'+clientes.length;
-  const rec= vis>0? Math.round(cob.length/vis*100):0;
+  const rec= META>0? Math.round(totCob/META*100):0;
   document.getElementById('s-rec').textContent=rec+'%';
   document.getElementById('meta-txt').textContent=fmt(totCob)+' / '+fmt(META);
   document.getElementById('meta-fill').style.width=Math.min(100,totCob/META*100)+'%';
