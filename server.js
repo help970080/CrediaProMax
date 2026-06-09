@@ -581,7 +581,7 @@ function puestoDe(user) {
   return null;
 }
 function porEntregarDe(nombre) { return db.porEntregar.filter(p => p.prom === nombre).reduce((a, p) => a + (p.monto || 0), 0); }
-function disponibleAsignar(user) { return user.rol === 'cobrador' ? porEntregarDe(user.nombre) : disponibleEntrega(user); }
+function disponibleAsignar(user) { return user.rol === 'cobrador' ? porEntregarDe(user.nombre) : posicionCash(user); }
 function nombrePuesto(tipo, id) {
   if (tipo === 'sucursal') { const s = db.sucursales.find(x => x.id == id); return 'Sucursal ' + (s ? s.nombre : id); }
   const u = db.users.find(x => x.id == id);
