@@ -328,7 +328,7 @@
         <button class="btn gold" onclick="abrirImprimirCartera()">🖨 Imprimir cartera</button>
         <button class="btn" onclick="exportCSV('prom')">⬇ CSV</button>
       </div></div>
-      <table><thead><tr><th>Cobrador</th><th class="n">Clientes</th><th class="n">Cartera asignada</th><th class="n">Vencida</th><th class="n">Cob. diario</th><th class="n">Cob. semanal</th><th class="n">Cob. único</th><th>Recup.</th><th class="n">Comisión</th></tr></thead><tbody id="tb-prom"></tbody></table>
+      <div style="overflow-x:auto"><table><thead><tr><th>Cobrador</th><th class="n">Clientes</th><th class="n">Cartera asignada</th><th class="n">Vencida</th><th class="n">Cobrado</th><th class="n">Por entregar</th><th>Recup.</th><th class="n">Comisión</th></tr></thead><tbody id="tb-prom"></tbody></table></div>
       <div class="note">Los cobradores solo cobran; no colocan crédito. Su comisión depende de cuánto recuperan y de mantener baja la mora — no de colocar más.</div>
     </div>
   </section>
@@ -802,7 +802,7 @@ function pintaResumen(d){
   const pct = t.saldo_pendiente>0 ? ((t.atraso_total||0)/t.saldo_pendiente*100) : 0;
   $('k-ven-p').textContent=pct.toFixed(1)+'% · '+(t.clientes_atrasados||0)+' clientes';
   $('k-ef').textContent=fmt(t.por_entregar+t.en_caja_efectivo);
-  const rows=[...d.por_cobrador].sort((a,b)=>b.pagos_recibidos-a.pagos_recibidos);
+  const rows=[...d.por_cobrador].sort((a,b)=>(b.comisionable!=null?b.comisionable:b.pagos_recibidos)-(a.comisionable!=null?a.comisionable:a.pagos_recibidos));
   const k=cfg();
   $('tb-res').innerHTML= rows.length? rows.map((p,i)=>{
     const color=_sucColor[i%_sucColor.length]; const ini=(p.nombre||'').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
@@ -840,14 +840,14 @@ async function borrarSucursal(id, nombre){
 }
 function pintaSucursales(d){
   const sucs=d.por_sucursal;
-  $('suc-kpis').innerHTML=sucs.map(s=>`<div class="kpi b"><div class="l">${s.nombre}</div><div class="v">${fmtK(s.pagos_recibidos)}</div><div class="s">${s.creditos} créditos · cartera ${fmtK(s.cartera)} · atraso ${fmtK(s.atraso_monto||0)}</div></div>`).join('') || '<div style="color:var(--faint);padding:10px">Sin sucursales.</div>';
+  $('suc-kpis').innerHTML=sucs.map(s=>`<div class="kpi b"><div class="l">${s.nombre}</div><div class="v">${fmtK(s.comisionable!=null?s.comisionable:s.pagos_recibidos)}</div><div class="s">${s.creditos} créditos · cartera ${fmtK(s.cartera)} · atraso ${fmtK(s.atraso_monto||0)}</div></div>`).join('') || '<div style="color:var(--faint);padding:10px">Sin sucursales.</div>';
   $('tb-suc').innerHTML=sucs.map((s,i)=>{
     const color=_sucColor[i%_sucColor.length];
     const est = s.por_entregar>0
       ? `<span class="pill w">${fmt(s.por_entregar)} por entregar</span>`
       : '<span class="pill ok">Cuadrada</span>';
     return `<tr><td><div class="who"><div class="ava" style="background:${color}">🏪</div><div class="nm">${s.nombre}</div></div></td>
-      <td>${s.encargada}</td><td class="n">${fmt(s.pagos_recibidos)}</td><td class="n">${s.npagos}</td><td class="n">${s.creditos_captados}</td>
+      <td>${s.encargada}</td><td class="n">${fmt(s.comisionable!=null?s.comisionable:s.pagos_recibidos)}</td><td class="n">${s.npagos}</td><td class="n">${s.creditos_captados}</td>
       <td class="n">${fmt(s.cartera)}</td>
       <td class="n" style="color:${(s.atraso_monto||0)>0?'var(--red)':'var(--faint)'}">${(s.atraso_monto||0)>0?fmt(s.atraso_monto)+' <span style="font-size:.65rem">('+s.atraso_clientes+')</span>':'—'}</td>
       <td class="n">${fmt(s.efectivo_caja)}</td><td>${est}</td>
@@ -859,13 +859,13 @@ function pintaCobradores(d){
   $('tb-prom').innerHTML= d.por_cobrador.length? d.por_cobrador.map((p,i)=>{
     const color=_sucColor[i%_sucColor.length]; const ini=(p.nombre||'').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
     const meta=p.clientes>0? Math.min(100,(p.npagos/p.clientes)*100):0;
-    const k=cfg(); const com=(p.comisionable!=null?p.comisionable:p.pagos_recibidos)*k.cob/100;
+    const k=cfg(); const cob=(p.comisionable!=null?p.comisionable:p.pagos_recibidos); const com=cob*k.cob/100;
     return `<tr><td><div class="who"><div class="ava" style="background:${color}">${ini}</div><div><div class="nm">${p.nombre}</div><div class="sn">${p.sucursal}</div></div></div></td>
       <td class="n">${p.clientes}</td><td class="n">${fmt(p.cartera)}</td>
       <td class="n" style="color:${p.atraso_monto>0?'var(--red)':'var(--faint)'}">${p.atraso_monto>0?fmt(p.atraso_monto)+'<div style="font-size:.65rem">'+p.atraso_clientes+' clientes</div>':'—'}</td>
-      <td class="n">${fmt(p.pagos_recibidos)}</td><td class="n">${p.npagos}</td><td class="n">${fmt(p.por_entregar)}</td>
+      <td class="n">${fmt(cob)}</td><td class="n">${fmt(p.por_entregar)}</td>
       <td><span class="pill ${meta>=85?'ok':meta>=70?'w':'bad'}">${meta.toFixed(0)}%</span></td><td class="n cm">${fmt(com)}</td></tr>`;
-  }).join('') : '<tr><td colspan="9" style="color:var(--faint);padding:18px;text-align:center">No hay cobradores dados de alta todavía. Crea uno en Usuarios.</td></tr>';
+  }).join('') : '<tr><td colspan="8" style="color:var(--faint);padding:18px;text-align:center">No hay cobradores dados de alta todavía. Crea uno en Usuarios.</td></tr>';
 }
 
 function pintaComisiones(d){
@@ -897,7 +897,7 @@ function pintaConciliacion(d){
   $('rc-prom').innerHTML=d.por_cobrador.length? d.por_cobrador.map((p,i)=>{
     const color=_sucColor[i%_sucColor.length]; const ini=(p.nombre||'').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
     const cls=p.por_entregar<1?'doc':'dbad'; const lbl=p.por_entregar<1?'Sin pendientes':'Por entregar';
-    return `<div class="recon"><div class="lf"><div class="ava" style="background:${color}">${ini}</div><div><div class="nm">${p.nombre}</div><div class="sn">Cobrado ${fmt(p.pagos_recibidos)} · Por entregar ${fmt(p.por_entregar)}</div></div></div>
+    return `<div class="recon"><div class="lf"><div class="ava" style="background:${color}">${ini}</div><div><div class="nm">${p.nombre}</div><div class="sn">Cobrado ${fmt(p.comisionable!=null?p.comisionable:p.pagos_recibidos)} · Por entregar ${fmt(p.por_entregar)}</div></div></div>
       <div class="mono ${cls}" style="font-weight:600;text-align:right">${p.por_entregar>=1?'+':''}${fmt(Math.abs(p.por_entregar))}<div style="font-size:.68rem;font-weight:400">${lbl}</div></div></div>`;
   }).join('') : '<div style="color:var(--faint);padding:8px">Sin cobradores.</div>';
   $('rc-suc').innerHTML=d.por_sucursal.map((s,i)=>{
