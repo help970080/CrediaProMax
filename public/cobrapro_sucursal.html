@@ -211,6 +211,7 @@
           <tr><td>Enganches recibidos</td><td class="n" id="ct-eng">$0</td></tr>
           <tr><td>Entregas de cobradores confirmadas</td><td class="n" id="ct-ent">$0</td></tr>
           <tr><td style="color:var(--dim)">Pagos por banco (transf./depósito)*</td><td class="n" id="ct-banco" style="color:var(--dim)">$0</td></tr>
+          <tr><td style="color:var(--vio)">Asignado / entregado a otros puestos</td><td class="n" id="ct-ret" style="color:var(--vio)">$0</td></tr>
         </tbody></table>
         <div style="font-size:.72rem;color:var(--faint);margin-top:8px">*No es efectivo en caja: entró directo a banco.</div>
         <button onclick="hacerCierreCaja(this)" style="width:100%;margin-top:12px;background:var(--acc);color:#1b2330;border:none;padding:12px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">🔒 Hacer cierre de caja</button>
@@ -224,6 +225,9 @@
 
         <div class="sect-lbl">📥 Efectivo por confirmar</div>
         <div id="asg-inbox-suc" style="font-size:.85rem"></div>
+
+        <div class="sect-lbl">📤 Asignaciones que enviaste (pendientes)</div>
+        <div id="asg-sent-suc" style="font-size:.85rem"></div>
 
         <div class="sect-lbl">Movimientos de hoy</div>
         <table><thead><tr><th>Hora</th><th>Concepto</th><th class="n">Monto</th></tr></thead><tbody id="movs"></tbody></table>
@@ -447,7 +451,7 @@ function cerrar(){document.getElementById('overlay').classList.remove('on');_bus
 document.getElementById('overlay').onclick=e=>{if(e.target.id==='overlay')cerrar();};
 async function cargarCaja(){
   try{ const d=await api('GET','/api/caja/hoy'); const cj=d.caja||{};
-    caja.inicial=cj.inicial||0; caja.efectivo=cj.efectivo||0; caja.banco=cj.banco||0; caja.entregasConfirmadas=cj.entregas||0;
+    caja.inicial=cj.inicial||0; caja.efectivo=cj.efectivo||0; caja.banco=cj.banco||0; caja.entregasConfirmadas=cj.entregas||0; caja.retiros=cj.retiros||0;
     porEntregar=(d.porEntregar||[]).map((p,i)=>({id:p.id,prom:p.prom,monto:p.monto,color:_colors[i%_colors.length]}));
   }catch(e){}
   render();
@@ -551,6 +555,8 @@ async function asgCargarSuc(){
   }catch(e){}
   try{ const d=await api('GET','/api/asignaciones');
     const box=document.getElementById('asg-inbox-suc'); if(box) box.innerHTML=(d.porConfirmar||[]).map(a=>`<div style="background:var(--surf-2);border:1px solid var(--line);border-radius:9px;padding:10px;margin-bottom:8px"><b>${fmt(a.monto)}</b> de <b>${a.fromNombre}</b>${a.nota?(' · '+a.nota):''}<div style="display:flex;gap:6px;margin-top:8px"><button onclick="asgConfirmarSuc(${a.id})" style="flex:1;background:var(--acc);color:#1b2330;border:none;padding:8px;border-radius:7px;font-family:'Sora';font-weight:700;cursor:pointer">Confirmar</button><button onclick="asgRechazarSuc(${a.id})" style="flex:1;background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:8px;border-radius:7px;font-family:'Sora';cursor:pointer">Rechazar</button></div></div>`).join('')||'<div style="color:var(--faint)">Nada por confirmar.</div>';
+    const sent=document.getElementById('asg-sent-suc'); const pend=(d.enviadas||[]).filter(a=>a.estado==='pendiente');
+    if(sent) sent.innerHTML=pend.map(a=>`<div style="background:var(--surf-2);border:1px solid var(--line);border-radius:9px;padding:10px;margin-bottom:8px"><b>${fmt(a.monto)}</b> a <b>${a.toNombre}</b> · ⏳ esperando que confirme${a.nota?(' · '+a.nota):''}<div style="margin-top:8px"><button onclick="asgRechazarSuc(${a.id})" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:8px 14px;border-radius:7px;font-family:'Sora';cursor:pointer">Cancelar y regresar a mi caja</button></div></div>`).join('')||'<div style="color:var(--faint)">No tienes asignaciones pendientes de que te confirmen.</div>';
   }catch(e){}
 }
 async function asgEnviarSuc(btn){
@@ -800,7 +806,7 @@ function render(){
   document.getElementById('k-ncob').textContent=caja.ncob+' pagos';
   document.getElementById('k-cred').textContent=caja.ncred;
   document.getElementById('k-coloc').textContent=fmt(caja.coloc)+' colocado';
-  const efectivoReal=caja.inicial+caja.efectivo+caja.entregasConfirmadas;
+  const efectivoReal=caja.inicial+caja.efectivo+caja.entregasConfirmadas-(caja.retiros||0);
   document.getElementById('k-caja').textContent=fmt(efectivoReal);
   document.getElementById('cut-tot').textContent=fmt(efectivoReal);
   document.getElementById('ct-ini').textContent=fmt(caja.inicial);
@@ -808,6 +814,7 @@ function render(){
   document.getElementById('ct-eng').textContent=fmt(0);
   document.getElementById('ct-ent').textContent=fmt(caja.entregasConfirmadas);
   document.getElementById('ct-banco').textContent=fmt(caja.banco);
+  const ctr=document.getElementById('ct-ret'); if(ctr) ctr.textContent=(caja.retiros>0?'−':'')+fmt(caja.retiros||0);
   document.getElementById('movs').innerHTML= movs.length? movs.map(m=>`<tr><td class="mono" style="color:var(--faint);font-size:.78rem">${m.hora}</td><td>${m.txt}</td><td class="n">${m.monto>0?fmt(m.monto):'—'}</td></tr>`).join('') : '<tr><td colspan="3" style="color:var(--faint);font-size:.82rem;text-align:center;padding:16px">Sin movimientos aún.</td></tr>';
 }
 function toast(t){const el=document.getElementById('toast');el.textContent=t;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2800);}
