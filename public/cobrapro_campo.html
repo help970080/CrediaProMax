@@ -152,7 +152,7 @@
 
   <div class="tabs">
     <button class="tab on" data-v="ruta">Mi ruta</button>
-    <button class="tab" data-v="resumen">Corte del día</button>
+    <button class="tab" data-v="resumen">Mi efectivo</button>
   </div>
 
   <div class="scroll">
@@ -177,27 +177,18 @@
     </section>
 
     <section class="view" id="resumen">
-      <div class="big-cut"><div class="l">Efectivo en mano</div><div class="v" id="cut-ef">$0</div></div>
-      <div class="res-card"><h3>Resumen del día</h3>
+      <div class="big-cut"><div class="l">Efectivo en mano (acumulado)</div><div class="v" id="cut-ef">$0</div></div>
+      <div class="res-card"><h3>Resumen de hoy</h3>
         <div class="res-row"><span>Cobros registrados</span><span class="v" id="r-ncob">0</span></div>
-        <div class="res-row"><span>Total cobrado</span><span class="v g" id="r-tot" style="color:var(--grn)">$0</span></div>
-        <div class="res-row"><span>💵 Efectivo (en mano)</span><span class="v" id="r-efe" style="color:var(--acc)">$0</span></div>
+        <div class="res-row"><span>Total cobrado hoy</span><span class="v g" id="r-tot" style="color:var(--grn)">$0</span></div>
+        <div class="res-row"><span>💵 Efectivo cobrado hoy</span><span class="v" id="r-efe" style="color:var(--acc)">$0</span></div>
         <div class="res-row"><span>🏦 Transferencia / depósito</span><span class="v" id="r-banco">$0</span></div>
         <div class="res-row"><span>⚖ Ajustes</span><span class="v" id="r-ajuste">$0</span></div>
         <div class="res-row"><span>Visitas sin pago</span><span class="v" id="r-nopago">0</span></div>
         <div class="res-row"><span>Promesas de pago</span><span class="v" id="r-prom">0</span></div>
         <div class="res-row"><span>Pendientes de sincronizar</span><span class="v" id="r-pend" style="color:var(--acc)">0</span></div>
       </div>
-      <div class="res-card"><h3>💵 Entregar efectivo al JC</h3>
-        <div style="font-size:.8rem;color:var(--dim);margin-bottom:10px;line-height:1.4">Asigna efectivo al Jefe de Crédito para que entregue créditos. Él lo confirmará en su caja.</div>
-        <div id="jc-wrap">
-          <select id="jc-sel" style="width:100%;background:var(--surf-2);border:1px solid var(--line-2);color:var(--txt);font-family:'Sora';font-size:.92rem;padding:10px 12px;border-radius:9px;margin-bottom:8px"></select>
-          <input id="jc-monto" type="number" inputmode="numeric" placeholder="Monto a entregar $" style="width:100%;background:var(--surf-2);border:1px solid var(--line-2);color:var(--txt);font-family:'Sora';font-size:.95rem;padding:10px 12px;border-radius:9px;margin-bottom:8px">
-          <button class="corte" style="width:100%;justify-content:center" onclick="entregarJC(this)">Entregar efectivo al JC</button>
-        </div>
-        <div id="jc-hist" style="margin-top:10px"></div>
-      </div>
-      <div class="res-card"><h3>💸 Asignar efectivo a otro puesto</h3>
+      <div class="res-card"><h3>💸 Asignar / entregar efectivo</h3>
         <div style="font-size:.8rem;color:var(--dim);margin-bottom:10px;line-height:1.4">Entrega tu efectivo en mano a una sucursal, supervisor, JC o admin. El puesto lo confirmará.</div>
         <select id="asg-dest-cob" style="width:100%;background:var(--surf-2);border:1px solid var(--line-2);color:var(--txt);font-family:'Sora';font-size:.92rem;padding:10px 12px;border-radius:9px;margin-bottom:8px"></select>
         <input id="asg-monto-cob" type="number" inputmode="numeric" placeholder="Monto $" style="width:100%;background:var(--surf-2);border:1px solid var(--line-2);color:var(--txt);font-family:'Sora';font-size:.95rem;padding:10px 12px;border-radius:9px;margin-bottom:8px">
@@ -213,8 +204,8 @@
   </div>
 
   <div class="botbar">
-    <div class="ef"><div class="l">Efectivo en mano</div><div class="v" id="bb-ef">$0</div></div>
-    <button class="corte" onclick="entregar()">⇄ Entregar corte</button>
+    <div class="ef"><div class="l">Efectivo en mano (acumulado)</div><div class="v" id="bb-ef">$0</div></div>
+    <div style="font-size:.72rem;color:var(--dim);max-width:42%;text-align:right;line-height:1.3">Se acumula hasta el día de cierre. En campo te lo retiran o lo asignas a un puesto.</div>
   </div>
 </div>
 
@@ -295,25 +286,17 @@ async function verEvidencia(saleId){
     document.body.appendChild(ov);
   }catch(e){ toast(e.message); }
 }
-let _jcDadoHoy=0;
+let _jcDadoHoy=0, _efAcum=0;
 async function cargarJC(){
-  try{
-    const jcs=await api('GET','/api/jc/lista');
-    const sel=document.getElementById('jc-sel'); if(!sel) return;
-    if(!jcs.length){ document.getElementById('jc-wrap').innerHTML='<div style="color:var(--faint);font-size:.82rem">No hay un JC en tu sucursal todavía.</div>'; }
-    else sel.innerHTML=jcs.map(j=>`<option value="${j.id}">${j.nombre}</option>`).join('');
-    const ents=await api('GET','/api/jc-entregas');
-    const hoy=new Date().toDateString();
-    _jcDadoHoy=ents.filter(e=>e.cobradorId===ME.id && new Date(e.creadoEn).toDateString()===hoy).reduce((a,e)=>a+e.monto,0);
-    const hist=ents.slice(0,5).map(e=>`<div style="display:flex;justify-content:space-between;font-size:.78rem;color:var(--dim);padding:5px 0;border-top:1px solid var(--line)"><span>${e.jcNombre} · ${e.estado==='recibido'?'✓ recibido':'⏳ pendiente'}</span><span class="mono">$${Math.round(e.monto).toLocaleString('es-MX')}</span></div>`).join('');
-    const h=document.getElementById('jc-hist'); if(h) h.innerHTML=hist;
-    asgCargarCob();
-    render();
-  }catch(e){}
+  await asgCargarCob();
+  render();
 }
 async function asgCargarCob(){
   try{ const d=await api('GET','/api/asignaciones/destinos');
+    _efAcum=d.disponible||0;
     const sel=document.getElementById('asg-dest-cob'); if(sel) sel.innerHTML=(d.destinos||[]).map(x=>`<option value="${x.tipo}:${x.id}">${x.nombre}</option>`).join('')||'<option value="">No hay puestos</option>';
+    const bb=document.getElementById('bb-ef'); if(bb) bb.textContent=fmt(_efAcum);
+    const ce=document.getElementById('cut-ef'); if(ce) ce.textContent=fmt(_efAcum);
   }catch(e){}
 }
 async function asgEnviarCob(btn){
@@ -325,23 +308,14 @@ async function asgEnviarCob(btn){
   catch(e){ toast(e.message); }
   finally{ btn.disabled=false; btn.textContent='Asignar efectivo'; }
 }
-async function entregarJC(btn){
-  const jcId=+document.getElementById('jc-sel').value, monto=+document.getElementById('jc-monto').value;
-  if(!jcId){ toast('No hay JC disponible'); return; }
-  if(!(monto>0)){ toast('Indica un monto válido'); return; }
-  btn.disabled=true; btn.textContent='Entregando…';
-  try{ await api('POST','/api/jc-entregas',{jcId,monto}); document.getElementById('jc-monto').value=''; toast('Efectivo asignado al JC'); await cargarJC(); }
-  catch(e){ toast(e.message); }
-  finally{ btn.disabled=false; btn.textContent='Entregar efectivo al JC'; }
-}
 function enqueue(item){ item.idem=item.idem||uuid(); cola.push(item); saveCola(); render(); flush(); }
 async function flush(){
-  if(!efectivamenteOnline()||_flushing) return; _flushing=true;
+  if(!efectivamenteOnline()||_flushing) return; _flushing=true; let _did=0;
   try{ while(cola.length){ const it=cola[0];
     try{
       if(it.kind==='pago') await api('POST','/api/sales/'+it.saleId+'/pago',{monto:it.monto,forma:it.forma,idempotencyKey:it.idem});
       else await api('POST','/api/sales/'+it.saleId+'/gestion',{tipo:it.tipo,detalle:it.detalle,idempotencyKey:it.idem});
-      cola.shift(); saveCola();
+      cola.shift(); saveCola(); _did++;
     }catch(e){
       // Error permanente del servidor (4xx que no es timeout/rate-limit): el movimiento no se puede aplicar.
       // Lo sacamos de la cola para no bloquear los demás cobros y avisamos al cobrador.
@@ -353,7 +327,7 @@ async function flush(){
       }
       break; // error transitorio (sin conexión / servidor caído): se reintenta después
     }
-  } } finally { _flushing=false; queue=cola.length; render(); }
+  } } finally { _flushing=false; queue=cola.length; render(); if(_did>0){ cargarRuta(); asgCargarCob(); } }
 }
 window.addEventListener('online', flush);
 
@@ -430,10 +404,9 @@ function render(){
   document.getElementById('s-rec').textContent=rec+'%';
   document.getElementById('meta-txt').textContent=fmt(totCob)+' / '+fmt(META);
   document.getElementById('meta-fill').style.width=Math.min(100,totCob/META*100)+'%';
-  // bottom + resumen: efectivo en mano = efectivo cobrado − lo que ya entregó al JC
-  const efMano=Math.max(0, efectivo - _jcDadoHoy);
-  document.getElementById('bb-ef').textContent=fmt(efMano);
-  document.getElementById('cut-ef').textContent=fmt(efMano);
+  // efectivo en mano = acumulado real del servidor (lo que trae sin entregar). Hoy solo informativo.
+  document.getElementById('bb-ef').textContent=fmt(_efAcum);
+  document.getElementById('cut-ef').textContent=fmt(_efAcum);
   document.getElementById('r-ncob').textContent=cob.length;
   document.getElementById('r-tot').textContent=fmt(totCob);
   document.getElementById('r-efe').textContent=fmt(efectivo);
@@ -450,7 +423,6 @@ let cobroId=null, formaPay='efectivo';
 const formaLbl={efectivo:'Efectivo',transferencia:'Transferencia',deposito:'Depósito',ajuste:'Ajuste'};
 function setForma(f,el){formaPay=f;document.querySelectorAll('#forma button').forEach(b=>b.classList.remove('on'));el.classList.add('on');}
 function abrirCobro(id){
-  if(_miCorte){ toast('⛔ Ya entregaste tu corte hoy. No puedes cobrar más hasta mañana.'); return; }
   cobroId=id;formaPay='efectivo';const c=clientes.find(x=>x.id===id);
   document.getElementById('overlay').innerHTML=`<div class="sheet">
     <h3>Cobrar a ${c.nombre}</h3><div class="sh-sub">${tipoLbl[c.tipo]} · saldo ${fmt(c.saldo)}</div>
