@@ -652,6 +652,7 @@
       <div id="ex-graph" style="overflow:auto;border:1px solid var(--line);border-radius:10px;background:var(--surf-1);min-height:120px"></div>
     </div>
     <div class="panel"><div class="ph"><h3>Grupos detectados</h3><span class="hint" id="ex-count"></span></div><div id="ex-list"></div></div>
+  </section>
   <section class="view" id="asignar">
     <div class="panel">
       <div class="ph"><h3>Asignar efectivo a un puesto</h3><span class="hint">El que recibe debe confirmar. El promotor nunca recibe.</span></div>
@@ -806,9 +807,10 @@ function pintaResumen(d){
   $('tb-res').innerHTML= rows.length? rows.map((p,i)=>{
     const color=_sucColor[i%_sucColor.length]; const ini=(p.nombre||'').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
     const meta=p.clientes>0? Math.min(100,(p.npagos/p.clientes)*100):0;
-    const com=p.pagos_recibidos*k.cob/100;
+    const cobReal=(p.comisionable!=null?p.comisionable:p.pagos_recibidos);
+    const com=cobReal*k.cob/100;
     return `<tr><td><div class="who"><div class="ava" style="background:${color}">${ini}</div><div class="nm">${p.nombre}</div></div></td>
-      <td>${p.sucursal}</td><td class="n">${p.clientes}</td><td class="n">${fmt(p.pagos_recibidos)}</td>
+      <td>${p.sucursal}</td><td class="n">${p.clientes}</td><td class="n">${fmt(cobReal)}</td>
       <td><div style="display:flex;align-items:center;gap:8px"><div class="bar"><i style="width:${meta}%;background:${meta>=85?'var(--grn)':meta>=70?'var(--acc)':'var(--red)'}"></i></div><span class="mono" style="font-size:.78rem">${meta.toFixed(0)}%</span></div></td>
       <td class="n cm">${fmt(com)}</td></tr>`;
   }).join('') : '<tr><td colspan="6" style="color:var(--faint);padding:18px;text-align:center">Aún sin cobradores con actividad en el periodo.</td></tr>';
