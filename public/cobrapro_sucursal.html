@@ -255,7 +255,7 @@
       </div>
       <div class="kpis" id="res-kpis" style="margin-top:14px"></div>
       <div class="sect-lbl">Desempeño y objetivos por cobrador</div>
-      <div style="overflow-x:auto"><table><thead><tr><th>Cobrador</th><th class="n">Clientes</th><th class="n">Cartera</th><th class="n">Vencida</th><th class="n">Cobrado</th><th class="n">Por entregar</th><th class="n" style="color:var(--vio)">Obj. clientes</th><th class="n" style="color:var(--vio)">Obj. cobranza</th><th class="n">% Clientes</th><th class="n">% Cobranza</th></tr></thead><tbody id="res-cob"></tbody></table></div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Cobrador</th><th class="n">Clientes</th><th class="n">Cartera</th><th class="n">Vencida</th><th class="n" style="color:var(--red)">Sin pago</th><th class="n">Cobrado</th><th class="n">Por entregar</th><th class="n" style="color:var(--vio)">Obj. clientes</th><th class="n" style="color:var(--vio)">Obj. cobranza</th><th class="n">% Clientes</th><th class="n">% Cobranza</th></tr></thead><tbody id="res-cob"></tbody></table></div>
       <div style="font-size:.74rem;color:var(--faint);margin-top:8px;line-height:1.4">Escribe los objetivos en las celdas moradas y pulsa <b>Guardar objetivos</b>. % Clientes = clientes que pagaron ÷ objetivo de clientes · % Cobranza = cobrado ÷ objetivo de cobranza. Cobrado no cuenta primer pago/descuentos.</div>
     </div>
   </div>
@@ -892,12 +892,13 @@ function pintaResumen(d){
   // KPIs de la sucursal = SUMA de sus cobradores (cuadra con la tabla de abajo)
   const sum=(f)=>cob.reduce((a,c)=>a+(c[f]||0),0);
   const cartera=sum('cartera'), vencida=sum('atraso_monto'), atrClientes=sum('atraso_clientes');
-  const cobrado=sum('comisionable'), npagos=sum('npagos'), porEntregar=sum('por_entregar'), clientes=sum('clientes');
+  const cobrado=sum('comisionable'), npagos=sum('npagos'), porEntregar=sum('por_entregar'), clientes=sum('clientes'), sinPago=sum('nopago');
   const per=_periodoSuc==='hoy'?'hoy':(_periodoSuc==='mes'?'mes':'semana');
   document.getElementById('res-kpis').innerHTML=[
     ['g','Cobrado ('+per+')',fmt(cobrado),npagos+' pagos'],
     ['','Cartera activa',fmt(cartera),clientes+' créditos en ruta'],
     ['r','Cartera vencida',fmt(vencida),atrClientes+' clientes en atraso'],
+    ['r','Clientes sin pago ('+per+')',sinPago,'cobro esperado y no abonaron'],
     ['b','Colocado ('+per+')',fmt(t.monto_colocado_periodo||0),(t.nuevos_creditos_periodo||0)+' créditos nuevos'],
     ['v','Efectivo por entregar',fmt(porEntregar),'en ruta de cobradores'],
   ].map(k=>`<div class="kpi ${k[0]}"><div class="l">${k[1]}</div><div class="v">${k[2]}</div><div class="s">${k[3]}</div></div>`).join('');
@@ -913,13 +914,14 @@ function pintaResumen(d){
     return `<tr data-cob="${(c.nombre||'').replace(/"/g,'&quot;')}">
       <td>${c.nombre}</td><td class="n">${c.clientes||0}</td><td class="n">${fmt(c.cartera||0)}</td>
       <td class="n" style="color:${c.atraso_monto>0?'var(--red)':'var(--faint)'}">${fmt(c.atraso_monto||0)}</td>
+      <td class="n" style="color:${(c.nopago||0)>0?'var(--red)':'var(--faint)'};font-weight:600">${c.nopago||0}</td>
       <td class="n"><b>${fmt(c.comisionable||0)}</b></td><td class="n">${fmt(c.por_entregar||0)}</td>
       <td class="n"><input type="number" min="0" class="so-cli" value="${objCli||''}" style="${inS}"></td>
       <td class="n"><input type="number" min="0" step="100" class="so-cob" value="${objCob||''}" style="${inS}"></td>
       <td class="n" style="color:${colC};font-weight:700">${objCli>0?pc+'%':'—'}</td>
       <td class="n" style="color:${colB};font-weight:700">${objCob>0?pcob+'%':'—'}</td>
     </tr>`;
-  }).join('')||'<tr><td colspan="10" style="text-align:center;color:var(--faint);padding:16px">Sin cobradores en esta sucursal.</td></tr>';
+  }).join('')||'<tr><td colspan="11" style="text-align:center;color:var(--faint);padding:16px">Sin cobradores en esta sucursal.</td></tr>';
 }
 async function sucGuardarObjetivos(btn){
   const trs=[...document.querySelectorAll('#res-cob tr[data-cob]')];
