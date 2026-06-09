@@ -277,20 +277,20 @@
             <tr>
               <th rowspan="2" style="vertical-align:bottom">Gerencia</th>
               <th colspan="2" style="text-align:center;border-bottom:1px solid var(--line);color:var(--blu)">OBJETIVOS (semana)</th>
-              <th colspan="2" style="text-align:center;border-bottom:1px solid var(--line)">Del día</th>
-              <th colspan="4" style="text-align:center;border-bottom:1px solid var(--line);color:var(--grn)">CIERRE / avance</th>
+              <th colspan="3" style="text-align:center;border-bottom:1px solid var(--line)">Del día</th>
+              <th colspan="5" style="text-align:center;border-bottom:1px solid var(--line);color:var(--grn)">CIERRE / avance</th>
             </tr>
             <tr>
               <th class="n">Clientes obj.</th><th class="n">Débito obj.</th>
-              <th class="n">Cts día</th><th class="n">Coll día</th>
-              <th class="n">Cts Acum</th><th class="n">Coll Acum</th><th class="n">% Clientes</th><th class="n">% Coll</th>
+              <th class="n">Cts día</th><th class="n">Coll día</th><th class="n" style="color:var(--red)">No pago día</th>
+              <th class="n">Cts Acum</th><th class="n">Coll Acum</th><th class="n" style="color:var(--red)">No pago sem</th><th class="n">% Clientes</th><th class="n">% Coll</th>
             </tr>
           </thead>
           <tbody id="nd-rows"></tbody>
           <tfoot id="nd-foot"></tfoot>
         </table>
       </div>
-      <div style="font-size:.74rem;color:var(--faint);margin-top:8px;line-height:1.4">Escribe los objetivos en las celdas azules y pulsa <b>Guardar objetivos</b>. % Clientes = Cts Acum ÷ Clientes objetivo · % Coll = Coll Acum ÷ Débito objetivo. Si dejas un objetivo en 0, se usa la cartera activa real como referencia. No cuenta el primer pago/descuentos.</div>
+      <div style="font-size:.74rem;color:var(--faint);margin-top:8px;line-height:1.4">Escribe los objetivos en las celdas azules y pulsa <b>Guardar objetivos</b>. % Clientes = Cts Acum ÷ Clientes objetivo · % Coll = Coll Acum ÷ Débito objetivo. <b style="color:var(--red)">No pago</b> = clientes con cobro esperado que NO abonaron (día y acumulado de la semana) — sirve para medir riesgo y ajustar objetivos. Si dejas un objetivo en 0, se usa la cartera activa real como referencia. No cuenta el primer pago/descuentos.</div>
     </div>
   </section>
 
@@ -2236,7 +2236,7 @@ async function cargarNumDiarios(){
     ]);
     _ndData=d; _ndObj=(obj&&obj.suc)||{};
     pintaNumDiarios(d);
-  }catch(e){ document.getElementById('nd-rows').innerHTML='<tr><td colspan="9" style="color:var(--red);padding:12px">'+e.message+'</td></tr>'; }
+  }catch(e){ document.getElementById('nd-rows').innerHTML='<tr><td colspan="11" style="color:var(--red);padding:12px">'+e.message+'</td></tr>'; }
 }
 function _ndPct(num,den){ return den>0?Math.round(num/den*100):0; }
 function _ndPctCol(p){ return p>=100?'var(--grn)':p>=70?'var(--acc)':p>=40?'#caa23a':'var(--red)'; }
@@ -2255,17 +2255,17 @@ function pintaNumDiarios(d){
       <td><b>${r.gerencia}</b></td>
       <td class="n"><input type="number" min="0" class="nd-obj-cli" value="${objCli||''}" placeholder="${r.clientes_totales}" style="width:78px;text-align:right;background:rgba(47,127,209,.08);border:1px solid var(--line);color:var(--txt);font-family:'Sora';padding:5px 7px;border-radius:6px"></td>
       <td class="n"><input type="number" min="0" step="50" class="nd-obj-deb" value="${objDeb||''}" placeholder="${Math.round(r.debito_total)}" style="width:104px;text-align:right;background:rgba(47,127,209,.08);border:1px solid var(--line);color:var(--txt);font-family:'Sora';padding:5px 7px;border-radius:6px"></td>
-      <td class="n">${r.dia_clientes}</td><td class="n">${fmt(r.dia_coll)}</td>
-      <td class="n">${r.acum_clientes}</td><td class="n"><b>${fmt(r.acum_coll)}</b></td>
+      <td class="n">${r.dia_clientes}</td><td class="n">${fmt(r.dia_coll)}</td><td class="n" style="color:${(r.dia_nopago||0)>0?'var(--red)':'var(--faint)'};font-weight:600">${r.dia_nopago||0}</td>
+      <td class="n">${r.acum_clientes}</td><td class="n"><b>${fmt(r.acum_coll)}</b></td><td class="n" style="color:${(r.acum_nopago||0)>0?'var(--red)':'var(--faint)'};font-weight:600">${r.acum_nopago||0}</td>
       <td class="n" style="color:${_ndPctCol(pc)};font-weight:700">${pc}%</td>
       <td class="n" style="color:${_ndPctCol(pcoll)};font-weight:700">${pcoll}%</td>
     </tr>`;
-  }).join('')||'<tr><td colspan="9" style="text-align:center;color:var(--faint);padding:16px">Sin datos para este día.</td></tr>';
+  }).join('')||'<tr><td colspan="11" style="text-align:center;color:var(--faint);padding:16px">Sin datos para este día.</td></tr>';
   const t=d.total||{};
   const objCliT=rows.reduce((a,r)=>{const o=_ndObj[String(r.id)]||{};return a+(o.clientes||r.clientes_totales);},0);
   const objDebT=rows.reduce((a,r)=>{const o=_ndObj[String(r.id)]||{};return a+(o.debito||r.debito_total);},0);
   const pcT=_ndPct(t.acum_clientes,objCliT), pcollT=_ndPct(t.acum_coll,objDebT);
-  document.getElementById('nd-foot').innerHTML=`<tr style="border-top:2px solid var(--line);font-weight:700"><td>TOTAL</td><td class="n">${objCliT}</td><td class="n">${fmt(objDebT)}</td><td class="n">${t.dia_clientes||0}</td><td class="n">${fmt(t.dia_coll||0)}</td><td class="n">${t.acum_clientes||0}</td><td class="n">${fmt(t.acum_coll||0)}</td><td class="n" style="color:${_ndPctCol(pcT)}">${pcT}%</td><td class="n" style="color:${_ndPctCol(pcollT)}">${pcollT}%</td></tr>`;
+  document.getElementById('nd-foot').innerHTML=`<tr style="border-top:2px solid var(--line);font-weight:700"><td>TOTAL</td><td class="n">${objCliT}</td><td class="n">${fmt(objDebT)}</td><td class="n">${t.dia_clientes||0}</td><td class="n">${fmt(t.dia_coll||0)}</td><td class="n" style="color:var(--red)">${t.dia_nopago||0}</td><td class="n">${t.acum_clientes||0}</td><td class="n">${fmt(t.acum_coll||0)}</td><td class="n" style="color:var(--red)">${t.acum_nopago||0}</td><td class="n" style="color:${_ndPctCol(pcT)}">${pcT}%</td><td class="n" style="color:${_ndPctCol(pcollT)}">${pcollT}%</td></tr>`;
 }
 async function ndGuardarObjetivos(btn){
   const trs=[...document.querySelectorAll('#nd-rows tr[data-sid]')];
@@ -2284,12 +2284,12 @@ async function ndGuardarObjetivos(btn){
 }
 function ndExport(){
   if(!_ndData) return;
-  const aoa=[['Gerencia','Clientes obj.','Débito obj.','Cts día','Coll día','Cts Acum','Coll Acum','% Clientes','% Coll']];
-  (_ndData.rows||[]).forEach(r=>{ const o=_ndObj[String(r.id)]||{}; const objCli=o.clientes||r.clientes_totales, objDeb=o.debito||r.debito_total; aoa.push([r.gerencia,o.clientes||0,o.debito||0,r.dia_clientes,r.dia_coll,r.acum_clientes,r.acum_coll,_ndPct(r.acum_clientes,objCli),_ndPct(r.acum_coll,objDeb)]); });
+  const aoa=[['Gerencia','Clientes obj.','Débito obj.','Cts día','Coll día','No pago día','Cts Acum','Coll Acum','No pago sem','% Clientes','% Coll']];
+  (_ndData.rows||[]).forEach(r=>{ const o=_ndObj[String(r.id)]||{}; const objCli=o.clientes||r.clientes_totales, objDeb=o.debito||r.debito_total; aoa.push([r.gerencia,o.clientes||0,o.debito||0,r.dia_clientes,r.dia_coll,r.dia_nopago||0,r.acum_clientes,r.acum_coll,r.acum_nopago||0,_ndPct(r.acum_clientes,objCli),_ndPct(r.acum_coll,objDeb)]); });
   const t=_ndData.total||{};
   const objCliT=(_ndData.rows||[]).reduce((a,r)=>{const o=_ndObj[String(r.id)]||{};return a+(o.clientes||r.clientes_totales);},0);
   const objDebT=(_ndData.rows||[]).reduce((a,r)=>{const o=_ndObj[String(r.id)]||{};return a+(o.debito||r.debito_total);},0);
-  aoa.push(['TOTAL',objCliT,objDebT,t.dia_clientes||0,t.dia_coll||0,t.acum_clientes||0,t.acum_coll||0,_ndPct(t.acum_clientes,objCliT),_ndPct(t.acum_coll,objDebT)]);
+  aoa.push(['TOTAL',objCliT,objDebT,t.dia_clientes||0,t.dia_coll||0,t.dia_nopago||0,t.acum_clientes||0,t.acum_coll||0,t.acum_nopago||0,_ndPct(t.acum_clientes,objCliT),_ndPct(t.acum_coll,objDebT)]);
   xlsxDL('numeros_diarios_'+(_ndData.dia||''), [{name:'Numeros diarios',aoa}]);
 }
 
