@@ -336,7 +336,8 @@ app.get('/api/clients', auth, (req, res) => {
 });
 app.get('/api/sales', auth, (req, res) => {
   const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
-  res.json(db.sales.filter(s => activos.has(s.clientId)).map(s => {
+  const miSuc = (req.user.rol === 'sucursal') ? Number(req.user.sucursalId || 0) : null;
+  res.json(db.sales.filter(s => activos.has(s.clientId) && (miSuc == null || s.sucursalId === miSuc)).map(s => {
     const c = db.clients.find(x => x.id === s.clientId) || {};
     const { entrega, ...rest } = s;
     return { ...rest, saldo: saldoDe(s.id), cliente: c.nombre, tel: c.tel || '', calle: c.calle || '', col: c.col || '', tieneEvidencia: !!entrega };
@@ -1226,10 +1227,12 @@ function _desdePeriodo(periodo){
 app.get('/api/dashboard', auth, (req,res)=>{
   const periodo=req.query.periodo||'semana';
   const desde=_desdePeriodo(periodo);
+  const miSuc = (req.user.rol==='sucursal') ? Number(req.user.sucursalId||0) : null;
   const activeClients=db.clients.filter(c=>c.activo!==false);
   const activeClientIds=new Set(activeClients.map(c=>c.id));
-  const sales=db.sales.filter(s=>activeClientIds.has(s.clientId) && s.entregado!==false), clients=activeClients, sucursales=db.sucursales.filter(s=>s.activo!==false);
-  const abonos=db.movimientos.filter(m=>m.abono>0 && _parseFechaMx(m.fecha)>=desde);
+  const sales=db.sales.filter(s=>activeClientIds.has(s.clientId) && s.entregado!==false && (miSuc==null || s.sucursalId===miSuc)), clients=activeClients, sucursales=db.sucursales.filter(s=>s.activo!==false && (miSuc==null || s.id===miSuc));
+  const _saleIds=new Set(sales.map(s=>s.id));
+  const abonos=db.movimientos.filter(m=>m.abono>0 && _parseFechaMx(m.fecha)>=desde && _saleIds.has(m.saleId));
   const nuevos=sales.filter(s=>s.createdAt && new Date(s.createdAt).getTime()>=desde);
   // atraso acumulado por sale
   function atrasoDe(s){
@@ -1254,7 +1257,7 @@ app.get('/api/dashboard', auth, (req,res)=>{
       cartera:ventas_suc.reduce((a,s)=>a+saldoDe(s.id),0), creditos:ventas_suc.length,
       atraso_monto, atraso_clientes, esperado_acum };
   });
-  const cobradores=db.users.filter(u=>u.rol==='cobrador'&&u.activo);
+  const cobradores=db.users.filter(u=>u.rol==='cobrador'&&u.activo && (miSuc==null || Number(u.sucursalId)===miSuc));
   const por_cobrador=cobradores.map(c=>{
     const sus_sales=sales.filter(s=>s.prom===c.nombre);
     const sus_abonos=abonos.filter(m=>{ const s=sales.find(x=>x.id===m.saleId); return s && s.prom===c.nombre; });
@@ -1285,9 +1288,9 @@ app.get('/api/dashboard', auth, (req,res)=>{
     monto_colocado_periodo: nuevos.reduce((a,s)=>a+s.monto,0),
     cobrado_periodo: abonos.filter(m=>m.forma!=='descuento').reduce((a,m)=>a+m.abono,0),
     utilidad_periodo: Math.round(abonos.filter(m=>m.forma!=='descuento').reduce((a,m)=>{ const s=sales.find(x=>x.id===m.saleId); return a + (s&&s.total>0 ? m.abono*((s.total-s.monto)/s.total) : 0); },0)),
-    en_caja_efectivo: Object.values(db.caja).reduce((a,c)=>a+((c.inicial||0)+(c.efectivo||0)+(c.entregas||0)),0),
-    en_caja_banco: Object.values(db.caja).reduce((a,c)=>a+(c.banco||0),0),
-    por_entregar: db.porEntregar.reduce((a,p)=>a+p.monto,0),
+    en_caja_efectivo: (miSuc==null?Object.values(db.caja):[db.caja[String(miSuc)]||{}]).reduce((a,c)=>a+((c.inicial||0)+(c.efectivo||0)+(c.entregas||0)-(c.retiros||0)),0),
+    en_caja_banco: (miSuc==null?Object.values(db.caja):[db.caja[String(miSuc)]||{}]).reduce((a,c)=>a+(c.banco||0),0),
+    por_entregar: db.porEntregar.filter(p=>miSuc==null||p.sucursalId===miSuc).reduce((a,p)=>a+p.monto,0),
     atraso_total: por_cobrador.reduce((a,c)=>a+c.atraso_monto,0),
     clientes_atrasados: por_cobrador.reduce((a,c)=>a+c.atraso_clientes,0),
   };
