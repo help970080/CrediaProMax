@@ -196,6 +196,10 @@
           <div class="field" id="plazoWrap"><label>Plazo</label><select id="n-plazo" onchange="calc()"></select></div>
         </div>
         <div class="field"><label>Monto del crédito</label><input id="n-monto" type="number" value="5000" step="500" oninput="calc()"></div>
+        <div class="field"><label>Artículo(s) que se vende(n) <span style="color:var(--faint);font-weight:400;font-size:.8rem">— opcional · celular, marca, modelo, IMEI…</span></label>
+          <div id="art-list"></div>
+          <button type="button" class="btn" style="margin-top:6px;font-size:.8rem" onclick="addArticulo()">➕ Agregar otro artículo</button>
+        </div>
         <div class="calc" id="calc"></div>
         <button class="btn-full" onclick="crearCredito()">Capturar crédito</button>
       </section>
@@ -480,11 +484,12 @@ async function agregarCreditoExistente(clienteId){
   const prom=document.getElementById('n-prom').value;
   if(!prom){toast('Selecciona el cobrador para este crédito');return;}
   try{
-    const d=await api('POST','/api/sales',{clienteExistenteId:clienteId,prom,tipo:t,plazo,monto,dias:plazo});
+    const d=await api('POST','/api/sales',{clienteExistenteId:clienteId,prom,tipo:t,plazo,monto,dias:plazo,articulos:leerArticulos()});
     caja.ncred++; caja.coloc+=monto;
     const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
     movs.unshift({hora,txt:`Crédito ${d.folio} — ${d.cliente} (${prom}) · 2º crédito`,monto:0});
     ['n-cli','n-tel','n-calle','n-col','n-ref','n-curp','n-ciudad','n-estado'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    resetArticulos();
     render(); _buscar();
     toast(`✓ ${d.folio} agregado a ${d.cliente} · ahora tiene ${d.totalCreditosCliente} créditos · cuota ${fmt(d.cuota)}`);
   }catch(e){ toast(e.message); }
@@ -517,6 +522,18 @@ async function entregarJCSuc(btn){
   catch(e){ toast(e.message); }
   finally{ btn.disabled=false; btn.textContent='Entregar efectivo al JC'; }
 }
+function addArticulo(v){
+  const w=document.getElementById('art-list'); if(!w) return;
+  const row=document.createElement('div'); row.style.cssText='display:flex;gap:6px;margin-bottom:6px';
+  const inp=document.createElement('input'); inp.type='text'; inp.className='art-inp'; inp.placeholder='Descripción del artículo';
+  inp.style.cssText='flex:1;background:var(--surf-2);border:1px solid var(--line);color:var(--ink);padding:9px;border-radius:7px;font-family:inherit';
+  if(v) inp.value=v;
+  const del=document.createElement('button'); del.type='button'; del.className='btn'; del.textContent='✕'; del.style.cssText='padding:0 11px';
+  del.onclick=()=>row.remove();
+  row.appendChild(inp); row.appendChild(del); w.appendChild(row);
+}
+function leerArticulos(){ return [...document.querySelectorAll('#art-list .art-inp')].map(i=>i.value.trim()).filter(Boolean); }
+function resetArticulos(){ const w=document.getElementById('art-list'); if(w){ w.innerHTML=''; addArticulo(); } }
 async function crearCredito(){
   const nombre=document.getElementById('n-cli').value.trim();
   const calle=document.getElementById('n-calle').value.trim();
@@ -535,7 +552,7 @@ async function crearCredito(){
   if(!prom){toast('Esta sucursal no tiene cobradores dados de alta. Pídele al admin que cree el usuario cobrador y lo asigne a tu sucursal.');return;}
   // fetch directo para poder leer el 409 estructurado de validación
   try{
-    const r=await fetch('/api/sales',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+TOKEN},body:JSON.stringify({nombre,tel,calle,col,ciudad,estado,curp,prom,tipo:t,plazo,monto,dias:plazo})});
+    const r=await fetch('/api/sales',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+TOKEN},body:JSON.stringify({nombre,tel,calle,col,ciudad,estado,curp,prom,tipo:t,plazo,monto,dias:plazo,articulos:leerArticulos()})});
     const d=await r.json().catch(()=>({}));
     if(r.status===400 && d.error==='curp_invalida'){ toast(d.detalle); return; }
     if(r.status===409 && d.error==='cliente_duplicado'){
@@ -562,6 +579,7 @@ async function crearCredito(){
     const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
     movs.unshift({hora,txt:`Crédito ${d.folio} — ${nombre} (${prom})`,monto:0});
     ['n-cli','n-tel','n-calle','n-col','n-ref','n-curp','n-ciudad','n-estado'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    resetArticulos();
     render(); _buscar();
     toast(`✓ ${d.folio} capturado · cuota ${fmt(d.cuota)} · en ruta de ${prom.split(' ')[0]}`);
     mostrarPagareCapturado(d.id, d.folio);
@@ -762,7 +780,7 @@ async function _init(){
       ? cob.map(c=>`<option>${c.nombre}</option>`).join('')
       : '<option value="">— sin cobradores en esta sucursal —</option>';
   }catch(e){}
-  fillPlazos(); calc(); _buscar(); cargarCaja(); cargarJCSuc();
+  fillPlazos(); calc(); _buscar(); cargarCaja(); cargarJCSuc(); addArticulo();
 // Ping de ubicación para el rastreo del admin/supervisor (mientras la app está abierta)
 function _pingUbic(){ if(!navigator.geolocation) return; navigator.geolocation.getCurrentPosition(function(p){ try{ api('POST','/api/ubicacion/ping',{lat:p.coords.latitude,lng:p.coords.longitude}); }catch(e){} }, function(){}, {enableHighAccuracy:false,timeout:8000,maximumAge:120000}); }
 _pingUbic(); setInterval(_pingUbic, 180000);
