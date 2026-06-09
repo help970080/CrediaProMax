@@ -1314,7 +1314,33 @@ app.get('/api/reports/pagos', auth, (req,res)=>{
   res.json(out);
 });
 
-/* ---------- Cortes de cobrador ---------- */
+/* ---------- Números diarios (scoreboard de cobranza por gerencia/sucursal) ---------- */
+app.get('/api/reports/numeros-diarios', auth, rol('admin','supervisor'), (req,res)=>{
+  const diaISO = req.query.dia || fechaMxHoyISO();
+  const dStart = new Date(diaISO+'T00:00:00').getTime();
+  const dEnd = dStart + 86400000;
+  const dd = new Date(diaISO+'T00:00:00'); const dow=dd.getDay(); const diff=(dow===0?6:dow-1);
+  const wkStart = new Date(dd.getFullYear(),dd.getMonth(),dd.getDate()-diff).getTime();
+  const wkEnd = dEnd; // acumulado de la semana hasta el fin del día elegido
+  const activos = new Set(db.clients.filter(c=>c.activo!==false).map(c=>c.id));
+  const sales = db.sales.filter(s=>activos.has(s.clientId) && s.entregado!==false);
+  const sucursales = db.sucursales.filter(s=>s.activo!==false);
+  const abonos = db.movimientos.filter(m=>m.abono>0 && m.forma!=='descuento');
+  const saleSuc = {}; sales.forEach(s=>{ saleSuc[s.id]={suc:s.sucursalId, cli:s.clientId}; });
+  const rows = sucursales.map(suc=>{
+    const activeVs = sales.filter(s=>s.sucursalId===suc.id && saldoDe(s.id)>0);
+    const clientes_totales = new Set(activeVs.map(s=>s.clientId)).size;
+    const debito_total = activeVs.reduce((a,s)=>a+(s.cuota||0),0);
+    let diaColl=0, acumColl=0; const diaCli=new Set(), acumCli=new Set();
+    for(const m of abonos){ const ref=saleSuc[m.saleId]; if(!ref||ref.suc!==suc.id) continue; const t=_parseFechaMx(m.fecha);
+      if(t>=wkStart && t<wkEnd){ acumColl+=m.abono; acumCli.add(ref.cli); }
+      if(t>=dStart && t<dEnd){ diaColl+=m.abono; diaCli.add(ref.cli); } }
+    return { id:suc.id, gerencia:suc.nombre, clientes_totales, debito_total,
+      dia_clientes:diaCli.size, dia_coll:diaColl, acum_clientes:acumCli.size, acum_coll:acumColl };
+  });
+  const total = rows.reduce((a,r)=>({clientes_totales:a.clientes_totales+r.clientes_totales, debito_total:a.debito_total+r.debito_total, dia_clientes:a.dia_clientes+r.dia_clientes, dia_coll:a.dia_coll+r.dia_coll, acum_clientes:a.acum_clientes+r.acum_clientes, acum_coll:a.acum_coll+r.acum_coll}), {clientes_totales:0,debito_total:0,dia_clientes:0,dia_coll:0,acum_clientes:0,acum_coll:0});
+  res.json({ dia:diaISO, semanaDesde:new Date(wkStart).toISOString(), rows, total });
+});
 // Hora de México (CDMX/Edomex = UTC-6 todo el año desde 2023, sin horario de verano)
 function nowMx(){ return new Date(Date.now() - 6*3600*1000); }
 function fechaMxHoyDDMM(){ const d=nowMx(); return `${String(d.getUTCDate()).padStart(2,'0')}/${String(d.getUTCMonth()+1).padStart(2,'0')}/${d.getUTCFullYear()}`; }
@@ -2131,7 +2157,7 @@ app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, 
   res.json({ generadoEn: new Date().toISOString(), reportes });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'asignaciones-v1', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v1', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
