@@ -1052,12 +1052,18 @@ app.post('/api/caja/entrega', auth, (req, res) => {
 /* ---------- Cobrador en ruta ---------- */
 app.get('/api/mi-ruta', auth, (req, res) => {
   const ventas = db.sales.filter(s => s.prom === req.user.nombre);
+  const hoy = fechaMxHoyDDMM();
   res.json(ventas.map(s => {
     const c = db.clients.find(x => x.id === s.clientId) || {};
     if (c.activo === false) return null;
     const totalAbonado = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0).reduce((a,m)=>a+m.abono,0);
     const at = calcAtraso(s, totalAbonado);
+    // Lo que ESTE cobrador cobró hoy a este cliente (para que su panel no se reinicie al re-entrar)
+    const movsHoy = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0 && m.forma !== 'descuento' && m.fecha === hoy && m.origen === req.user.nombre);
+    const cobradoHoy = movsHoy.reduce((a,m)=>a+m.abono,0);
+    const formaHoy = movsHoy.length ? (movsHoy[movsHoy.length-1].forma || 'efectivo') : null;
     return { id: s.id, folio: s.folio, nombre: c.nombre || '—', dir: [c.calle, c.col].filter(Boolean).join(', '), tel: c.tel || '', tipo: s.tipo, cuota: s.cuota, saldo: saldoDe(s.id),
+      cobradoHoy, formaHoy,
       atraso: at.montoAtraso, diasAtraso: at.diasAtraso, cuotasAtraso: at.cuotasAtraso, cuotasDebidas: at.cuotasDebidas, cuotasPagadas: at.cuotasPagadas, tieneEvidencia: !!s.entrega };
   }).filter(Boolean));
 });
@@ -2007,7 +2013,7 @@ app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, 
   res.json({ generadoEn: new Date().toISOString(), reportes });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'articulos-v1', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'ruta-persist-v1', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
