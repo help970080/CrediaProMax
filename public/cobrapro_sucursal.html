@@ -216,15 +216,7 @@
         <button onclick="hacerCierreCaja(this)" style="width:100%;margin-top:12px;background:var(--acc);color:#1b2330;border:none;padding:12px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">🔒 Hacer cierre de caja</button>
         <div style="font-size:.72rem;color:var(--faint);margin-top:6px;line-height:1.4">Cierra el corte: el efectivo pasa al administrador (lo verá en Conciliación) y tu caja queda en ceros para empezar de nuevo.</div>
 
-        <div class="sect-lbl">💵 Entregar efectivo al JC</div>
-        <div style="font-size:.78rem;color:var(--dim);margin-bottom:8px;line-height:1.4">Asigna efectivo de la caja al Jefe de Crédito para que entregue créditos. Se descuenta de tu caja y el JC lo confirma.</div>
-        <div id="jc-wrap-suc">
-          <select id="jc-sel-suc" style="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--txt);font-family:'Sora';font-size:.92rem;padding:10px 12px;border-radius:9px;margin-bottom:8px"></select>
-          <input id="jc-monto-suc" type="number" inputmode="numeric" placeholder="Monto a entregar $" style="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--txt);font-family:'Sora';font-size:.95rem;padding:10px 12px;border-radius:9px;margin-bottom:8px">
-          <button onclick="entregarJCSuc(this)" style="width:100%;background:var(--vio);color:#fff;border:none;padding:10px;border-radius:9px;font-family:'Sora';font-weight:600;cursor:pointer">Entregar efectivo al JC</button>
-        </div>
-
-        <div class="sect-lbl">💸 Asignar efectivo a otro puesto</div>
+        <div class="sect-lbl">💸 Asignar / entregar efectivo a otro puesto</div>
         <div style="font-size:.78rem;color:var(--dim);margin-bottom:8px;line-height:1.4">Manda efectivo de tu caja a otra sucursal, supervisor, JC o admin. Se descuenta de tu caja y el destino confirma.</div>
         <select id="asg-dest-suc" style="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--txt);font-family:'Sora';font-size:.92rem;padding:10px 12px;border-radius:9px;margin-bottom:8px"></select>
         <input id="asg-monto-suc" type="number" inputmode="numeric" placeholder="Monto $" style="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--txt);font-family:'Sora';font-size:.95rem;padding:10px 12px;border-radius:9px;margin-bottom:8px">
