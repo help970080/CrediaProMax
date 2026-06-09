@@ -159,6 +159,12 @@
     <div class="kpi b"><div class="l">Créditos captados hoy</div><div class="v" id="k-cred">0</div><div class="s" id="k-coloc">$0 colocado</div></div>
     <div class="kpi"><div class="l">Efectivo real en caja</div><div class="v" id="k-caja">$0</div><div class="s">disponible para conciliar</div></div>
   </div>
+  <div class="subnav" style="display:flex;gap:8px;margin:0 0 14px;flex-wrap:wrap">
+    <button class="snb" data-vw="op" onclick="setVw('op')" style="background:var(--acc);color:#1b2330;border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">🧾 Operación</button>
+    <button class="snb" data-vw="resumen" onclick="setVw('resumen')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">📊 Resumen</button>
+    <button class="snb" data-vw="cartera" onclick="setVw('cartera')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">📁 Cartera de crédito</button>
+  </div>
+  <div id="view-op">
   <div class="grid">
     <div class="panel">
       <h2>Recibir pago</h2>
@@ -232,6 +238,40 @@
         <div class="sect-lbl">Movimientos de hoy</div>
         <table><thead><tr><th>Hora</th><th>Concepto</th><th class="n">Monto</th></tr></thead><tbody id="movs"></tbody></table>
       </section>
+    </div>
+  </div>
+  </div>
+
+  <div id="view-resumen" style="display:none">
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <h2 style="margin:0">📊 Resumen de mi sucursal</h2>
+        <div style="display:flex;gap:6px">
+          <button class="perb" data-p="hoy" onclick="setPeriodoSuc('hoy')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:7px 13px;border-radius:8px;font-family:'Sora';font-weight:600;cursor:pointer">Hoy</button>
+          <button class="perb" data-p="semana" onclick="setPeriodoSuc('semana')" style="background:var(--acc);color:#1b2330;border:1px solid var(--line);padding:7px 13px;border-radius:8px;font-family:'Sora';font-weight:600;cursor:pointer">Semana</button>
+          <button class="perb" data-p="mes" onclick="setPeriodoSuc('mes')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:7px 13px;border-radius:8px;font-family:'Sora';font-weight:600;cursor:pointer">Mes</button>
+        </div>
+      </div>
+      <div class="kpis" id="res-kpis" style="margin-top:14px"></div>
+      <div class="sect-lbl">Desempeño por cobrador</div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Cobrador</th><th class="n">Clientes</th><th class="n">Cartera</th><th class="n">Vencida</th><th class="n">Cobrado</th><th class="n">Por entregar</th><th class="n">Recup.</th></tr></thead><tbody id="res-cob"></tbody></table></div>
+      <div style="font-size:.74rem;color:var(--faint);margin-top:8px;line-height:1.4">Cobrado = pagos del periodo (sin contar primer pago/descuentos). Recup. = cobrado ÷ esperado del periodo. Vencida = monto en atraso acumulado.</div>
+    </div>
+  </div>
+
+  <div id="view-cartera" style="display:none">
+    <div class="panel">
+      <h2 style="margin:0 0 12px">📁 Cartera de crédito · mi sucursal</h2>
+      <div class="frow">
+        <div class="field"><label>Buscar</label><input id="cs-q" placeholder="Cliente, folio o teléfono…" oninput="pintaCartSuc()"></div>
+        <div class="field"><label>Cobrador / ruta</label><select id="cs-cob" onchange="pintaCartSuc()"><option value="">Todos</option></select></div>
+      </div>
+      <div class="frow">
+        <div class="field"><label>Modalidad</label><select id="cs-tipo" onchange="pintaCartSuc()"><option value="">Todas</option><option value="diario">Diario</option><option value="semanal">Semanal</option><option value="s16">Semanal 16</option><option value="s17">Semanal 17</option><option value="s21">21 semanas</option><option value="s31">31 semanas</option><option value="unico">Pago único</option><option value="p17">Celulares 17</option></select></div>
+        <div class="field"><label>Estado</label><select id="cs-est" onchange="pintaCartSuc()"><option value="">Todos</option><option value="act">Con saldo</option><option value="liq">Liquidados</option></select></div>
+      </div>
+      <div style="color:var(--dim);font-size:.85rem;margin:4px 0 10px" id="cs-count"></div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Cliente</th><th>Cobrador</th><th>Modalidad</th><th class="n">Cuota</th><th class="n">Saldo</th></tr></thead><tbody id="cs-rows"></tbody></table></div>
     </div>
   </div>
 </div>
@@ -822,6 +862,65 @@ function render(){
   document.getElementById('movs').innerHTML= movs.length? movs.map(m=>`<tr><td class="mono" style="color:var(--faint);font-size:.78rem">${m.hora}</td><td>${m.txt}</td><td class="n">${m.monto>0?fmt(m.monto):'—'}</td></tr>`).join('') : '<tr><td colspan="3" style="color:var(--faint);font-size:.82rem;text-align:center;padding:16px">Sin movimientos aún.</td></tr>';
 }
 function toast(t){const el=document.getElementById('toast');el.textContent=t;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2800);}
+
+/* ===== Vistas: Operación / Resumen / Cartera ===== */
+function setVw(vw){
+  document.querySelectorAll('.snb').forEach(b=>{const on=b.dataset.vw===vw;b.style.background=on?'var(--acc)':'var(--surf-2)';b.style.color=on?'#1b2330':'var(--txt)';});
+  document.getElementById('view-op').style.display=vw==='op'?'':'none';
+  document.getElementById('view-resumen').style.display=vw==='resumen'?'':'none';
+  document.getElementById('view-cartera').style.display=vw==='cartera'?'':'none';
+  if(vw==='resumen') cargarResumen();
+  if(vw==='cartera') cargarCartSuc();
+}
+let _periodoSuc='semana', _dashSuc=null;
+function setPeriodoSuc(p){
+  _periodoSuc=p;
+  document.querySelectorAll('.perb').forEach(b=>{const on=b.dataset.p===p;b.style.background=on?'var(--acc)':'var(--surf-2)';b.style.color=on?'#1b2330':'var(--txt)';});
+  cargarResumen();
+}
+async function cargarResumen(){
+  try{ _dashSuc=await api('GET','/api/dashboard?periodo='+_periodoSuc); pintaResumen(_dashSuc); }
+  catch(e){ document.getElementById('res-kpis').innerHTML='<div style="color:var(--red);padding:10px">'+e.message+'</div>'; }
+}
+function pintaResumen(d){
+  const t=d.totales||{};
+  const per=_periodoSuc==='hoy'?'hoy':(_periodoSuc==='mes'?'mes':'semana');
+  document.getElementById('res-kpis').innerHTML=[
+    ['g','Cobrado ('+per+')',fmt(t.cobrado_periodo||0),(t.npagos_periodo||0)+' pagos'],
+    ['','Cartera activa',fmt(t.saldo_pendiente||0),(t.creditos_activos||0)+' créditos vigentes'],
+    ['r','Cartera vencida',fmt(t.atraso_total||0),(t.clientes_atrasados||0)+' clientes en atraso'],
+    ['b','Colocado ('+per+')',fmt(t.monto_colocado_periodo||0),(t.nuevos_creditos_periodo||0)+' créditos nuevos'],
+    ['v','Efectivo por entregar',fmt(t.por_entregar||0),'en ruta de cobradores'],
+  ].map(k=>`<div class="kpi ${k[0]}"><div class="l">${k[1]}</div><div class="v">${k[2]}</div><div class="s">${k[3]}</div></div>`).join('');
+  const cob=(d.por_cobrador||[]).slice().sort((a,b)=>(b.comisionable||0)-(a.comisionable||0));
+  document.getElementById('res-cob').innerHTML=cob.map(c=>{
+    const recup=c.esperado_acum>0?Math.min(100,Math.round((c.comisionable||0)/c.esperado_acum*100)):0;
+    return `<tr><td>${c.nombre}</td><td class="n">${c.clientes||0}</td><td class="n">${fmt(c.cartera||0)}</td><td class="n" style="color:${c.atraso_monto>0?'var(--red)':'var(--faint)'}">${fmt(c.atraso_monto||0)}</td><td class="n"><b>${fmt(c.comisionable||0)}</b></td><td class="n">${fmt(c.por_entregar||0)}</td><td class="n" style="color:${recup>=70?'var(--grn)':recup>=40?'var(--acc)':'var(--red)'}">${recup}%</td></tr>`;
+  }).join('')||'<tr><td colspan="7" style="text-align:center;color:var(--faint);padding:16px">Sin cobradores en esta sucursal.</td></tr>';
+}
+let _cartSuc=[];
+const TIPO_LBL={diario:'Diario',semanal:'Semanal',s16:'Semanal 16',s17:'Semanal 17',s21:'21 sem',s31:'31 sem',unico:'Pago único',p17:'Cel 17'};
+async function cargarCartSuc(){
+  try{ _cartSuc=(await api('GET','/api/sales')).filter(s=>s.entregado!==false);
+    const cobs=[...new Set(_cartSuc.map(s=>s.prom).filter(Boolean))].sort();
+    const sel=document.getElementById('cs-cob'); if(sel) sel.innerHTML='<option value="">Todos</option>'+cobs.map(c=>`<option>${c}</option>`).join('');
+    pintaCartSuc();
+  }catch(e){ document.getElementById('cs-rows').innerHTML='<tr><td colspan="5" style="color:var(--red);padding:10px">'+e.message+'</td></tr>'; }
+}
+function pintaCartSuc(){
+  const q=(document.getElementById('cs-q').value||'').toLowerCase();
+  const fc=document.getElementById('cs-cob').value, ft=document.getElementById('cs-tipo').value, fe=document.getElementById('cs-est').value;
+  const rows=_cartSuc.filter(s=>{
+    if(fc && s.prom!==fc) return false;
+    if(ft && s.tipo!==ft) return false;
+    if(fe==='act' && !(s.saldo>0)) return false;
+    if(fe==='liq' && s.saldo>0) return false;
+    if(q){ const blob=((s.cliente||'')+' '+(s.folio||'')+' '+(s.tel||'')).toLowerCase(); if(!blob.includes(q)) return false; }
+    return true;
+  });
+  document.getElementById('cs-count').textContent=rows.length+' crédito(s) · saldo total '+fmt(rows.reduce((a,s)=>a+Math.max(0,s.saldo||0),0));
+  document.getElementById('cs-rows').innerHTML=rows.slice(0,500).map(s=>`<tr><td>${s.cliente||'—'}<div style="font-size:.74rem;color:var(--faint)">${s.folio||''}</div></td><td>${s.prom||'—'}</td><td>${TIPO_LBL[s.tipo]||s.tipo}</td><td class="n">${fmt(s.cuota||0)}</td><td class="n" style="color:${s.saldo>0?'var(--txt)':'var(--grn)'}">${s.saldo>0?fmt(s.saldo):'Liquidado'}</td></tr>`).join('')||'<tr><td colspan="5" style="text-align:center;color:var(--faint);padding:16px">Sin resultados.</td></tr>';
+}
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));t.classList.add('on');document.getElementById(t.dataset.v).classList.add('on');});
 setInterval(()=>document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'}),1000);
 document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'});
