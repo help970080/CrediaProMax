@@ -1158,7 +1158,7 @@ app.post('/api/caja/entrega', auth, (req, res) => {
 
 /* ---------- Cobrador en ruta ---------- */
 app.get('/api/mi-ruta', auth, (req, res) => {
-  const ventas = db.sales.filter(s => s.prom === req.user.nombre);
+  const ventas = db.sales.filter(s => s.prom === req.user.nombre && s.entregado !== false);
   const hoy = fechaMxHoyDDMM();
   res.json(ventas.map(s => {
     const c = db.clients.find(x => x.id === s.clientId) || {};
@@ -1222,7 +1222,7 @@ app.get('/api/dashboard', auth, (req,res)=>{
   const desde=_desdePeriodo(periodo);
   const activeClients=db.clients.filter(c=>c.activo!==false);
   const activeClientIds=new Set(activeClients.map(c=>c.id));
-  const sales=db.sales.filter(s=>activeClientIds.has(s.clientId)), clients=activeClients, sucursales=db.sucursales.filter(s=>s.activo!==false);
+  const sales=db.sales.filter(s=>activeClientIds.has(s.clientId) && s.entregado!==false), clients=activeClients, sucursales=db.sucursales.filter(s=>s.activo!==false);
   const abonos=db.movimientos.filter(m=>m.abono>0 && _parseFechaMx(m.fecha)>=desde);
   const nuevos=sales.filter(s=>s.createdAt && new Date(s.createdAt).getTime()>=desde);
   // atraso acumulado por sale
