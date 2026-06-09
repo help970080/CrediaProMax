@@ -340,25 +340,46 @@ function abrirRefin(){
     <div class="amt-box"><div class="l">Nuevo monto a otorgar</div><input class="amt-input" id="ref-monto" placeholder="${Math.max(saldo*2,3000)}" inputmode="numeric" oninput="calcRefin()"></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
       <div><div class="l" style="font-size:.7rem;color:var(--dim);margin-bottom:4px">Modalidad</div>
-        <select id="ref-tipo" style="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--ink);padding:9px;border-radius:7px;font-family:inherit" onchange="calcRefin()">
-          <option value="semanal" selected>Semanal</option><option value="diario">Diario</option><option value="unico">Pago único</option>
+        <select id="ref-tipo" style="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--ink);padding:9px;border-radius:7px;font-family:inherit" onchange="fillPlazosRefin();calcRefin()">
+          <option value="diario">Diario</option><option value="semanal" selected>Semanal</option><option value="s16">Semanal 16 (primer pago)</option><option value="s17">Semanal 17 (primer pago)</option><option value="s21">21 semanas (primer pago)</option><option value="s31">31 semanas (primer pago)</option><option value="unico">Pago único</option><option value="p17">Celulares 17 pagos</option>
         </select></div>
-      <div><div class="l" style="font-size:.7rem;color:var(--dim);margin-bottom:4px">Plazo</div>
-        <input id="ref-plazo" type="number" value="12" min="1" style="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--ink);padding:9px;border-radius:7px;font-family:inherit" oninput="calcRefin()"></div>
+      <div id="ref-plazoWrap"><div class="l" style="font-size:.7rem;color:var(--dim);margin-bottom:4px">Plazo</div>
+        <select id="ref-plazo" style="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--ink);padding:9px;border-radius:7px;font-family:inherit" onchange="calcRefin()"></select></div>
     </div>
     <div id="ref-preview" style="background:rgba(179,136,255,.08);border:1px solid rgba(179,136,255,.3);border-radius:8px;padding:11px;margin-bottom:10px;font-size:.78rem;line-height:1.7">
       <div style="display:flex;justify-content:space-between"><span>Saldo a liquidar</span><b style="color:var(--red)">${fmt(saldo)}</b></div>
       <div style="display:flex;justify-content:space-between"><span>Nuevo monto</span><b id="rp-nm">$0</b></div>
+      <div style="display:flex;justify-content:space-between"><span>Total a pagar</span><b id="rp-total">$0</b></div>
+      <div style="display:flex;justify-content:space-between"><span>Cuota</span><b id="rp-cuota" style="color:var(--acc)">$0</b></div>
       <div style="display:flex;justify-content:space-between;border-top:1px dashed rgba(255,255,255,.1);padding-top:6px;margin-top:6px"><span><b>Neto a entregar al cliente</b></span><b id="rp-neto" style="color:var(--grn)">$0</b></div>
     </div>
     <div class="modal-actions"><button class="ma cancel" onclick="cerrar()">Cancelar</button><button class="ma ok" style="background:#b388ff" onclick="confirmRefin()">Aplicar REFIN</button></div>
   </div>`;
+  fillPlazosRefin(); calcRefin();
+}
+function fillPlazosRefin(){
+  const t=document.getElementById('ref-tipo').value; const w=document.getElementById('ref-plazoWrap');
+  const lbl='<div class="l" style="font-size:.7rem;color:var(--dim);margin-bottom:4px">Plazo</div>';
+  const stl="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--ink);padding:9px;border-radius:7px;font-family:inherit";
+  if(t==='unico'){ w.innerHTML=lbl+`<input id="ref-plazo" type="number" value="15" min="1" step="1" style="${stl}" oninput="calcRefin()">`; return; }
+  if(t==='p17'){ w.innerHTML=lbl+`<select id="ref-plazo" style="${stl}" onchange="calcRefin()"><option value="17">17 pagos fijos</option></select>`; return; }
+  if(t==='s16'){ w.innerHTML=lbl+`<select id="ref-plazo" style="${stl}" onchange="calcRefin()"><option value="16">16 semanas</option></select>`; return; }
+  if(t==='s17'){ w.innerHTML=lbl+`<select id="ref-plazo" style="${stl}" onchange="calcRefin()"><option value="17">17 semanas</option></select>`; return; }
+  if(t==='s21'){ w.innerHTML=lbl+`<select id="ref-plazo" style="${stl}" onchange="calcRefin()"><option value="21">21 semanas</option></select>`; return; }
+  if(t==='s31'){ w.innerHTML=lbl+`<select id="ref-plazo" style="${stl}" onchange="calcRefin()"><option value="31">31 semanas</option></select>`; return; }
+  w.innerHTML=lbl+`<select id="ref-plazo" style="${stl}" onchange="calcRefin()"></select>`;
+  const s=document.getElementById('ref-plazo'); s.innerHTML=PROD[t].map(x=>`<option value="${x.p}">${x.p} ${t==='semanal'?'semanas':'días'}</option>`).join(''); if(t==='semanal')s.value=12;
 }
 function calcRefin(){
   const nm=parseFloat(document.getElementById('ref-monto').value)||0;
+  const t=document.getElementById('ref-tipo')?document.getElementById('ref-tipo').value:'semanal';
+  const plazo=+(document.getElementById('ref-plazo')?.value||0);
   const neto=Math.max(0,nm-(payCtx.saldo||0));
   document.getElementById('rp-nm').textContent=fmt(nm);
   document.getElementById('rp-neto').textContent=fmt(neto);
+  let r=null; try{ r=calcCredito(t,plazo,nm); }catch(e){}
+  const cu=document.getElementById('rp-cuota'); if(cu) cu.textContent=fmt(r?r.cuota:0);
+  const tt=document.getElementById('rp-total'); if(tt) tt.textContent=fmt(r?r.total:0);
 }
 async function confirmRefin(){
   const nuevoMonto=parseFloat(document.getElementById('ref-monto').value)||0;
