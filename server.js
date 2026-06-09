@@ -704,6 +704,7 @@ app.get('/api/sales/:id/pagare', auth, (req, res) => {
     cliente: { nombre: c.nombre || '—', domicilio: [c.calle, c.col, c.ciudad, c.estado].filter(Boolean).join(', ') || '—', curp: c.curp || '', tel: c.tel || '' },
     monto: s.monto, total: s.total, cuota: s.cuota, pagos, freq, tipo: s.tipo,
     primerPago: s.primerPago || 0, descuentaPP: !!s.descuentaPP, entregaMonto: s.entregaMonto != null ? s.entregaMonto : s.monto,
+    articulos: s.articulos || [],
     firma: !!(s.entrega && s.entrega.firma)
   });
 });
@@ -763,7 +764,7 @@ app.patch('/api/clients/:id', auth, rol('admin', 'supervisor'), (req, res) => {
   res.json({ ok: true, cliente: c });
 });
 app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
-  const { nombre, tel, calle, col, ciudad, estado, curp, sucursalId, prom, tipo, plazo, monto, dias, force, clienteExistenteId } = req.body;
+  const { nombre, tel, calle, col, ciudad, estado, curp, sucursalId, prom, tipo, plazo, monto, dias, force, clienteExistenteId, articulos } = req.body;
 
   let client;
   if (clienteExistenteId) {
@@ -822,6 +823,8 @@ app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) 
   const promFinal = prom || client.prom || '';
   const sucCred = req.user.rol === 'sucursal' ? (req.user.sucursalId || 1) : (clienteExistenteId ? client.sucursalId : (sucursalId || req.user.sucursalId || 1));
   const sale = { id: nextId('sales'), folio, clientId: client.id, tipo, plazo: +plazo, monto: +monto, cuota: r.cuota, total: r.total, prom: promFinal, sucursalId: sucCred, entregado: false, createdAt: new Date().toISOString() };
+  const artLimpios = Array.isArray(articulos) ? articulos.map(x => String(x || '').trim()).filter(Boolean).slice(0, 30) : [];
+  if (artLimpios.length) sale.articulos = artLimpios;
   if (r.descuentaPP) { sale.primerPago = r.primerPago; sale.descuentaPP = true; sale.entregaMonto = r.entregaCliente; }
   db.sales.push(sale);
   db.movimientos.push({ id: nextId('movimientos'), saleId: sale.id, fecha: fechaMxHoyDDMM(), concepto: 'Disposición de crédito', origen: 'Sucursal', cargo: r.total, abono: 0 });
@@ -1136,13 +1139,14 @@ app.get('/api/dashboard', auth, (req,res)=>{
     const sus_sales=sales.filter(s=>s.prom===c.nombre);
     const sus_abonos=abonos.filter(m=>{ const s=sales.find(x=>x.id===m.saleId); return s && s.prom===c.nombre; });
     const recuperado=sus_abonos.reduce((a,m)=>a+m.abono,0);
+    const comisionable=sus_abonos.filter(m=>m.forma!=='descuento').reduce((a,m)=>a+m.abono,0);
     const cartera=sus_sales.reduce((a,s)=>a+saldoDe(s.id),0);
     const por_entregar=db.porEntregar.filter(p=>p.prom===c.nombre).reduce((a,p)=>a+p.monto,0);
     const suc=sucursales.find(s=>s.id===c.sucursalId);
     let atraso_monto=0, atraso_clientes=0, esperado_acum=0;
     sus_sales.forEach(s=>{ if(saldoDe(s.id)<=0)return; const at=atrasoDe(s); esperado_acum+=at.cuotasDebidas*s.cuota; if(at.montoAtraso>0){ atraso_monto+=at.montoAtraso; atraso_clientes++; } });
     return {id:c.id, nombre:c.nombre, sucursal:suc?suc.nombre:'—', sucursalId:c.sucursalId,
-      clientes:sus_sales.length, cartera, pagos_recibidos:recuperado, npagos:sus_abonos.length, por_entregar,
+      clientes:sus_sales.length, cartera, pagos_recibidos:recuperado, comisionable, npagos:sus_abonos.length, por_entregar,
       atraso_monto, atraso_clientes, esperado_acum };
   });
   const pagos_recientes=abonos.slice(-40).reverse().map(m=>{
@@ -1737,7 +1741,7 @@ app.get('/api/reports/comisiones', auth, rol('admin','supervisor'), (req, res) =
     const sus_sales = db.sales.filter(s => s.prom === c.nombre && sucActivos.has(s.clientId));
     const sus_movs = db.movimientos.filter(m => {
       const s = sus_sales.find(x => x.id === m.saleId);
-      return s && m.abono > 0 && _parseFechaMx(m.fecha) >= desdeMs;
+      return s && m.abono > 0 && m.forma !== 'descuento' && _parseFechaMx(m.fecha) >= desdeMs;
     });
     const efe = sus_movs.filter(m => !m.forma || m.forma === 'efectivo').reduce((a,m)=>a+m.abono,0);
     const tra = sus_movs.filter(m => m.forma === 'transferencia').reduce((a,m)=>a+m.abono,0);
@@ -2003,7 +2007,7 @@ app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, 
   res.json({ generadoEn: new Date().toISOString(), reportes });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'tarifas-v2', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'articulos-v1', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
