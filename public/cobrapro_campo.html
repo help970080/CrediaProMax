@@ -245,7 +245,15 @@ queue=cola.length;
 let forceOffline=false, _flushing=false;
 function saveCola(){ try{localStorage.setItem('cobrapro_cola',JSON.stringify(cola));}catch(e){} queue=cola.length; }
 function efectivamenteOnline(){ return navigator.onLine && !forceOffline; }
-async function cargarRuta(){ try{ clientes=await api('GET','/api/mi-ruta'); }catch(e){ toast('No se pudo cargar la ruta: '+e.message); } render(); }
+async function cargarRuta(){ try{ clientes=await api('GET','/api/mi-ruta'); reconstruirEstado(); }catch(e){ toast('No se pudo cargar la ruta: '+e.message); } render(); }
+function reconstruirEstado(){
+  // Reconstruye lo cobrado HOY desde el servidor para que el panel no se reinicie al re-entrar.
+  (clientes||[]).forEach(c=>{
+    if((c.cobradoHoy||0)>0 && !(estado[c.id] && estado[c.id].status)){
+      estado[c.id]={status:'pagado', monto:c.cobradoHoy, forma:c.formaHoy||'efectivo', hora:'hoy', fromServer:true};
+    }
+  });
+}
 async function cargarEvidencias(){
   const box=document.getElementById('evid-list');
   box.innerHTML='<div style="color:var(--faint);font-size:.82rem;padding:6px">Cargando…</div>';
@@ -354,7 +362,7 @@ function render(){
       <div class="cinfo">
         <div><div class="k">Modalidad</div><div class="v"><span class="tipo ${tipoCls[c.tipo]||'sem'}">${tipoLbl[c.tipo]||c.tipo}</span></div></div>
         <div><div class="k">Cuota</div><div class="v acc">${fmt(c.cuota)}</div></div>
-        <div><div class="k">Saldo</div><div class="v">${fmt(e&&e.status==='pagado'?Math.max(0,c.saldo-e.monto):c.saldo)}</div></div>
+        <div><div class="k">Saldo</div><div class="v">${fmt(e&&e.status==='pagado'&&!e.fromServer?Math.max(0,c.saldo-e.monto):c.saldo)}</div></div>
         ${c.atraso>0?`<div><div class="k">Atraso</div><div class="v" style="color:var(--red)">${fmt(c.atraso)} · ${c.diasAtraso}d</div></div>`:''}
       </div>
       ${liq?`<div class="done-tag" style="color:var(--grn)">✓ Liquidado · sin saldo por cobrar</div>`
