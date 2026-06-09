@@ -1234,13 +1234,14 @@ app.get('/api/dashboard', auth, (req,res)=>{
     const ventas_suc=sales.filter(s=>s.sucursalId===suc.id);
     const abonos_suc=abonos.filter(m=>{ const s=sales.find(x=>x.id===m.saleId); return s && s.sucursalId===suc.id; });
     const recuperado=abonos_suc.reduce((a,m)=>a+m.abono,0);
+    const comisionable=abonos_suc.filter(m=>m.forma!=='descuento').reduce((a,m)=>a+m.abono,0);
     const nuevos_suc=nuevos.filter(s=>s.sucursalId===suc.id);
     const caja=db.caja[String(suc.id)]||{inicial:0,efectivo:0,banco:0,entregas:0};
     const enc=db.users.find(u=>u.rol==='sucursal' && u.sucursalId===suc.id);
     let atraso_monto=0, atraso_clientes=0, esperado_acum=0;
     ventas_suc.forEach(s=>{ if(saldoDe(s.id)<=0)return; const at=atrasoDe(s); esperado_acum+=at.cuotasDebidas*s.cuota; if(at.montoAtraso>0){ atraso_monto+=at.montoAtraso; atraso_clientes++; } });
     return {id:suc.id, nombre:suc.nombre, encargada:enc?enc.nombre:'—',
-      pagos_recibidos:recuperado, npagos:abonos_suc.length,
+      pagos_recibidos:recuperado, comisionable, npagos:abonos_suc.length,
       creditos_captados:nuevos_suc.length, colocado:nuevos_suc.reduce((a,s)=>a+s.monto,0),
       efectivo_caja:(caja.inicial||0)+(caja.efectivo||0)+(caja.entregas||0)-(caja.retiros||0), banco:caja.banco||0,
       por_entregar:db.porEntregar.filter(p=>p.sucursalId===suc.id).reduce((a,p)=>a+p.monto,0),
