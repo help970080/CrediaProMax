@@ -347,6 +347,7 @@ function abrirRefin(){
       <div style="display:flex;justify-content:space-between"><span>Nuevo monto</span><b id="rp-nm">$0</b></div>
       <div style="display:flex;justify-content:space-between"><span>Total a pagar</span><b id="rp-total">$0</b></div>
       <div style="display:flex;justify-content:space-between"><span>Cuota</span><b id="rp-cuota" style="color:var(--acc)">$0</b></div>
+      <div id="rp-pp-row" style="display:none;justify-content:space-between"><span>1er pago (Tarifa 1, se descuenta)</span><b id="rp-pp" style="color:var(--vio)">$0</b></div>
       <div style="display:flex;justify-content:space-between;border-top:1px dashed rgba(255,255,255,.1);padding-top:6px;margin-top:6px"><span><b>Neto a entregar al cliente</b></span><b id="rp-neto" style="color:var(--grn)">$0</b></div>
     </div>
     <div class="modal-actions"><button class="ma cancel" onclick="cerrar()">Cancelar</button><button class="ma ok" style="background:#b388ff" onclick="confirmRefin()">Aplicar REFIN</button></div>
@@ -370,12 +371,15 @@ function calcRefin(){
   const nm=parseFloat(document.getElementById('ref-monto').value)||0;
   const t=document.getElementById('ref-tipo')?document.getElementById('ref-tipo').value:'semanal';
   const plazo=+(document.getElementById('ref-plazo')?.value||0);
-  const neto=Math.max(0,nm-(payCtx.saldo||0));
-  document.getElementById('rp-nm').textContent=fmt(nm);
-  document.getElementById('rp-neto').textContent=fmt(neto);
   let r=null; try{ r=calcCredito(t,plazo,nm); }catch(e){}
+  const pp=(r&&r.descuentaPP)?(r.primerPago||0):0;
+  const neto=Math.max(0,nm-(payCtx.saldo||0)-pp);
+  document.getElementById('rp-nm').textContent=fmt(nm);
   const cu=document.getElementById('rp-cuota'); if(cu) cu.textContent=fmt(r?r.cuota:0);
   const tt=document.getElementById('rp-total'); if(tt) tt.textContent=fmt(r?r.total:0);
+  const ppr=document.getElementById('rp-pp-row'); const ppv=document.getElementById('rp-pp');
+  if(ppr&&ppv){ if(pp>0){ ppr.style.display='flex'; ppv.textContent='−'+fmt(pp); } else ppr.style.display='none'; }
+  document.getElementById('rp-neto').textContent=fmt(neto);
 }
 async function confirmRefin(){
   const nuevoMonto=parseFloat(document.getElementById('ref-monto').value)||0;
