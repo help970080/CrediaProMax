@@ -920,7 +920,7 @@ async function cargarCartera(){
   try{
     if(!Object.keys(_sucMap).length){ const s=await apiU('GET','/api/sucursales'); s.forEach(x=>_sucMap[x.id]=x.nombre);
       $('f-suc').innerHTML='<option value="">Todas las sucursales</option>'+s.map(x=>`<option value="${x.id}">${x.nombre}</option>`).join(''); }
-    _cartera = await apiU('GET','/api/sales');
+    _cartera = (await apiU('GET','/api/sales')).filter(s=>s.entregado!==false);
     renderCartera();
   }catch(e){ tb.innerHTML=`<tr><td colspan="11" style="color:var(--red);padding:18px">${e.message}</td></tr>`; }
 }
