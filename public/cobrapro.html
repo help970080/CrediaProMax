@@ -198,6 +198,7 @@
   <nav id="nav">
     <div class="nav-lbl">Operación</div>
     <button class="navitem on" data-v="resumen"><span class="ic">▣</span> Resumen</button>
+    <button class="navitem" data-v="numdiarios"><span class="ic">📅</span> Números diarios</button>
     <button class="navitem" data-v="cartera"><span class="ic">≣</span> Cartera de crédito</button>
     <button class="navitem" data-v="estado"><span class="ic">🧾</span> Estado de cuenta</button>
     <button class="navitem" data-v="bandeja"><span class="ic">📦</span> Bandeja de entregas</button>
@@ -251,6 +252,45 @@
     </div>
     <div class="panel"><div class="ph"><h3>Desempeño de cobradores</h3><span class="hint">recuperación = cobrado ÷ exigible del periodo</span></div>
       <table><thead><tr><th>Cobrador</th><th>Sucursal</th><th class="n">Clientes</th><th class="n">Cobrado</th><th>Recuperación</th><th class="n">Comisión</th></tr></thead><tbody id="tb-res"></tbody></table>
+    </div>
+  </section>
+
+  <!-- NÚMEROS DIARIOS -->
+  <section class="view" id="numdiarios">
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:6px">
+        <div>
+          <h2 style="margin:0">📅 Números diarios por gerencia</h2>
+          <div style="color:var(--faint);font-size:.85rem;margin-top:2px">Clientes que pagaron y monto cobrado del día, más el acumulado de la semana (lunes a hoy).</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <label style="color:var(--faint);font-size:.85rem">Día</label>
+          <input type="date" id="nd-dia" onchange="cargarNumDiarios()" style="background:var(--surf-2);border:1px solid var(--line);color:var(--txt);font-family:'Sora';padding:8px 10px;border-radius:8px">
+          <button onclick="ndExport()" class="btn" style="font-size:.82rem">⬇️ Excel</button>
+        </div>
+      </div>
+      <div id="nd-sem" style="color:var(--acc);font-size:.82rem;font-weight:600;margin-bottom:10px"></div>
+      <div style="overflow-x:auto">
+        <table id="nd-tbl">
+          <thead>
+            <tr>
+              <th rowspan="2" style="vertical-align:bottom">Gerencia</th>
+              <th colspan="2" style="text-align:center;border-bottom:1px solid var(--line)">Cartera activa</th>
+              <th colspan="2" style="text-align:center;border-bottom:1px solid var(--line)">Del día</th>
+              <th colspan="2" style="text-align:center;border-bottom:1px solid var(--line)">Acumulado semana</th>
+              <th rowspan="2" style="vertical-align:bottom" class="n">Avance</th>
+            </tr>
+            <tr>
+              <th class="n">Clientes</th><th class="n">Débito</th>
+              <th class="n">Clientes</th><th class="n">Coll.</th>
+              <th class="n">Cts Acum</th><th class="n">Coll Acum</th>
+            </tr>
+          </thead>
+          <tbody id="nd-rows"></tbody>
+          <tfoot id="nd-foot"></tfoot>
+        </table>
+      </div>
+      <div style="font-size:.74rem;color:var(--faint);margin-top:8px;line-height:1.4">Débito = suma de la cuota de los créditos activos de la gerencia (una exhibición). Avance = Coll Acum ÷ Débito. No cuenta el primer pago/descuentos.</div>
     </div>
   </section>
 
@@ -1996,7 +2036,7 @@ function sim(){const t=$('s-tipo').value,monto=+$('s-monto').value||0,plazo=+$('
 }
 
 /* NAV + EVENTOS */
-const titles={resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],bandeja:['Bandeja de entregas','Créditos por entregar · toma y entrega con evidencia'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],flujo:['Flujo / Tesorería','Efectivo del admin · dotación a la operación, nómina y capital'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo'],mapa:['Mapa de clientes','Ubicación geográfica de la cartera'],rastreo:['Rastreo de equipo','Dónde está tu gente en campo · seguridad y operación'],extras:['Extras · Detector de prestanombres','Coincidencias por teléfono, domicilio y apellidos'],asignar:['Asignar efectivo','Mueve efectivo entre puestos · el que recibe confirma']};
+const titles={resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],numdiarios:['Números diarios','Cobranza por gerencia · del día y acumulado de la semana'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],bandeja:['Bandeja de entregas','Créditos por entregar · toma y entrega con evidencia'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],flujo:['Flujo / Tesorería','Efectivo del admin · dotación a la operación, nómina y capital'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo'],mapa:['Mapa de clientes','Ubicación geográfica de la cartera'],rastreo:['Rastreo de equipo','Dónde está tu gente en campo · seguridad y operación'],extras:['Extras · Detector de prestanombres','Coincidencias por teléfono, domicilio y apellidos'],asignar:['Asignar efectivo','Mueve efectivo entre puestos · el que recibe confirma']};
 document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
   document.querySelectorAll('.navitem').forEach(x=>x.classList.remove('on'));
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
@@ -2007,6 +2047,7 @@ document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
   document.getElementById('subtitle').textContent=_tt[1];
   if(n.dataset.v==='usuarios') cargarUsuarios();
   if(n.dataset.v==='cartera') cargarCartera();
+  if(n.dataset.v==='numdiarios') cargarNumDiarios();
   if(n.dataset.v==='estado') ecInit();
   if(n.dataset.v==='conciliacion') cargarCortes();
   if(n.dataset.v==='reportes') renderReportesLive();
@@ -2182,6 +2223,39 @@ async function resetTarifas(){
   catch(e){ alert(e.message); }
 }
 // f-suc se llena con sucursales reales al abrir Cartera (ver cargarCartera)
+
+/* ===== Números diarios ===== */
+let _ndData=null;
+async function cargarNumDiarios(){
+  const di=document.getElementById('nd-dia'); if(di && !di.value){ di.value=new Date().toISOString().slice(0,10); }
+  const dia=di?di.value:'';
+  try{
+    _ndData=await apiU('GET','/api/reports/numeros-diarios'+(dia?('?dia='+dia):''));
+    pintaNumDiarios(_ndData);
+  }catch(e){ document.getElementById('nd-rows').innerHTML='<tr><td colspan="8" style="color:var(--red);padding:12px">'+e.message+'</td></tr>'; }
+}
+function pintaNumDiarios(d){
+  try{
+    const sem=new Date(d.semanaDesde);
+    document.getElementById('nd-sem').textContent='Semana desde '+sem.toLocaleDateString('es-MX',{day:'2-digit',month:'short'})+' · día: '+new Date(d.dia+'T00:00:00').toLocaleDateString('es-MX',{weekday:'long',day:'2-digit',month:'short'});
+  }catch(e){}
+  const rows=(d.rows||[]).slice().sort((a,b)=>(b.acum_coll||0)-(a.acum_coll||0));
+  document.getElementById('nd-rows').innerHTML=rows.map(r=>{
+    const av=r.debito_total>0?Math.round(r.acum_coll/r.debito_total*100):0;
+    const col=av>=100?'var(--grn)':av>=70?'var(--acc)':av>=40?'#caa23a':'var(--red)';
+    return `<tr><td><b>${r.gerencia}</b></td><td class="n">${r.clientes_totales}</td><td class="n">${fmt(r.debito_total)}</td><td class="n">${r.dia_clientes}</td><td class="n">${fmt(r.dia_coll)}</td><td class="n">${r.acum_clientes}</td><td class="n"><b>${fmt(r.acum_coll)}</b></td><td class="n" style="color:${col};font-weight:700">${av}%</td></tr>`;
+  }).join('')||'<tr><td colspan="8" style="text-align:center;color:var(--faint);padding:16px">Sin datos para este día.</td></tr>';
+  const t=d.total||{}; const avT=t.debito_total>0?Math.round(t.acum_coll/t.debito_total*100):0;
+  document.getElementById('nd-foot').innerHTML=`<tr style="border-top:2px solid var(--line);font-weight:700"><td>TOTAL</td><td class="n">${t.clientes_totales||0}</td><td class="n">${fmt(t.debito_total||0)}</td><td class="n">${t.dia_clientes||0}</td><td class="n">${fmt(t.dia_coll||0)}</td><td class="n">${t.acum_clientes||0}</td><td class="n">${fmt(t.acum_coll||0)}</td><td class="n">${avT}%</td></tr>`;
+}
+function ndExport(){
+  if(!_ndData) return;
+  const aoa=[['Gerencia','Clientes totales','Débito total','Clientes (día)','Coll (día)','Cts Acum','Coll Acum','Avance %']];
+  (_ndData.rows||[]).forEach(r=>{ const av=r.debito_total>0?Math.round(r.acum_coll/r.debito_total*100):0; aoa.push([r.gerencia,r.clientes_totales,r.debito_total,r.dia_clientes,r.dia_coll,r.acum_clientes,r.acum_coll,av]); });
+  const t=_ndData.total||{}; const avT=t.debito_total>0?Math.round(t.acum_coll/t.debito_total*100):0;
+  aoa.push(['TOTAL',t.clientes_totales||0,t.debito_total||0,t.dia_clientes||0,t.dia_coll||0,t.acum_clientes||0,t.acum_coll||0,avT]);
+  xlsxDL('numeros_diarios_'+(_ndData.dia||''), [{name:'Numeros diarios',aoa}]);
+}
 
 function xlsxDL(filename, sheets){
   try{
