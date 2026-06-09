@@ -70,6 +70,7 @@ function blankTenant(brandNombre, adminUser, adminPass, adminNombre) {
     users: [{ id: 1, nombre: adminNombre || 'Administrador', usuario: (adminUser || 'admin').toLowerCase(), rol: 'admin', sucursalId: null, passwordHash: bcrypt.hashSync(adminPass || 'admin123', 8), activo: true, createdAt: new Date().toISOString() }],
     sucursales: [], clients: [], sales: [], movimientos: [], caja: {}, porEntregar: [],
     gestiones: [], cortes: [], transferencias: [], recolecciones: [], jcEntregas: [], jcCierres: [], asignaciones: [],
+    objetivos: { suc: {}, cob: {} },
     config: { corteAutoHora: '19:00', corteAutoDias: [1, 2, 3, 4, 5, 6], brand: { nombre: brandNombre || 'CobraPro' }, tarifas: JSON.parse(JSON.stringify(DEFAULT_TARIFAS)) }, _idem: {}
   };
 }
@@ -78,6 +79,7 @@ function normalizeTenant(b) {
   b.recolecciones = b.recolecciones || []; b.caja = b.caja || {}; b.porEntregar = b.porEntregar || [];
   b.jcEntregas = b.jcEntregas || []; b.jcCierres = b.jcCierres || [];
   b.asignaciones = b.asignaciones || [];
+  b.objetivos = b.objetivos || { suc: {}, cob: {} }; b.objetivos.suc = b.objetivos.suc || {}; b.objetivos.cob = b.objetivos.cob || {};
   b.flujo = b.flujo || [];
   b.config = b.config || {}; if (!b.config.corteAutoHora) b.config.corteAutoHora = '19:00';
   if (!b.config.corteAutoDias) b.config.corteAutoDias = [1, 2, 3, 4, 5, 6];
@@ -1336,10 +1338,33 @@ app.get('/api/reports/numeros-diarios', auth, rol('admin','supervisor'), (req,re
       if(t>=wkStart && t<wkEnd){ acumColl+=m.abono; acumCli.add(ref.cli); }
       if(t>=dStart && t<dEnd){ diaColl+=m.abono; diaCli.add(ref.cli); } }
     return { id:suc.id, gerencia:suc.nombre, clientes_totales, debito_total,
-      dia_clientes:diaCli.size, dia_coll:diaColl, acum_clientes:acumCli.size, acum_coll:acumColl };
+      dia_clientes:diaCli.size, dia_coll:diaColl, acum_clientes:acumCli.size, acum_coll:acumColl,
+      objetivo: db.objetivos.suc[String(suc.id)] || null };
   });
   const total = rows.reduce((a,r)=>({clientes_totales:a.clientes_totales+r.clientes_totales, debito_total:a.debito_total+r.debito_total, dia_clientes:a.dia_clientes+r.dia_clientes, dia_coll:a.dia_coll+r.dia_coll, acum_clientes:a.acum_clientes+r.acum_clientes, acum_coll:a.acum_coll+r.acum_coll}), {clientes_totales:0,debito_total:0,dia_clientes:0,dia_coll:0,acum_clientes:0,acum_coll:0});
   res.json({ dia:diaISO, semanaDesde:new Date(wkStart).toISOString(), rows, total });
+});
+
+/* ---------- Objetivos (metas por sucursal y por cobrador) ---------- */
+app.get('/api/objetivos', auth, (req,res)=>{
+  res.json({ suc: db.objetivos.suc || {}, cob: db.objetivos.cob || {} });
+});
+app.post('/api/objetivos/suc', auth, rol('admin','supervisor'), (req,res)=>{
+  const { sucursalId, clientes, debito } = req.body;
+  const sid = String(sucursalId);
+  if(!db.sucursales.find(s=>String(s.id)===sid)) return res.status(404).json({ error:'Sucursal no encontrada' });
+  db.objetivos.suc[sid] = { clientes: Math.max(0, +clientes||0), debito: Math.max(0, +debito||0), actualizado: new Date().toISOString() };
+  saveDB(); res.json({ ok:true, objetivo: db.objetivos.suc[sid] });
+});
+app.post('/api/objetivos/cob', auth, rol('admin','supervisor','sucursal'), (req,res)=>{
+  const { cobrador, clientes, cobranza } = req.body;
+  const nombre = String(cobrador||'').trim();
+  if(!nombre) return res.status(400).json({ error:'Falta el cobrador' });
+  const u = db.users.find(x=>x.rol==='cobrador' && x.nombre===nombre);
+  if(!u) return res.status(404).json({ error:'Cobrador no encontrado' });
+  if(req.user.rol==='sucursal' && Number(u.sucursalId)!==Number(req.user.sucursalId)) return res.status(403).json({ error:'Ese cobrador no es de tu sucursal' });
+  db.objetivos.cob[nombre] = { clientes: Math.max(0, +clientes||0), cobranza: Math.max(0, +cobranza||0), actualizado: new Date().toISOString() };
+  saveDB(); res.json({ ok:true, objetivo: db.objetivos.cob[nombre] });
 });
 // Hora de México (CDMX/Edomex = UTC-6 todo el año desde 2023, sin horario de verano)
 function nowMx(){ return new Date(Date.now() - 6*3600*1000); }
