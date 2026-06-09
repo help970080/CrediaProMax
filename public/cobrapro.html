@@ -261,11 +261,12 @@
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:6px">
         <div>
           <h2 style="margin:0">📅 Números diarios por gerencia</h2>
-          <div style="color:var(--faint);font-size:.85rem;margin-top:2px">Clientes que pagaron y monto cobrado del día, más el acumulado de la semana (lunes a hoy).</div>
+          <div style="color:var(--faint);font-size:.85rem;margin-top:2px">Captura los objetivos de la semana y mide el avance contra el acumulado (lunes a hoy).</div>
         </div>
-        <div style="display:flex;align-items:center;gap:8px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <label style="color:var(--faint);font-size:.85rem">Día</label>
           <input type="date" id="nd-dia" onchange="cargarNumDiarios()" style="background:var(--surf-2);border:1px solid var(--line);color:var(--txt);font-family:'Sora';padding:8px 10px;border-radius:8px">
+          <button onclick="ndGuardarObjetivos(this)" class="btn" style="font-size:.82rem;background:var(--acc);color:#1b2330;border:none;font-weight:700">💾 Guardar objetivos</button>
           <button onclick="ndExport()" class="btn" style="font-size:.82rem">⬇️ Excel</button>
         </div>
       </div>
@@ -275,22 +276,21 @@
           <thead>
             <tr>
               <th rowspan="2" style="vertical-align:bottom">Gerencia</th>
-              <th colspan="2" style="text-align:center;border-bottom:1px solid var(--line)">Cartera activa</th>
+              <th colspan="2" style="text-align:center;border-bottom:1px solid var(--line);color:var(--blu)">OBJETIVOS (semana)</th>
               <th colspan="2" style="text-align:center;border-bottom:1px solid var(--line)">Del día</th>
-              <th colspan="2" style="text-align:center;border-bottom:1px solid var(--line)">Acumulado semana</th>
-              <th rowspan="2" style="vertical-align:bottom" class="n">Avance</th>
+              <th colspan="4" style="text-align:center;border-bottom:1px solid var(--line);color:var(--grn)">CIERRE / avance</th>
             </tr>
             <tr>
-              <th class="n">Clientes</th><th class="n">Débito</th>
-              <th class="n">Clientes</th><th class="n">Coll.</th>
-              <th class="n">Cts Acum</th><th class="n">Coll Acum</th>
+              <th class="n">Clientes obj.</th><th class="n">Débito obj.</th>
+              <th class="n">Cts día</th><th class="n">Coll día</th>
+              <th class="n">Cts Acum</th><th class="n">Coll Acum</th><th class="n">% Clientes</th><th class="n">% Coll</th>
             </tr>
           </thead>
           <tbody id="nd-rows"></tbody>
           <tfoot id="nd-foot"></tfoot>
         </table>
       </div>
-      <div style="font-size:.74rem;color:var(--faint);margin-top:8px;line-height:1.4">Débito = suma de la cuota de los créditos activos de la gerencia (una exhibición). Avance = Coll Acum ÷ Débito. No cuenta el primer pago/descuentos.</div>
+      <div style="font-size:.74rem;color:var(--faint);margin-top:8px;line-height:1.4">Escribe los objetivos en las celdas azules y pulsa <b>Guardar objetivos</b>. % Clientes = Cts Acum ÷ Clientes objetivo · % Coll = Coll Acum ÷ Débito objetivo. Si dejas un objetivo en 0, se usa la cartera activa real como referencia. No cuenta el primer pago/descuentos.</div>
     </div>
   </section>
 
@@ -2225,15 +2225,21 @@ async function resetTarifas(){
 // f-suc se llena con sucursales reales al abrir Cartera (ver cargarCartera)
 
 /* ===== Números diarios ===== */
-let _ndData=null;
+let _ndData=null, _ndObj={};
 async function cargarNumDiarios(){
   const di=document.getElementById('nd-dia'); if(di && !di.value){ di.value=new Date().toISOString().slice(0,10); }
   const dia=di?di.value:'';
   try{
-    _ndData=await apiU('GET','/api/reports/numeros-diarios'+(dia?('?dia='+dia):''));
-    pintaNumDiarios(_ndData);
-  }catch(e){ document.getElementById('nd-rows').innerHTML='<tr><td colspan="8" style="color:var(--red);padding:12px">'+e.message+'</td></tr>'; }
+    const [d,obj]=await Promise.all([
+      apiU('GET','/api/reports/numeros-diarios'+(dia?('?dia='+dia):'')),
+      apiU('GET','/api/objetivos')
+    ]);
+    _ndData=d; _ndObj=(obj&&obj.suc)||{};
+    pintaNumDiarios(d);
+  }catch(e){ document.getElementById('nd-rows').innerHTML='<tr><td colspan="9" style="color:var(--red);padding:12px">'+e.message+'</td></tr>'; }
 }
+function _ndPct(num,den){ return den>0?Math.round(num/den*100):0; }
+function _ndPctCol(p){ return p>=100?'var(--grn)':p>=70?'var(--acc)':p>=40?'#caa23a':'var(--red)'; }
 function pintaNumDiarios(d){
   try{
     const sem=new Date(d.semanaDesde);
@@ -2241,19 +2247,49 @@ function pintaNumDiarios(d){
   }catch(e){}
   const rows=(d.rows||[]).slice().sort((a,b)=>(b.acum_coll||0)-(a.acum_coll||0));
   document.getElementById('nd-rows').innerHTML=rows.map(r=>{
-    const av=r.debito_total>0?Math.round(r.acum_coll/r.debito_total*100):0;
-    const col=av>=100?'var(--grn)':av>=70?'var(--acc)':av>=40?'#caa23a':'var(--red)';
-    return `<tr><td><b>${r.gerencia}</b></td><td class="n">${r.clientes_totales}</td><td class="n">${fmt(r.debito_total)}</td><td class="n">${r.dia_clientes}</td><td class="n">${fmt(r.dia_coll)}</td><td class="n">${r.acum_clientes}</td><td class="n"><b>${fmt(r.acum_coll)}</b></td><td class="n" style="color:${col};font-weight:700">${av}%</td></tr>`;
-  }).join('')||'<tr><td colspan="8" style="text-align:center;color:var(--faint);padding:16px">Sin datos para este día.</td></tr>';
-  const t=d.total||{}; const avT=t.debito_total>0?Math.round(t.acum_coll/t.debito_total*100):0;
-  document.getElementById('nd-foot').innerHTML=`<tr style="border-top:2px solid var(--line);font-weight:700"><td>TOTAL</td><td class="n">${t.clientes_totales||0}</td><td class="n">${fmt(t.debito_total||0)}</td><td class="n">${t.dia_clientes||0}</td><td class="n">${fmt(t.dia_coll||0)}</td><td class="n">${t.acum_clientes||0}</td><td class="n">${fmt(t.acum_coll||0)}</td><td class="n">${avT}%</td></tr>`;
+    const o=_ndObj[String(r.id)]||{};
+    const objCli=o.clientes||0, objDeb=o.debito||0;
+    const denCli=objCli>0?objCli:r.clientes_totales, denDeb=objDeb>0?objDeb:r.debito_total;
+    const pc=_ndPct(r.acum_clientes,denCli), pcoll=_ndPct(r.acum_coll,denDeb);
+    return `<tr data-sid="${r.id}">
+      <td><b>${r.gerencia}</b></td>
+      <td class="n"><input type="number" min="0" class="nd-obj-cli" value="${objCli||''}" placeholder="${r.clientes_totales}" style="width:78px;text-align:right;background:rgba(47,127,209,.08);border:1px solid var(--line);color:var(--txt);font-family:'Sora';padding:5px 7px;border-radius:6px"></td>
+      <td class="n"><input type="number" min="0" step="50" class="nd-obj-deb" value="${objDeb||''}" placeholder="${Math.round(r.debito_total)}" style="width:104px;text-align:right;background:rgba(47,127,209,.08);border:1px solid var(--line);color:var(--txt);font-family:'Sora';padding:5px 7px;border-radius:6px"></td>
+      <td class="n">${r.dia_clientes}</td><td class="n">${fmt(r.dia_coll)}</td>
+      <td class="n">${r.acum_clientes}</td><td class="n"><b>${fmt(r.acum_coll)}</b></td>
+      <td class="n" style="color:${_ndPctCol(pc)};font-weight:700">${pc}%</td>
+      <td class="n" style="color:${_ndPctCol(pcoll)};font-weight:700">${pcoll}%</td>
+    </tr>`;
+  }).join('')||'<tr><td colspan="9" style="text-align:center;color:var(--faint);padding:16px">Sin datos para este día.</td></tr>';
+  const t=d.total||{};
+  const objCliT=rows.reduce((a,r)=>{const o=_ndObj[String(r.id)]||{};return a+(o.clientes||r.clientes_totales);},0);
+  const objDebT=rows.reduce((a,r)=>{const o=_ndObj[String(r.id)]||{};return a+(o.debito||r.debito_total);},0);
+  const pcT=_ndPct(t.acum_clientes,objCliT), pcollT=_ndPct(t.acum_coll,objDebT);
+  document.getElementById('nd-foot').innerHTML=`<tr style="border-top:2px solid var(--line);font-weight:700"><td>TOTAL</td><td class="n">${objCliT}</td><td class="n">${fmt(objDebT)}</td><td class="n">${t.dia_clientes||0}</td><td class="n">${fmt(t.dia_coll||0)}</td><td class="n">${t.acum_clientes||0}</td><td class="n">${fmt(t.acum_coll||0)}</td><td class="n" style="color:${_ndPctCol(pcT)}">${pcT}%</td><td class="n" style="color:${_ndPctCol(pcollT)}">${pcollT}%</td></tr>`;
+}
+async function ndGuardarObjetivos(btn){
+  const trs=[...document.querySelectorAll('#nd-rows tr[data-sid]')];
+  if(!trs.length) return;
+  btn.disabled=true; const _t=btn.textContent; btn.textContent='Guardando…';
+  try{
+    for(const tr of trs){
+      const sid=tr.dataset.sid;
+      const cli=+(tr.querySelector('.nd-obj-cli').value||0);
+      const deb=+(tr.querySelector('.nd-obj-deb').value||0);
+      await apiU('POST','/api/objetivos/suc',{ sucursalId:sid, clientes:cli, debito:deb });
+    }
+    await cargarNumDiarios();
+    btn.textContent='✓ Guardado'; setTimeout(()=>{btn.textContent=_t;btn.disabled=false;},1500);
+  }catch(e){ alert(e.message); btn.textContent=_t; btn.disabled=false; }
 }
 function ndExport(){
   if(!_ndData) return;
-  const aoa=[['Gerencia','Clientes totales','Débito total','Clientes (día)','Coll (día)','Cts Acum','Coll Acum','Avance %']];
-  (_ndData.rows||[]).forEach(r=>{ const av=r.debito_total>0?Math.round(r.acum_coll/r.debito_total*100):0; aoa.push([r.gerencia,r.clientes_totales,r.debito_total,r.dia_clientes,r.dia_coll,r.acum_clientes,r.acum_coll,av]); });
-  const t=_ndData.total||{}; const avT=t.debito_total>0?Math.round(t.acum_coll/t.debito_total*100):0;
-  aoa.push(['TOTAL',t.clientes_totales||0,t.debito_total||0,t.dia_clientes||0,t.dia_coll||0,t.acum_clientes||0,t.acum_coll||0,avT]);
+  const aoa=[['Gerencia','Clientes obj.','Débito obj.','Cts día','Coll día','Cts Acum','Coll Acum','% Clientes','% Coll']];
+  (_ndData.rows||[]).forEach(r=>{ const o=_ndObj[String(r.id)]||{}; const objCli=o.clientes||r.clientes_totales, objDeb=o.debito||r.debito_total; aoa.push([r.gerencia,o.clientes||0,o.debito||0,r.dia_clientes,r.dia_coll,r.acum_clientes,r.acum_coll,_ndPct(r.acum_clientes,objCli),_ndPct(r.acum_coll,objDeb)]); });
+  const t=_ndData.total||{};
+  const objCliT=(_ndData.rows||[]).reduce((a,r)=>{const o=_ndObj[String(r.id)]||{};return a+(o.clientes||r.clientes_totales);},0);
+  const objDebT=(_ndData.rows||[]).reduce((a,r)=>{const o=_ndObj[String(r.id)]||{};return a+(o.debito||r.debito_total);},0);
+  aoa.push(['TOTAL',objCliT,objDebT,t.dia_clientes||0,t.dia_coll||0,t.acum_clientes||0,t.acum_coll||0,_ndPct(t.acum_clientes,objCliT),_ndPct(t.acum_coll,objDebT)]);
   xlsxDL('numeros_diarios_'+(_ndData.dia||''), [{name:'Numeros diarios',aoa}]);
 }
 
