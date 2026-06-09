@@ -1051,6 +1051,7 @@ app.post('/api/sales/:id/refin', auth, rol('admin','supervisor','sucursal'), ide
     refinDe: old.id, entregado: true,
     createdAt: new Date().toISOString(), createdBy: req.user.nombre,
   };
+  if (r.descuentaPP) { nuevo.primerPago = r.primerPago; nuevo.descuentaPP = true; nuevo.entregaMonto = r.entregaCliente; }
   db.sales.push(nuevo);
   // 3. disposición del nuevo crédito
   db.movimientos.push({
@@ -1059,14 +1060,19 @@ app.post('/api/sales/:id/refin', auth, rol('admin','supervisor','sucursal'), ide
     origen: 'Sucursal: ' + req.user.nombre,
     cargo: r.total, abono: 0
   });
+  // 3b. primer pago descontado al inicio (no se considera cobranza; forma=descuento)
+  if (r.descuentaPP && r.primerPago > 0) {
+    db.movimientos.push({ id: nextId('movimientos'), saleId: nuevo.id, fecha: hoy, concepto: 'Primer pago descontado al inicio', origen: 'Origen del crédito (REFIN)', cargo: 0, abono: r.primerPago, forma: 'descuento', sucursalCobro: old.sucursalId, sucursalCredito: old.sucursalId });
+  }
 
-  const neto = monto - saldoActual;
+  const primerPago = (r.descuentaPP && r.primerPago > 0) ? r.primerPago : 0;
+  const neto = monto - saldoActual - primerPago;
   markIdem(req); saveDB();
   res.status(201).json({
     ok: true,
     oldFolio: old.folio, saldoLiquidado: saldoActual,
     nuevoFolio: nuevo.folio, nuevoSaleId: nuevo.id,
-    nuevoMonto: monto, nuevoTotal: r.total, nuevoCuota: r.cuota,
+    nuevoMonto: monto, nuevoTotal: r.total, nuevoCuota: r.cuota, primerPago,
     saldoNuevo: saldoDe(nuevo.id), neto
   });
 });
