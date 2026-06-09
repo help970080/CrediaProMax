@@ -246,16 +246,17 @@
     <div class="panel">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
         <h2 style="margin:0">📊 Resumen de mi sucursal</h2>
-        <div style="display:flex;gap:6px">
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="perb" data-p="hoy" onclick="setPeriodoSuc('hoy')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:7px 13px;border-radius:8px;font-family:'Sora';font-weight:600;cursor:pointer">Hoy</button>
           <button class="perb" data-p="semana" onclick="setPeriodoSuc('semana')" style="background:var(--acc);color:#1b2330;border:1px solid var(--line);padding:7px 13px;border-radius:8px;font-family:'Sora';font-weight:600;cursor:pointer">Semana</button>
           <button class="perb" data-p="mes" onclick="setPeriodoSuc('mes')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:7px 13px;border-radius:8px;font-family:'Sora';font-weight:600;cursor:pointer">Mes</button>
+          <button onclick="sucGuardarObjetivos(this)" style="background:var(--vio);color:#fff;border:none;padding:7px 13px;border-radius:8px;font-family:'Sora';font-weight:700;cursor:pointer">💾 Guardar objetivos</button>
         </div>
       </div>
       <div class="kpis" id="res-kpis" style="margin-top:14px"></div>
-      <div class="sect-lbl">Desempeño por cobrador</div>
-      <div style="overflow-x:auto"><table><thead><tr><th>Cobrador</th><th class="n">Clientes</th><th class="n">Cartera</th><th class="n">Vencida</th><th class="n">Cobrado</th><th class="n">Por entregar</th><th class="n">Recup.</th></tr></thead><tbody id="res-cob"></tbody></table></div>
-      <div style="font-size:.74rem;color:var(--faint);margin-top:8px;line-height:1.4">Cobrado = pagos del periodo (sin contar primer pago/descuentos). Recup. = cobrado ÷ esperado del periodo. Vencida = monto en atraso acumulado.</div>
+      <div class="sect-lbl">Desempeño y objetivos por cobrador</div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Cobrador</th><th class="n">Clientes</th><th class="n">Cartera</th><th class="n">Vencida</th><th class="n">Cobrado</th><th class="n">Por entregar</th><th class="n" style="color:var(--vio)">Obj. clientes</th><th class="n" style="color:var(--vio)">Obj. cobranza</th><th class="n">% Clientes</th><th class="n">% Cobranza</th></tr></thead><tbody id="res-cob"></tbody></table></div>
+      <div style="font-size:.74rem;color:var(--faint);margin-top:8px;line-height:1.4">Escribe los objetivos en las celdas moradas y pulsa <b>Guardar objetivos</b>. % Clientes = clientes que pagaron ÷ objetivo de clientes · % Cobranza = cobrado ÷ objetivo de cobranza. Cobrado no cuenta primer pago/descuentos.</div>
     </div>
   </div>
 
@@ -872,14 +873,17 @@ function setVw(vw){
   if(vw==='resumen') cargarResumen();
   if(vw==='cartera') cargarCartSuc();
 }
-let _periodoSuc='semana', _dashSuc=null;
+let _periodoSuc='semana', _dashSuc=null, _cobObj={};
 function setPeriodoSuc(p){
   _periodoSuc=p;
   document.querySelectorAll('.perb').forEach(b=>{const on=b.dataset.p===p;b.style.background=on?'var(--acc)':'var(--surf-2)';b.style.color=on?'#1b2330':'var(--txt)';});
   cargarResumen();
 }
 async function cargarResumen(){
-  try{ _dashSuc=await api('GET','/api/dashboard?periodo='+_periodoSuc); pintaResumen(_dashSuc); }
+  try{
+    const [d,obj]=await Promise.all([ api('GET','/api/dashboard?periodo='+_periodoSuc), api('GET','/api/objetivos') ]);
+    _dashSuc=d; _cobObj=(obj&&obj.cob)||{}; pintaResumen(d);
+  }
   catch(e){ document.getElementById('res-kpis').innerHTML='<div style="color:var(--red);padding:10px">'+e.message+'</div>'; }
 }
 function pintaResumen(d){
@@ -898,9 +902,39 @@ function pintaResumen(d){
     ['v','Efectivo por entregar',fmt(porEntregar),'en ruta de cobradores'],
   ].map(k=>`<div class="kpi ${k[0]}"><div class="l">${k[1]}</div><div class="v">${k[2]}</div><div class="s">${k[3]}</div></div>`).join('');
   document.getElementById('res-cob').innerHTML=cob.map(c=>{
-    const recup=c.esperado_acum>0?Math.min(100,Math.round((c.comisionable||0)/c.esperado_acum*100)):0;
-    return `<tr><td>${c.nombre}</td><td class="n">${c.clientes||0}</td><td class="n">${fmt(c.cartera||0)}</td><td class="n" style="color:${c.atraso_monto>0?'var(--red)':'var(--faint)'}">${fmt(c.atraso_monto||0)}</td><td class="n"><b>${fmt(c.comisionable||0)}</b></td><td class="n">${fmt(c.por_entregar||0)}</td><td class="n" style="color:${recup>=70?'var(--grn)':recup>=40?'var(--acc)':'var(--red)'}">${recup}%</td></tr>`;
-  }).join('')||'<tr><td colspan="7" style="text-align:center;color:var(--faint);padding:16px">Sin cobradores en esta sucursal.</td></tr>';
+    const o=_cobObj[c.nombre]||{};
+    const objCli=o.clientes||0, objCob=o.cobranza||0;
+    const pagaron=c.npagos||0;
+    const pc=objCli>0?Math.min(999,Math.round(pagaron/objCli*100)):0;
+    const pcob=objCob>0?Math.min(999,Math.round((c.comisionable||0)/objCob*100)):0;
+    const colC=objCli>0?(pc>=100?'var(--grn)':pc>=70?'var(--acc)':'var(--red)'):'var(--faint)';
+    const colB=objCob>0?(pcob>=100?'var(--grn)':pcob>=70?'var(--acc)':'var(--red)'):'var(--faint)';
+    const inS="width:74px;text-align:right;background:rgba(124,92,224,.10);border:1px solid var(--line);color:var(--txt);font-family:'Sora';padding:5px 7px;border-radius:6px";
+    return `<tr data-cob="${(c.nombre||'').replace(/"/g,'&quot;')}">
+      <td>${c.nombre}</td><td class="n">${c.clientes||0}</td><td class="n">${fmt(c.cartera||0)}</td>
+      <td class="n" style="color:${c.atraso_monto>0?'var(--red)':'var(--faint)'}">${fmt(c.atraso_monto||0)}</td>
+      <td class="n"><b>${fmt(c.comisionable||0)}</b></td><td class="n">${fmt(c.por_entregar||0)}</td>
+      <td class="n"><input type="number" min="0" class="so-cli" value="${objCli||''}" style="${inS}"></td>
+      <td class="n"><input type="number" min="0" step="100" class="so-cob" value="${objCob||''}" style="${inS}"></td>
+      <td class="n" style="color:${colC};font-weight:700">${objCli>0?pc+'%':'—'}</td>
+      <td class="n" style="color:${colB};font-weight:700">${objCob>0?pcob+'%':'—'}</td>
+    </tr>`;
+  }).join('')||'<tr><td colspan="10" style="text-align:center;color:var(--faint);padding:16px">Sin cobradores en esta sucursal.</td></tr>';
+}
+async function sucGuardarObjetivos(btn){
+  const trs=[...document.querySelectorAll('#res-cob tr[data-cob]')];
+  if(!trs.length) return;
+  btn.disabled=true; const _t=btn.textContent; btn.textContent='Guardando…';
+  try{
+    for(const tr of trs){
+      const nombre=tr.dataset.cob;
+      const cli=+(tr.querySelector('.so-cli').value||0);
+      const cob=+(tr.querySelector('.so-cob').value||0);
+      await api('POST','/api/objetivos/cob',{ cobrador:nombre, clientes:cli, cobranza:cob });
+    }
+    await cargarResumen();
+    btn.textContent='✓ Guardado'; setTimeout(()=>{btn.textContent=_t;btn.disabled=false;},1500);
+  }catch(e){ toast(e.message); btn.textContent=_t; btn.disabled=false; }
 }
 let _cartSuc=[];
 const TIPO_LBL={diario:'Diario',semanal:'Semanal',s16:'Semanal 16',s17:'Semanal 17',s21:'21 sem',s31:'31 sem',unico:'Pago único',p17:'Cel 17'};
