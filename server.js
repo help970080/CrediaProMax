@@ -1251,8 +1251,12 @@ app.get('/api/dashboard', auth, (req,res)=>{
     const enc=db.users.find(u=>u.rol==='sucursal' && u.sucursalId===suc.id);
     let atraso_monto=0, atraso_clientes=0, esperado_acum=0;
     ventas_suc.forEach(s=>{ if(saldoDe(s.id)<=0)return; const at=atrasoDe(s); esperado_acum+=at.cuotasDebidas*s.cuota; if(at.montoAtraso>0){ atraso_monto+=at.montoAtraso; atraso_clientes++; } });
+    // Clientes sin pago en el periodo (riesgo): vigente, no único, no nuevo del periodo, sin abono en el periodo
+    const pagaronSuc=new Set(abonos_suc.map(m=>{const s=sales.find(x=>x.id===m.saleId); return s?s.clientId:null;}).filter(v=>v!=null));
+    const nopagoSuc=new Set();
+    ventas_suc.forEach(s=>{ if(saldoDe(s.id)<=0||s.tipo==='unico')return; const ct=s.createdAt?new Date(s.createdAt).getTime():0; if(ct>=desde)return; if(!pagaronSuc.has(s.clientId)) nopagoSuc.add(s.clientId); });
     return {id:suc.id, nombre:suc.nombre, encargada:enc?enc.nombre:'—',
-      pagos_recibidos:recuperado, comisionable, npagos:abonos_suc.length,
+      pagos_recibidos:recuperado, comisionable, npagos:abonos_suc.length, nopago:nopagoSuc.size,
       creditos_captados:nuevos_suc.length, colocado:nuevos_suc.reduce((a,s)=>a+s.monto,0),
       efectivo_caja:(caja.inicial||0)+(caja.efectivo||0)+(caja.entregas||0)-(caja.retiros||0), banco:caja.banco||0,
       por_entregar:db.porEntregar.filter(p=>p.sucursalId===suc.id).reduce((a,p)=>a+p.monto,0),
@@ -1270,8 +1274,12 @@ app.get('/api/dashboard', auth, (req,res)=>{
     const suc=sucursales.find(s=>s.id===c.sucursalId);
     let atraso_monto=0, atraso_clientes=0, esperado_acum=0;
     sus_sales.forEach(s=>{ if(saldoDe(s.id)<=0)return; const at=atrasoDe(s); esperado_acum+=at.cuotasDebidas*s.cuota; if(at.montoAtraso>0){ atraso_monto+=at.montoAtraso; atraso_clientes++; } });
+    // Clientes sin pago en el periodo (riesgo): vigente, no único, no nuevo del periodo, sin abono en el periodo
+    const pagaronCob=new Set(sus_abonos.map(m=>{const s=sales.find(x=>x.id===m.saleId); return s?s.clientId:null;}).filter(v=>v!=null));
+    const nopagoCob=new Set();
+    sus_sales.forEach(s=>{ if(saldoDe(s.id)<=0||s.tipo==='unico')return; const ct=s.createdAt?new Date(s.createdAt).getTime():0; if(ct>=desde)return; if(!pagaronCob.has(s.clientId)) nopagoCob.add(s.clientId); });
     return {id:c.id, nombre:c.nombre, sucursal:suc?suc.nombre:'—', sucursalId:c.sucursalId,
-      clientes:sus_sales.length, cartera, pagos_recibidos:recuperado, comisionable, npagos:sus_abonos.length, por_entregar,
+      clientes:sus_sales.length, cartera, pagos_recibidos:recuperado, comisionable, npagos:sus_abonos.length, nopago:nopagoCob.size, por_entregar,
       atraso_monto, atraso_clientes, esperado_acum };
   });
   const pagos_recientes=abonos.slice(-40).reverse().map(m=>{
@@ -1316,6 +1324,28 @@ app.get('/api/reports/pagos', auth, (req,res)=>{
   res.json(out);
 });
 
+/* ---------- No pagos (riesgo): un crédito tiene "cobro esperado" hoy / esta semana ---------- */
+// Fechas programadas de cobro para semanal / celulares-17 (los diarios se evalúan por rango).
+function _fechasProgSrv(s){
+  const out=[]; const P=s.plazo||0; if(!s.createdAt) return out; const created=new Date(s.createdAt);
+  if(s.tipo==='semanal'){ for(let i=1;i<=P;i++){ const d=new Date(created); d.setDate(d.getDate()+i*7); out.push(d.getTime()); } }
+  else if(s.tipo==='p17'){ const iv=Math.max(1,Math.round((P||270)/17)); for(let i=1;i<=17;i++){ const d=new Date(created); d.setDate(d.getDate()+i*iv); out.push(d.getTime()); } }
+  return out;
+}
+// ¿Se esperaba un cobro de este crédito en el día [dStart,dEnd)? (no cuenta la venta nueva del día)
+function _esperaCobroDia(s, dStart, dEnd){
+  const c = s.createdAt ? new Date(s.createdAt).getTime() : 0;
+  if(!c || c >= dStart) return false;                       // creado hoy o después: es venta nueva, no se le exige cobro hoy
+  if(s.tipo==='unico'){ const d=new Date(s.createdAt); d.setDate(d.getDate()+(s.plazo||0)); const t=d.getTime(); return t>=dStart && t<dEnd; }
+  if(s.tipo==='diario'){
+    if(new Date(dStart).getDay()===0) return false;         // domingo: no se cobra (cuadra con débito = cuota x 6)
+    const fin=new Date(s.createdAt); fin.setDate(fin.getDate()+(s.plazo||0));
+    return dStart <= fin.getTime();                         // dentro del plazo
+  }
+  // semanal / cel-17: solo el día que les toca
+  return _fechasProgSrv(s).some(t=> t>=dStart && t<dEnd);
+}
+
 /* ---------- Números diarios (scoreboard de cobranza por gerencia/sucursal) ---------- */
 app.get('/api/reports/numeros-diarios', auth, rol('admin','supervisor'), (req,res)=>{
   const diaISO = req.query.dia || fechaMxHoyISO();
@@ -1337,11 +1367,21 @@ app.get('/api/reports/numeros-diarios', auth, rol('admin','supervisor'), (req,re
     for(const m of abonos){ const ref=saleSuc[m.saleId]; if(!ref||ref.suc!==suc.id) continue; const t=_parseFechaMx(m.fecha);
       if(t>=wkStart && t<wkEnd){ acumColl+=m.abono; acumCli.add(ref.cli); }
       if(t>=dStart && t<dEnd){ diaColl+=m.abono; diaCli.add(ref.cli); } }
+    // No pagos (riesgo): clientes con cobro esperado que NO abonaron (día y acumulado de la semana)
+    const espDia=new Set(), espSem=new Set();
+    activeVs.forEach(s=>{
+      const ct = s.createdAt ? new Date(s.createdAt).getTime() : 0;
+      if(_esperaCobroDia(s, dStart, dEnd)) espDia.add(s.clientId);
+      if(s.tipo!=='unico' && !(ct>=wkStart && ct<wkEnd)) espSem.add(s.clientId); // esperado en la semana (= reporte semanal)
+    });
+    const dia_nopago=[...espDia].filter(id=>!diaCli.has(id)).length;
+    const acum_nopago=[...espSem].filter(id=>!acumCli.has(id)).length;
     return { id:suc.id, gerencia:suc.nombre, clientes_totales, debito_total,
-      dia_clientes:diaCli.size, dia_coll:diaColl, acum_clientes:acumCli.size, acum_coll:acumColl,
+      dia_clientes:diaCli.size, dia_coll:diaColl, dia_nopago,
+      acum_clientes:acumCli.size, acum_coll:acumColl, acum_nopago,
       objetivo: db.objetivos.suc[String(suc.id)] || null };
   });
-  const total = rows.reduce((a,r)=>({clientes_totales:a.clientes_totales+r.clientes_totales, debito_total:a.debito_total+r.debito_total, dia_clientes:a.dia_clientes+r.dia_clientes, dia_coll:a.dia_coll+r.dia_coll, acum_clientes:a.acum_clientes+r.acum_clientes, acum_coll:a.acum_coll+r.acum_coll}), {clientes_totales:0,debito_total:0,dia_clientes:0,dia_coll:0,acum_clientes:0,acum_coll:0});
+  const total = rows.reduce((a,r)=>({clientes_totales:a.clientes_totales+r.clientes_totales, debito_total:a.debito_total+r.debito_total, dia_clientes:a.dia_clientes+r.dia_clientes, dia_coll:a.dia_coll+r.dia_coll, dia_nopago:a.dia_nopago+r.dia_nopago, acum_clientes:a.acum_clientes+r.acum_clientes, acum_coll:a.acum_coll+r.acum_coll, acum_nopago:a.acum_nopago+r.acum_nopago}), {clientes_totales:0,debito_total:0,dia_clientes:0,dia_coll:0,dia_nopago:0,acum_clientes:0,acum_coll:0,acum_nopago:0});
   res.json({ dia:diaISO, semanaDesde:new Date(wkStart).toISOString(), rows, total });
 });
 
@@ -2182,7 +2222,7 @@ app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, 
   res.json({ generadoEn: new Date().toISOString(), reportes });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v1', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v2', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
