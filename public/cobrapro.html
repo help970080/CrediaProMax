@@ -287,6 +287,7 @@
           <div><div style="color:var(--dim);font-size:.72rem;text-transform:uppercase">Folio</div><div class="mono" id="ec-folio">—</div></div>
           <div><div style="color:var(--dim);font-size:.72rem;text-transform:uppercase">Modalidad · cuota</div><div id="ec-mod">—</div></div>
           <div style="grid-column:1/3"><div style="color:var(--dim);font-size:.72rem;text-transform:uppercase">Domicilio</div><div id="ec-dom">—</div></div>
+          <div style="grid-column:1/3" id="ec-art-wrap"><div style="color:var(--dim);font-size:.72rem;text-transform:uppercase">Datos del artículo</div><div id="ec-art">—</div></div>
           <div><div style="color:var(--dim);font-size:.72rem;text-transform:uppercase">Periodos vencidos</div><div class="mono" id="ec-venc" style="color:var(--red)">—</div></div>
           <div><div style="color:var(--dim);font-size:.72rem;text-transform:uppercase">Cobrador</div><div id="ec-prom">—</div></div>
         </div>
@@ -842,7 +843,7 @@ function pintaCobradores(d){
   $('tb-prom').innerHTML= d.por_cobrador.length? d.por_cobrador.map((p,i)=>{
     const color=_sucColor[i%_sucColor.length]; const ini=(p.nombre||'').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
     const meta=p.clientes>0? Math.min(100,(p.npagos/p.clientes)*100):0;
-    const k=cfg(); const com=p.pagos_recibidos*k.cob/100;
+    const k=cfg(); const com=(p.comisionable!=null?p.comisionable:p.pagos_recibidos)*k.cob/100;
     return `<tr><td><div class="who"><div class="ava" style="background:${color}">${ini}</div><div><div class="nm">${p.nombre}</div><div class="sn">${p.sucursal}</div></div></div></td>
       <td class="n">${p.clientes}</td><td class="n">${fmt(p.cartera)}</td>
       <td class="n" style="color:${p.atraso_monto>0?'var(--red)':'var(--faint)'}">${p.atraso_monto>0?fmt(p.atraso_monto)+'<div style="font-size:.65rem">'+p.atraso_clientes+' clientes</div>':'—'}</td>
@@ -858,7 +859,7 @@ function pintaComisiones(d){
   $('tb-com').innerHTML=d.por_cobrador.map((p,i)=>{
     const color=_sucColor[i%_sucColor.length]; const ini=(p.nombre||'').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
     const meta=p.clientes>0? (p.npagos/p.clientes)*100:0;
-    const cCob=p.pagos_recibidos*k.cob/100;
+    const cCob=(p.comisionable!=null?p.comisionable:p.pagos_recibidos)*k.cob/100;
     const cBono=meta>=k.meta?k.bono:0;
     const cMora=0; // sin aging por ahora
     const neta=cCob+cBono-cMora;
@@ -1538,6 +1539,9 @@ function ecPinta(d){
   document.getElementById('ec-folio').textContent=c.folio;
   document.getElementById('ec-mod').textContent=(_tipoLbl[c.tipo]||c.tipo)+' · '+fmt(c.cuota);
   document.getElementById('ec-dom').textContent=([c.calle,c.col].filter(Boolean).join(', ')||'—')+(c.tel?(' · 📞 '+c.tel):'');
+  const _arts=(c.articulos&&c.articulos.length)?c.articulos:null;
+  const _artWrap=document.getElementById('ec-art-wrap');
+  if(_artWrap){ if(_arts){ _artWrap.style.display=''; document.getElementById('ec-art').innerHTML=_arts.map(a=>'• '+String(a).replace(/[<>]/g,'')).join('<br>'); } else { _artWrap.style.display='none'; } }
   document.getElementById('ec-venc').textContent='—';
   document.getElementById('ec-prom').textContent=c.prom||'—';
   document.getElementById('ec-mora-alert').innerHTML='';
