@@ -1322,7 +1322,12 @@ app.get('/api/dashboard', auth, (req,res)=>{
     atraso_total: por_cobrador.reduce((a,c)=>a+c.atraso_monto,0),
     clientes_atrasados: por_cobrador.reduce((a,c)=>a+c.atraso_clientes,0),
   };
-  res.json({periodo, desde:new Date(desde).toISOString(), totales, por_sucursal, por_cobrador, pagos_recientes});
+  const _wkFin = desde + 7*86400000 - 1;
+  res.json({periodo, desde:new Date(desde).toISOString(),
+    semanaInicioDia:_diaSemanaInicio(),
+    semanaDesdeISO:(periodo==='semana'?_isoDe(desde):null),
+    semanaHastaISO:(periodo==='semana'?_isoDe(_wkFin):null),
+    totales, por_sucursal, por_cobrador, pagos_recientes});
 });
 app.get('/api/reports/pagos', auth, (req,res)=>{
   const {desde,hasta,forma,prom,sucursalId}=req.query;
