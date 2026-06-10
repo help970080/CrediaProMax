@@ -204,6 +204,7 @@
     <button class="navitem" data-v="bandeja"><span class="ic">📦</span> Bandeja de entregas</button>
     <button class="navitem" data-v="rastreo"><span class="ic">📡</span> Rastreo de equipo</button>
     <button class="navitem" data-v="promotores"><span class="ic">⛬</span> Cobradores</button>
+    <button class="navitem" data-v="ranking"><span class="ic">🏆</span> Ranking</button>
     <button class="navitem" data-v="transferencias"><span class="ic">⇆</span> Transferencias</button>
     <button class="navitem" data-v="sucursales"><span class="ic">🏪</span> Sucursales</button>
     <div class="nav-lbl">Finanzas</div>
@@ -261,12 +262,11 @@
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:6px">
         <div>
           <h2 style="margin:0">📅 Números diarios por gerencia</h2>
-          <div style="color:var(--faint);font-size:.85rem;margin-top:2px">Captura los objetivos de la semana y mide el avance contra el acumulado (lunes a hoy).</div>
+          <div style="color:var(--faint);font-size:.85rem;margin-top:2px">La meta es el 100% de la cartera activa (clientes y débito). El avance se mide contra el acumulado de la semana (lunes a hoy).</div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <label style="color:var(--faint);font-size:.85rem">Día</label>
           <input type="date" id="nd-dia" onchange="cargarNumDiarios()" style="background:var(--surf-2);border:1px solid var(--line);color:var(--txt);font-family:'Sora';padding:8px 10px;border-radius:8px">
-          <button onclick="ndGuardarObjetivos(this)" class="btn" style="font-size:.82rem;background:var(--acc);color:#1b2330;border:none;font-weight:700">💾 Guardar objetivos</button>
           <button onclick="ndExport()" class="btn" style="font-size:.82rem">⬇️ Excel</button>
         </div>
       </div>
@@ -276,12 +276,12 @@
           <thead>
             <tr>
               <th rowspan="2" style="vertical-align:bottom">Gerencia</th>
-              <th colspan="2" style="text-align:center;border-bottom:1px solid var(--line);color:var(--blu)">OBJETIVOS (semana)</th>
+              <th colspan="2" style="text-align:center;border-bottom:1px solid var(--line);color:var(--blu)">META 100% (cartera)</th>
               <th colspan="3" style="text-align:center;border-bottom:1px solid var(--line)">Del día</th>
               <th colspan="5" style="text-align:center;border-bottom:1px solid var(--line);color:var(--grn)">CIERRE / avance</th>
             </tr>
             <tr>
-              <th class="n">Clientes obj.</th><th class="n">Débito obj.</th>
+              <th class="n">Clientes (100%)</th><th class="n">Débito (100%)</th>
               <th class="n">Cts día</th><th class="n">Coll día</th><th class="n" style="color:var(--red)">No pago día</th>
               <th class="n">Cts Acum</th><th class="n">Coll Acum</th><th class="n" style="color:var(--red)">No pago sem</th><th class="n">% Clientes</th><th class="n">% Coll</th>
             </tr>
@@ -290,7 +290,28 @@
           <tfoot id="nd-foot"></tfoot>
         </table>
       </div>
-      <div style="font-size:.74rem;color:var(--faint);margin-top:8px;line-height:1.4">Escribe los objetivos en las celdas azules y pulsa <b>Guardar objetivos</b>. % Clientes = Cts Acum ÷ Clientes objetivo · % Coll = Coll Acum ÷ Débito objetivo. <b style="color:var(--red)">No pago</b> = clientes con cobro esperado que NO abonaron (día y acumulado de la semana) — sirve para medir riesgo y ajustar objetivos. Si dejas un objetivo en 0, se usa la cartera activa real como referencia. No cuenta el primer pago/descuentos.</div>
+      <div style="font-size:.74rem;color:var(--faint);margin-top:8px;line-height:1.4">La <b style="color:var(--blu)">meta es el 100%</b> de la cartera activa (no se captura, no se modifica). % Clientes = Cts Acum ÷ Clientes 100% · % Coll = Coll Acum ÷ Débito 100%. <b style="color:var(--red)">No pago</b> = clientes con cobro esperado que NO abonaron (día y acumulado de la semana). No cuenta el primer pago/descuentos.</div>
+    </div>
+
+    <!-- CONTACTOS: no pagos de la semana anterior (avance + validación) -->
+    <div class="panel" style="margin-top:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <div>
+          <h2 style="margin:0">📇 Contactos · no pagos de la semana anterior</h2>
+          <div id="ct-adm-sem" style="color:var(--faint);font-size:.85rem;margin-top:2px"></div>
+        </div>
+        <div id="ct-adm-resumen" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+      </div>
+      <div id="ct-adm-suc" style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0"></div>
+      <div style="overflow-x:auto">
+        <table id="ct-adm-tbl">
+          <thead><tr>
+            <th>Cliente</th><th>Gerencia</th><th>Cobrador</th><th class="n">Atraso</th><th class="n">Últ. pago</th><th>Resultado de la visita</th><th class="n">Evidencia</th><th class="n">Estado</th>
+          </tr></thead>
+          <tbody id="ct-adm-rows"></tbody>
+        </table>
+      </div>
+      <div style="font-size:.74rem;color:var(--faint);margin-top:8px;line-height:1.4">Las sucursales suben la evidencia de cada visita. Aquí el <b>admin/supervisor valida</b> el trabajo. El avance (gestionados / validados) se mide sobre los clientes que no pagaron la semana inmediata anterior.</div>
     </div>
   </section>
 
@@ -370,6 +391,32 @@
       </div></div>
       <div style="overflow-x:auto"><table><thead><tr><th>Cobrador</th><th class="n">Clientes</th><th class="n">Cartera asignada</th><th class="n">Vencida</th><th class="n">Cobrado</th><th class="n">Por entregar</th><th>Recup.</th><th class="n">Comisión</th></tr></thead><tbody id="tb-prom"></tbody></table></div>
       <div class="note">Los cobradores solo cobran; no colocan crédito. Su comisión depende de cuánto recuperan y de mantener baja la mora — no de colocar más.</div>
+    </div>
+  </section>
+
+  <!-- RANKING DE COBRADORES -->
+  <section class="view" id="ranking">
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:4px">
+        <div>
+          <h2 style="margin:0">🏆 Ranking de cobradores · semana</h2>
+          <div style="color:var(--faint);font-size:.85rem;margin-top:2px">Cada columna se ordena con semáforo de mejor (verde) a peor (rojo). Sin gráficas: comparación directa.</div>
+        </div>
+        <button onclick="rkExport()" class="btn" style="font-size:.82rem">⬇️ Excel</button>
+      </div>
+      <div style="overflow-x:auto">
+        <table id="rk-tbl">
+          <thead><tr>
+            <th class="n">#</th><th>Cobrador</th><th>Sucursal</th>
+            <th class="n">Unidades vendidas</th>
+            <th class="n">% Cobranza vs débito</th>
+            <th class="n">Total clientes</th>
+            <th class="n">Clientes cobrados</th>
+          </tr></thead>
+          <tbody id="rk-rows"></tbody>
+        </table>
+      </div>
+      <div style="font-size:.74rem;color:var(--faint);margin-top:8px;line-height:1.4"><b>Unidades vendidas</b> = créditos nuevos en su ruta esta semana · <b>% Cobranza vs débito</b> = cobrado ÷ débito esperado · <b>Total clientes</b> = cartera activa · <b>Clientes cobrados</b> = a cuántos de su cartera les cobró esta semana.</div>
     </div>
   </section>
 
@@ -2036,7 +2083,7 @@ function sim(){const t=$('s-tipo').value,monto=+$('s-monto').value||0,plazo=+$('
 }
 
 /* NAV + EVENTOS */
-const titles={resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],numdiarios:['Números diarios','Cobranza por gerencia · del día y acumulado de la semana'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],bandeja:['Bandeja de entregas','Créditos por entregar · toma y entrega con evidencia'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],flujo:['Flujo / Tesorería','Efectivo del admin · dotación a la operación, nómina y capital'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo'],mapa:['Mapa de clientes','Ubicación geográfica de la cartera'],rastreo:['Rastreo de equipo','Dónde está tu gente en campo · seguridad y operación'],extras:['Extras · Detector de prestanombres','Coincidencias por teléfono, domicilio y apellidos'],asignar:['Asignar efectivo','Mueve efectivo entre puestos · el que recibe confirma']};
+const titles={resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],numdiarios:['Números diarios','Cobranza por gerencia · del día y acumulado de la semana'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],bandeja:['Bandeja de entregas','Créditos por entregar · toma y entrega con evidencia'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],ranking:['Ranking de cobradores','Semana · unidades, % cobranza, clientes y cobrados con semáforo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],flujo:['Flujo / Tesorería','Efectivo del admin · dotación a la operación, nómina y capital'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo'],mapa:['Mapa de clientes','Ubicación geográfica de la cartera'],rastreo:['Rastreo de equipo','Dónde está tu gente en campo · seguridad y operación'],extras:['Extras · Detector de prestanombres','Coincidencias por teléfono, domicilio y apellidos'],asignar:['Asignar efectivo','Mueve efectivo entre puestos · el que recibe confirma']};
 document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
   document.querySelectorAll('.navitem').forEach(x=>x.classList.remove('on'));
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
@@ -2048,6 +2095,7 @@ document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
   if(n.dataset.v==='usuarios') cargarUsuarios();
   if(n.dataset.v==='cartera') cargarCartera();
   if(n.dataset.v==='numdiarios') cargarNumDiarios();
+  if(n.dataset.v==='ranking') cargarRanking();
   if(n.dataset.v==='estado') ecInit();
   if(n.dataset.v==='conciliacion') cargarCortes();
   if(n.dataset.v==='reportes') renderReportesLive();
@@ -2230,12 +2278,10 @@ async function cargarNumDiarios(){
   const di=document.getElementById('nd-dia'); if(di && !di.value){ di.value=new Date().toISOString().slice(0,10); }
   const dia=di?di.value:'';
   try{
-    const [d,obj]=await Promise.all([
-      apiU('GET','/api/reports/numeros-diarios'+(dia?('?dia='+dia):'')),
-      apiU('GET','/api/objetivos')
-    ]);
-    _ndData=d; _ndObj=(obj&&obj.suc)||{};
+    const d=await apiU('GET','/api/reports/numeros-diarios'+(dia?('?dia='+dia):''));
+    _ndData=d;
     pintaNumDiarios(d);
+    pintaContactosAdmin(d);
   }catch(e){ document.getElementById('nd-rows').innerHTML='<tr><td colspan="11" style="color:var(--red);padding:12px">'+e.message+'</td></tr>'; }
 }
 function _ndPct(num,den){ return den>0?Math.round(num/den*100):0; }
@@ -2247,14 +2293,12 @@ function pintaNumDiarios(d){
   }catch(e){}
   const rows=(d.rows||[]).slice().sort((a,b)=>(b.acum_coll||0)-(a.acum_coll||0));
   document.getElementById('nd-rows').innerHTML=rows.map(r=>{
-    const o=_ndObj[String(r.id)]||{};
-    const objCli=o.clientes||0, objDeb=o.debito||0;
-    const denCli=objCli>0?objCli:r.clientes_totales, denDeb=objDeb>0?objDeb:r.debito_total;
+    const denCli=r.clientes_totales||0, denDeb=r.debito_total||0;
     const pc=_ndPct(r.acum_clientes,denCli), pcoll=_ndPct(r.acum_coll,denDeb);
     return `<tr data-sid="${r.id}">
       <td><b>${r.gerencia}</b></td>
-      <td class="n"><input type="number" min="0" class="nd-obj-cli" value="${objCli||''}" placeholder="${r.clientes_totales}" style="width:78px;text-align:right;background:rgba(47,127,209,.08);border:1px solid var(--line);color:var(--txt);font-family:'Sora';padding:5px 7px;border-radius:6px"></td>
-      <td class="n"><input type="number" min="0" step="50" class="nd-obj-deb" value="${objDeb||''}" placeholder="${Math.round(r.debito_total)}" style="width:104px;text-align:right;background:rgba(47,127,209,.08);border:1px solid var(--line);color:var(--txt);font-family:'Sora';padding:5px 7px;border-radius:6px"></td>
+      <td class="n" style="color:var(--blu);font-weight:600">${denCli}</td>
+      <td class="n" style="color:var(--blu);font-weight:600">${fmt(denDeb)}</td>
       <td class="n">${r.dia_clientes}</td><td class="n">${fmt(r.dia_coll)}</td><td class="n" style="color:${(r.dia_nopago||0)>0?'var(--red)':'var(--faint)'};font-weight:600">${r.dia_nopago||0}</td>
       <td class="n">${r.acum_clientes}</td><td class="n"><b>${fmt(r.acum_coll)}</b></td><td class="n" style="color:${(r.acum_nopago||0)>0?'var(--red)':'var(--faint)'};font-weight:600">${r.acum_nopago||0}</td>
       <td class="n" style="color:${_ndPctCol(pc)};font-weight:700">${pc}%</td>
@@ -2262,35 +2306,127 @@ function pintaNumDiarios(d){
     </tr>`;
   }).join('')||'<tr><td colspan="11" style="text-align:center;color:var(--faint);padding:16px">Sin datos para este día.</td></tr>';
   const t=d.total||{};
-  const objCliT=rows.reduce((a,r)=>{const o=_ndObj[String(r.id)]||{};return a+(o.clientes||r.clientes_totales);},0);
-  const objDebT=rows.reduce((a,r)=>{const o=_ndObj[String(r.id)]||{};return a+(o.debito||r.debito_total);},0);
+  const objCliT=rows.reduce((a,r)=>a+(r.clientes_totales||0),0);
+  const objDebT=rows.reduce((a,r)=>a+(r.debito_total||0),0);
   const pcT=_ndPct(t.acum_clientes,objCliT), pcollT=_ndPct(t.acum_coll,objDebT);
-  document.getElementById('nd-foot').innerHTML=`<tr style="border-top:2px solid var(--line);font-weight:700"><td>TOTAL</td><td class="n">${objCliT}</td><td class="n">${fmt(objDebT)}</td><td class="n">${t.dia_clientes||0}</td><td class="n">${fmt(t.dia_coll||0)}</td><td class="n" style="color:var(--red)">${t.dia_nopago||0}</td><td class="n">${t.acum_clientes||0}</td><td class="n">${fmt(t.acum_coll||0)}</td><td class="n" style="color:var(--red)">${t.acum_nopago||0}</td><td class="n" style="color:${_ndPctCol(pcT)}">${pcT}%</td><td class="n" style="color:${_ndPctCol(pcollT)}">${pcollT}%</td></tr>`;
-}
-async function ndGuardarObjetivos(btn){
-  const trs=[...document.querySelectorAll('#nd-rows tr[data-sid]')];
-  if(!trs.length) return;
-  btn.disabled=true; const _t=btn.textContent; btn.textContent='Guardando…';
-  try{
-    for(const tr of trs){
-      const sid=tr.dataset.sid;
-      const cli=+(tr.querySelector('.nd-obj-cli').value||0);
-      const deb=+(tr.querySelector('.nd-obj-deb').value||0);
-      await apiU('POST','/api/objetivos/suc',{ sucursalId:sid, clientes:cli, debito:deb });
-    }
-    await cargarNumDiarios();
-    btn.textContent='✓ Guardado'; setTimeout(()=>{btn.textContent=_t;btn.disabled=false;},1500);
-  }catch(e){ alert(e.message); btn.textContent=_t; btn.disabled=false; }
+  document.getElementById('nd-foot').innerHTML=`<tr style="border-top:2px solid var(--line);font-weight:700"><td>TOTAL</td><td class="n" style="color:var(--blu)">${objCliT}</td><td class="n" style="color:var(--blu)">${fmt(objDebT)}</td><td class="n">${t.dia_clientes||0}</td><td class="n">${fmt(t.dia_coll||0)}</td><td class="n" style="color:var(--red)">${t.dia_nopago||0}</td><td class="n">${t.acum_clientes||0}</td><td class="n">${fmt(t.acum_coll||0)}</td><td class="n" style="color:var(--red)">${t.acum_nopago||0}</td><td class="n" style="color:${_ndPctCol(pcT)}">${pcT}%</td><td class="n" style="color:${_ndPctCol(pcollT)}">${pcollT}%</td></tr>`;
 }
 function ndExport(){
   if(!_ndData) return;
-  const aoa=[['Gerencia','Clientes obj.','Débito obj.','Cts día','Coll día','No pago día','Cts Acum','Coll Acum','No pago sem','% Clientes','% Coll']];
-  (_ndData.rows||[]).forEach(r=>{ const o=_ndObj[String(r.id)]||{}; const objCli=o.clientes||r.clientes_totales, objDeb=o.debito||r.debito_total; aoa.push([r.gerencia,o.clientes||0,o.debito||0,r.dia_clientes,r.dia_coll,r.dia_nopago||0,r.acum_clientes,r.acum_coll,r.acum_nopago||0,_ndPct(r.acum_clientes,objCli),_ndPct(r.acum_coll,objDeb)]); });
+  const aoa=[['Gerencia','Clientes (100%)','Débito (100%)','Cts día','Coll día','No pago día','Cts Acum','Coll Acum','No pago sem','% Clientes','% Coll']];
+  (_ndData.rows||[]).forEach(r=>{ aoa.push([r.gerencia,r.clientes_totales||0,Math.round(r.debito_total||0),r.dia_clientes,r.dia_coll,r.dia_nopago||0,r.acum_clientes,r.acum_coll,r.acum_nopago||0,_ndPct(r.acum_clientes,r.clientes_totales),_ndPct(r.acum_coll,r.debito_total)]); });
   const t=_ndData.total||{};
-  const objCliT=(_ndData.rows||[]).reduce((a,r)=>{const o=_ndObj[String(r.id)]||{};return a+(o.clientes||r.clientes_totales);},0);
-  const objDebT=(_ndData.rows||[]).reduce((a,r)=>{const o=_ndObj[String(r.id)]||{};return a+(o.debito||r.debito_total);},0);
-  aoa.push(['TOTAL',objCliT,objDebT,t.dia_clientes||0,t.dia_coll||0,t.dia_nopago||0,t.acum_clientes||0,t.acum_coll||0,t.acum_nopago||0,_ndPct(t.acum_clientes,objCliT),_ndPct(t.acum_coll,objDebT)]);
+  const objCliT=(_ndData.rows||[]).reduce((a,r)=>a+(r.clientes_totales||0),0);
+  const objDebT=(_ndData.rows||[]).reduce((a,r)=>a+(r.debito_total||0),0);
+  aoa.push(['TOTAL',objCliT,Math.round(objDebT),t.dia_clientes||0,t.dia_coll||0,t.dia_nopago||0,t.acum_clientes||0,t.acum_coll||0,t.acum_nopago||0,_ndPct(t.acum_clientes,objCliT),_ndPct(t.acum_coll,objDebT)]);
   xlsxDL('numeros_diarios_'+(_ndData.dia||''), [{name:'Numeros diarios',aoa}]);
+}
+
+/* ===== Contactos (admin/supervisor): avance + validación ===== */
+let _ctAdm=null, _ctAdmSem='';
+function _ctChip(lbl,val,col){ return `<div style="background:var(--surf-2);border:1px solid var(--line);border-radius:9px;padding:7px 12px;text-align:center"><div style="font-size:.68rem;color:var(--faint)">${lbl}</div><div style="font-size:1.05rem;font-weight:700;color:${col||'var(--txt)'}">${val}</div></div>`; }
+function _ctPctCol(p){ return p>=80?'var(--grn)':p>=50?'var(--acc)':p>=25?'#caa23a':'var(--red)'; }
+async function pintaContactosAdmin(d){
+  _ctAdmSem = d.semanaContactos||'';
+  const t=(d.total&&d.total.contactos)||{total:0,gestionados:0,validados:0};
+  try{ const sem=new Date(_ctAdmSem+'T00:00:00'); document.getElementById('ct-adm-sem').textContent='Semana del '+sem.toLocaleDateString('es-MX',{day:'2-digit',month:'short'})+' al '+new Date(sem.getTime()+6*86400000).toLocaleDateString('es-MX',{day:'2-digit',month:'short'}); }catch(e){}
+  const pg=t.total?Math.round(t.gestionados/t.total*100):0, pv=t.total?Math.round(t.validados/t.total*100):0;
+  document.getElementById('ct-adm-resumen').innerHTML=_ctChip('No pagaron',t.total)+_ctChip('Gestionados',t.gestionados+' ('+pg+'%)',_ctPctCol(pg))+_ctChip('Validados',t.validados+' ('+pv+'%)',_ctPctCol(pv));
+  // chips por gerencia
+  document.getElementById('ct-adm-suc').innerHTML=(d.rows||[]).filter(r=>r.contactos&&r.contactos.total>0).map(r=>{
+    const c=r.contactos; const p=c.total?Math.round(c.validados/c.total*100):0;
+    return `<div style="background:var(--surf-2);border:1px solid var(--line);border-left:3px solid ${_ctPctCol(p)};border-radius:8px;padding:6px 11px;font-size:.8rem"><b>${r.gerencia}</b> · ${c.validados}/${c.total} validados · ${c.gestionados} gestionados</div>`;
+  }).join('')||'<div style="color:var(--faint);font-size:.84rem">Ninguna gerencia tiene clientes sin pago la semana anterior. 🎉</div>';
+  // tabla completa
+  try{
+    const r=await apiU('GET','/api/contactos?semana='+encodeURIComponent(_ctAdmSem));
+    _ctAdm=r; pintaContactosAdminTabla(r.rows||[]);
+  }catch(e){ document.getElementById('ct-adm-rows').innerHTML='<tr><td colspan="8" style="color:var(--red);padding:12px">'+e.message+'</td></tr>'; }
+}
+function pintaContactosAdminTabla(rows){
+  rows=rows.slice().sort((a,b)=>(b.monto_atraso||0)-(a.monto_atraso||0));
+  document.getElementById('ct-adm-rows').innerHTML=rows.map(r=>{
+    const g=r.gestion||null;
+    const res=g&&g.resultado?g.resultado:'<span style="color:var(--faint)">— sin gestionar —</span>';
+    const ev=g&&g.tieneEvidencia?`<button class="btn" style="padding:3px 9px;font-size:.72rem" onclick="ctVerEvidencia(${g.id})">👁 Ver</button>`:'<span style="color:var(--faint);font-size:.78rem">—</span>';
+    let est;
+    if(!g||(!g.resultado&&!g.tieneEvidencia)) est='<span style="color:var(--faint);font-size:.78rem">pendiente</span>';
+    else if(g.validado) est=`<span style="color:var(--grn);font-weight:600;font-size:.78rem">✓ validado</span><br><button class="btn" style="padding:2px 7px;font-size:.66rem;margin-top:3px" onclick="ctValidar(${g.id},false)">deshacer</button>`;
+    else est=`<button class="btn gold" style="padding:4px 10px;font-size:.74rem" onclick="ctValidar(${g.id},true)">✓ Validar</button>`;
+    return `<tr>
+      <td><b>${r.nombre}</b><div style="font-size:.72rem;color:var(--faint)">${r.direccion||''}</div></td>
+      <td style="font-size:.82rem">${_ndSucName(r.sucursalId)}</td>
+      <td style="font-size:.82rem">${r.cobrador||'—'}</td>
+      <td class="n" style="color:${(r.monto_atraso||0)>0?'var(--red)':'var(--faint)'}">${fmt(r.monto_atraso||0)}</td>
+      <td class="n" style="font-size:.8rem">${r.ultima_fecha_pago||'—'}</td>
+      <td style="font-size:.82rem">${res}${g&&g.nota?'<div style="font-size:.72rem;color:var(--faint)">'+g.nota+'</div>':''}</td>
+      <td class="n">${ev}</td>
+      <td class="n">${est}</td>
+    </tr>`;
+  }).join('')||'<tr><td colspan="8" style="text-align:center;color:var(--faint);padding:16px">No hay clientes sin pago en la semana anterior. 🎉</td></tr>';
+}
+function _ndSucName(sid){ const r=(_ndData&&_ndData.rows||[]).find(x=>x.id===sid); return r?r.gerencia:('Suc '+sid); }
+async function ctValidar(id,val){
+  try{ await apiU('POST','/api/contactos/'+id+'/validar',{validado:val}); await cargarNumDiarios(); }
+  catch(e){ alert(e.message); }
+}
+async function ctVerEvidencia(id){
+  try{
+    const r=await apiU('GET','/api/contactos/'+id+'/evidencia');
+    const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;background:rgba(10,15,25,.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:18px';
+    ov.onclick=()=>ov.remove();
+    const img=r.evidencia?`<img src="${r.evidencia}" style="max-width:100%;max-height:70vh;border-radius:10px;display:block;margin:0 auto">`:'<div style="color:var(--faint);padding:30px;text-align:center">Sin imagen de evidencia</div>';
+    ov.innerHTML=`<div style="background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:16px;max-width:680px;width:100%" onclick="event.stopPropagation()">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b>Evidencia de visita</b><button class="btn" onclick="this.closest('div').parentNode.remove()">✕</button></div>
+      ${r.resultado?'<div style="margin-bottom:8px"><b>Resultado:</b> '+r.resultado+'</div>':''}
+      ${r.nota?'<div style="margin-bottom:8px;color:var(--dim)">'+r.nota+'</div>':''}
+      ${img}
+      <div style="font-size:.74rem;color:var(--faint);margin-top:8px">Subido por ${r.por||'—'}${r.validado?' · ✓ validado por '+(r.validadoPor||''):''}</div>
+    </div>`;
+    document.body.appendChild(ov);
+  }catch(e){ alert(e.message); }
+}
+
+/* ===== Ranking de cobradores (semana) ===== */
+let _rkData=null;
+async function cargarRanking(){
+  try{
+    const d=await apiU('GET','/api/dashboard?periodo=semana');
+    _rkData=(d.por_cobrador||[]).slice();
+    pintaRanking(_rkData);
+  }catch(e){ document.getElementById('rk-rows').innerHTML='<tr><td colspan="7" style="color:var(--red);padding:12px">'+e.message+'</td></tr>'; }
+}
+function _rkColors(rows, key){ // mejor (mayor valor) = verde; peor = rojo
+  const vals=rows.map(r=>({id:r.id, v:+(r[key]||0)})).sort((a,b)=>b.v-a.v);
+  const n=vals.length, m={};
+  vals.forEach((x,i)=>{ m[x.id] = x.v<=0 ? 'var(--faint)' : (i< n/3 ? 'var(--grn)' : (i< 2*n/3 ? '#caa23a' : 'var(--red)')); });
+  return m;
+}
+function _rkTot(r){ return r.clientes_vigentes!=null?r.clientes_vigentes:(r.clientes||0); }
+function pintaRanking(rows){
+  if(!rows.length){ document.getElementById('rk-rows').innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--faint);padding:16px">Sin cobradores con actividad.</td></tr>'; return; }
+  const keys=['unidades','pct_cob','clientes_vigentes','clientes_cobrados'];
+  const cm={}; keys.forEach(k=>cm[k]=_rkColors(rows,k));
+  const pos={}; keys.forEach(k=>{ rows.map(r=>({id:r.id,v:+(r[k]||0)})).sort((a,b)=>b.v-a.v).forEach((x,i)=>{ pos[x.id]=(pos[x.id]||0)+i; }); });
+  const ordered=rows.slice().sort((a,b)=>(pos[a.id]||0)-(pos[b.id]||0));
+  document.getElementById('rk-rows').innerHTML=ordered.map((r,idx)=>{
+    const medal= idx===0?'🥇':idx===1?'🥈':idx===2?'🥉':(idx+1);
+    const c=(k,txt)=>`<td class="n" style="color:${cm[k][r.id]};font-weight:700">${txt}</td>`;
+    return `<tr>
+      <td class="n" style="font-weight:700">${medal}</td>
+      <td><b>${r.nombre}</b></td><td style="font-size:.82rem;color:var(--dim)">${r.sucursal||'—'}</td>
+      ${c('unidades', r.unidades||0)}
+      ${c('pct_cob', (r.pct_cob||0)+'%')}
+      ${c('clientes_vigentes', _rkTot(r))}
+      ${c('clientes_cobrados', r.clientes_cobrados||0)}
+    </tr>`;
+  }).join('');
+}
+function rkExport(){
+  if(!_rkData||!_rkData.length) return;
+  const aoa=[['Cobrador','Sucursal','Unidades vendidas','% Cobranza vs débito','Total clientes','Clientes cobrados']];
+  _rkData.forEach(r=>aoa.push([r.nombre,r.sucursal||'',r.unidades||0,r.pct_cob||0,_rkTot(r),r.clientes_cobrados||0]));
+  xlsxDL('ranking_cobradores',[{name:'Ranking',aoa}]);
 }
 
 function xlsxDL(filename, sheets){
