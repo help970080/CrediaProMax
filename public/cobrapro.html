@@ -297,6 +297,23 @@
       <div style="font-size:.74rem;color:var(--faint);margin-top:8px;line-height:1.4">La <b style="color:var(--blu)">meta es el 100%</b> de la cartera activa (no se captura, no se modifica). % Clientes = Cts Acum ÷ Clientes 100% · % Coll = Coll Acum ÷ Débito 100%. <b style="color:var(--red)">No pago</b> = clientes con cobro esperado que NO abonaron (día y acumulado de la semana). No cuenta el primer pago/descuentos.</div>
     </div>
 
+    <!-- CIERRE DE SEMANA (admin valida que todos cerraron) -->
+    <div class="panel" style="margin-top:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <div>
+          <h2 style="margin:0">🔒 Cierre de semana</h2>
+          <div id="cs-adm-sem" style="color:var(--faint);font-size:.85rem;margin-top:2px"></div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <div id="cs-adm-resumen" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+          <button id="cs-adm-btn" class="btn gold" style="font-size:.85rem;font-weight:700" onclick="toggleCierreAdmin(this)">Validar y cerrar semana</button>
+        </div>
+      </div>
+      <div id="cs-adm-estado" style="font-size:.85rem;margin-top:10px"></div>
+      <div id="cs-adm-suc" style="display:flex;flex-direction:column;gap:6px;margin-top:10px"></div>
+      <div style="font-size:.74rem;color:var(--faint);margin-top:8px;line-height:1.4">Cuando cierres la semana, se generan de inmediato los <b>contactos</b> (no pagos) y reportes de esa semana, sin esperar a la medianoche. Cada cobrador y sucursal cierran lo suyo; tú validas y cierras.</div>
+    </div>
+
     <!-- CONTACTOS: no pagos de la semana anterior (avance + validación) -->
     <div class="panel" style="margin-top:16px">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
@@ -2290,6 +2307,7 @@ async function cargarNumDiarios(){
     _ndData=d;
     pintaNumDiarios(d);
     pintaContactosAdmin(d);
+    cargarCierreAdmin();
   }catch(e){ document.getElementById('nd-rows').innerHTML='<tr><td colspan="11" style="color:var(--red);padding:12px">'+e.message+'</td></tr>'; }
 }
 async function ndCambiarInicio(v){
@@ -2333,6 +2351,35 @@ function ndExport(){
   const objDebT=(_ndData.rows||[]).reduce((a,r)=>a+(r.debito_total||0),0);
   aoa.push(['TOTAL',objCliT,Math.round(objDebT),t.dia_clientes||0,t.dia_coll||0,t.dia_nopago||0,t.acum_clientes||0,t.acum_coll||0,t.acum_nopago||0,_ndPct(t.acum_clientes,objCliT),_ndPct(t.acum_coll,objDebT)]);
   xlsxDL('numeros_diarios_'+(_ndData.dia||''), [{name:'Numeros diarios',aoa}]);
+}
+
+/* ===== Cierre de semana (admin) ===== */
+let _csAdm=null;
+async function cargarCierreAdmin(){
+  try{
+    const d=await apiU('GET','/api/cierre-semana'); _csAdm=d;
+    const r=d.resumen||{totSuc:0,sucCerradas:0,totCob:0,cobCerrados:0};
+    try{ const s=new Date(d.semana+'T00:00:00'); document.getElementById('cs-adm-sem').textContent='Semana en curso: '+_ndFechaCorta(d.semana)+' al '+_ndFechaCorta(new Date(s.getTime()+6*86400000).toISOString().slice(0,10)); }catch(e){}
+    const pctS=r.totSuc?Math.round(r.sucCerradas/r.totSuc*100):0, pctC=r.totCob?Math.round(r.cobCerrados/r.totCob*100):0;
+    document.getElementById('cs-adm-resumen').innerHTML=_ctChip('Sucursales',r.sucCerradas+'/'+r.totSuc,_ctPctCol(pctS))+_ctChip('Cobradores',r.cobCerrados+'/'+r.totCob,_ctPctCol(pctC));
+    const est=document.getElementById('cs-adm-estado'), btn=document.getElementById('cs-adm-btn');
+    if(d.adminCerrada){ est.innerHTML='<span style="color:var(--grn);font-weight:700">✓ Semana cerrada por '+(d.adminPor||'admin')+'.</span> Los contactos y reportes de esta semana ya están disponibles.'; btn.textContent='Reabrir semana'; btn.classList.remove('gold'); }
+    else { const falt=(r.totSuc-r.sucCerradas); est.innerHTML= falt>0 ? '<span style="color:var(--acc)">Faltan '+falt+' de '+r.totSuc+' sucursales por cerrar.</span> Puedes cerrar de todas formas para generar contactos ya.' : '<span style="color:var(--grn)">Todas las sucursales ya cerraron.</span> Valida y cierra la semana.'; btn.textContent='Validar y cerrar semana'; btn.classList.add('gold'); }
+    document.getElementById('cs-adm-suc').innerHTML=(d.sucursales||[]).map(s=>{
+      const ok=s.cerrada, p=s.totalCob?Math.round(s.cobCerrados/s.totalCob*100):0;
+      return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--surf-2);border:1px solid var(--line);border-left:3px solid ${ok?'var(--grn)':_ctPctCol(p)};border-radius:8px;padding:7px 11px;font-size:.84rem">
+        <span><b>${s.nombre}</b> · cobradores ${s.cobCerrados}/${s.totalCob}</span>
+        <span style="color:${ok?'var(--grn)':'var(--faint)'};font-weight:600">${ok?'✓ cerrada'+(s.cerradaPor?' ('+s.cerradaPor+')':''):'pendiente'}</span>
+      </div>`;
+    }).join('');
+  }catch(e){ const est=document.getElementById('cs-adm-estado'); if(est) est.textContent=e.message; }
+}
+async function toggleCierreAdmin(btn){
+  const cerrar=!(_csAdm&&_csAdm.adminCerrada);
+  if(cerrar){ const r=_csAdm&&_csAdm.resumen; const falt=r?(r.totSuc-r.sucCerradas):0; if(falt>0 && !confirm('Faltan '+falt+' sucursal(es) por cerrar. ¿Cerrar la semana de todas formas?')) return; }
+  btn.disabled=true;
+  try{ await apiU('POST','/api/cierre-semana/'+(cerrar?'cerrar':'reabrir'),{}); await cargarNumDiarios(); }
+  catch(e){ alert(e.message); } finally{ btn.disabled=false; }
 }
 
 /* ===== Contactos (admin/supervisor): avance + validación ===== */
