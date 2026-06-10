@@ -1221,11 +1221,12 @@ app.post('/api/sales/:id/gestion', auth, idem, (req, res) => {
 /* ---------- Dashboard agregado ---------- */
 function _parseFechaMx(s){ if(!s) return 0; const [d,m,y]=s.split('/'); return new Date(+y,+m-1,+d).getTime(); }
 function _desdePeriodo(periodo){
-  const now=new Date();
-  if(periodo==='hoy') return new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
-  if(periodo==='mes') return new Date(now.getFullYear(),now.getMonth(),1).getTime();
-  // semana: usa el día de inicio configurable (ciclo de la agencia)
-  return _inicioCiclo(Date.now());
+  // Ancla en HOY (hora de México) para que coincida con Números diarios, no en UTC del servidor
+  const mx = new Date(fechaMxHoyISO()+'T00:00:00');
+  if(periodo==='hoy') return mx.getTime();
+  if(periodo==='mes') return new Date(mx.getFullYear(),mx.getMonth(),1).getTime();
+  // semana: mismo ciclo configurable que Números diarios
+  return _inicioCiclo(mx.getTime());
 }
 app.get('/api/dashboard', auth, (req,res)=>{
   const periodo=req.query.periodo||'semana';
