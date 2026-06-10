@@ -278,6 +278,17 @@
   </div>
 
   <div id="view-contactos" style="display:none">
+    <div class="panel" id="suc-cierre-panel" style="margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <div>
+          <h2 style="margin:0">🔒 Cierre de semana</h2>
+          <div id="suc-cierre-sem" style="color:var(--faint);font-size:.85rem;margin-top:2px"></div>
+        </div>
+        <button id="suc-cierre-btn" class="bd-b gold" style="width:auto;padding:9px 16px" onclick="toggleCierreSuc(this)">Cerrar semana de mi sucursal</button>
+      </div>
+      <div id="suc-cierre-estado" style="font-size:.85rem;margin-top:10px"></div>
+      <div id="suc-cierre-cobs" style="margin-top:8px"></div>
+    </div>
     <div class="panel">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
         <div>
@@ -952,7 +963,30 @@ function pintaResumen(d){
 let _ctData=null, _ctSemana='', _ctEvid={};
 const CT_RESULTADOS=['Pagó en la visita','Prometió pagar','Convenio de pago','No se encontraba','Se negó a pagar','Domicilio no localizado','Cliente ilocalizable','Otro'];
 function _ctChip(lbl,val,col){ return `<div style="background:var(--surf-2);border:1px solid var(--line);border-radius:9px;padding:6px 12px;text-align:center"><div style="font-size:.66rem;color:var(--faint)">${lbl}</div><div style="font-size:1.05rem;font-weight:700;color:${col||'var(--txt)'}">${val}</div></div>`; }
+/* ===== Cierre de semana (sucursal) ===== */
+let _cierreSuc=null;
+async function cargarCierreSuc(){
+  try{
+    const d=await api('GET','/api/cierre-semana'); _cierreSuc=d;
+    const mi=(d.sucursales||[])[0]||null;
+    try{ const s=new Date(d.semana+'T00:00:00'); document.getElementById('suc-cierre-sem').textContent='Semana del '+_sucFechaCorta(d.semana)+' al '+_sucFechaCorta(new Date(s.getTime()+6*86400000).toISOString().slice(0,10)); }catch(e){}
+    const est=document.getElementById('suc-cierre-estado'), btn=document.getElementById('suc-cierre-btn'), cobsEl=document.getElementById('suc-cierre-cobs');
+    if(!mi){ est.textContent='Sin cobradores en tu sucursal.'; cobsEl.innerHTML=''; return; }
+    const faltan=mi.totalCob-mi.cobCerrados;
+    if(mi.cerrada){ est.innerHTML='<span style="color:var(--grn);font-weight:600">✓ Tu sucursal ya cerró la semana'+(mi.cerradaPor?' ('+mi.cerradaPor+')':'')+'.</span>'+(d.adminCerrada?' El admin ya cerró la semana.':' Esperando validación del admin.'); btn.textContent='Reabrir sucursal'; btn.classList.remove('gold'); }
+    else { est.innerHTML= faltan>0 ? '<span style="color:var(--acc)">Faltan '+faltan+' de '+mi.totalCob+' cobradores por cerrar.</span> Puedes cerrar de todas formas.' : '<span style="color:var(--grn)">Todos tus cobradores ya cerraron.</span> Ya puedes cerrar tu sucursal.'; btn.textContent='Cerrar semana de mi sucursal'; btn.classList.add('gold'); }
+    cobsEl.innerHTML='<div style="display:flex;flex-wrap:wrap;gap:6px">'+(mi.cobradores||[]).map(c=>`<span style="font-size:.78rem;padding:4px 9px;border-radius:8px;border:1px solid var(--line);background:var(--surf-2);color:${c.cerrado?'var(--grn)':'var(--dim)'}">${c.cerrado?'✓':'○'} ${c.nombre}</span>`).join('')+'</div>';
+  }catch(e){ const est=document.getElementById('suc-cierre-estado'); if(est) est.textContent='No se pudo cargar el estado.'; }
+}
+async function toggleCierreSuc(btn){
+  const mi=_cierreSuc&&(_cierreSuc.sucursales||[])[0];
+  const cerrar=!(mi&&mi.cerrada);
+  btn.disabled=true;
+  try{ await api('POST','/api/cierre-semana/'+(cerrar?'cerrar':'reabrir'),{}); toast(cerrar?'✓ Sucursal cerrada':'Sucursal reabierta'); await cargarCierreSuc(); }
+  catch(e){ toast(e.message); } finally{ btn.disabled=false; }
+}
 async function cargarContactos(){
+  cargarCierreSuc();
   document.getElementById('ct-list').innerHTML='<div style="color:var(--faint);padding:12px">Cargando…</div>';
   try{
     const r=await api('GET','/api/contactos');
