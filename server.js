@@ -1371,8 +1371,10 @@ app.get('/api/reports/numeros-diarios', auth, rol('admin','supervisor'), (req,re
   const dEnd = dStart + 86400000;
   const inicioDia = (req.query.inicio!=null && req.query.inicio!=='') ? Math.min(6,Math.max(0,+req.query.inicio)) : _diaSemanaInicio();
   const wkStart = _inicioCiclo(dStart, inicioDia);
-  const wkEnd = dEnd; // acumulado de la semana hasta el fin del día elegido
-  const wkFin = wkStart + 7*86400000 - 1; // fin del ciclo completo (para mostrar "Termina")
+  const wkFinTs = wkStart + 7*86400000;            // fin (exclusivo) del ciclo completo
+  // Acumulado = toda la semana transcurrida hasta HOY (o la semana completa si es pasada). NO se corta por el día elegido.
+  const wkEnd = Math.min(Date.now(), wkFinTs);
+  const wkFin = wkFinTs - 1;                        // para mostrar "Termina"
   const activos = new Set(db.clients.filter(c=>c.activo!==false).map(c=>c.id));
   const sales = db.sales.filter(s=>activos.has(s.clientId) && s.entregado!==false);
   const sucursales = db.sucursales.filter(s=>s.activo!==false);
