@@ -262,9 +262,13 @@
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:6px">
         <div>
           <h2 style="margin:0">📅 Números diarios por gerencia</h2>
-          <div style="color:var(--faint);font-size:.85rem;margin-top:2px">La meta es el 100% de la cartera activa (clientes y débito). El avance se mide contra el acumulado de la semana (lunes a hoy).</div>
+          <div style="color:var(--faint);font-size:.85rem;margin-top:2px">La meta es el 100% de la cartera activa (clientes y débito). El avance se mide contra el acumulado de la semana, según el día de inicio que elijas arriba.</div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <label style="color:var(--faint);font-size:.85rem">Inicia semana</label>
+          <select id="nd-inicio" onchange="ndCambiarInicio(this.value)" style="background:var(--surf-2);border:1px solid var(--line);color:var(--txt);font-family:'Sora';padding:8px 10px;border-radius:8px">
+            <option value="0">Domingo</option><option value="1">Lunes</option><option value="2">Martes</option><option value="3">Miércoles</option><option value="4">Jueves</option><option value="5">Viernes</option><option value="6">Sábado</option>
+          </select>
           <label style="color:var(--faint);font-size:.85rem">Día</label>
           <input type="date" id="nd-dia" onchange="cargarNumDiarios()" style="background:var(--surf-2);border:1px solid var(--line);color:var(--txt);font-family:'Sora';padding:8px 10px;border-radius:8px">
           <button onclick="ndExport()" class="btn" style="font-size:.82rem">⬇️ Excel</button>
@@ -410,13 +414,13 @@
             <th class="n">#</th><th>Cobrador</th><th>Sucursal</th>
             <th class="n">Unidades vendidas</th>
             <th class="n">% Cobranza vs débito</th>
-            <th class="n">Total clientes</th>
+            <th class="n">Crecimiento clientes</th>
             <th class="n">Clientes cobrados</th>
           </tr></thead>
           <tbody id="rk-rows"></tbody>
         </table>
       </div>
-      <div style="font-size:.74rem;color:var(--faint);margin-top:8px;line-height:1.4"><b>Unidades vendidas</b> = créditos nuevos en su ruta esta semana · <b>% Cobranza vs débito</b> = cobrado ÷ débito esperado · <b>Total clientes</b> = cartera activa · <b>Clientes cobrados</b> = a cuántos de su cartera les cobró esta semana.</div>
+      <div style="font-size:.74rem;color:var(--faint);margin-top:8px;line-height:1.4">Se ordena por <b>mejora real</b> (no por tamaño de cartera): quien no vende ni cobra cae al fondo. <b>Unidades</b> = créditos nuevos esta semana · <b>% Cobranza vs débito</b> = cobrado ÷ débito esperado · <b style="color:var(--grn)">Crecimiento</b> = clientes ganados − perdidos esta semana (perder clientes resta) · <b>Clientes cobrados</b> = a cuántos de su cartera les cobró.</div>
     </div>
   </section>
 
@@ -2273,23 +2277,32 @@ async function resetTarifas(){
 // f-suc se llena con sucursales reales al abrir Cartera (ver cargarCartera)
 
 /* ===== Números diarios ===== */
-let _ndData=null, _ndObj={};
+let _ndData=null, _ndObj={}, _ndInicio=null;
 async function cargarNumDiarios(){
   const di=document.getElementById('nd-dia'); if(di && !di.value){ di.value=new Date().toISOString().slice(0,10); }
   const dia=di?di.value:'';
+  // primer carga: lee el día de inicio configurado y posiciona el selector
+  if(_ndInicio===null){ try{ const cf=await apiU('GET','/api/config/semana'); _ndInicio=cf.semanaInicio; }catch(e){ _ndInicio=4; }
+    const sel=document.getElementById('nd-inicio'); if(sel) sel.value=String(_ndInicio); }
   try{
-    const d=await apiU('GET','/api/reports/numeros-diarios'+(dia?('?dia='+dia):''));
+    const qs=(dia?('?dia='+dia):'?_=1')+(_ndInicio!=null?('&inicio='+_ndInicio):'');
+    const d=await apiU('GET','/api/reports/numeros-diarios'+qs);
     _ndData=d;
     pintaNumDiarios(d);
     pintaContactosAdmin(d);
   }catch(e){ document.getElementById('nd-rows').innerHTML='<tr><td colspan="11" style="color:var(--red);padding:12px">'+e.message+'</td></tr>'; }
 }
+async function ndCambiarInicio(v){
+  _ndInicio=+v;
+  try{ await apiU('PATCH','/api/config',{ semanaInicio:_ndInicio }); }catch(e){}
+  cargarNumDiarios();
+}
+function _ndFechaCorta(iso){ if(!iso) return ''; const [y,m,d]=iso.split('-').map(Number); const dd=new Date(y,m-1,d); const dias=['domingo','lunes','martes','miércoles','jueves','viernes','sábado']; const mes=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']; return dias[dd.getDay()]+' '+String(d).padStart(2,'0')+'-'+mes[m-1]; }
 function _ndPct(num,den){ return den>0?Math.round(num/den*100):0; }
 function _ndPctCol(p){ return p>=100?'var(--grn)':p>=70?'var(--acc)':p>=40?'#caa23a':'var(--red)'; }
 function pintaNumDiarios(d){
   try{
-    const sem=new Date(d.semanaDesde);
-    document.getElementById('nd-sem').textContent='Semana desde '+sem.toLocaleDateString('es-MX',{day:'2-digit',month:'short'})+' · día: '+new Date(d.dia+'T00:00:00').toLocaleDateString('es-MX',{weekday:'long',day:'2-digit',month:'short'});
+    document.getElementById('nd-sem').textContent='Semana: inicia '+_ndFechaCorta(d.semanaDesdeISO)+' · termina '+_ndFechaCorta(d.semanaHastaISO)+' · día consultado: '+_ndFechaCorta(d.dia);
   }catch(e){}
   const rows=(d.rows||[]).slice().sort((a,b)=>(b.acum_coll||0)-(a.acum_coll||0));
   document.getElementById('nd-rows').innerHTML=rows.map(r=>{
@@ -2403,29 +2416,35 @@ function _rkColors(rows, key){ // mejor (mayor valor) = verde; peor = rojo
   return m;
 }
 function _rkTot(r){ return r.clientes_vigentes!=null?r.clientes_vigentes:(r.clientes||0); }
+function _rkCrec(r){ return r.crecimiento!=null?r.crecimiento:((r.unidades||0)-(r.bajas||0)); }
 function pintaRanking(rows){
   if(!rows.length){ document.getElementById('rk-rows').innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--faint);padding:16px">Sin cobradores con actividad.</td></tr>'; return; }
-  const keys=['unidades','pct_cob','clientes_vigentes','clientes_cobrados'];
-  const cm={}; keys.forEach(k=>cm[k]=_rkColors(rows,k));
-  const pos={}; keys.forEach(k=>{ rows.map(r=>({id:r.id,v:+(r[k]||0)})).sort((a,b)=>b.v-a.v).forEach((x,i)=>{ pos[x.id]=(pos[x.id]||0)+i; }); });
-  const ordered=rows.slice().sort((a,b)=>(pos[a.id]||0)-(pos[b.id]||0));
+  // Semáforo por columna (mejor→peor) para los 3 indicadores "más es mejor"
+  const cm={}; ['unidades','pct_cob','clientes_cobrados'].forEach(k=>cm[k]=_rkColors(rows,k));
+  // Score de MEJORA REAL: suma de indicadores normalizados. Crecimiento puede ser negativo (perder clientes resta).
+  const mx=k=>Math.max(1,...rows.map(r=>Math.abs(+(r[k]||0))));
+  const mu=mx('unidades'), mp=mx('pct_cob'), mco=mx('clientes_cobrados'); const mg=Math.max(1,...rows.map(r=>Math.abs(_rkCrec(r))));
+  rows.forEach(r=>{ r._score=(+(r.unidades||0)/mu)+(+(r.pct_cob||0)/mp)+(+(r.clientes_cobrados||0)/mco)+(_rkCrec(r)/mg); });
+  const ordered=rows.slice().sort((a,b)=>b._score-a._score);
   document.getElementById('rk-rows').innerHTML=ordered.map((r,idx)=>{
     const medal= idx===0?'🥇':idx===1?'🥈':idx===2?'🥉':(idx+1);
     const c=(k,txt)=>`<td class="n" style="color:${cm[k][r.id]};font-weight:700">${txt}</td>`;
+    const cre=_rkCrec(r); const creCol= cre>0?'var(--grn)':cre<0?'var(--red)':'var(--faint)'; const creTxt= (cre>0?'+':'')+cre;
     return `<tr>
       <td class="n" style="font-weight:700">${medal}</td>
-      <td><b>${r.nombre}</b></td><td style="font-size:.82rem;color:var(--dim)">${r.sucursal||'—'}</td>
+      <td><b>${r.nombre}</b><div style="font-size:.7rem;color:var(--faint)">${_rkTot(r)} en cartera</div></td>
+      <td style="font-size:.82rem;color:var(--dim)">${r.sucursal||'—'}</td>
       ${c('unidades', r.unidades||0)}
       ${c('pct_cob', (r.pct_cob||0)+'%')}
-      ${c('clientes_vigentes', _rkTot(r))}
+      <td class="n" style="color:${creCol};font-weight:700">${creTxt}</td>
       ${c('clientes_cobrados', r.clientes_cobrados||0)}
     </tr>`;
   }).join('');
 }
 function rkExport(){
   if(!_rkData||!_rkData.length) return;
-  const aoa=[['Cobrador','Sucursal','Unidades vendidas','% Cobranza vs débito','Total clientes','Clientes cobrados']];
-  _rkData.forEach(r=>aoa.push([r.nombre,r.sucursal||'',r.unidades||0,r.pct_cob||0,_rkTot(r),r.clientes_cobrados||0]));
+  const aoa=[['Cobrador','Sucursal','Unidades vendidas','% Cobranza vs débito','Crecimiento clientes','Clientes cobrados','En cartera']];
+  _rkData.slice().sort((a,b)=>(b._score||0)-(a._score||0)).forEach(r=>aoa.push([r.nombre,r.sucursal||'',r.unidades||0,r.pct_cob||0,_rkCrec(r),r.clientes_cobrados||0,_rkTot(r)]));
   xlsxDL('ranking_cobradores',[{name:'Ranking',aoa}]);
 }
 
