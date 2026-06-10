@@ -178,6 +178,12 @@
 
     <section class="view" id="resumen">
       <div class="big-cut"><div class="l">Efectivo en mano (acumulado)</div><div class="v" id="cut-ef">$0</div></div>
+      <div class="res-card" id="cierre-card">
+        <h3>🔒 Cierre de semana</h3>
+        <div id="cierre-estado" style="font-size:.85rem;color:var(--dim);margin-bottom:10px">Cargando…</div>
+        <button class="corte" id="cierre-btn" style="width:100%;justify-content:center" onclick="toggleCierreCob(this)">Cerrar mi semana</button>
+        <div style="font-size:.74rem;color:var(--faint);margin-top:8px;line-height:1.4">Cierra cuando termines de cobrar esta semana. Así tu sucursal sabe que ya terminaste y el admin puede cerrar la semana.</div>
+      </div>
       <div class="res-card"><h3>Resumen de hoy</h3>
         <div class="res-row"><span>Cobros registrados</span><span class="v" id="r-ncob">0</span></div>
         <div class="res-row"><span>Total cobrado hoy</span><span class="v g" id="r-tot" style="color:var(--grn)">$0</span></div>
@@ -573,8 +579,31 @@ document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
   t.classList.add('on');document.getElementById(t.dataset.v).classList.add('on');
+  if(t.dataset.v==='resumen') cargarCierreCob();
 });
-cargarRuta(); flush(); checkMiCorte(); cargarJC();
+/* ===== Cierre de semana (cobrador) ===== */
+let _cierreCob=null;
+async function cargarCierreCob(){
+  const est=document.getElementById('cierre-estado'), btn=document.getElementById('cierre-btn');
+  if(!est||!btn) return;
+  try{
+    const d=await api('GET','/api/cierre-semana'); _cierreCob=d;
+    if(d.miCerrado){
+      est.innerHTML='<span style="color:var(--grn);font-weight:600">✓ Ya cerraste tu semana.</span>'+(d.adminCerrada?' El admin ya cerró la semana.':' Esperando a que cierren tu sucursal y el admin.');
+      btn.textContent='Reabrir mi semana'; btn.style.background='var(--surf-3)';
+    } else {
+      est.innerHTML= d.adminCerrada ? '<span style="color:var(--grn)">El admin ya cerró esta semana.</span>' : 'Aún no cierras tu semana de cobranza.';
+      btn.textContent='Cerrar mi semana'; btn.style.background='';
+    }
+  }catch(e){ est.textContent='No se pudo cargar el estado.'; }
+}
+async function toggleCierreCob(btn){
+  const cerrar=!(_cierreCob&&_cierreCob.miCerrado);
+  btn.disabled=true;
+  try{ await api('POST','/api/cierre-semana/'+(cerrar?'cerrar':'reabrir'),{}); toast(cerrar?'✓ Cerraste tu semana':'Semana reabierta'); await cargarCierreCob(); }
+  catch(e){ toast(e.message); } finally{ btn.disabled=false; }
+}
+cargarRuta(); flush(); checkMiCorte(); cargarJC(); cargarCierreCob();
 // Ping de ubicación para el rastreo del admin/supervisor (mientras la app está abierta)
 function _pingUbic(){ if(!navigator.geolocation) return; navigator.geolocation.getCurrentPosition(function(p){ try{ api('POST','/api/ubicacion/ping',{lat:p.coords.latitude,lng:p.coords.longitude}); }catch(e){} }, function(){}, {enableHighAccuracy:false,timeout:8000,maximumAge:120000}); }
 _pingUbic(); setInterval(_pingUbic, 180000);
