@@ -412,15 +412,15 @@
         <table id="rk-tbl">
           <thead><tr>
             <th class="n">#</th><th>Cobrador</th><th>Sucursal</th>
-            <th class="n">Unidades vendidas</th>
+            <th class="n">Ventas semana</th>
             <th class="n">% Cobranza vs débito</th>
             <th class="n">Crecimiento clientes</th>
-            <th class="n">Clientes cobrados</th>
+            <th class="n">Clientes sin pago</th>
           </tr></thead>
           <tbody id="rk-rows"></tbody>
         </table>
       </div>
-      <div style="font-size:.74rem;color:var(--faint);margin-top:8px;line-height:1.4">Se ordena por <b>mejora real</b> (no por tamaño de cartera): quien no vende ni cobra cae al fondo. <b>Unidades</b> = créditos nuevos esta semana · <b>% Cobranza vs débito</b> = cobrado ÷ débito esperado · <b style="color:var(--grn)">Crecimiento</b> = clientes ganados − perdidos esta semana (perder clientes resta) · <b>Clientes cobrados</b> = a cuántos de su cartera les cobró.</div>
+      <div style="font-size:.74rem;color:var(--faint);margin-top:8px;line-height:1.4">Se ordena por <b>mejora real</b> (no por tamaño de cartera): vender, cobrar y crecer suman; tener clientes sin pago resta. Cada columna se pinta con semáforo por valor (verde = mejor). <b>Crecimiento</b> = clientes ganados − perdidos · <b>Clientes sin pago</b> = con cobro esperado que no abonaron (menos es mejor). Usa la semana configurada en Números diarios.</div>
     </div>
   </section>
 
@@ -2409,42 +2409,46 @@ async function cargarRanking(){
     pintaRanking(_rkData);
   }catch(e){ document.getElementById('rk-rows').innerHTML='<tr><td colspan="7" style="color:var(--red);padding:12px">'+e.message+'</td></tr>'; }
 }
-function _rkColors(rows, key){ // mejor (mayor valor) = verde; peor = rojo
-  const vals=rows.map(r=>({id:r.id, v:+(r[key]||0)})).sort((a,b)=>b.v-a.v);
-  const n=vals.length, m={};
-  vals.forEach((x,i)=>{ m[x.id] = x.v<=0 ? 'var(--faint)' : (i< n/3 ? 'var(--grn)' : (i< 2*n/3 ? '#caa23a' : 'var(--red)')); });
-  return m;
-}
 function _rkTot(r){ return r.clientes_vigentes!=null?r.clientes_vigentes:(r.clientes||0); }
 function _rkCrec(r){ return r.crecimiento!=null?r.crecimiento:((r.unidades||0)-(r.bajas||0)); }
+// Color por VALOR (no por posición): mejor=verde(120) … peor=rojo(0). asc=true cuando "menos es mejor".
+function _rkRange(rows, val){ let mn=Infinity,mx=-Infinity; rows.forEach(r=>{const v=val(r); if(v<mn)mn=v; if(v>mx)mx=v;}); return {mn,mx}; }
+function _rkCell(v, rng, asc){
+  if(rng.mx<=rng.mn) return 'color:var(--faint)'; // todos iguales → neutro
+  let p=(v-rng.mn)/(rng.mx-rng.mn); if(asc) p=1-p;
+  const h=Math.round(120*p);
+  return `background:hsla(${h},70%,45%,.16);color:hsl(${h},75%,62%);font-weight:700;border-radius:6px`;
+}
 function pintaRanking(rows){
   if(!rows.length){ document.getElementById('rk-rows').innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--faint);padding:16px">Sin cobradores con actividad.</td></tr>'; return; }
-  // Semáforo por columna (mejor→peor) para los 3 indicadores "más es mejor"
-  const cm={}; ['unidades','pct_cob','clientes_cobrados'].forEach(k=>cm[k]=_rkColors(rows,k));
-  // Score de MEJORA REAL: suma de indicadores normalizados. Crecimiento puede ser negativo (perder clientes resta).
+  // Rangos por indicador
+  const rU=_rkRange(rows,r=>+(r.unidades||0));
+  const rP=_rkRange(rows,r=>+(r.pct_cob||0));
+  const rC=_rkRange(rows,_rkCrec);
+  const rS=_rkRange(rows,r=>+(r.nopago||0));
+  // Score de MEJORA REAL: vende + cobra + crece − clientes sin pago (todo normalizado)
   const mx=k=>Math.max(1,...rows.map(r=>Math.abs(+(r[k]||0))));
-  const mu=mx('unidades'), mp=mx('pct_cob'), mco=mx('clientes_cobrados'); const mg=Math.max(1,...rows.map(r=>Math.abs(_rkCrec(r))));
-  rows.forEach(r=>{ r._score=(+(r.unidades||0)/mu)+(+(r.pct_cob||0)/mp)+(+(r.clientes_cobrados||0)/mco)+(_rkCrec(r)/mg); });
+  const mu=mx('unidades'),mp=mx('pct_cob'),ms=mx('nopago'); const mg=Math.max(1,...rows.map(r=>Math.abs(_rkCrec(r))));
+  rows.forEach(r=>{ r._score=(+(r.unidades||0)/mu)+(+(r.pct_cob||0)/mp)+(_rkCrec(r)/mg)-(+(r.nopago||0)/ms); });
   const ordered=rows.slice().sort((a,b)=>b._score-a._score);
   document.getElementById('rk-rows').innerHTML=ordered.map((r,idx)=>{
     const medal= idx===0?'🥇':idx===1?'🥈':idx===2?'🥉':(idx+1);
-    const c=(k,txt)=>`<td class="n" style="color:${cm[k][r.id]};font-weight:700">${txt}</td>`;
-    const cre=_rkCrec(r); const creCol= cre>0?'var(--grn)':cre<0?'var(--red)':'var(--faint)'; const creTxt= (cre>0?'+':'')+cre;
+    const cre=_rkCrec(r); const creTxt=(cre>0?'+':'')+cre;
     return `<tr>
       <td class="n" style="font-weight:700">${medal}</td>
       <td><b>${r.nombre}</b><div style="font-size:.7rem;color:var(--faint)">${_rkTot(r)} en cartera</div></td>
       <td style="font-size:.82rem;color:var(--dim)">${r.sucursal||'—'}</td>
-      ${c('unidades', r.unidades||0)}
-      ${c('pct_cob', (r.pct_cob||0)+'%')}
-      <td class="n" style="color:${creCol};font-weight:700">${creTxt}</td>
-      ${c('clientes_cobrados', r.clientes_cobrados||0)}
+      <td class="n" style="${_rkCell(+(r.unidades||0),rU,false)}">${r.unidades||0}</td>
+      <td class="n" style="${_rkCell(+(r.pct_cob||0),rP,false)}">${r.pct_cob||0}%</td>
+      <td class="n" style="${_rkCell(cre,rC,false)}">${creTxt}</td>
+      <td class="n" style="${_rkCell(+(r.nopago||0),rS,true)}">${r.nopago||0}</td>
     </tr>`;
   }).join('');
 }
 function rkExport(){
   if(!_rkData||!_rkData.length) return;
-  const aoa=[['Cobrador','Sucursal','Unidades vendidas','% Cobranza vs débito','Crecimiento clientes','Clientes cobrados','En cartera']];
-  _rkData.slice().sort((a,b)=>(b._score||0)-(a._score||0)).forEach(r=>aoa.push([r.nombre,r.sucursal||'',r.unidades||0,r.pct_cob||0,_rkCrec(r),r.clientes_cobrados||0,_rkTot(r)]));
+  const aoa=[['Cobrador','Sucursal','Ventas semana','% Cobranza vs débito','Crecimiento clientes','Clientes sin pago','En cartera']];
+  _rkData.slice().sort((a,b)=>(b._score||0)-(a._score||0)).forEach(r=>aoa.push([r.nombre,r.sucursal||'',r.unidades||0,r.pct_cob||0,_rkCrec(r),r.nopago||0,_rkTot(r)]));
   xlsxDL('ranking_cobradores',[{name:'Ranking',aoa}]);
 }
 
