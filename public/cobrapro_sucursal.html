@@ -163,6 +163,7 @@
     <button class="snb" data-vw="op" onclick="setVw('op')" style="background:var(--acc);color:#1b2330;border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">🧾 Operación</button>
     <button class="snb" data-vw="resumen" onclick="setVw('resumen')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">📊 Resumen</button>
     <button class="snb" data-vw="cartera" onclick="setVw('cartera')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">📁 Cartera de crédito</button>
+    <button class="snb" data-vw="contactos" onclick="setVw('contactos')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">📇 Contactos</button>
   </div>
   <div id="view-op">
   <div class="grid">
@@ -250,13 +251,12 @@
           <button class="perb" data-p="hoy" onclick="setPeriodoSuc('hoy')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:7px 13px;border-radius:8px;font-family:'Sora';font-weight:600;cursor:pointer">Hoy</button>
           <button class="perb" data-p="semana" onclick="setPeriodoSuc('semana')" style="background:var(--acc);color:#1b2330;border:1px solid var(--line);padding:7px 13px;border-radius:8px;font-family:'Sora';font-weight:600;cursor:pointer">Semana</button>
           <button class="perb" data-p="mes" onclick="setPeriodoSuc('mes')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:7px 13px;border-radius:8px;font-family:'Sora';font-weight:600;cursor:pointer">Mes</button>
-          <button onclick="sucGuardarObjetivos(this)" style="background:var(--vio);color:#fff;border:none;padding:7px 13px;border-radius:8px;font-family:'Sora';font-weight:700;cursor:pointer">💾 Guardar objetivos</button>
         </div>
       </div>
       <div class="kpis" id="res-kpis" style="margin-top:14px"></div>
       <div class="sect-lbl">Desempeño y objetivos por cobrador</div>
-      <div style="overflow-x:auto"><table><thead><tr><th>Cobrador</th><th class="n">Clientes</th><th class="n">Cartera</th><th class="n">Vencida</th><th class="n" style="color:var(--red)">Sin pago</th><th class="n">Cobrado</th><th class="n">Por entregar</th><th class="n" style="color:var(--vio)">Obj. clientes</th><th class="n" style="color:var(--vio)">Obj. cobranza</th><th class="n">% Clientes</th><th class="n">% Cobranza</th></tr></thead><tbody id="res-cob"></tbody></table></div>
-      <div style="font-size:.74rem;color:var(--faint);margin-top:8px;line-height:1.4">Escribe los objetivos en las celdas moradas y pulsa <b>Guardar objetivos</b>. % Clientes = clientes que pagaron ÷ objetivo de clientes · % Cobranza = cobrado ÷ objetivo de cobranza. Cobrado no cuenta primer pago/descuentos.</div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Cobrador</th><th class="n">Clientes</th><th class="n">Cartera</th><th class="n">Vencida</th><th class="n" style="color:var(--red)">Sin pago</th><th class="n">Cobrado</th><th class="n">Por entregar</th><th class="n" style="color:var(--vio)">Meta clientes (100%)</th><th class="n" style="color:var(--vio)">Meta cobranza (100%)</th><th class="n">% Clientes</th><th class="n">% Cobranza</th></tr></thead><tbody id="res-cob"></tbody></table></div>
+      <div style="font-size:.74rem;color:var(--faint);margin-top:8px;line-height:1.4">La <b style="color:var(--vio)">meta es el 100%</b> de la cartera del cobrador (no se captura, no se modifica). % Clientes = clientes cobrados ÷ clientes en cartera · % Cobranza = cobrado ÷ débito esperado. <b style="color:var(--red)">Sin pago</b> = clientes con cobro esperado que no abonaron. Cobrado no cuenta primer pago/descuentos.</div>
     </div>
   </div>
 
@@ -273,6 +273,25 @@
       </div>
       <div style="color:var(--dim);font-size:.85rem;margin:4px 0 10px" id="cs-count"></div>
       <div style="overflow-x:auto"><table><thead><tr><th>Cliente</th><th>Cobrador</th><th>Modalidad</th><th class="n">Cuota</th><th class="n">Saldo</th></tr></thead><tbody id="cs-rows"></tbody></table></div>
+    </div>
+  </div>
+
+  <div id="view-contactos" style="display:none">
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <div>
+          <h2 style="margin:0">📇 Contactos · no pagaron la semana anterior</h2>
+          <div id="ct-sem" style="color:var(--faint);font-size:.85rem;margin-top:2px"></div>
+        </div>
+        <div id="ct-resumen" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+      </div>
+      <div class="frow" style="margin-top:12px">
+        <div class="field"><label>Buscar</label><input id="ct-q" placeholder="Cliente, dirección o cobrador…" oninput="pintaContactos()"></div>
+        <div class="field"><label>Estado</label><select id="ct-filtro" onchange="pintaContactos()"><option value="">Todos</option><option value="pend">Pendientes</option><option value="ges">Gestionados</option><option value="val">Validados</option></select></div>
+      </div>
+      <div id="ct-count" style="color:var(--dim);font-size:.85rem;margin:4px 0 10px"></div>
+      <div id="ct-list"></div>
+      <div style="font-size:.74rem;color:var(--faint);margin-top:10px;line-height:1.4">Visita a cada cliente que no pagó la semana pasada, anota el <b>resultado</b> y sube una <b>foto de evidencia</b>. El admin y el supervisor revisan y validan tu trabajo, y ven el avance en Números diarios.</div>
     </div>
   </div>
 </div>
@@ -870,8 +889,10 @@ function setVw(vw){
   document.getElementById('view-op').style.display=vw==='op'?'':'none';
   document.getElementById('view-resumen').style.display=vw==='resumen'?'':'none';
   document.getElementById('view-cartera').style.display=vw==='cartera'?'':'none';
+  document.getElementById('view-contactos').style.display=vw==='contactos'?'':'none';
   if(vw==='resumen') cargarResumen();
   if(vw==='cartera') cargarCartSuc();
+  if(vw==='contactos') cargarContactos();
 }
 let _periodoSuc='semana', _dashSuc=null, _cobObj={};
 function setPeriodoSuc(p){
@@ -881,8 +902,8 @@ function setPeriodoSuc(p){
 }
 async function cargarResumen(){
   try{
-    const [d,obj]=await Promise.all([ api('GET','/api/dashboard?periodo='+_periodoSuc), api('GET','/api/objetivos') ]);
-    _dashSuc=d; _cobObj=(obj&&obj.cob)||{}; pintaResumen(d);
+    const d=await api('GET','/api/dashboard?periodo='+_periodoSuc);
+    _dashSuc=d; pintaResumen(d);
   }
   catch(e){ document.getElementById('res-kpis').innerHTML='<div style="color:var(--red);padding:10px">'+e.message+'</div>'; }
 }
@@ -903,41 +924,113 @@ function pintaResumen(d){
     ['v','Efectivo por entregar',fmt(porEntregar),'en ruta de cobradores'],
   ].map(k=>`<div class="kpi ${k[0]}"><div class="l">${k[1]}</div><div class="v">${k[2]}</div><div class="s">${k[3]}</div></div>`).join('');
   document.getElementById('res-cob').innerHTML=cob.map(c=>{
-    const o=_cobObj[c.nombre]||{};
-    const objCli=o.clientes||0, objCob=o.cobranza||0;
-    const pagaron=c.npagos||0;
-    const pc=objCli>0?Math.min(999,Math.round(pagaron/objCli*100)):0;
-    const pcob=objCob>0?Math.min(999,Math.round((c.comisionable||0)/objCob*100)):0;
-    const colC=objCli>0?(pc>=100?'var(--grn)':pc>=70?'var(--acc)':'var(--red)'):'var(--faint)';
-    const colB=objCob>0?(pcob>=100?'var(--grn)':pcob>=70?'var(--acc)':'var(--red)'):'var(--faint)';
-    const inS="width:74px;text-align:right;background:rgba(124,92,224,.10);border:1px solid var(--line);color:var(--txt);font-family:'Sora';padding:5px 7px;border-radius:6px";
+    const metaCli=c.clientes_vigentes!=null?c.clientes_vigentes:(c.clientes||0);
+    const metaCob=c.debito||0;
+    const cobrados=c.clientes_cobrados!=null?c.clientes_cobrados:(c.npagos||0);
+    const pc=metaCli>0?Math.min(999,Math.round(cobrados/metaCli*100)):0;
+    const pcob=metaCob>0?Math.min(999,Math.round((c.comisionable||0)/metaCob*100)):0;
+    const colC=metaCli>0?(pc>=100?'var(--grn)':pc>=70?'var(--acc)':'var(--red)'):'var(--faint)';
+    const colB=metaCob>0?(pcob>=100?'var(--grn)':pcob>=70?'var(--acc)':'var(--red)'):'var(--faint)';
     return `<tr data-cob="${(c.nombre||'').replace(/"/g,'&quot;')}">
       <td>${c.nombre}</td><td class="n">${c.clientes||0}</td><td class="n">${fmt(c.cartera||0)}</td>
       <td class="n" style="color:${c.atraso_monto>0?'var(--red)':'var(--faint)'}">${fmt(c.atraso_monto||0)}</td>
       <td class="n" style="color:${(c.nopago||0)>0?'var(--red)':'var(--faint)'};font-weight:600">${c.nopago||0}</td>
       <td class="n"><b>${fmt(c.comisionable||0)}</b></td><td class="n">${fmt(c.por_entregar||0)}</td>
-      <td class="n"><input type="number" min="0" class="so-cli" value="${objCli||''}" style="${inS}"></td>
-      <td class="n"><input type="number" min="0" step="100" class="so-cob" value="${objCob||''}" style="${inS}"></td>
-      <td class="n" style="color:${colC};font-weight:700">${objCli>0?pc+'%':'—'}</td>
-      <td class="n" style="color:${colB};font-weight:700">${objCob>0?pcob+'%':'—'}</td>
+      <td class="n" style="color:var(--vio);font-weight:600">${metaCli}</td>
+      <td class="n" style="color:var(--vio);font-weight:600">${fmt(metaCob)}</td>
+      <td class="n" style="color:${colC};font-weight:700">${metaCli>0?pc+'%':'—'}</td>
+      <td class="n" style="color:${colB};font-weight:700">${metaCob>0?pcob+'%':'—'}</td>
     </tr>`;
   }).join('')||'<tr><td colspan="11" style="text-align:center;color:var(--faint);padding:16px">Sin cobradores en esta sucursal.</td></tr>';
 }
-async function sucGuardarObjetivos(btn){
-  const trs=[...document.querySelectorAll('#res-cob tr[data-cob]')];
-  if(!trs.length) return;
+
+/* ===== Contactos (sucursal): no pagaron la semana anterior · gestión + evidencia ===== */
+let _ctData=null, _ctSemana='', _ctEvid={};
+const CT_RESULTADOS=['Pagó en la visita','Prometió pagar','Convenio de pago','No se encontraba','Se negó a pagar','Domicilio no localizado','Cliente ilocalizable','Otro'];
+function _ctChip(lbl,val,col){ return `<div style="background:var(--surf-2);border:1px solid var(--line);border-radius:9px;padding:6px 12px;text-align:center"><div style="font-size:.66rem;color:var(--faint)">${lbl}</div><div style="font-size:1.05rem;font-weight:700;color:${col||'var(--txt)'}">${val}</div></div>`; }
+async function cargarContactos(){
+  document.getElementById('ct-list').innerHTML='<div style="color:var(--faint);padding:12px">Cargando…</div>';
+  try{
+    const r=await api('GET','/api/contactos');
+    _ctData=r; _ctSemana=r.semana||''; _ctEvid={};
+    try{ const s=new Date(_ctSemana+'T00:00:00'); document.getElementById('ct-sem').textContent='Semana del '+s.toLocaleDateString('es-MX',{day:'2-digit',month:'short'})+' al '+new Date(s.getTime()+6*86400000).toLocaleDateString('es-MX',{day:'2-digit',month:'short'}); }catch(e){}
+    const t=r.resumen||{total:0,gestionados:0,validados:0};
+    document.getElementById('ct-resumen').innerHTML=_ctChip('No pagaron',t.total)+_ctChip('Gestionados',t.gestionados,'var(--acc)')+_ctChip('Validados',t.validados,'var(--grn)');
+    pintaContactos();
+  }catch(e){ document.getElementById('ct-list').innerHTML='<div style="color:var(--red);padding:12px">'+e.message+'</div>'; }
+}
+function pintaContactos(){
+  if(!_ctData) return;
+  const q=(document.getElementById('ct-q').value||'').toLowerCase();
+  const f=document.getElementById('ct-filtro').value;
+  let rows=(_ctData.rows||[]).slice().sort((a,b)=>(b.monto_atraso||0)-(a.monto_atraso||0));
+  rows=rows.filter(r=>{
+    if(q){ const hay=((r.nombre||'')+' '+(r.direccion||'')+' '+(r.cobrador||'')).toLowerCase(); if(!hay.includes(q)) return false; }
+    const g=r.gestion; const gestionado=!!(g&&(g.resultado||g.tieneEvidencia));
+    if(f==='pend' && gestionado) return false;
+    if(f==='ges' && !gestionado) return false;
+    if(f==='val' && !(g&&g.validado)) return false;
+    return true;
+  });
+  document.getElementById('ct-count').textContent=rows.length+' cliente(s)';
+  document.getElementById('ct-list').innerHTML=rows.map(r=>{
+    const g=r.gestion||{};
+    const opts='<option value="">— elige —</option>'+CT_RESULTADOS.map(o=>`<option ${g.resultado===o?'selected':''}>${o}</option>`).join('');
+    let estado;
+    if(g.validado) estado='<span style="color:var(--grn);font-weight:700">✓ Validado'+(g.validadoPor?' · '+g.validadoPor:'')+'</span>';
+    else if(g.resultado||g.tieneEvidencia) estado='<span style="color:var(--acc);font-weight:700">⏳ Gestionado · pendiente de validar</span>';
+    else estado='<span style="color:var(--faint)">Sin gestionar</span>';
+    const evBadge=g.tieneEvidencia?'<span style="color:var(--grn);font-size:.76rem">✓ evidencia subida</span>':'';
+    return `<div class="bd-card" data-cid="${r.clientId}" style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <div><div style="font-weight:700">${r.nombre}</div><div style="font-size:.78rem;color:var(--faint)">${r.direccion||''}</div>
+          <div style="font-size:.78rem;color:var(--dim);margin-top:3px">🧍 ${r.cobrador||'—'} · ${r.tel||'sin tel'}</div></div>
+        <div style="text-align:right"><div style="color:var(--red);font-weight:700">${fmt(r.monto_atraso||0)}</div>
+          <div style="font-size:.72rem;color:var(--faint)">atraso</div>
+          <div style="font-size:.72rem;color:var(--faint);margin-top:2px">Últ. pago: ${r.ultima_fecha_pago||'—'}</div></div>
+      </div>
+      <div style="margin-top:8px;font-size:.8rem">${estado}</div>
+      <div class="field" style="margin-top:8px"><label>Resultado de la visita</label><select class="ct-res">${opts}</select></div>
+      <input class="ct-nota" placeholder="Nota (opcional)" value="${(g.nota||'').replace(/"/g,'&quot;')}" style="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--txt);font-family:'Sora';padding:9px;border-radius:8px;margin-top:6px;box-sizing:border-box">
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <label class="bd-b" style="flex:1;min-width:130px;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer">📷 <span class="ct-foto-t">${g.tieneEvidencia?'Cambiar evidencia':'Subir evidencia'}</span><input type="file" accept="image/*" capture="environment" style="display:none" onchange="ctLeerFoto(this,${r.clientId})"></label>
+        ${g.tieneEvidencia?`<button class="bd-b" style="flex:0 0 auto" onclick="ctVerFoto(${g.id})">👁 Ver</button>`:''}
+        <button class="bd-b gold" style="flex:1;min-width:120px" onclick="ctGuardar(${r.clientId},this)">💾 Guardar</button>
+      </div>
+      <div class="ct-foto-badge" style="margin-top:4px">${evBadge}</div>
+    </div>`;
+  }).join('')||'<div style="color:var(--faint);padding:16px;text-align:center">Ningún cliente quedó sin pago la semana anterior. 🎉</div>';
+}
+function ctLeerFoto(input,cid){
+  const f=input.files&&input.files[0]; if(!f)return; const rd=new FileReader();
+  rd.onload=()=>{ const img=new Image(); img.onload=()=>{ let w=img.width,h=img.height; const mx=1000; if(w>mx||h>mx){ const k=mx/Math.max(w,h); w=Math.round(w*k); h=Math.round(h*k); } const cv=document.createElement('canvas'); cv.width=w; cv.height=h; cv.getContext('2d').drawImage(img,0,0,w,h); _ctEvid[cid]=cv.toDataURL('image/jpeg',0.55); const card=document.querySelector('.bd-card[data-cid="'+cid+'"]'); if(card){ card.querySelector('.ct-foto-t').textContent='✓ Foto lista (sin guardar)'; card.querySelector('.ct-foto-badge').innerHTML='<span style="color:var(--acc);font-size:.76rem">● foto pendiente de guardar</span>'; } }; img.src=rd.result; };
+  rd.readAsDataURL(f);
+}
+async function ctGuardar(cid,btn){
+  const card=document.querySelector('.bd-card[data-cid="'+cid+'"]'); if(!card)return;
+  const resultado=card.querySelector('.ct-res').value;
+  const nota=card.querySelector('.ct-nota').value;
+  const evidencia=_ctEvid[cid]||null;
+  if(!resultado && !evidencia){ toast('Anota el resultado o sube una evidencia'); return; }
   btn.disabled=true; const _t=btn.textContent; btn.textContent='Guardando…';
   try{
-    for(const tr of trs){
-      const nombre=tr.dataset.cob;
-      const cli=+(tr.querySelector('.so-cli').value||0);
-      const cob=+(tr.querySelector('.so-cob').value||0);
-      await api('POST','/api/objetivos/cob',{ cobrador:nombre, clientes:cli, cobranza:cob });
-    }
-    await cargarResumen();
-    btn.textContent='✓ Guardado'; setTimeout(()=>{btn.textContent=_t;btn.disabled=false;},1500);
+    const body={ semana:_ctSemana, clientId:cid, resultado, nota }; if(evidencia) body.evidencia=evidencia;
+    await api('POST','/api/contactos',body);
+    delete _ctEvid[cid];
+    toast('Gestión guardada'); await cargarContactos();
   }catch(e){ toast(e.message); btn.textContent=_t; btn.disabled=false; }
 }
+async function ctVerFoto(id){
+  try{
+    const r=await api('GET','/api/contactos/'+id+'/evidencia');
+    const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;background:rgba(10,15,25,.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:18px'; ov.onclick=()=>ov.remove();
+    const img=r.evidencia?`<img src="${r.evidencia}" style="max-width:100%;max-height:72vh;border-radius:10px;display:block">`:'<div style="color:var(--faint);padding:30px">Sin imagen</div>';
+    const box=document.createElement('div'); box.style.cssText='background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:14px;max-width:640px;width:100%'; box.onclick=e=>e.stopPropagation();
+    box.innerHTML=`<div style="display:flex;justify-content:space-between;margin-bottom:8px"><b>Evidencia</b><button class="bd-b" style="width:auto;padding:5px 12px" onclick="this.closest('div').parentNode.remove()">✕</button></div>${r.resultado?'<div style="margin-bottom:6px"><b>'+r.resultado+'</b></div>':''}${r.nota?'<div style="color:var(--dim);margin-bottom:6px">'+r.nota+'</div>':''}${img}`;
+    ov.appendChild(box); document.body.appendChild(ov);
+  }catch(e){ toast(e.message); }
+}
+
 let _cartSuc=[];
 const TIPO_LBL={diario:'Diario',semanal:'Semanal',s16:'Semanal 16',s17:'Semanal 17',s21:'21 sem',s31:'31 sem',unico:'Pago único',p17:'Cel 17'};
 async function cargarCartSuc(){
