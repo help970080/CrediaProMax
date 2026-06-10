@@ -253,6 +253,7 @@
           <button class="perb" data-p="mes" onclick="setPeriodoSuc('mes')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:7px 13px;border-radius:8px;font-family:'Sora';font-weight:600;cursor:pointer">Mes</button>
         </div>
       </div>
+      <div id="res-sem" style="color:var(--acc);font-size:.82rem;font-weight:600;margin-top:8px"></div>
       <div class="kpis" id="res-kpis" style="margin-top:14px"></div>
       <div class="sect-lbl">Desempeño y objetivos por cobrador</div>
       <div style="overflow-x:auto"><table><thead><tr><th>Cobrador</th><th class="n">Clientes</th><th class="n">Cartera</th><th class="n">Vencida</th><th class="n" style="color:var(--red)">Sin pago</th><th class="n">Cobrado</th><th class="n">Por entregar</th><th class="n" style="color:var(--vio)">Meta clientes (100%)</th><th class="n" style="color:var(--vio)">Meta cobranza (100%)</th><th class="n">% Clientes</th><th class="n">% Cobranza</th></tr></thead><tbody id="res-cob"></tbody></table></div>
@@ -907,8 +908,11 @@ async function cargarResumen(){
   }
   catch(e){ document.getElementById('res-kpis').innerHTML='<div style="color:var(--red);padding:10px">'+e.message+'</div>'; }
 }
+function _sucFechaCorta(iso){ if(!iso) return ''; const [y,m,d]=iso.split('-').map(Number); const dd=new Date(y,m-1,d); const dias=['domingo','lunes','martes','miércoles','jueves','viernes','sábado']; const mes=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']; return dias[dd.getDay()]+' '+String(d).padStart(2,'0')+'-'+mes[m-1]; }
 function pintaResumen(d){
   const t=d.totales||{};
+  const elSem=document.getElementById('res-sem');
+  if(elSem){ if(d.semanaDesdeISO){ elSem.textContent='Semana configurada: inicia '+_sucFechaCorta(d.semanaDesdeISO)+' · termina '+_sucFechaCorta(d.semanaHastaISO); elSem.style.display=''; } else { elSem.style.display='none'; } }
   const cob=(d.por_cobrador||[]).slice().sort((a,b)=>(b.comisionable||0)-(a.comisionable||0));
   // KPIs de la sucursal = SUMA de sus cobradores (cuadra con la tabla de abajo)
   const sum=(f)=>cob.reduce((a,c)=>a+(c[f]||0),0);
