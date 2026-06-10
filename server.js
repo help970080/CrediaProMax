@@ -69,7 +69,7 @@ function blankTenant(brandNombre, adminUser, adminPass, adminNombre) {
   return {
     users: [{ id: 1, nombre: adminNombre || 'Administrador', usuario: (adminUser || 'admin').toLowerCase(), rol: 'admin', sucursalId: null, passwordHash: bcrypt.hashSync(adminPass || 'admin123', 8), activo: true, createdAt: new Date().toISOString() }],
     sucursales: [], clients: [], sales: [], movimientos: [], caja: {}, porEntregar: [],
-    gestiones: [], cortes: [], transferencias: [], recolecciones: [], jcEntregas: [], jcCierres: [], asignaciones: [], contactos: [],
+    gestiones: [], cortes: [], transferencias: [], recolecciones: [], jcEntregas: [], jcCierres: [], asignaciones: [], contactos: [], cierresSemana: [],
     objetivos: { suc: {}, cob: {} },
     config: { corteAutoHora: '19:00', corteAutoDias: [1, 2, 3, 4, 5, 6], semanaInicio: 4, brand: { nombre: brandNombre || 'CobraPro' }, tarifas: JSON.parse(JSON.stringify(DEFAULT_TARIFAS)) }, _idem: {}
   };
@@ -80,6 +80,7 @@ function normalizeTenant(b) {
   b.jcEntregas = b.jcEntregas || []; b.jcCierres = b.jcCierres || [];
   b.asignaciones = b.asignaciones || [];
   b.contactos = b.contactos || [];
+  b.cierresSemana = b.cierresSemana || [];
   b.objetivos = b.objetivos || { suc: {}, cob: {} }; b.objetivos.suc = b.objetivos.suc || {}; b.objetivos.cob = b.objetivos.cob || {};
   b.flujo = b.flujo || [];
   b.config = b.config || {}; if (!b.config.corteAutoHora) b.config.corteAutoHora = '19:00';
@@ -1386,8 +1387,8 @@ app.get('/api/reports/numeros-diarios', auth, rol('admin','supervisor'), (req,re
   const sucursales = db.sucursales.filter(s=>s.activo!==false);
   const abonos = db.movimientos.filter(m=>m.abono>0 && m.forma!=='descuento');
   const saleSuc = {}; sales.forEach(s=>{ saleSuc[s.id]={suc:s.sucursalId, cli:s.clientId}; });
-  // Avance de contactos (no pagos de la semana inmediata anterior) — para que admin/supervisor lo vean aquí
-  const prevIso = _isoDe(_inicioCiclo(wkStart - 86400000, inicioDia));
+  // Avance de contactos: semana objetivo (la última cerrada por admin, o la anterior por tiempo)
+  const prevIso = _semanaContactos();
   const contactosPrev = _listaContactos(prevIso);
   const _avSuc = sid => { const r=contactosPrev.filter(x=>x.sucursalId===sid); return { total:r.length, gestionados:r.filter(x=>x.gestion&&(x.gestion.resultado||x.gestion.tieneEvidencia)).length, validados:r.filter(x=>x.gestion&&x.gestion.validado).length }; };
   const rows = sucursales.map(suc=>{
@@ -1458,8 +1459,18 @@ function _semanaCiclo(refTs, inicioDia){
   return { start, end:endD.getTime(), iso:_isoDe(start) };
 }
 function _semanaDesdeISO(iso){ const [y,mo,d]=iso.split('-').map(Number); const start=new Date(y,mo-1,d); start.setHours(0,0,0,0); const end=new Date(start); end.setDate(end.getDate()+7); return { start:start.getTime(), end:end.getTime(), iso }; }
-// ISO de inicio de la semana inmediata anterior a hoy (según el ciclo configurado)
-function _semanaAnteriorISO(){ const ini=_inicioCiclo(Date.now()); return _isoDe(_inicioCiclo(ini-86400000)); }
+// ISO de inicio de la semana actual (hora de México) y de la inmediata anterior
+function _semanaActualISO(){ return _isoDe(_inicioCiclo(new Date(fechaMxHoyISO()+'T00:00:00').getTime())); }
+function _semanaAnteriorISO(){ const ini=_inicioCiclo(new Date(fechaMxHoyISO()+'T00:00:00').getTime()); return _isoDe(_inicioCiclo(ini-86400000)); }
+// Registro de cierre de una semana (get-or-create)
+function _cierreGet(iso){ let r=db.cierresSemana.find(c=>c.semana===iso); if(!r){ r={ semana:iso, cobradores:{}, sucursales:{}, admin:null }; db.cierresSemana.push(r); } return r; }
+// Semana objetivo de CONTACTOS: la última cerrada por el admin si existe; si no, la anterior por tiempo
+function _semanaContactos(){
+  const cerradas=(db.cierresSemana||[]).filter(c=>c.admin&&c.admin.cerrado).map(c=>c.semana).sort();
+  const ult=cerradas[cerradas.length-1];
+  const prev=_semanaAnteriorISO();
+  return (ult && ult>=prev) ? ult : prev;
+}
 // Última fecha de pago (dd/mm/aaaa) del cliente, o null
 function _ultimaFechaPago(clientId){
   const ids=new Set(db.sales.filter(s=>s.clientId===clientId).map(s=>s.id));
@@ -1501,7 +1512,7 @@ function _avanceContactos(iso, sucursalId){
 }
 // Listado de contactos (sucursal ve los suyos; admin/supervisor todos)
 app.get('/api/contactos', auth, rol('admin','supervisor','sucursal','cobrador'), (req,res)=>{
-  const iso = req.query.semana || _semanaAnteriorISO();
+  const iso = req.query.semana || _semanaContactos();
   let rows=_listaContactos(iso);
   if(req.user.rol==='sucursal') rows=rows.filter(r=>Number(r.sucursalId)===Number(req.user.sucursalId));
   else if(req.user.rol==='cobrador') rows=rows.filter(r=>r.cobrador===req.user.nombre);
@@ -1511,7 +1522,7 @@ app.get('/api/contactos', auth, rol('admin','supervisor','sucursal','cobrador'),
 // Guardar gestión / evidencia de un contacto (queda pendiente de validar)
 app.post('/api/contactos', auth, rol('admin','supervisor','sucursal','cobrador'), (req,res)=>{
   const { semana, clientId, resultado, nota, evidencia } = req.body;
-  const iso = semana || _semanaAnteriorISO();
+  const iso = semana || _semanaContactos();
   const cid = +clientId;
   if(!cid) return res.status(400).json({ error:'Falta el cliente' });
   // alcance: sucursal/cobrador solo su cartera
@@ -1540,6 +1551,54 @@ app.post('/api/contactos/:id/validar', auth, rol('admin','supervisor'), (req,res
   rec.validado = req.body.validado!==false;
   rec.validadoPor = req.user.nombre; rec.validadoFecha=new Date().toISOString();
   saveDB(); res.json({ ok:true, validado:rec.validado });
+});
+
+/* ---------- CIERRE DE SEMANA (cobrador → sucursal → admin) ---------- */
+// Estado del cierre de la semana (scoped por rol). Permite ver quién ya cerró.
+app.get('/api/cierre-semana', auth, (req,res)=>{
+  const iso = req.query.semana || _semanaActualISO();
+  const rec = db.cierresSemana.find(c=>c.semana===iso) || { semana:iso, cobradores:{}, sucursales:{}, admin:null };
+  const sucs = db.sucursales.filter(s=>s.activo!==false);
+  const cobs = db.users.filter(u=>u.rol==='cobrador' && u.activo);
+  const porSuc = sucs.map(s=>{
+    const sc = cobs.filter(c=>Number(c.sucursalId)===Number(s.id));
+    return {
+      id:s.id, nombre:s.nombre, totalCob:sc.length,
+      cobCerrados: sc.filter(c=>rec.cobradores[c.nombre]&&rec.cobradores[c.nombre].cerrado).length,
+      cobradores: sc.map(c=>({ nombre:c.nombre, cerrado: !!(rec.cobradores[c.nombre]&&rec.cobradores[c.nombre].cerrado), fecha: rec.cobradores[c.nombre]?rec.cobradores[c.nombre].fecha:null })),
+      cerrada: !!(rec.sucursales[String(s.id)]&&rec.sucursales[String(s.id)].cerrado),
+      cerradaPor: rec.sucursales[String(s.id)]?rec.sucursales[String(s.id)].por:null
+    };
+  });
+  let scope = porSuc;
+  if(req.user.rol==='sucursal') scope = porSuc.filter(s=>Number(s.id)===Number(req.user.sucursalId));
+  const miCerrado = req.user.rol==='cobrador' ? !!(rec.cobradores[req.user.nombre]&&rec.cobradores[req.user.nombre].cerrado) : null;
+  res.json({
+    semana: iso,
+    adminCerrada: !!(rec.admin&&rec.admin.cerrado), adminPor: rec.admin?rec.admin.por:null, adminFecha: rec.admin?rec.admin.fecha:null,
+    miCerrado, sucursales: scope,
+    resumen: { totSuc: porSuc.length, sucCerradas: porSuc.filter(s=>s.cerrada).length,
+               totCob: cobs.length, cobCerrados: cobs.filter(c=>rec.cobradores[c.nombre]&&rec.cobradores[c.nombre].cerrado).length },
+    semanaContactos: _semanaContactos()
+  });
+});
+// Cerrar la semana al nivel del que llama
+app.post('/api/cierre-semana/cerrar', auth, rol('admin','supervisor','sucursal','cobrador'), (req,res)=>{
+  const iso = req.body.semana || _semanaActualISO();
+  const rec = _cierreGet(iso); const now=new Date().toISOString();
+  if(req.user.rol==='cobrador') rec.cobradores[req.user.nombre]={ cerrado:true, fecha:now, por:req.user.nombre };
+  else if(req.user.rol==='sucursal') rec.sucursales[String(req.user.sucursalId)]={ cerrado:true, fecha:now, por:req.user.nombre };
+  else rec.admin={ cerrado:true, fecha:now, por:req.user.nombre };   // admin/supervisor: cierre global → habilita contactos/reportes
+  saveDB(); res.json({ ok:true, semana:iso, nivel:req.user.rol });
+});
+// Reabrir (deshacer cierre) al nivel del que llama
+app.post('/api/cierre-semana/reabrir', auth, rol('admin','supervisor','sucursal','cobrador'), (req,res)=>{
+  const iso = req.body.semana || _semanaActualISO();
+  const rec = _cierreGet(iso);
+  if(req.user.rol==='cobrador') delete rec.cobradores[req.user.nombre];
+  else if(req.user.rol==='sucursal') delete rec.sucursales[String(req.user.sucursalId)];
+  else rec.admin=null;
+  saveDB(); res.json({ ok:true, semana:iso });
 });
 // Hora de México (CDMX/Edomex = UTC-6 todo el año desde 2023, sin horario de verano)
 function nowMx(){ return new Date(Date.now() - 6*3600*1000); }function fechaMxHoyDDMM(){ const d=nowMx(); return `${String(d.getUTCDate()).padStart(2,'0')}/${String(d.getUTCMonth()+1).padStart(2,'0')}/${d.getUTCFullYear()}`; }
@@ -2360,7 +2419,7 @@ app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, 
   res.json({ generadoEn: new Date().toISOString(), reportes });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v4', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v5', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
