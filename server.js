@@ -1830,8 +1830,8 @@ app.get('/api/reports/colocacion', auth, rol('admin','supervisor'), (req, res) =
     const d = new Date(s.createdAt);
     let key;
     if (bucket === 'semana') {
-      const monday = new Date(d); monday.setDate(d.getDate() - ((d.getDay()+6) % 7));
-      key = monday.toISOString().slice(0,10);
+      const _ini = _diaSemanaInicio(); const wk = new Date(d); wk.setDate(d.getDate() - ((d.getDay() - _ini + 7) % 7));
+      key = wk.toISOString().slice(0,10);
     } else { key = d.toISOString().slice(0,10); }
     buckets[key] = buckets[key] || { fecha: key, creditos: 0, monto: 0 };
     buckets[key].creditos++; buckets[key].monto += s.monto || 0;
@@ -1839,7 +1839,7 @@ app.get('/api/reports/colocacion', auth, rol('admin','supervisor'), (req, res) =
   // serie completa con ceros donde no hubo nada
   const serie = [];
   if (bucket === 'semana') {
-    const start = new Date(desde); start.setDate(start.getDate() - ((start.getDay()+6)%7));
+    const start = new Date(desde); start.setDate(start.getDate() - ((start.getDay() - _diaSemanaInicio() + 7)%7));
     for (let d = new Date(start); d <= ahora; d.setDate(d.getDate()+7)) {
       const k = d.toISOString().slice(0,10);
       serie.push(buckets[k] || { fecha: k, creditos: 0, monto: 0 });
@@ -2292,7 +2292,7 @@ function _ultimasSemanas(n, inicioDia) {
 }
 app.get('/api/reports/desglose', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
   const n = Math.min(Math.max(+req.query.semanas || 12, 1), 26);
-  const inicio = (req.query.inicio != null && req.query.inicio !== '') ? Math.min(Math.max(+req.query.inicio, 0), 6) : 4;
+  const inicio = (req.query.inicio != null && req.query.inicio !== '') ? Math.min(Math.max(+req.query.inicio, 0), 6) : _diaSemanaInicio();
   const semanas = _ultimasSemanas(n, inicio);
   const esGerente = req.user.rol === 'sucursal';
   const miSuc = esGerente ? (db.users.find(u => u.id === req.user.id) || {}).sucursalId : null;
