@@ -2563,7 +2563,8 @@ app.post('/api/voz/lanzar', auth, rol('admin','supervisor'), async (req,res)=>{
   let rows = _listaContactos(_semanaContactos()).filter(r => String(r.tel||'').replace(/\D/g,'').length >= 10);
   if(req.body.sucursalId!=null)  rows = rows.filter(r => Number(r.sucursalId)===Number(req.body.sucursalId));
   if(req.body.soloNoLlamados)    rows = rows.filter(r => !(r.gestion && r.gestion.llamado));
-  rows = rows.slice(0, creditos); // no marcar más de lo que se puede pagar (peor caso: todas contestan)
+  rows.sort((a,b)=>(b.monto_atraso||0)-(a.monto_atraso||0)); // prioriza MAYOR atraso, igual que la tabla
+  rows = rows.slice(0, creditos); // con créditos limitados, marca primero a los que más deben
   if(!rows.length) return res.json({ ok:true, enviados:0, mensaje:'No hay clientes por llamar' });
   const clientes = rows.map(r=>({ nombre:r.nombre, telefono:r.tel, saldo:r.monto_atraso, clientId:r.clientId }));
   try{
