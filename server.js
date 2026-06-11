@@ -93,6 +93,8 @@ function normalizeTenant(b) {
   if (!b.config.tarifas.s21) b.config.tarifas.s21 = JSON.parse(JSON.stringify(DEFAULT_TARIFAS.s21));
   if (!b.config.tarifas.s31) b.config.tarifas.s31 = JSON.parse(JSON.stringify(DEFAULT_TARIFAS.s31));
   b._idem = b._idem || {};
+  if(b.config.creditosVoz == null) b.config.creditosVoz = 0;
+  b.config.voz = b.config.voz || { despacho:'', acreedor:'', telContacto:'', whatsapp:'' };
   (b.cortes || []).forEach(c => { if (c.estado === 'pendiente' && !(c.totalEfectivo > 0)) { c.estado = 'recibido'; c.recibidoAt = c.recibidoAt || new Date().toISOString(); c.recibidoBy = c.recibidoBy || 'sin efectivo'; } });
   return b;
 }
@@ -1497,7 +1499,7 @@ function _listaContactos(iso){
     rows.push({ clientId, saleId:s.id, sucursalId:s.sucursalId, cobrador:s.prom||'—',
       nombre:c.nombre||'—', direccion:[c.calle,c.col,c.ciudad].filter(Boolean).join(', '), tel:c.tel||'',
       monto_atraso:Math.round(atraso), ultima_fecha_pago:_ultimaFechaPago(clientId),
-      gestion: rec? { id:rec.id, resultado:rec.resultado||'', nota:rec.nota||'', tieneEvidencia:!!rec.evidencia, por:rec.por||null, fecha:rec.fecha||null, validado:!!rec.validado, validadoPor:rec.validadoPor||null, validadoFecha:rec.validadoFecha||null } : null });
+      gestion: rec? { id:rec.id, resultado:rec.resultado||'', nota:rec.nota||'', tieneEvidencia:!!rec.evidencia, por:rec.por||null, fecha:rec.fecha||null, validado:!!rec.validado, validadoPor:rec.validadoPor||null, validadoFecha:rec.validadoFecha||null, llamado:!!(rec.llamadas&&rec.llamadas.length), ultimaLlamada:rec.ultimaLlamada||null } : null });
   });
   return rows;
 }
@@ -2419,7 +2421,7 @@ app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, 
   res.json({ generadoEn: new Date().toISOString(), reportes });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v5', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v5', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
@@ -2494,6 +2496,151 @@ app.post('/api/transferencias/lote', auth, rol('admin', 'supervisor'), (req, res
 });
 
 // Sirve el portal (index.html) en "/" y en cualquier ruta que NO sea /api
+
+/* ════════════════════════════════════════════════════════════════
+   MÓDULO DE VOZ (llamadas IVR multitenant vía bridge Zadarma)
+   - Cada agencia llama a sus no-pagos con SUS datos (config.voz / brand)
+   - Créditos por agencia: los carga el Super Admin; 1 crédito = 1 llamada CONTESTADA
+   - Cada llamada queda reportada en Contactos (estilo log de Fantasma)
+   ════════════════════════════════════════════════════════════════ */
+const IVR_BRIDGE_URL   = process.env.IVR_BRIDGE_URL || 'https://ivr.legaxia.uk';
+const IVR_BRIDGE_TOKEN = process.env.IVR_API_TOKEN  || 'legaxi_2026_secreto_xyz123';
+function _tid(){ const s = als.getStore(); return s ? s.tenantId : null; }
+
+// Registra (o acumula) en Contactos que ya se llamó al cliente. Equivalente al seguimiento_log de Fantasma.
+function _registrarLlamadaContacto(clientId, info){
+  const iso = _semanaContactos();
+  let rec = db.contactos.find(k => k.semana===iso && k.clientId===clientId);
+  if(!rec){ rec = { id: nextId('contactos'), semana: iso, clientId }; db.contactos.push(rec); }
+  rec.llamadas = rec.llamadas || [];
+  rec.llamadas.push({ fecha:new Date().toISOString(), resultado:info.resultado, contesto:!!info.contesto, duracion:info.duracion||0, disposition:info.disposition||'', grabacion:info.grabacion||null });
+  rec.ultimaLlamada = { fecha:new Date().toISOString(), resultado:info.resultado, contesto:!!info.contesto, grabacion:info.grabacion||null };
+  const humano = rec.por && rec.por !== 'IVR (automático)';
+  if(!humano && !rec.evidencia){ rec.resultado = String(info.resultado).slice(0,80); rec.por = 'IVR (automático)'; rec.fecha = new Date().toISOString(); }
+  const linea = `📞 ${fechaMxHoyDDMM()} · ${info.resultado}` + (info.grabacion ? ' · 🎙️' : '');
+  rec.nota = (rec.nota ? rec.nota + '\n' : '') + linea;
+  if(rec.nota.length > 1500) rec.nota = rec.nota.slice(-1500);
+  return rec;
+}
+
+// Vista previa: a quién se llamaría (no-pagos de la semana con teléfono)
+app.get('/api/voz/candidatos', auth, rol('admin','supervisor'), (req,res)=>{
+  let rows = _listaContactos(_semanaContactos()).filter(r => String(r.tel||'').replace(/\D/g,'').length >= 10);
+  if(req.user.rol==='sucursal') rows = rows.filter(r => Number(r.sucursalId)===Number(req.user.sucursalId));
+  res.json({ total: rows.length, creditosVoz: (db.config&&db.config.creditosVoz)||0,
+    candidatos: rows.map(r=>({ clientId:r.clientId, nombre:r.nombre, tel:r.tel, saldo:r.monto_atraso, sucursalId:r.sucursalId, yaLlamado: !!(r.gestion && r.gestion.llamado) })) });
+});
+
+// Lanzar lote de llamadas para ESTA agencia (gate por créditos; marca = datos de la agencia)
+app.post('/api/voz/lanzar', auth, rol('admin','supervisor'), async (req,res)=>{
+  const tid = _tid();
+  const creditos = (db.config&&db.config.creditosVoz)||0;
+  if(creditos<=0) return res.status(402).json({ error:'sin_creditos', detalle:'Esta agencia no tiene créditos de voz. Pide al Super Admin que recargue.' });
+  const marca = Object.assign(
+    { despacho: (db.config&&db.config.brand&&db.config.brand.nombre) || 'CobraPro' },
+    (db.config&&db.config.voz) || {}
+  );
+  let rows = _listaContactos(_semanaContactos()).filter(r => String(r.tel||'').replace(/\D/g,'').length >= 10);
+  if(req.body.sucursalId!=null)  rows = rows.filter(r => Number(r.sucursalId)===Number(req.body.sucursalId));
+  if(req.body.soloNoLlamados)    rows = rows.filter(r => !(r.gestion && r.gestion.llamado));
+  rows = rows.slice(0, creditos); // no marcar más de lo que se puede pagar (peor caso: todas contestan)
+  if(!rows.length) return res.json({ ok:true, enviados:0, mensaje:'No hay clientes por llamar' });
+  const clientes = rows.map(r=>({ nombre:r.nombre, telefono:r.tel, saldo:r.monto_atraso, clientId:r.clientId }));
+  try{
+    const resp = await fetch(IVR_BRIDGE_URL + '/api/llamar-lote', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + IVR_BRIDGE_TOKEN },
+      body: JSON.stringify({ tenantId: tid, marca, clientes })
+    });
+    const data = await resp.json().catch(()=>({}));
+    if(!resp.ok) return res.status(502).json({ error:'bridge_error', detalle:data.error || ('HTTP '+resp.status), lote:data.lote||null });
+    res.json({ ok:true, enviados: clientes.length, creditosVoz: creditos, marca, bridge: data });
+  }catch(e){ res.status(502).json({ error:'bridge_inaccesible', detalle:e.message }); }
+});
+
+// Estado del lote en curso (proxy al bridge)
+app.get('/api/voz/estado', auth, rol('admin','supervisor'), async (req,res)=>{
+  try{
+    const resp = await fetch(IVR_BRIDGE_URL + '/api/status', { signal: AbortSignal.timeout(5000) });
+    const data = await resp.json();
+    res.json({ ok:true, creditosVoz:(db.config&&db.config.creditosVoz)||0, consumo:(db.config&&db.config.vozConsumo)||0, bridge:data });
+  }catch(e){ res.json({ ok:false, creditosVoz:(db.config&&db.config.creditosVoz)||0, error:'bridge_inaccesible' }); }
+});
+
+// Resultado de la llamada (lo manda el bridge; SIN JWT → resolvemos tenant por tenantId)
+app.post('/api/voz/resultado', async (req,res)=>{
+  const token = (req.headers.authorization||'').replace(/^Bearer\s+/i,'').trim();
+  const expected = process.env.IVR_API_TOKEN || 'legaxi_2026_secreto_xyz123';
+  if(expected && token!==expected) return res.status(401).json({ error:'Token inválido' });
+  const { tenantId, telefono, disposition, duration, event, grabacionUrl } = req.body || {};
+  if(tenantId==null) return res.status(400).json({ error:'tenantId requerido' });
+  if(!telefono)      return res.status(400).json({ error:'telefono requerido' });
+  const blob = await getTenant(+tenantId);
+  if(!blob) return res.status(404).json({ error:'agencia no encontrada' });
+  als.run({ tenantId:+tenantId, db:blob }, ()=>{
+    const tel10 = String(telefono).replace(/\D/g,'').slice(-10);
+    const cli = db.clients.find(c => String(c.tel||'').replace(/\D/g,'').slice(-10)===tel10);
+    if(!cli){ saveRow(+tenantId, blob); return res.json({ ok:true, sinCliente:true }); }
+    if(event==='NOTIFY_RECORD' && grabacionUrl){
+      const rec = db.contactos.find(k => k.semana===_semanaContactos() && k.clientId===cli.id);
+      if(rec){
+        if(rec.ultimaLlamada) rec.ultimaLlamada.grabacion = grabacionUrl;
+        if(rec.llamadas && rec.llamadas.length) rec.llamadas[rec.llamadas.length-1].grabacion = grabacionUrl;
+        rec.nota = (rec.nota ? rec.nota+'\n' : '') + `🎙️ ${grabacionUrl}`;
+      }
+      saveRow(+tenantId, blob); return res.json({ ok:true, grabacion:true });
+    }
+    const dur = parseInt(duration)||0;
+    const disp = String(disposition||'unknown').toLowerCase();
+    let resultado, contesto=false;
+    if(disp==='answered' && dur>=5){ resultado=`✅ Contestó (${dur}s)`; contesto=true; }
+    else if(disp==='answered'){ resultado=`⚠️ Colgó rápido (${dur}s)`; }
+    else if(disp==='busy'){ resultado='⏰ Ocupado'; }
+    else if(disp==='no-answer' || disp==='noanswer'){ resultado='❌ Sin respuesta'; }
+    else if(disp==='cancel' || disp==='cancelled'){ resultado='🚫 Cancelada'; }
+    else if(disp==='failed'){ resultado='⚠️ Falló (número inválido)'; }
+    else { resultado=`${disp} (${dur}s)`; contesto = dur>5; }
+    _registrarLlamadaContacto(cli.id, { resultado, contesto, duracion:dur, disposition:disp, grabacion:grabacionUrl||null });
+    if(contesto){
+      db.config = db.config || {};
+      db.config.creditosVoz = Math.max(0, ((db.config.creditosVoz)||0) - 1);
+      db.config.vozConsumo  = ((db.config.vozConsumo)||0) + 1;
+    }
+    saveRow(+tenantId, blob);
+    res.json({ ok:true, resultado, contesto, creditosVoz:(db.config&&db.config.creditosVoz)||0 });
+  });
+});
+
+// ── Super Admin: cargar créditos y fijar la marca (datos) de una agencia ──
+app.post('/api/super/tenants/:id/voz', auth, superOnly, async (req,res)=>{
+  const tid = +req.params.id;
+  const blob = await getTenant(tid);
+  if(!blob) return res.status(404).json({ error:'Agencia no encontrada' });
+  blob.config = blob.config || {};
+  const { creditos, recargar, despacho, acreedor, telContacto, whatsapp } = req.body || {};
+  if(despacho!=null || acreedor!=null || telContacto!=null || whatsapp!=null){
+    blob.config.voz = blob.config.voz || {};
+    if(despacho!=null)    blob.config.voz.despacho    = String(despacho).slice(0,60);
+    if(acreedor!=null)    blob.config.voz.acreedor    = String(acreedor).slice(0,60);
+    if(telContacto!=null) blob.config.voz.telContacto = String(telContacto).replace(/[^\d]/g,'').slice(0,15);
+    if(whatsapp!=null)    blob.config.voz.whatsapp    = String(whatsapp).replace(/[^\d]/g,'').slice(0,15);
+  }
+  if(creditos!=null) blob.config.creditosVoz = Math.max(0, Math.round(+creditos));
+  if(recargar!=null) blob.config.creditosVoz = Math.max(0, ((blob.config.creditosVoz)||0) + Math.round(+recargar));
+  saveRow(tid, blob);
+  res.json({ ok:true, creditosVoz: blob.config.creditosVoz||0, voz: blob.config.voz||{} });
+});
+
+// ── Super Admin: consumo de voz por agencia ──
+app.get('/api/super/voz/consumo', auth, superOnly, async (req,res)=>{
+  const out = [];
+  for(const t of (SYS.tenants||[])){
+    const b = await getTenant(t.id); if(!b) continue;
+    out.push({ id:t.id, nombre:t.nombre, creditosVoz:(b.config&&b.config.creditosVoz)||0, consumo:(b.config&&b.config.vozConsumo)||0, voz:(b.config&&b.config.voz)||null });
+  }
+  res.json(out);
+});
+
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api')) return next();
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
