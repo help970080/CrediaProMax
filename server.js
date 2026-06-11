@@ -1481,6 +1481,26 @@ function _ultimaFechaPago(clientId){
   return str;
 }
 // Lista de clientes que NO pagaron en la semana (iso). Se une con la gestión guardada.
+// Último pago (timestamp) de un crédito concreto (ignora el cargo de migración)
+function _ultPagoSale(saleId){
+  let best=0;
+  for(const m of db.movimientos){ if(m.saleId===saleId && m.abono>0){ const t=_parseFechaMx(m.fecha); if(t>best) best=t; } }
+  return best||0;
+}
+// Vencido acumulado de un crédito = cuota × semanas sin pagar (tope al saldo).
+// Crédito normal: usa el atraso real del calendario. Importado: lo estima desde el último pago.
+function _vencidoDe(sale){
+  const saldo = saldoDe(sale.id);
+  if(saldo<=0) return 0;
+  const ca = calcAtraso(sale);
+  if(ca.montoAtraso > 0) return Math.min(saldo, Math.round(ca.montoAtraso));
+  const cuota = sale.cuota>0 ? sale.cuota : (sale.plazo>0 ? Math.round((sale.total||0)/sale.plazo) : 0);
+  if(cuota<=0) return 0;
+  const ult = _ultPagoSale(sale.id);
+  const ancla = ult || (sale.createdAt ? new Date(sale.createdAt).getTime() : Date.now());
+  const semanas = Math.max(1, Math.floor((Date.now() - ancla) / (7*86400000)));
+  return Math.min(saldo, Math.round(cuota * semanas));
+}
 function _listaContactos(iso){
   const wb=_semanaDesdeISO(iso);
   const activos=new Set(db.clients.filter(c=>c.activo!==false).map(c=>c.id));
@@ -1494,7 +1514,7 @@ function _listaContactos(iso){
   espCli.forEach((s,clientId)=>{
     if(pagoSemana.has(clientId)) return; // sí pagó esa semana → no es contacto
     const c=db.clients.find(x=>x.id===clientId)||{};
-    let atraso=0; db.sales.filter(x=>x.clientId===clientId && saldoDe(x.id)>0).forEach(x=>{ atraso+=calcAtraso(x).montoAtraso; });
+    let atraso=0; db.sales.filter(x=>x.clientId===clientId && saldoDe(x.id)>0).forEach(x=>{ atraso+=_vencidoDe(x); });
     const rec=db.contactos.find(k=>k.semana===iso && k.clientId===clientId)||null;
     rows.push({ clientId, saleId:s.id, sucursalId:s.sucursalId, cobrador:s.prom||'—',
       nombre:c.nombre||'—', direccion:[c.calle,c.col,c.ciudad].filter(Boolean).join(', '), tel:c.tel||'',
