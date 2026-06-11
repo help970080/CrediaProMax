@@ -2000,7 +2000,7 @@ app.get('/api/reports/entregas', auth, rol('admin', 'supervisor', 'sucursal'), (
 // ===== ALERTA: QUIÉN NO HA VENDIDO =====
 app.get('/api/reports/sin-ventas', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
   const scope = scopeSucDe(req.user);
-  const inicio = (req.query.inicio != null && req.query.inicio !== '') ? Math.min(Math.max(+req.query.inicio, 0), 6) : 4;
+  const inicio = (req.query.inicio != null && req.query.inicio !== '') ? Math.min(Math.max(+req.query.inicio, 0), 6) : _diaSemanaInicio();
   const sem = _ultimasSemanas(4, inicio); // últimas 4 semanas operativas
   const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
   let cobs = db.users.filter(u => u.rol === 'cobrador' && u.activo && (scope == null || u.sucursalId === scope));
