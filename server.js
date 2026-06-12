@@ -148,6 +148,24 @@ function calcCredito(tipo, plazo, monto, dias) {
 function genPassword() { const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let p = ''; for (let i = 0; i < 8; i++) p += c[Math.floor(Math.random() * c.length)]; return p; }
 function saldoDe(saleId) { return db.movimientos.filter(m => m.saleId === saleId).reduce((s, m) => s + (m.cargo || 0) - (m.abono || 0), 0); }
 
+/* ---------- Oportunidades comerciales: REFIN y PARALELO ----------
+   REFIN: le faltan 2 tarifas o menos por liquidar (saldo <= 2*cuota).
+   PARALELO: ya pagó >= 50% del crédito vigente; oferta tope OFERTA_PARALELO_MAX.
+   % pagado = (total - saldo)/total. Para créditos nuevos es exacto;
+   para importados depende de que 'total' traiga la deuda origen. */
+const OFERTA_PARALELO_MAX = 4000;
+function oportunidadDe(sale) {
+  const saldo = saldoDe(sale.id);
+  const cuota = +sale.cuota || 0;
+  const total = +sale.total || 0;
+  const out = { refin: false, paralelo: false, pctPagado: 0, oferta: 0, saldo };
+  if (saldo <= 0) return out;                                  // ya liquidado, sin oferta
+  out.pctPagado = total > 0 ? Math.max(0, Math.min(100, Math.round((total - saldo) / total * 100))) : 0;
+  if (cuota > 0 && saldo <= 2 * cuota) { out.refin = true; return out; }   // REFIN tiene prioridad
+  if (total > 0 && out.pctPagado >= 50) { out.paralelo = true; out.oferta = OFERTA_PARALELO_MAX; }
+  return out;
+}
+
 /* ---------- Semilla de agencia DEMO (datos de ejemplo, solo para la primera agencia migrada si está vacía) ---------- */
 function seedDemo(brandNombre) {
   const b = blankTenant(brandNombre || 'CobraPro', 'admin', 'admin123', 'Administrador');
@@ -350,6 +368,34 @@ app.get('/api/sales', auth, (req, res) => {
     return { ...rest, saldo: saldoDe(s.id), cliente: c.nombre, tel: c.tel || '', calle: c.calle || '', col: c.col || '', tieneEvidencia: !!entrega };
   }));
 });
+/* ---------- Oportunidades: listado de candidatos a REFIN / PARALELO ---------- */
+app.get('/api/oportunidades', auth, (req, res) => {
+  let ventas = db.sales.filter(s => s.entregado !== false);
+  if (req.user.rol === 'cobrador') ventas = ventas.filter(s => s.prom === req.user.nombre);
+  else if (req.user.rol === 'sucursal') ventas = ventas.filter(s => Number(s.sucursalId) === Number(req.user.sucursalId || 0));
+  else if (req.query.sucursalId) ventas = ventas.filter(s => Number(s.sucursalId) === Number(req.query.sucursalId)); // admin/supervisor: filtro opcional
+  const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
+  const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
+  const refin = [], paralelo = [];
+  ventas.forEach(s => {
+    if (!activos.has(s.clientId)) return;
+    const op = oportunidadDe(s);
+    if (!op.refin && !op.paralelo) return;
+    const c = db.clients.find(x => x.id === s.clientId) || {};
+    const row = {
+      saleId: s.id, folio: s.folio, cliente: c.nombre || '—', tel: c.tel || '',
+      dir: [c.calle, c.col].filter(Boolean).join(', '), cobrador: s.prom || '—',
+      sucursal: sucMap[s.sucursalId] || '—', sucursalId: s.sucursalId,
+      tipo: s.tipo, cuota: s.cuota || 0, total: s.total || 0,
+      saldo: op.saldo, pctPagado: op.pctPagado, oferta: op.oferta
+    };
+    if (op.refin) refin.push(row); else paralelo.push(row);
+  });
+  refin.sort((a, b) => a.saldo - b.saldo);           // los más cerca de liquidar primero
+  paralelo.sort((a, b) => b.pctPagado - a.pctPagado); // los que más han pagado primero
+  res.json({ refin, paralelo, ofertaParaleloMax: OFERTA_PARALELO_MAX, totales: { refin: refin.length, paralelo: paralelo.length } });
+});
+
 /* ---------- Mapa de clientes ---------- */
 app.get('/api/mapa', auth, rol('admin', 'supervisor'), (req, res) => {
   const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
@@ -1190,7 +1236,7 @@ app.get('/api/mi-ruta', auth, (req, res) => {
     const formaHoy = movsHoy.length ? (movsHoy[movsHoy.length-1].forma || 'efectivo') : null;
     return { id: s.id, folio: s.folio, nombre: c.nombre || '—', dir: [c.calle, c.col].filter(Boolean).join(', '), tel: c.tel || '', tipo: s.tipo, cuota: s.cuota, saldo: saldoDe(s.id),
       cobradoHoy, formaHoy,
-      atraso: at.montoAtraso, diasAtraso: at.diasAtraso, cuotasAtraso: at.cuotasAtraso, cuotasDebidas: at.cuotasDebidas, cuotasPagadas: at.cuotasPagadas, tieneEvidencia: !!s.entrega };
+      atraso: at.montoAtraso, diasAtraso: at.diasAtraso, cuotasAtraso: at.cuotasAtraso, cuotasDebidas: at.cuotasDebidas, cuotasPagadas: at.cuotasPagadas, tieneEvidencia: !!s.entrega, op: oportunidadDe(s) };
   }).filter(Boolean));
 });
 // Evidencias de entrega del cobrador (incluye clientes dados de baja)
