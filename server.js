@@ -1946,6 +1946,47 @@ app.get('/api/flujo', auth, rol('admin', 'supervisor'), (req, res) => {
   const supervisores = db.users.filter(u => u.rol === 'supervisor' && u.activo).map(u => ({ id: u.id, nombre: u.nombre, dotado: dotadoPor['supervisor:' + u.id] || 0 }));
   res.json({ saldo: flujoSaldo(), totales: T, destinos: { sucursales, jcs, supervisores }, movimientos: conSaldo.slice(0, 120) });
 });
+// ===== TESORERÍA CONSOLIDADA: TODO el dinero del sistema en una sola vista (solo admin) =====
+app.get('/api/tesoreria', auth, rol('admin'), (req, res) => {
+  const sucursales = db.sucursales.filter(s => s.activo !== false).map(s => {
+    const c = db.caja[String(s.id)] || {};
+    return { id: s.id, nombre: s.nombre,
+      efectivo: Math.round((c.inicial||0)+(c.efectivo||0)+(c.entregas||0)-(c.retiros||0)),
+      banco: Math.round(c.banco||0) };
+  });
+  const jc = db.users.filter(u => u.rol === 'jc' && u.activo)
+    .map(u => ({ id: u.id, nombre: u.nombre, saldo: Math.round(jcCajaDe(u.id).saldo) }));
+  const supervisores = db.users.filter(u => u.rol === 'supervisor' && u.activo)
+    .map(u => ({ id: u.id, nombre: u.nombre, saldo: Math.round(supervisorCajaDe(u.id)) }));
+  const porEntregar = (db.porEntregar||[])
+    .filter(p => (p.monto||0) !== 0)
+    .map(p => ({ prom: p.prom, sucursalId: p.sucursalId, monto: Math.round(p.monto||0) }));
+  const cortesPend = (db.cortes||[])
+    .filter(c => c.tipo === 'sucursal' && c.estado === 'pendiente')
+    .map(c => ({ id: c.id, prom: c.prom, sucursalId: c.sucursalId, totalEfectivo: Math.round(c.totalEfectivo||0), totalBanco: Math.round(c.totalBanco||0) }));
+
+  const T = {
+    tesoreriaAdmin: Math.round(flujoSaldo()),
+    sucursalesEfectivo: sucursales.reduce((a,s)=>a+s.efectivo,0),
+    sucursalesBanco: sucursales.reduce((a,s)=>a+s.banco,0),
+    cajasJC: jc.reduce((a,x)=>a+x.saldo,0),
+    cajasSupervisor: supervisores.reduce((a,x)=>a+x.saldo,0),
+    enRutaPorEntregar: porEntregar.reduce((a,p)=>a+p.monto,0),
+    enTransitoCortes: cortesPend.reduce((a,c)=>a+c.totalEfectivo,0)
+  };
+  const granTotalEfectivo = T.tesoreriaAdmin + T.sucursalesEfectivo + T.cajasJC + T.cajasSupervisor + T.enRutaPorEntregar + T.enTransitoCortes;
+  const granTotal = granTotalEfectivo + T.sucursalesBanco;
+
+  res.json({
+    granTotal, granTotalEfectivo,
+    totales: T,
+    detalle: {
+      sucursales, jc, supervisores,
+      enRuta: porEntregar,
+      enTransito: cortesPend
+    }
+  });
+});
 app.post('/api/flujo/inyeccion', auth, rol('admin'), (req, res) => {
   const monto = +req.body.monto; if (!(monto > 0)) return res.status(400).json({ error: 'Monto inválido' });
   flujoAgregar('entrada', 'inyeccion', 'Inyección de capital' + (req.body.nota ? ' · ' + req.body.nota : ''), monto, null, req.user.nombre);
