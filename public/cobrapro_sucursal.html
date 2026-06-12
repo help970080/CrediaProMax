@@ -164,6 +164,7 @@
     <button class="snb" data-vw="resumen" onclick="setVw('resumen')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">📊 Resumen</button>
     <button class="snb" data-vw="cartera" onclick="setVw('cartera')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">📁 Cartera de crédito</button>
     <button class="snb" data-vw="contactos" onclick="setVw('contactos')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">📇 Contactos</button>
+    <button class="snb" data-vw="oport" onclick="setVw('oport')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">🎯 Oportunidades</button>
   </div>
   <div id="view-op">
   <div class="grid">
@@ -274,6 +275,29 @@
       </div>
       <div style="color:var(--dim);font-size:.85rem;margin:4px 0 10px" id="cs-count"></div>
       <div style="overflow-x:auto"><table><thead><tr><th>Cliente</th><th>Cobrador</th><th>Modalidad</th><th class="n">Cuota</th><th class="n">Saldo</th></tr></thead><tbody id="cs-rows"></tbody></table></div>
+    </div>
+  </div>
+
+  <div id="view-oport" style="display:none">
+    <div class="panel">
+      <h2 style="margin:0 0 4px">🎯 Oportunidades · mi sucursal</h2>
+      <div style="color:var(--dim);font-size:.85rem;margin:0 0 12px">Clientes con posibilidad de <b style="color:var(--acc)">REFIN</b> (le faltan 2 tarifas o menos) o <b style="color:var(--grn)">crédito PARALELO</b> (ya pagó 50% o más · oferta hasta <span id="op-max">$4,000</span>).</div>
+      <div class="frow">
+        <div class="field"><label>Buscar</label><input id="op-q" placeholder="Cliente, folio o cobrador…" oninput="pintaOportSuc()"></div>
+        <div class="field"><label>Cobrador / ruta</label><select id="op-cob" onchange="pintaOportSuc()"><option value="">Todos</option></select></div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-top:14px">
+      <h3 style="margin:0 0 6px;color:var(--acc)">🔁 REFIN · <span id="op-nrefin">0</span></h3>
+      <div style="color:var(--faint);font-size:.8rem;margin:0 0 10px">Casi liquidados. Conviene reenganchar con un crédito nuevo.</div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Cliente</th><th>Cobrador</th><th>Modalidad</th><th class="n">Cuota</th><th class="n">Saldo</th><th class="n">Faltan</th></tr></thead><tbody id="op-refin-rows"></tbody></table></div>
+    </div>
+
+    <div class="panel" style="margin-top:14px">
+      <h3 style="margin:0 0 6px;color:var(--grn)">➕ PARALELO · <span id="op-nparal">0</span></h3>
+      <div style="color:var(--faint);font-size:.8rem;margin:0 0 10px">Buen pagador (≥50% pagado). Puede llevar un segundo crédito sin liquidar el actual.</div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Cliente</th><th>Cobrador</th><th>Modalidad</th><th class="n">% pagado</th><th class="n">Saldo</th><th class="n">Oferta</th></tr></thead><tbody id="op-paral-rows"></tbody></table></div>
     </div>
   </div>
 
@@ -903,9 +927,11 @@ function setVw(vw){
   document.getElementById('view-resumen').style.display=vw==='resumen'?'':'none';
   document.getElementById('view-cartera').style.display=vw==='cartera'?'':'none';
   document.getElementById('view-contactos').style.display=vw==='contactos'?'':'none';
+  document.getElementById('view-oport').style.display=vw==='oport'?'':'none';
   if(vw==='resumen') cargarResumen();
   if(vw==='cartera') cargarCartSuc();
   if(vw==='contactos') cargarContactos();
+  if(vw==='oport') cargarOportSuc();
 }
 let _periodoSuc='semana', _dashSuc=null, _cobObj={};
 function setPeriodoSuc(p){
@@ -1094,6 +1120,33 @@ function pintaCartSuc(){
   document.getElementById('cs-rows').innerHTML=rows.slice(0,500).map(s=>`<tr><td>${s.cliente||'—'}<div style="font-size:.74rem;color:var(--faint)">${s.folio||''}</div></td><td>${s.prom||'—'}</td><td>${TIPO_LBL[s.tipo]||s.tipo}</td><td class="n">${fmt(s.cuota||0)}</td><td class="n" style="color:${s.saldo>0?'var(--txt)':'var(--grn)'}">${s.saldo>0?fmt(s.saldo):'Liquidado'}</td></tr>`).join('')||'<tr><td colspan="5" style="text-align:center;color:var(--faint);padding:16px">Sin resultados.</td></tr>';
 }
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));t.classList.add('on');document.getElementById(t.dataset.v).classList.add('on');});
+
+/* ===== Oportunidades: REFIN / PARALELO ===== */
+let _oport={refin:[],paralelo:[]};
+async function cargarOportSuc(){
+  try{
+    _oport=await api('GET','/api/oportunidades');
+    document.getElementById('op-max').textContent=fmt(_oport.ofertaParaleloMax||4000);
+    const cobs=[...new Set([..._oport.refin,..._oport.paralelo].map(r=>r.cobrador).filter(Boolean))].sort();
+    const sel=document.getElementById('op-cob'); if(sel) sel.innerHTML='<option value="">Todos</option>'+cobs.map(c=>`<option>${c}</option>`).join('');
+    pintaOportSuc();
+  }catch(e){ document.getElementById('op-refin-rows').innerHTML='<tr><td colspan="6" style="color:var(--red);padding:10px">'+e.message+'</td></tr>'; }
+}
+function pintaOportSuc(){
+  const q=(document.getElementById('op-q').value||'').toLowerCase();
+  const fc=document.getElementById('op-cob').value;
+  const filtra=r=>{ if(fc && r.cobrador!==fc) return false; if(q){ const b=((r.cliente||'')+' '+(r.folio||'')+' '+(r.cobrador||'')).toLowerCase(); if(!b.includes(q)) return false; } return true; };
+  const rf=_oport.refin.filter(filtra), pl=_oport.paralelo.filter(filtra);
+  document.getElementById('op-nrefin').textContent=rf.length;
+  document.getElementById('op-nparal').textContent=pl.length;
+  document.getElementById('op-refin-rows').innerHTML=rf.map(r=>{
+    const faltan=r.cuota>0?Math.ceil(r.saldo/r.cuota):'—';
+    return `<tr><td>${r.cliente}<div style="font-size:.74rem;color:var(--faint)">${r.folio||''}${r.tel?' · '+r.tel:''}</div></td><td>${r.cobrador}</td><td>${TIPO_LBL[r.tipo]||r.tipo}</td><td class="n">${fmt(r.cuota)}</td><td class="n">${fmt(r.saldo)}</td><td class="n" style="color:var(--acc)">${faltan} tarifa(s)</td></tr>`;
+  }).join('')||'<tr><td colspan="6" style="text-align:center;color:var(--faint);padding:16px">Sin candidatos a REFIN.</td></tr>';
+  document.getElementById('op-paral-rows').innerHTML=pl.map(r=>
+    `<tr><td>${r.cliente}<div style="font-size:.74rem;color:var(--faint)">${r.folio||''}${r.tel?' · '+r.tel:''}</div></td><td>${r.cobrador}</td><td>${TIPO_LBL[r.tipo]||r.tipo}</td><td class="n" style="color:var(--grn)">${r.pctPagado}%</td><td class="n">${fmt(r.saldo)}</td><td class="n" style="color:var(--grn)">hasta ${fmt(r.oferta)}</td></tr>`
+  ).join('')||'<tr><td colspan="6" style="text-align:center;color:var(--faint);padding:16px">Sin candidatos a PARALELO.</td></tr>';
+}
 setInterval(()=>document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'}),1000);
 document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'});
 async function _init(){
