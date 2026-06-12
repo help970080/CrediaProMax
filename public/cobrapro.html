@@ -324,6 +324,7 @@
         <div id="ct-adm-resumen" style="display:flex;gap:8px;flex-wrap:wrap"></div>
       </div>
       <div id="ct-adm-suc" style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0"></div>
+      <div style="margin:4px 0 10px"><select id="ct-adm-fsuc" onchange="ctAdmFiltrar()" style="min-width:220px;background:var(--surf-2);border:1px solid var(--line);color:var(--ink);font-family:'Sora';padding:8px 10px;border-radius:8px"><option value="">Todas las sucursales</option></select></div>
       <div style="overflow-x:auto">
         <table id="ct-adm-tbl">
           <thead><tr>
@@ -358,6 +359,7 @@
     <div class="panel">
       <div class="ph"><h3>Estado de cuenta del cliente</h3><span class="hint" id="ec-rol">Rol: Supervisor · puede condonar y ajustar</span></div>
       <div class="filters">
+        <input id="ec-buscar" oninput="ecFiltrar()" placeholder="🔍 Buscar cliente por nombre o folio…" style="flex:1;min-width:220px;background:var(--surf-2);border:1px solid var(--line-2);color:var(--ink);font-family:'Sora';padding:9px 11px;border-radius:8px">
         <select id="ec-sel" onchange="ecSelect()" style="flex:1;min-width:240px"></select>
         <div style="display:flex;align-items:center;gap:6px;font-size:.82rem;color:var(--dim);margin-left:auto">Monto de moratorio <input type="number" id="ec-mora" value="25" step="5" style="width:78px;background:var(--surf-2);border:1px solid var(--line-2);color:var(--acc);font-family:'IBM Plex Mono';padding:6px 8px;border-radius:7px"></div>
       </div>
@@ -1661,10 +1663,15 @@ let _ecSales=[], ecActual=null, _ecLib=null;
 async function ecInit(){
   try{
     _ecSales = await apiU('GET','/api/sales');
-    document.getElementById('ec-sel').innerHTML = _ecSales.map(s=>`<option value="${s.id}">${s.cliente||'—'} · ${s.folio} · ${_tipoLbl[s.tipo]||s.tipo}</option>`).join('');
+    ecFiltrar();
     if(_ecSales.length){ ecActual=_ecSales[0]; await ecCargar(); }
     else { document.getElementById('ec-empty').style.display='block'; document.getElementById('ec-empty').innerHTML='<div style="color:var(--faint);text-align:center;padding:20px">No hay créditos en la base todavía.</div>'; }
   }catch(e){ document.getElementById('ec-empty').innerHTML='<div style="color:var(--red);padding:18px">'+e.message+'</div>'; }
+}
+function ecFiltrar(){
+  const q=(document.getElementById('ec-buscar').value||'').toLowerCase().trim();
+  const list=q? _ecSales.filter(s=>(((s.cliente||'')+' '+(s.folio||'')+' '+(s.cobrador||'')).toLowerCase().includes(q))) : _ecSales;
+  document.getElementById('ec-sel').innerHTML = list.map(s=>`<option value="${s.id}">${s.cliente||'—'} · ${s.folio} · ${_tipoLbl[s.tipo]||s.tipo}</option>`).join('') || '<option value="">— sin coincidencias —</option>';
 }
 function ecSelect(){ ecActual=_ecSales.find(s=>String(s.id)===document.getElementById('ec-sel').value); ecCargar(); }
 async function ecCargar(){
@@ -2439,8 +2446,25 @@ async function pintaContactosAdmin(d){
     _ctAdm=r; pintaContactosAdminTabla(r.rows||[]);
   }catch(e){ document.getElementById('ct-adm-rows').innerHTML='<tr><td colspan="8" style="color:var(--red);padding:12px">'+e.message+'</td></tr>'; }
 }
+let _ctAdmAllRows=[];
+function _ctAdmFillFiltro(rows){
+  const sel=document.getElementById('ct-adm-fsuc'); if(!sel) return;
+  const prev=sel.value;
+  const sucs=[...new Map(rows.map(r=>[r.sucursalId,_ndSucName(r.sucursalId)])).entries()].sort((a,b)=>(a[1]||'').localeCompare(b[1]||''));
+  sel.innerHTML='<option value="">Todas las sucursales</option>'+sucs.map(([id,nm])=>`<option value="${id}">${nm}</option>`).join('');
+  sel.value=prev;
+}
+function ctAdmFiltrar(){ _ctAdmPintar(); }
 function pintaContactosAdminTabla(rows){
-  rows=rows.slice().sort((a,b)=>(b.monto_atraso||0)-(a.monto_atraso||0));
+  _ctAdmAllRows=(rows||[]).slice();
+  _ctAdmFillFiltro(_ctAdmAllRows);
+  _ctAdmPintar();
+}
+function _ctAdmPintar(){
+  let rows=_ctAdmAllRows.slice();
+  const _f=document.getElementById('ct-adm-fsuc'); const _fv=_f?_f.value:'';
+  if(_fv) rows=rows.filter(r=>String(r.sucursalId)===_fv);
+  rows=rows.sort((a,b)=>(b.monto_atraso||0)-(a.monto_atraso||0));
   document.getElementById('ct-adm-rows').innerHTML=rows.map(r=>{
     const g=r.gestion||null;
     const res=g&&g.resultado?g.resultado:'<span style="color:var(--faint)">— sin gestionar —</span>';
