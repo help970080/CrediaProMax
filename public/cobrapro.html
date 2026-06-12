@@ -324,14 +324,6 @@
         <div id="ct-adm-resumen" style="display:flex;gap:8px;flex-wrap:wrap"></div>
       </div>
       <div id="ct-adm-suc" style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0"></div>
-      <div id="voz-bar" style="display:none;align-items:center;flex-wrap:wrap;gap:10px;margin:10px 0;padding:10px 12px;background:var(--surf-2);border:1px solid var(--line);border-radius:10px">
-        <div style="font-weight:600">📞 Llamadas automáticas <span style="font-weight:400;color:var(--faint);font-size:.8rem">· marca a los no-pagos con voz</span></div>
-        <div id="voz-creditos" style="font-size:.82rem;color:var(--dim)">Créditos: …</div>
-        <div style="flex:1"></div>
-        <label style="font-size:.78rem;color:var(--dim);display:flex;align-items:center;gap:5px"><input type="checkbox" id="voz-solo"> sólo no llamados</label>
-        <button class="btn gold" id="voz-btn" onclick="vozLanzar()">📞 Llamar no-pagos</button>
-      </div>
-      <div id="voz-msg" style="display:none;font-size:.82rem;margin:0 0 8px"></div>
       <div style="overflow-x:auto">
         <table id="ct-adm-tbl">
           <thead><tr>
@@ -590,6 +582,25 @@
 
   <!-- FLUJO / TESORERÍA -->
   <section class="view" id="flujo">
+    <div class="panel" id="tt-card" style="background:linear-gradient(135deg,var(--surf-2),var(--surf));border:1px solid var(--acc)">
+      <div class="ph"><h3>💰 Tesorería total · todo el dinero del sistema</h3><span class="hint">cada peso, en una sola vista · solo admin</span></div>
+      <div style="padding:6px 4px 10px">
+        <div style="font-size:.78rem;color:var(--dim)">Gran total (efectivo + banco)</div>
+        <div id="tt-grantotal" style="font-size:2.6rem;font-weight:800;letter-spacing:-.02em;color:var(--acc)">$0</div>
+        <div style="font-size:.74rem;color:var(--faint)">Solo efectivo: <span id="tt-efectivo" style="color:var(--grn);font-weight:600">$0</span></div>
+      </div>
+      <div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">
+        <div class="kpi"><div class="l">🏦 Tesorería admin</div><div class="v" id="tt-tes" style="font-size:1.15rem">$0</div></div>
+        <div class="kpi g"><div class="l">🏪 Cajas sucursal</div><div class="v" id="tt-suc" style="font-size:1.15rem">$0</div></div>
+        <div class="kpi b"><div class="l">💳 Banco sucursal</div><div class="v" id="tt-banco" style="font-size:1.15rem">$0</div></div>
+        <div class="kpi v"><div class="l">📦 Cajas JC</div><div class="v" id="tt-jc" style="font-size:1.15rem">$0</div></div>
+        <div class="kpi"><div class="l">👔 Cajas supervisor</div><div class="v" id="tt-sup" style="font-size:1.15rem">$0</div></div>
+        <div class="kpi"><div class="l">🚶 Por entregar (ruta)</div><div class="v" id="tt-ruta" style="font-size:1.15rem">$0</div></div>
+        <div class="kpi r"><div class="l">⏳ En tránsito (cortes)</div><div class="v" id="tt-tran" style="font-size:1.15rem">$0</div></div>
+      </div>
+      <div class="note">Suma <b>cada caja</b> del sistema sin doble-contar: la tesorería central, las cajas de sucursal (efectivo y banco), las de JC y supervisor, el efectivo que traen los cobradores en ruta, y los cortes de sucursal cerrados que aún no confirmas.</div>
+    </div>
+
     <div class="panel" style="background:linear-gradient(135deg,var(--surf-2),var(--surf));border:1px solid var(--line)">
       <div class="ph"><h3>🏦 Tesorería · efectivo del administrador</h3><span class="hint">Todo el dinero recolectado llega aquí. Desde aquí se dota a sucursales, JC y supervisores para poder operar.</span></div>
       <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;padding:6px 4px 14px">
@@ -1822,8 +1833,25 @@ async function recibirCorte(id){
   try{ await apiU('POST','/api/cortes/'+id+'/recibir'); await cargarCortes(); }catch(e){ alert(e.message); }
 }
 let _flData=null;
+async function cargarTesoreria(){
+  try{
+    const d=await apiU('GET','/api/tesoreria');
+    const T=d.totales||{};
+    $('tt-grantotal').textContent=fmt(d.granTotal||0);
+    $('tt-efectivo').textContent=fmt(d.granTotalEfectivo||0);
+    $('tt-tes').textContent=fmt(T.tesoreriaAdmin||0);
+    $('tt-suc').textContent=fmt(T.sucursalesEfectivo||0);
+    $('tt-banco').textContent=fmt(T.sucursalesBanco||0);
+    $('tt-jc').textContent=fmt(T.cajasJC||0);
+    $('tt-sup').textContent=fmt(T.cajasSupervisor||0);
+    $('tt-ruta').textContent=fmt(T.enRutaPorEntregar||0);
+    $('tt-tran').textContent=fmt(T.enTransitoCortes||0);
+    $('tt-grantotal').style.color=(d.granTotal||0)<0?'var(--red)':'var(--acc)';
+  }catch(e){ const c=$('tt-card'); if(c) c.style.display='none'; } // si no es admin, ocultar la tarjeta
+}
 async function cargarFlujo(){
   try{
+    cargarTesoreria();
     const d=await apiU('GET','/api/flujo'); _flData=d;
     $('fl-saldo').textContent=fmt(d.saldo);
     $('fl-saldo').style.color = d.saldo<0?'var(--red)':'var(--acc)';
@@ -2408,7 +2436,7 @@ async function pintaContactosAdmin(d){
   // tabla completa
   try{
     const r=await apiU('GET','/api/contactos?semana='+encodeURIComponent(_ctAdmSem));
-    _ctAdm=r; pintaContactosAdminTabla(r.rows||[]); vozRefrescar();
+    _ctAdm=r; pintaContactosAdminTabla(r.rows||[]);
   }catch(e){ document.getElementById('ct-adm-rows').innerHTML='<tr><td colspan="8" style="color:var(--red);padding:12px">'+e.message+'</td></tr>'; }
 }
 function pintaContactosAdminTabla(rows){
@@ -2416,7 +2444,6 @@ function pintaContactosAdminTabla(rows){
   document.getElementById('ct-adm-rows').innerHTML=rows.map(r=>{
     const g=r.gestion||null;
     const res=g&&g.resultado?g.resultado:'<span style="color:var(--faint)">— sin gestionar —</span>';
-    const llamado=(g&&g.llamado)?`<span style="display:inline-block;background:#16314f;color:#7fb3ff;border:1px solid #28507a;border-radius:6px;padding:1px 7px;font-size:.7rem;margin-bottom:3px">📞 ${(g.ultimaLlamada&&g.ultimaLlamada.resultado)||'Llamado'}</span><br>`:'';
     const ev=g&&g.tieneEvidencia?`<button class="btn" style="padding:3px 9px;font-size:.72rem" onclick="ctVerEvidencia(${g.id})">👁 Ver</button>`:'<span style="color:var(--faint);font-size:.78rem">—</span>';
     let est;
     if(!g||(!g.resultado&&!g.tieneEvidencia)) est='<span style="color:var(--faint);font-size:.78rem">pendiente</span>';
@@ -2428,43 +2455,11 @@ function pintaContactosAdminTabla(rows){
       <td style="font-size:.82rem">${r.cobrador||'—'}</td>
       <td class="n" style="color:${(r.monto_atraso||0)>0?'var(--red)':'var(--faint)'}">${fmt(r.monto_atraso||0)}</td>
       <td class="n" style="font-size:.8rem">${r.ultima_fecha_pago||'—'}</td>
-      <td style="font-size:.82rem">${llamado}${res}${g&&g.nota?'<div style="font-size:.72rem;color:var(--faint)">'+g.nota+'</div>':''}</td>
+      <td style="font-size:.82rem">${res}${g&&g.nota?'<div style="font-size:.72rem;color:var(--faint)">'+g.nota+'</div>':''}</td>
       <td class="n">${ev}</td>
       <td class="n">${est}</td>
     </tr>`;
   }).join('')||'<tr><td colspan="8" style="text-align:center;color:var(--faint);padding:16px">No hay clientes sin pago en la semana anterior. 🎉</td></tr>';
-}
-/* ===== Llamadas automáticas (voz IVR) — admin/supervisor ===== */
-let _vozCreditos=0, _vozTotal=0;
-function _vozPuede(){ return ME && (ME.rol==='admin'||ME.rol==='supervisor'); }
-async function vozRefrescar(){
-  if(!_vozPuede()) return;
-  const bar=document.getElementById('voz-bar'); if(bar) bar.style.display='flex';
-  try{
-    const r=await apiU('GET','/api/voz/candidatos');
-    _vozCreditos=r.creditosVoz||0; _vozTotal=r.total||0;
-    const yaLlamados=(r.candidatos||[]).filter(c=>c.yaLlamado).length;
-    const cEl=document.getElementById('voz-creditos');
-    if(cEl) cEl.innerHTML='Créditos: <b style="color:'+(_vozCreditos>0?'var(--grn)':'var(--red)')+'">'+_vozCreditos+'</b> · No-pagos con tel: <b>'+_vozTotal+'</b>'+(yaLlamados?' · ya llamados: '+yaLlamados:'');
-    const btn=document.getElementById('voz-btn');
-    if(btn){ btn.disabled=(_vozCreditos<=0||_vozTotal===0); btn.style.opacity=btn.disabled?'.5':'1'; }
-  }catch(e){ const cEl=document.getElementById('voz-creditos'); if(cEl) cEl.textContent='Voz no disponible'; }
-}
-async function vozLanzar(){
-  if(!_vozPuede()) return;
-  const solo=document.getElementById('voz-solo')?document.getElementById('voz-solo').checked:false;
-  const aLlamar=Math.min(_vozCreditos,_vozTotal);
-  if(aLlamar<=0){ alert(_vozCreditos<=0?'Esta agencia no tiene créditos de voz. Pide al Super Admin que recargue.':'No hay no-pagos con teléfono para llamar.'); return; }
-  if(!confirm('Se van a marcar hasta '+aLlamar+' clientes sin pago.\nCada llamada CONTESTADA consume 1 crédito. ¿Iniciar?')) return;
-  const msg=document.getElementById('voz-msg'); if(msg){ msg.style.display='block'; msg.style.color='var(--dim)'; msg.textContent='Enviando lote al marcador…'; }
-  const btn=document.getElementById('voz-btn'); if(btn){ btn.disabled=true; btn.style.opacity='.5'; }
-  try{
-    const r=await apiU('POST','/api/voz/lanzar',{ soloNoLlamados:solo });
-    if(msg){ msg.style.color='var(--grn)'; msg.textContent='✓ '+(r.enviados||0)+' llamadas en cola. Los resultados se reflejarán en la tabla conforme contesten.'; }
-  }catch(e){
-    if(msg){ msg.style.color='var(--red)'; msg.textContent='✕ '+(e.message||'Error al lanzar'); }
-  }
-  setTimeout(vozRefrescar,1500);
 }
 function _ndSucName(sid){ const r=(_ndData&&_ndData.rows||[]).find(x=>x.id===sid); return r?r.gerencia:('Suc '+sid); }
 async function ctValidar(id,val){
