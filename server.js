@@ -1019,6 +1019,11 @@ app.post('/api/sales/:id/pago', auth, idem, (req, res) => {
     // ventanilla / admin / supervisor: el dinero entra a la caja de la sucursal que lo recibió
     if (f === 'efectivo') db.caja[sidCobro].efectivo += +monto;
     else if (f === 'transferencia' || f === 'deposito') db.caja[sidCobro].banco += +monto;
+    // Cobrado en ventanilla (acumulado del periodo) — se reinicia en cada cierre de caja
+    if (f !== 'ajuste') {
+      db.caja[sidCobro].cobradoVent = (db.caja[sidCobro].cobradoVent || 0) + (+monto);
+      db.caja[sidCobro].cobradoVentN = (db.caja[sidCobro].cobradoVentN || 0) + 1;
+    }
   }
   markIdem(req); saveDB();
   res.status(201).json({ ok: true, saldo: saldoDe(id), cobroCruzado: sidCobro !== sidCredito });
@@ -1712,7 +1717,7 @@ app.post('/api/caja/cierre', auth, rol('sucursal'), (req, res) => {
   };
   db.cortes.push(corte);
   // dejar la caja en ceros (el efectivo cerrado ya quedó en el corte para el admin)
-  db.caja[sid] = { inicial: 0, efectivo: 0, banco: 0, entregas: 0, retiros: 0 };
+  db.caja[sid] = { inicial: 0, efectivo: 0, banco: 0, entregas: 0, retiros: 0, cobradoVent: 0, cobradoVentN: 0 };
   saveDB();
   res.json({ ok: true, corte, efectivoCerrado: efectivoReal, banco });
 });
