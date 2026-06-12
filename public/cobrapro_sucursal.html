@@ -528,6 +528,7 @@ document.getElementById('overlay').onclick=e=>{if(e.target.id==='overlay')cerrar
 async function cargarCaja(){
   try{ const d=await api('GET','/api/caja/hoy'); const cj=d.caja||{};
     caja.inicial=cj.inicial||0; caja.efectivo=cj.efectivo||0; caja.banco=cj.banco||0; caja.entregasConfirmadas=cj.entregas||0; caja.retiros=cj.retiros||0;
+    caja.cobradoVent=cj.cobradoVent||0; caja.cobradoVentN=cj.cobradoVentN||0;
     porEntregar=(d.porEntregar||[]).map((p,i)=>({id:p.id,prom:p.prom,monto:p.monto,color:_colors[i%_colors.length]}));
   }catch(e){}
   render();
@@ -878,8 +879,8 @@ async function imprimirPagare(saleId){
   cerrar();
 }
 function render(){
-  document.getElementById('k-cob').textContent=fmt(caja.efectivo+caja.banco);
-  document.getElementById('k-ncob').textContent=caja.ncob+' pagos';
+  document.getElementById('k-cob').textContent=fmt(caja.cobradoVent||0);
+  document.getElementById('k-ncob').textContent=(caja.cobradoVentN||0)+' pagos';
   document.getElementById('k-cred').textContent=caja.ncred;
   document.getElementById('k-coloc').textContent=fmt(caja.coloc)+' colocado';
   const efectivoReal=caja.inicial+caja.efectivo+caja.entregasConfirmadas-(caja.retiros||0);
