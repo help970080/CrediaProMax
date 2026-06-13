@@ -305,16 +305,16 @@
   <div id="view-mora" style="display:none">
     <div class="panel">
       <h2 style="margin:0 0 4px">📉 Aging de mora · mi sucursal</h2>
-      <div style="color:var(--dim);font-size:.85rem;margin:0 0 12px">Tu cartera clasificada por días de atraso. Mientras más a la derecha, más riesgo de no recuperar.</div>
+      <div style="color:var(--dim);font-size:.82rem;margin:0 0 12px;line-height:1.5">La <b style="color:var(--txt)">mora</b> es el <b style="color:var(--txt)">débito vencido</b> (cuotas no pagadas × cuota), no el saldo total. Si un cliente debe 1 pago, su mora es 1 cuota.</div>
       <div class="frow">
-        <div class="field"><label>Cartera vigente</label><div id="ag-cartera" style="font-family:'Sora';font-weight:800;font-size:1.3rem">$0</div></div>
-        <div class="field"><label>Cartera vencida</label><div id="ag-vencida" style="font-family:'Sora';font-weight:800;font-size:1.3rem;color:var(--red)">$0</div></div>
+        <div class="field"><label>Cartera total</label><div id="ag-cartera" style="font-family:'Sora';font-weight:800;font-size:1.3rem">$0</div></div>
+        <div class="field"><label>En mora (débito)</label><div id="ag-vencida" style="font-family:'Sora';font-weight:800;font-size:1.3rem;color:var(--red)">$0</div></div>
         <div class="field"><label>Índice de mora</label><div id="ag-indice" style="font-family:'Sora';font-weight:800;font-size:1.3rem">0%</div></div>
       </div>
     </div>
     <div class="panel" style="margin-top:14px">
-      <h3 style="margin:0 0 10px">Cubetas de morosidad (por días de atraso)</h3>
-      <div style="overflow-x:auto"><table><thead><tr><th>Antigüedad</th><th class="n">Créditos</th><th class="n">Saldo</th><th>Distribución</th><th class="n">%</th></tr></thead><tbody id="ag-rows"></tbody></table></div>
+      <h3 style="margin:0 0 10px">Cubetas de morosidad · débito vencido por días de atraso</h3>
+      <div style="overflow-x:auto"><table><thead><tr><th>Antigüedad</th><th class="n">Créditos</th><th class="n">Débito vencido</th><th>Distribución</th><th class="n">%</th></tr></thead><tbody id="ag-rows"></tbody></table></div>
     </div>
   </div>
 
@@ -1144,10 +1144,10 @@ async function cargarMoraSuc(){
   try{
     const d=await api('GET','/api/reports/aging');
     document.getElementById('ag-cartera').textContent=fmt(d.saldoTotal);
-    document.getElementById('ag-vencida').textContent=fmt(d.carteraVencida);
+    document.getElementById('ag-vencida').textContent=fmt(d.moraMonto);
     document.getElementById('ag-indice').textContent=d.indiceMora+'%';
     const col={corriente:'var(--grn)',b1:'#9bbf2e',b2:'var(--acc)',b3:'#e08a1e',b4:'#dc6a1e',b5:'var(--red)'};
-    document.getElementById('ag-rows').innerHTML=d.buckets.map(b=>`<tr><td>${b.lbl}</td><td class="n">${b.creditos}</td><td class="n">${fmt(b.saldo)}</td><td style="min-width:110px"><div style="background:var(--surf-2);border-radius:6px;height:15px;overflow:hidden"><i style="display:block;height:100%;width:${b.pct}%;background:${col[b.k]||'var(--acc)'}"></i></div></td><td class="n">${b.pct}%</td></tr>`).join('');
+    document.getElementById('ag-rows').innerHTML=d.buckets.map(b=>`<tr><td>${b.lbl}</td><td class="n">${b.creditos}</td><td class="n">${fmt(b.mora)}</td><td style="min-width:110px"><div style="background:var(--surf-2);border-radius:6px;height:15px;overflow:hidden"><i style="display:block;height:100%;width:${b.pct}%;background:${col[b.k]||'var(--acc)'}"></i></div></td><td class="n">${b.pct}%</td></tr>`).join('');
   }catch(e){ document.getElementById('ag-rows').innerHTML='<tr><td colspan="5" style="color:var(--red);padding:10px">'+e.message+'</td></tr>'; }
 }
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));t.classList.add('on');document.getElementById(t.dataset.v).classList.add('on');});
