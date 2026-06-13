@@ -657,6 +657,7 @@
         <div class="rp-card" onclick="rpVerComisiones()"><div class="rp-ic">💵</div><div class="rp-tt">Comisiones por cobrador</div><div class="rp-ds">Cobrado, REFIN, comisión calculada · exporta CSV</div><button class="btn" style="margin-top:8px">Ver</button></div>
         <div class="rp-card" onclick="rpVerRecoleccion()"><div class="rp-ic">💰</div><div class="rp-tt">Recolección de efectivo</div><div class="rp-ds">Cuánto recolectar por cobrador y por sucursal · imprimible</div><button class="btn gold" style="margin-top:8px">Generar</button></div>
         <div class="rp-card" onclick="rpVerAtraso()"><div class="rp-ic">⚠️</div><div class="rp-tt">Atraso / mora por sucursal</div><div class="rp-ds">Clientes vencidos y monto en atraso</div><button class="btn" style="margin-top:8px">Ver</button></div>
+        <div class="rp-card" onclick="rpVerAging()"><div class="rp-ic">📉</div><div class="rp-tt">Aging de mora</div><div class="rp-ds">Cubetas de morosidad: al corriente, 1–7, 8–14, 15–30, 31–60, 60+ días · saldo, % y por sucursal</div><button class="btn gold" style="margin-top:8px">Ver</button></div>
         <div class="rp-card" onclick="exportCSV('pagos')"><div class="rp-ic">⬇</div><div class="rp-tt">Movimientos del periodo</div><div class="rp-ds">Quién pagó · hora · forma · cobrador · sucursal</div><button class="btn" style="margin-top:8px">Descargar CSV</button></div>
       </div>
     </div>
@@ -1460,6 +1461,25 @@ async function rpVerComisiones(){
   }catch(e){ alert(e.message); }
 }
 
+async function rpVerAging(){
+  try{
+    const d=await apiU('GET','/api/reports/aging');
+    _rpActual='aging'; _rpData=d;
+    const col={corriente:'var(--grn)',b1:'#9bbf2e',b2:'var(--acc)',b3:'#e08a1e',b4:'#dc6a1e',b5:'var(--red)'};
+    const bk=d.buckets.map(b=>`<tr><td>${b.lbl}</td><td class="n">${b.creditos}</td><td class="n">${fmt(b.saldo)}</td><td style="min-width:120px"><div style="background:var(--surf-2);border-radius:6px;height:15px;overflow:hidden"><i style="display:block;height:100%;width:${b.pct}%;background:${col[b.k]||'var(--acc)'}"></i></div></td><td class="n">${b.pct}%</td></tr>`).join('');
+    const sucs=d.porSucursal.map(s=>`<tr><td>${s.nombre}</td><td class="n">${fmt(s.saldo)}</td><td class="n" style="color:${s.mora>0?'var(--red)':'var(--faint)'}">${fmt(s.mora)}</td><td class="n">${s.creditosMora}</td><td class="n" style="color:${s.pctMora>15?'var(--red)':'var(--txt)'}">${s.pctMora}%</td></tr>`).join('')||'<tr><td colspan="5" style="color:var(--faint);padding:10px">—</td></tr>';
+    rpAbrir('📉 Aging de mora',`
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px">
+        <div class="kpi" style="padding:10px"><div class="l">Cartera vigente</div><div class="v" style="font-size:1.3rem">${fmt(d.saldoTotal)}</div></div>
+        <div class="kpi" style="padding:10px;border-color:var(--red)"><div class="l">Cartera vencida</div><div class="v" style="font-size:1.3rem;color:var(--red)">${fmt(d.carteraVencida)}</div></div>
+        <div class="kpi" style="padding:10px"><div class="l">Índice de mora</div><div class="v" style="font-size:1.3rem">${d.indiceMora}%</div></div>
+      </div>
+      <h4 style="margin:6px 0;font-size:.85rem">Cubetas de morosidad (por días de atraso)</h4>
+      <table class="rp-table"><thead><tr><th>Antigüedad</th><th class="n">Créditos</th><th class="n">Saldo</th><th>Distribución</th><th class="n">%</th></tr></thead><tbody>${bk}</tbody></table>
+      <h4 style="margin:16px 0 6px;font-size:.85rem">Por sucursal (mayor mora primero)</h4>
+      <table class="rp-table"><thead><tr><th>Sucursal</th><th class="n">Cartera</th><th class="n">En mora</th><th class="n">Créd. en mora</th><th class="n">% mora</th></tr></thead><tbody>${sucs}</tbody></table>`);
+  }catch(e){ alert(e.message); }
+}
 async function rpVerAtraso(){
   try{
     const periodo = period==='dia'?'hoy':period;
