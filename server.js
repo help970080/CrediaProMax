@@ -1050,6 +1050,15 @@ app.get('/api/sales/:id/movimientos', auth, (req, res) => {
 });
 
 /* ---------- Pago (idempotente, con forma de pago) ---------- */
+// Cuántos pagos semanales se esperan ya, contando por CICLO (igual que Números Diarios):
+// se espera un pago por cada ciclo que inició DESPUÉS del ciclo en que se creó/reestructuró el crédito,
+// hasta el ciclo actual inclusive. Sin gracia de 7 días: un crédito de la semana pasada ya debe 1.
+function _ciclosEsperados(anchorTs){
+  const cycleNow = _inicioCiclo(new Date(fechaMxHoyISO() + 'T00:00:00').getTime());
+  const firstCycle = _inicioCiclo(anchorTs) + 7 * 86400000;
+  if (cycleNow < firstCycle) return 0;
+  return Math.round((cycleNow - firstCycle) / (7 * 86400000)) + 1;
+}
 function calcAtraso(sale){
   const cuota = sale.cuota || 0;
   // ancla del calendario: si hubo reestructura, el reloj se reinicia desde esa fecha
@@ -1057,8 +1066,8 @@ function calcAtraso(sale){
   const dias = Math.max(0, Math.floor((Date.now() - anchor.getTime())/86400000));
   let cuotasDebidas = 0;
   if (sale.tipo === 'diario') cuotasDebidas = Math.min(sale.plazo || 0, dias);
-  else if (sale.tipo === 'semanal') cuotasDebidas = Math.min(sale.plazo || 0, Math.floor(dias/7));
-  else if (sale.tipo === 's16' || sale.tipo === 's17' || sale.tipo === 's21' || sale.tipo === 's31') cuotasDebidas = Math.min(sale.plazo || 0, Math.floor(dias/7));
+  else if (sale.tipo === 'semanal') cuotasDebidas = Math.min(sale.plazo || 0, _ciclosEsperados(anchor.getTime()));
+  else if (sale.tipo === 's16' || sale.tipo === 's17' || sale.tipo === 's21' || sale.tipo === 's31') cuotasDebidas = Math.min(sale.plazo || 0, _ciclosEsperados(anchor.getTime()));
   else if (sale.tipo === 'unico') cuotasDebidas = dias >= (sale.plazo || 0) ? 1 : 0;
   else if (sale.tipo === 'p17') cuotasDebidas = Math.min(17, Math.floor(dias / ((sale.plazo || 270)/17)));
   // saldo base: total original, o el saldo reprogramado si hubo reestructura
@@ -2488,6 +2497,63 @@ app.get('/api/reports/aging', auth, rol('admin', 'supervisor', 'sucursal'), (req
   const porSucursal = Object.values(porSuc).map(p => ({ ...p, saldo: Math.round(p.saldo), mora: Math.round(p.mora), buckets: Object.fromEntries(Object.entries(p.buckets).map(([k, v]) => [k, Math.round(v)])), pctMora: p.saldo > 0 ? Math.round((p.saldo - p.buckets.corriente) / p.saldo * 1000) / 10 : 0 })).sort((a, b) => b.pctMora - a.pctMora);
   res.json({ buckets, saldoTotal: Math.round(saldoTotal), carteraVencida: Math.round(carteraVencida), moraMonto: Math.round(moraMonto), creditosMora, indiceMora, porSucursal });
 });
+/* ---------- P&L mensual (estado de resultados) ----------
+   Ingreso = intereses cobrados (cobranza del mes × % interés configurable, porque la cartera
+   importada no trae el capital separado). Costos directos = comisiones (tasaCobrador × cobranza).
+   Gastos fijos + castigo = los captura el ADMIN por sucursal (recurrentes). */
+function computePL() {
+  const desde = _desdePeriodo('mes');
+  const tasaInt = (db.config.pl && db.config.pl.tasaInteres != null) ? +db.config.pl.tasaInteres : 30;
+  const tasaCom = (db.config && db.config.tasaCobrador) || 5;
+  const gastos = (db.config.gastosFijos) || {};
+  const saleSuc = {}; db.sales.forEach(s => { saleSuc[s.id] = s.sucursalId; });
+  const cobSuc = {};
+  db.movimientos.forEach(m => {
+    if (!(m.abono > 0) || m.forma === 'descuento' || m.forma === 'refin') return;
+    if (_parseFechaMx(m.fecha) < desde) return;
+    const sid = saleSuc[m.saleId]; if (sid == null) return;
+    cobSuc[sid] = (cobSuc[sid] || 0) + m.abono;
+  });
+  const filas = []; const T = { cobranza: 0, interes: 0, comis: 0, gastos: 0, castigo: 0, util: 0 };
+  db.sucursales.forEach(su => {
+    const cob = cobSuc[su.id] || 0;
+    const g = gastos[su.id] || {};
+    const gf = (+g.renta || 0) + (+g.sueldos || 0) + (+g.servicios || 0) + (+g.tecnologia || 0) + (+g.fondeo || 0) + (+g.varios || 0);
+    const castigo = (+g.incobrables || 0);
+    const interes = Math.round(cob * tasaInt / 100);
+    const comis = Math.round(cob * tasaCom / 100);
+    const util = interes - comis - gf - castigo;
+    filas.push({ sucursalId: su.id, nombre: su.nombre, cobranza: Math.round(cob), interes, comisiones: comis, gastos: gf, castigo, utilidad: util });
+    T.cobranza += cob; T.interes += interes; T.comis += comis; T.gastos += gf; T.castigo += castigo; T.util += util;
+  });
+  filas.sort((a, b) => b.utilidad - a.utilidad);
+  const ingresos = T.interes;
+  const margen = ingresos > 0 ? Math.round(T.util / ingresos * 1000) / 10 : 0;
+  return { tasaInteres: tasaInt, tasaCobrador: tasaCom, consolidado: { cobranza: Math.round(T.cobranza), interes: T.interes, comisiones: T.comis, gastosFijos: T.gastos, castigo: T.castigo, utilidad: T.util, margen }, porSucursal: filas };
+}
+app.get('/api/pl', auth, rol('admin', 'supervisor'), (req, res) => {
+  res.json({
+    sucursales: db.sucursales.map(s => ({ id: s.id, nombre: s.nombre })),
+    tasaInteres: (db.config.pl && db.config.pl.tasaInteres != null) ? +db.config.pl.tasaInteres : 30,
+    gastos: db.config.gastosFijos || {},
+    pl: computePL()
+  });
+});
+app.post('/api/pl/config', auth, rol('admin'), (req, res) => {
+  db.config.pl = db.config.pl || {};
+  if (req.body.tasaInteres != null) db.config.pl.tasaInteres = Math.max(0, +req.body.tasaInteres || 0);
+  if (req.body.gastos && typeof req.body.gastos === 'object') {
+    db.config.gastosFijos = db.config.gastosFijos || {};
+    Object.entries(req.body.gastos).forEach(([sid, g]) => {
+      db.config.gastosFijos[sid] = {
+        renta: +g.renta || 0, sueldos: +g.sueldos || 0, servicios: +g.servicios || 0,
+        tecnologia: +g.tecnologia || 0, fondeo: +g.fondeo || 0, varios: +g.varios || 0, incobrables: +g.incobrables || 0
+      };
+    });
+  }
+  saveDB();
+  res.json({ ok: true, tasaInteres: (db.config.pl.tasaInteres != null) ? db.config.pl.tasaInteres : 30, gastos: db.config.gastosFijos || {}, pl: computePL() });
+});
 app.get('/api/reports/desglose', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
   const n = Math.min(Math.max(+req.query.semanas || 12, 1), 26);
   const inicio = (req.query.inicio != null && req.query.inicio !== '') ? Math.min(Math.max(+req.query.inicio, 0), 6) : _diaSemanaInicio();
@@ -2639,7 +2705,7 @@ app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, 
   res.json({ generadoEn: new Date().toISOString(), reportes });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v6', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, pagoExterno: true, recibirEfectivoCobrador: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v7', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
