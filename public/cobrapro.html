@@ -216,7 +216,8 @@
     <button class="navitem" data-v="usuarios"><span class="ic">👤</span> Usuarios</button>
     <button class="navitem" data-v="mapa"><span class="ic">🗺️</span> Mapa de clientes</button>
     <button class="navitem" data-v="simulador"><span class="ic">🖩</span> Simulador de crédito</button>
-    <button class="navitem" data-v="extras" id="nav-extras"><span class="ic">🧮</span> Extras · P&L</button>
+    <button class="navitem" data-v="pl" id="nav-pl"><span class="ic">🧮</span> P&L mensual</button>
+    <button class="navitem" data-v="extras" id="nav-extras"><span class="ic">🕵️</span> Extras · Prestanombres</button>
   </nav>
   <div class="side-foot">
     <div class="live"><span class="dot"></span> Sincronizado en vivo</div>
@@ -751,20 +752,7 @@
       </div>
     </div>
   </section>
-  <section class="view" id="extras">
-    <style>
-      .ex-chk{display:inline-flex;align-items:center;gap:6px;cursor:pointer;color:var(--dim);user-select:none}
-      .ex-chk input{accent-color:var(--acc);cursor:pointer}
-      .ex-rk{display:inline-block;padding:2px 8px;border-radius:20px;font-size:.7rem;font-weight:700}
-      .ex-rk.alta{background:rgba(214,67,45,.16);color:#e8624d}
-      .ex-rk.media{background:rgba(224,160,18,.16);color:#e0a012}
-      .ex-rk.baja{background:rgba(151,162,178,.16);color:#9aa6b6}
-      .ex-card{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:9px;background:var(--surf-1)}
-      .ex-card>summary{cursor:pointer;list-style:none;display:flex;flex-wrap:wrap;align-items:center;gap:9px;font-size:.85rem}
-      .ex-card>summary::-webkit-details-marker{display:none}
-      .ex-mem{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-top:1px dotted var(--line);font-size:.8rem}
-      .ex-mem .mc{color:var(--faint);font-size:.72rem}
-    </style>
+  <section class="view" id="pl">
     <div class="panel">
       <div class="ph"><h3>💰 P&L mensual · mes en curso</h3><span class="hint" id="pl-tasas">—</span></div>
       <div id="pl-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;padding:8px"></div>
@@ -788,6 +776,23 @@
         <button class="btn gold" style="margin-top:12px" onclick="guardarPL()">💾 Guardar gastos y recalcular</button>
       </div>
     </details>
+  </section>
+
+  <section class="view" id="extras">
+    <style>
+      .ex-chk{display:inline-flex;align-items:center;gap:6px;cursor:pointer;color:var(--dim);user-select:none}
+      .ex-chk input{accent-color:var(--acc);cursor:pointer}
+      .ex-rk{display:inline-block;padding:2px 8px;border-radius:20px;font-size:.7rem;font-weight:700}
+      .ex-rk.alta{background:rgba(214,67,45,.16);color:#e8624d}
+      .ex-rk.media{background:rgba(224,160,18,.16);color:#e0a012}
+      .ex-rk.baja{background:rgba(151,162,178,.16);color:#9aa6b6}
+      .ex-card{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:9px;background:var(--surf-1)}
+      .ex-card>summary{cursor:pointer;list-style:none;display:flex;flex-wrap:wrap;align-items:center;gap:9px;font-size:.85rem}
+      .ex-card>summary::-webkit-details-marker{display:none}
+      .ex-mem{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-top:1px dotted var(--line);font-size:.8rem}
+      .ex-mem .mc{color:var(--faint);font-size:.72rem}
+    </style>
+
     <div class="panel">
       <div class="ph"><h3>🕵️ Detector de prestanombres</h3><span class="hint">Agrupa clientes que comparten teléfono, domicilio o apellidos. Sirve para detectar identidades recicladas, créditos cruzados o cartera inflada por un cobrador.</span></div>
       <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;padding:8px 2px 14px;font-size:.85rem">
@@ -2205,7 +2210,7 @@ function sim(){const t=$('s-tipo').value,monto=+$('s-monto').value||0,plazo=+$('
 }
 
 /* NAV + EVENTOS */
-const titles={resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],numdiarios:['Números diarios','Cobranza por gerencia · del día y acumulado de la semana'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],bandeja:['Bandeja de entregas','Créditos por entregar · toma y entrega con evidencia'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],ranking:['Ranking de cobradores','Semana · unidades, % cobranza, clientes y cobrados con semáforo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],flujo:['Flujo / Tesorería','Efectivo del admin · dotación a la operación, nómina y capital'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo'],mapa:['Mapa de clientes','Ubicación geográfica de la cartera'],rastreo:['Rastreo de equipo','Dónde está tu gente en campo · seguridad y operación'],extras:['Extras · Detector de prestanombres','Coincidencias por teléfono, domicilio y apellidos'],asignar:['Asignar efectivo','Mueve efectivo entre puestos · el que recibe confirma']};
+const titles={resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],numdiarios:['Números diarios','Cobranza por gerencia · del día y acumulado de la semana'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],bandeja:['Bandeja de entregas','Créditos por entregar · toma y entrega con evidencia'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],ranking:['Ranking de cobradores','Semana · unidades, % cobranza, clientes y cobrados con semáforo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],flujo:['Flujo / Tesorería','Efectivo del admin · dotación a la operación, nómina y capital'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo'],mapa:['Mapa de clientes','Ubicación geográfica de la cartera'],rastreo:['Rastreo de equipo','Dónde está tu gente en campo · seguridad y operación'],pl:['P&L mensual','Estado de resultados del mes · ingreso, costos, gastos y utilidad por sucursal'],extras:['Extras · Detector de prestanombres','Coincidencias por teléfono, domicilio y apellidos'],asignar:['Asignar efectivo','Mueve efectivo entre puestos · el que recibe confirma']};
 document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
   document.querySelectorAll('.navitem').forEach(x=>x.classList.remove('on'));
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
@@ -2229,7 +2234,8 @@ document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
   if(n.dataset.v==='mapa') initMapa();
   if(n.dataset.v==='comisiones' && !_comisCargado) cargarComisiones();
   if(n.dataset.v==='asignar') initAsignar();
-  if(n.dataset.v==='extras'){ initExtras(); cargarPL(); }
+  if(n.dataset.v==='extras') initExtras();
+  if(n.dataset.v==='pl') cargarPL();
 });
 document.querySelectorAll('#period button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#period button').forEach(x=>x.classList.remove('on'));b.classList.add('on');period=b.dataset.p;render();});
 ['c-cob','c-meta','c-bono','c-mora','c-coloc'].forEach(id=>document.getElementById(id).oninput=render);
