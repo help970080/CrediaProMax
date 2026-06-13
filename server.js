@@ -147,6 +147,13 @@ function calcCredito(tipo, plazo, monto, dias) {
 }
 function genPassword() { const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let p = ''; for (let i = 0; i < 8; i++) p += c[Math.floor(Math.random() * c.length)]; return p; }
 function saldoDe(saleId) { return db.movimientos.filter(m => m.saleId === saleId).reduce((s, m) => s + (m.cargo || 0) - (m.abono || 0), 0); }
+// Saldo de apertura del crédito = primer cargo (disposición en créditos nuevos, "saldo inicial" en importados).
+// Es el saldo REAL con el que arrancó el reloj de cobranza, no la deuda origen.
+function aperturaDe(saleId) {
+  let first = null;
+  for (const m of db.movimientos) { if (m.saleId === saleId && (m.cargo || 0) > 0) { if (!first || (m.id || 0) < (first.id || 0)) first = m; } }
+  return first ? first.cargo : 0;
+}
 
 /* ---------- Oportunidades comerciales: REFIN y PARALELO ----------
    REFIN: le faltan 2 tarifas o menos por liquidar (saldo <= 2*cuota).
@@ -1055,7 +1062,7 @@ function calcAtraso(sale){
   else if (sale.tipo === 'unico') cuotasDebidas = dias >= (sale.plazo || 0) ? 1 : 0;
   else if (sale.tipo === 'p17') cuotasDebidas = Math.min(17, Math.floor(dias / ((sale.plazo || 270)/17)));
   // saldo base: total original, o el saldo reprogramado si hubo reestructura
-  const saldoBase = sale.saldoBaseReestructura != null ? sale.saldoBaseReestructura : (sale.total || 0);
+  const saldoBase = sale.saldoBaseReestructura != null ? sale.saldoBaseReestructura : (aperturaDe(sale.id) || sale.total || 0);
   const saldoActual = saldoDe(sale.id);
   const expectedSaldo = Math.max(0, saldoBase - cuotasDebidas * cuota);
   const montoAtraso = Math.max(0, saldoActual - expectedSaldo);
