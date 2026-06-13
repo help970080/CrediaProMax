@@ -725,6 +725,40 @@ app.post('/api/asignaciones/:id/rechazar', auth, (req, res) => {
   saveDB();
   res.json({ ok: true });
 });
+/* ---------- Admin/supervisor JALA el efectivo "por entregar" de un cobrador ----------
+   Para cuando nadie de la sucursal lo recogió. Baja el "por entregar" del cobrador y
+   acredita el destino: ADMIN/tesorería (default, vía ledger de flujo) o la caja de su sucursal.
+   No hay doble conteo: flujoSaldo() ya considera el flujo; aquí solo movemos el efectivo de
+   "en ruta" a la caja elegida. */
+app.post('/api/cobrador/recibir-efectivo', auth, rol('admin', 'supervisor'), (req, res) => {
+  const prom = req.body.prom;
+  const cob = db.users.find(u => u.rol === 'cobrador' && u.nombre === prom);
+  if (!cob) return res.status(404).json({ error: 'Cobrador no encontrado' });
+  const disp = porEntregarDe(prom);
+  if (disp <= 0.5) return res.status(409).json({ error: 'Ese cobrador no trae efectivo por entregar' });
+  let monto = (req.body.monto != null) ? +req.body.monto : disp;
+  if (!(monto > 0)) return res.status(400).json({ error: 'Monto inválido' });
+  if (monto > disp + 0.5) return res.status(409).json({ error: `Ese cobrador solo trae $${Math.round(disp).toLocaleString('es-MX')} por entregar` });
+  monto = Math.round(monto);
+  const destino = req.body.destino === 'sucursal' ? 'sucursal' : 'admin'; // default: admin/tesorería
+  // 1. baja el "por entregar" del cobrador
+  let restante = monto; const mis = db.porEntregar.filter(p => p.prom === prom);
+  for (const pe of mis) { if (restante <= 0) break; const take = Math.min(pe.monto, restante); pe.monto -= take; restante -= take; }
+  db.porEntregar = db.porEntregar.filter(p => p.monto > 0.5);
+  // 2. acredita el destino
+  let destinoNombre;
+  if (destino === 'sucursal') {
+    const sid = String(cob.sucursalId || 1);
+    db.caja[sid] = db.caja[sid] || { inicial: 0, efectivo: 0, banco: 0, entregas: 0, retiros: 0 };
+    db.caja[sid].entregas = (db.caja[sid].entregas || 0) + monto;
+    destinoNombre = 'Caja ' + ((db.sucursales.find(s => s.id == cob.sucursalId) || {}).nombre || 'sucursal');
+  } else {
+    flujoAgregar('entrada', 'recoleccion', `Efectivo recibido de ${prom} (cobrador) · por ${req.user.nombre}`, monto, null, req.user.nombre);
+    destinoNombre = 'Admin / Tesorería';
+  }
+  saveDB();
+  res.json({ ok: true, recibido: monto, destino, destinoNombre, restante: Math.round(porEntregarDe(prom)) });
+});
 // Panel del JC
 app.get('/api/jc/panel', auth, rol('jc'), (req, res) => {
   const me = db.users.find(u => u.id === req.user.id);
