@@ -1,1201 +1,2902 @@
-<!DOCTYPE html>
-<html lang="es-MX">
-<head>
-<link rel="manifest" href="/manifest.webmanifest">
-<meta name="theme-color" content="#caa23a">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="CobraPro">
-<link rel="apple-touch-icon" href="/icon-192.png">
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CobraPro Sucursal · Caja</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
-<style>
-  :root{--bg:#eef1f7;--surf:#ffffff;--surf-1:#ffffff;--surf-2:#f1f4f9;--surf-3:#e7ecf3;--line:#dde3ec;--line-2:#c9d2de;
-    --txt:#1b2330;--ink:#1b2330;--dim:#5b6675;--faint:#97a2b2;--acc:#d99a0f;--acc-d:#a87a10;
-    --grn:#178a55;--grn-d:#0f6e42;--red:#d6432d;--blu:#2f7fd1;--vio:#7c5ce0;--r:12px;}
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{background:var(--bg);color:var(--txt);font-family:"Sora",sans-serif;line-height:1.45}
-  .mono{font-family:"IBM Plex Mono",monospace;font-feature-settings:"tnum"}
-  ::-webkit-scrollbar{width:9px;height:9px}::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:8px}
-  header{display:flex;align-items:center;gap:14px;padding:15px 26px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,var(--surf),var(--bg));position:sticky;top:0;z-index:20}
-  .mk{width:38px;height:38px;border-radius:10px;background:linear-gradient(140deg,var(--acc),var(--acc-d));display:grid;place-items:center;font-weight:700;color:#1a1408;font-size:18px}
-  header h1{font-size:1.05rem;font-weight:600;line-height:1}
-  header .sub{font-size:.72rem;color:var(--faint)}
-  .hmeta{margin-left:auto;display:flex;align-items:center;gap:18px}
-  .live{display:flex;align-items:center;gap:7px;font-size:.78rem;color:var(--dim)}
-  .dot{width:8px;height:8px;border-radius:50%;background:var(--grn);animation:pulse 2s infinite}
-  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(62,207,142,.5)}70%{box-shadow:0 0 0 7px rgba(62,207,142,0)}100%{box-shadow:0 0 0 0 rgba(62,207,142,0)}}
-  .clock{font-size:.8rem;color:var(--dim)}
-  .wrap{max-width:1180px;margin:0 auto;padding:22px 26px 60px}
-  .grid{display:grid;grid-template-columns:1.15fr 1fr;gap:20px;align-items:start}
-  @media(max-width:900px){.grid{grid-template-columns:1fr}}
-  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:20px}
-  @media(max-width:680px){.kpis{grid-template-columns:1fr 1fr}}
-  @media(max-width:680px){.wrap{padding:16px 12px 50px}table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}}
-  .kpi{background:linear-gradient(160deg,var(--surf-2),var(--surf));border:1px solid var(--line);border-radius:var(--r);padding:15px 16px;position:relative;overflow:hidden}
-  .kpi::before{content:"";position:absolute;top:0;left:0;width:3px;height:100%;background:var(--acc);opacity:.55}
-  .kpi.g::before{background:var(--grn)}.kpi.b::before{background:var(--blu)}.kpi.v::before{background:var(--vio)}.kpi.r::before{background:var(--red)}
-  .kpi .l{font-size:.68rem;color:var(--dim);text-transform:uppercase;letter-spacing:.04em}
-  .kpi .v{font-size:1.5rem;font-weight:600;font-family:"IBM Plex Mono";margin-top:6px}
-  .kpi .s{font-size:.72rem;color:var(--faint);margin-top:3px}
-  .panel{background:var(--surf);border:1px solid var(--line);border-radius:var(--r);padding:19px;margin-bottom:20px}
-  .panel h2{font-size:1.02rem;font-weight:600;margin-bottom:4px}
-  .panel .ph-sub{font-size:.78rem;color:var(--faint);margin-bottom:16px}
-  .search{display:flex;gap:9px;margin-bottom:6px}
-  .search input{flex:1;background:var(--surf-2);border:1px solid var(--line-2);color:var(--txt);font-family:"Sora";font-size:.92rem;padding:11px 14px;border-radius:9px;outline:none}
-  .search input:focus{border-color:var(--acc)}
-  .search-hint{font-size:.71rem;color:var(--faint);margin-bottom:13px}
-  .cli-res{display:flex;flex-direction:column;gap:9px;max-height:380px;overflow-y:auto}
-  .cli{background:var(--surf-2);border:1px solid var(--line);border-radius:10px;padding:13px;cursor:pointer;transition:.13s}
-  .cli:hover{border-color:var(--line-2)}
-  .cli.sel{border-color:var(--acc);background:rgba(240,180,41,.05)}
-  .cli-top{display:flex;align-items:center;gap:11px}
-  .cli-ava{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;font-size:.74rem;font-weight:600;color:#0a0c10}
-  .cli-nm{font-weight:600;font-size:.92rem}.cli-sub{font-size:.73rem;color:var(--faint)}
-  .cli-addr{font-size:.71rem;color:var(--faint);margin-top:2px;display:flex;align-items:center;gap:5px}
-  .cli-saldo{margin-left:auto;text-align:right}
-  .cli-saldo .v{font-family:"IBM Plex Mono";font-weight:600}
-  .cli-saldo .k{font-size:.66rem;color:var(--dim)}
-  .credits{margin-top:11px;padding-top:11px;border-top:1px solid var(--line);display:none}
-  .cli.sel .credits{display:block}
-  .crow{display:flex;align-items:center;gap:10px;padding:9px 10px;background:var(--surf);border:1px solid var(--line);border-radius:9px;margin-bottom:8px}
-  .crow:last-child{margin-bottom:0}
-  .tipo{font-size:.62rem;font-weight:600;text-transform:uppercase;padding:2px 7px;border-radius:5px;white-space:nowrap}
-  .tipo.dia{background:rgba(90,160,232,.14);color:var(--blu)}.tipo.sem{background:rgba(176,124,224,.14);color:var(--vio)}.tipo.uni{background:rgba(240,180,41,.14);color:var(--acc)}.tipo.p17{background:rgba(62,207,142,.14);color:var(--grn)}
-  .pill{display:inline-flex;padding:2px 9px;border-radius:20px;font-size:.69rem;font-weight:500}
-  .pill.ok{background:rgba(62,207,142,.13);color:var(--grn)}.pill.w{background:rgba(240,180,41,.14);color:var(--acc)}.pill.bad{background:rgba(240,101,77,.13);color:var(--red)}
-  .crow .cdata{flex:1;min-width:0}
-  .crow .cdata .l1{font-size:.82rem;font-weight:500}
-  .crow .cdata .l2{font-size:.72rem;color:var(--faint)}
-  .crow .pay{background:linear-gradient(140deg,var(--acc),var(--acc-d));color:#1a1408;border:none;border-radius:8px;font-family:"Sora";font-weight:600;font-size:.8rem;padding:8px 13px;cursor:pointer;white-space:nowrap}
-  .crow .pay:active{transform:scale(.97)}
-  .field{margin-bottom:13px}
-  .field label{display:block;font-size:.74rem;color:var(--dim);margin-bottom:6px}
-  .field .req{color:var(--acc)}
-  .field input,.field select{width:100%;background:var(--surf-2);border:1px solid var(--line-2);color:var(--txt);font-family:"Sora";font-size:.9rem;padding:10px 12px;border-radius:8px;outline:none}
-  .field input:focus,.field select:focus{border-color:var(--acc)}
-  .frow{display:grid;grid-template-columns:1fr 1fr;gap:11px}
-  .frow3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:11px}
-  .sect-lbl{font-size:.68rem;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;margin:18px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--line)}
-  .calc{background:var(--surf-2);border:1px dashed var(--line-2);border-radius:10px;padding:14px;margin:6px 0 14px}
-  .calc-row{display:flex;justify-content:space-between;padding:6px 0;font-size:.85rem;border-bottom:1px solid var(--line)}
-  .calc-row:last-child{border:none}.calc-row .v{font-family:"IBM Plex Mono";font-weight:600}
-  .calc-row.big .v{font-size:1.25rem;color:var(--acc)}
-  .btn-full{width:100%;background:linear-gradient(140deg,var(--acc),var(--acc-d));color:#1a1408;border:none;border-radius:10px;font-family:"Sora";font-weight:600;font-size:.95rem;padding:13px;cursor:pointer}
-  .btn-full:active{transform:scale(.99)}
-  table{width:100%;border-collapse:collapse;font-size:.85rem}
-  th{text-align:left;font-weight:500;color:var(--dim);font-size:.69rem;text-transform:uppercase;letter-spacing:.04em;padding:8px 10px;border-bottom:1px solid var(--line-2)}
-  th.n,td.n{text-align:right;font-family:"IBM Plex Mono"}
-  td{padding:10px;border-bottom:1px solid var(--line)}tr:last-child td{border-bottom:none}
-  .big-cut{background:linear-gradient(140deg,var(--acc),var(--acc-d));border-radius:12px;padding:18px;color:#1a1408;text-align:center;margin-bottom:14px}
-  .big-cut .l{font-size:.74rem;font-weight:600;text-transform:uppercase;opacity:.8}
-  .big-cut .v{font-size:2.1rem;font-weight:700;font-family:"IBM Plex Mono"}
-  .pe-card{background:var(--surf-2);border:1px solid var(--line);border-left:3px solid var(--acc);border-radius:9px;padding:13px;margin-bottom:9px;display:flex;align-items:center;gap:12px}
-  .pe-card .pe-ava{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;font-size:.72rem;font-weight:600;color:#0a0c10}
-  .pe-card .pe-nm{font-weight:600;font-size:.88rem}.pe-card .pe-sub{font-size:.72rem;color:var(--faint)}
-  .pe-card .pe-monto{margin-left:auto;font-family:"IBM Plex Mono";font-weight:600;color:var(--acc)}
-  .pe-card .pe-btn{background:var(--surf-3);border:1px solid var(--grn-d);color:var(--grn);font-family:"Sora";font-weight:600;font-size:.76rem;padding:8px 11px;border-radius:8px;cursor:pointer;white-space:nowrap}
-  .pe-card .pe-btn:active{transform:scale(.97)}
-  .pe-note{font-size:.74rem;color:var(--faint);line-height:1.5;background:rgba(240,180,41,.06);border:1px solid rgba(240,180,41,.18);border-radius:8px;padding:11px 13px;margin-bottom:13px}
-  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
-  .overlay.on{display:flex;animation:fade .2s}@keyframes fade{from{opacity:0}to{opacity:1}}
-  .modal{background:var(--surf);border:1px solid var(--line-2);border-radius:16px;max-width:390px;width:100%;padding:22px;animation:pop .25s}
-  @keyframes pop{from{transform:scale(.94);opacity:0}to{transform:none;opacity:1}}
-  .modal h3{font-size:1.05rem;margin-bottom:14px}
-  .amt-box{background:var(--surf-2);border:1px solid var(--line-2);border-radius:11px;padding:14px;text-align:center;margin-bottom:14px}
-  .amt-box .l{font-size:.7rem;color:var(--dim);text-transform:uppercase}
-  .amt-input{background:none;border:none;color:var(--acc);font-family:"IBM Plex Mono";font-size:2rem;font-weight:600;text-align:center;width:100%;outline:none;margin-top:4px}
-  .forma{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
-  .forma button{background:var(--surf-2);border:1px solid var(--line);color:var(--dim);border-radius:9px;padding:11px;font-family:"Sora";font-size:.82rem;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px}
-  .forma button.on{border-color:var(--acc);color:var(--acc);background:rgba(240,180,41,.06)}
-  .recibo{background:var(--surf-2);border-radius:10px;padding:16px;font-size:.86rem}
-  .recibo .rr{display:flex;justify-content:space-between;padding:5px 0}
-  .recibo .rr .v{font-family:"IBM Plex Mono"}
-  .modal-actions{display:flex;gap:10px;margin-top:16px}
-  .ma{flex:1;border:none;border-radius:10px;font-family:"Sora";font-weight:600;font-size:.9rem;padding:12px;cursor:pointer}
-  .ma.cancel{background:var(--surf-3);color:var(--dim)}.ma.ok{background:linear-gradient(140deg,var(--acc),var(--acc-d));color:#1a1408}
-  .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--grn);color:#04130c;padding:13px 22px;border-radius:30px;font-weight:600;opacity:0;transition:.3s;z-index:100;max-width:90%;text-align:center}
-  .toast.show{opacity:1;transform:translateX(-50%)}
-  .tabs{display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid var(--line)}
-  .tab{background:none;border:none;color:var(--dim);font-family:"Sora";font-size:.9rem;font-weight:500;padding:10px 15px;cursor:pointer;position:relative}
-  .tab.on{color:var(--acc)}.tab.on::after{content:"";position:absolute;left:10px;right:10px;bottom:-1px;height:2px;background:var(--acc)}
-  .view{display:none}.view.on{display:block}
+/* ============================================================
+   CobraPro · Backend (Express + JWT + almacén JSON)
+   Sistema NUEVO e independiente. No tiene relación con CelExpress.
+   Arranque local:  npm install && node server.js
+   Sirve el front desde ./public y expone la API en /api/*
+   ============================================================ */
+const express = require('express');
+const cors = require('cors');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const fs = require('fs');
+const path = require('path');
 
-  .dgov{position:fixed;inset:0;background:rgba(10,15,25,.55);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto}
-  .dgbox{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:18px;width:min(1100px,98vw);max-height:94vh;display:flex;flex-direction:column}
-  .dg-table{width:100%;border-collapse:collapse}
-  .dg-table th,.dg-table td{white-space:nowrap;border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:7px 8px;font-size:.8rem}
-  .dg-table th{background:var(--surf-2);color:var(--dim);font-weight:600;font-size:.7rem;text-align:right}
-  .dg-table th.lbl,.dg-table td.lbl{position:sticky;left:0;z-index:2;text-align:left;background:var(--surf);font-weight:600;min-width:180px;box-shadow:2px 0 4px rgba(0,0,0,.05)}
-  .dg-table thead th.lbl{background:var(--surf-2);z-index:3}
-  .dg-table td.n{text-align:right;font-variant-numeric:tabular-nums}
-  .dg-table tbody tr:nth-child(even) td:not(.lbl){background:var(--surf-2)}
-  .dg-tab{background:var(--surf-2);border:1px solid var(--line);color:var(--dim);font-family:'Sora';font-weight:600;font-size:.78rem;padding:6px 12px;border-radius:8px;cursor:pointer}
-  .dg-tab.on{background:var(--acc);border-color:var(--acc);color:#1b2330}
+const app = express();
+const PORT = process.env.PORT || 5000;
+const JWT_SECRET = process.env.JWT_SECRET || 'cobrapro_dev_secret_cambiame';
+const DB_FILE = path.join(__dirname, 'db.json');
 
-  .bd-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
-  .bd-card{background:var(--surf-1);border:1px solid var(--line);border-radius:10px;padding:12px}
-  .bd-b{width:100%;margin-top:8px;background:var(--surf-2);border:1px solid var(--line);color:var(--dim);padding:9px;border-radius:8px;font-family:'Sora';font-weight:600;font-size:.78rem;cursor:pointer}
-  .bd-b.gold{background:var(--acc);border-color:var(--acc);color:#1b2330}
-</style>
-</head>
-<body>
-<header>
-  <div class="mk">🏪</div>
-  <div><h1>Sucursal Amecameca</h1><div class="sub" id="encName">Caja · Brenda Solís</div></div>
-  <div class="hmeta">
-    <div class="live"><span class="dot"></span> Sincronizado en vivo</div>
-    <div class="clock mono" id="clock"></div>
-    <button onclick="abrirBandeja()" style="background:var(--vio);border:1px solid var(--vio);color:#fff;font-family:'Sora';font-weight:700;font-size:.78rem;padding:7px 12px;border-radius:8px;cursor:pointer">📦 Entregas</button>
-    <button onclick="abrirDesglose()" style="background:var(--acc);border:1px solid var(--acc);color:#1b2330;font-family:'Sora';font-weight:700;font-size:.78rem;padding:7px 12px;border-radius:8px;cursor:pointer">📋 Desglose</button>
-    <button onclick="salir()" style="background:var(--surf-3);border:1px solid var(--line-2);color:var(--dim);font-family:'Sora';font-size:.78rem;padding:7px 12px;border-radius:8px;cursor:pointer">Salir</button>
-  </div>
-</header>
-<div class="wrap">
-  <div class="kpis">
-    <div class="kpi g"><div class="l">Cobrado en ventanilla</div><div class="v" id="k-cob">$0</div><div class="s" id="k-ncob">0 pagos</div></div>
-    <div class="kpi b"><div class="l">Créditos captados hoy</div><div class="v" id="k-cred">0</div><div class="s" id="k-coloc">$0 colocado</div></div>
-    <div class="kpi"><div class="l">Efectivo real en caja</div><div class="v" id="k-caja">$0</div><div class="s">disponible para conciliar</div></div>
-  </div>
-  <div class="subnav" style="display:flex;gap:8px;margin:0 0 14px;flex-wrap:wrap">
-    <button class="snb" data-vw="op" onclick="setVw('op')" style="background:var(--acc);color:#1b2330;border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">🧾 Operación</button>
-    <button class="snb" data-vw="resumen" onclick="setVw('resumen')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">📊 Resumen</button>
-    <button class="snb" data-vw="cartera" onclick="setVw('cartera')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">📁 Cartera de crédito</button>
-    <button class="snb" data-vw="contactos" onclick="setVw('contactos')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">📇 Contactos</button>
-    <button class="snb" data-vw="oport" onclick="setVw('oport')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">🎯 Oportunidades</button>
-    <button class="snb" data-vw="mora" onclick="setVw('mora')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">📉 Mora</button>
-  </div>
-  <div id="view-op">
-  <div class="grid">
-    <div class="panel">
-      <h2>Recibir pago</h2>
-      <div class="ph-sub">Busca al cliente —de cualquier cobrador— y registra su abono con su forma de pago. El saldo se actualiza al instante.</div>
-      <div class="search"><input id="q" placeholder="Buscar por nombre, teléfono, folio, domicilio o cobrador…" oninput="buscar()"></div>
-      <div class="search-hint">🔎 Busca por todos los campos a la vez</div>
-      <div class="cli-res" id="cliRes"></div>
-    </div>
-    <div class="panel">
-      <div class="tabs">
-        <button class="tab on" data-v="nuevo">Nuevo crédito</button>
-        <button class="tab" data-v="corte">Corte de caja</button>
-      </div>
-      <section class="view on" id="nuevo">
-        <div class="ph-sub" style="margin-top:-6px">El crédito que el cliente firma en sucursal. Se asigna a un cobrador y entra a su ruta de inmediato.</div>
-        <div class="sect-lbl">Datos del cliente</div>
-        <div class="field"><label>Nombre completo <span class="req">*</span></label><input id="n-cli" placeholder="Nombre del acreditado"></div>
-        <div class="field"><label>CURP (del INE) <span class="req">*</span></label><input id="n-curp" placeholder="18 caracteres" maxlength="18" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></div>
-        <div class="frow">
-          <div class="field"><label>Teléfono</label><input id="n-tel" placeholder="10 dígitos" inputmode="numeric"></div>
-          <div class="field"><label>Cobrador / ruta <span class="req">*</span></label><select id="n-prom"><option>Ana Reyes</option><option>Raúl Cárdenas</option></select></div>
-        </div>
-        <div class="field"><label>Domicilio (calle y número) <span class="req">*</span></label><input id="n-calle" placeholder="Calle, número ext/int"></div>
-        <div class="frow">
-          <div class="field"><label>Colonia / localidad <span class="req">*</span></label><input id="n-col" placeholder="Colonia"></div>
-          <div class="field"><label>Referencias</label><input id="n-ref" placeholder="Entre calles, seña"></div>
-        </div>
-        <div class="frow">
-          <div class="field"><label>Ciudad / municipio <span class="req">*</span></label><input id="n-ciudad" placeholder="Ciudad o municipio"></div>
-          <div class="field"><label>Estado <span class="req">*</span></label><input id="n-estado" placeholder="Estado"></div>
-        </div>
-        <div class="sect-lbl">Producto de crédito</div>
-        <div class="frow">
-          <div class="field"><label>Modalidad</label><select id="n-tipo" onchange="fillPlazos();calc()"><option value="diario">Diario</option><option value="semanal" selected>Semanal</option><option value="s16">Semanal 16 (primer pago)</option><option value="s17">Semanal 17 (primer pago)</option><option value="s21">21 semanas (primer pago)</option><option value="s31">31 semanas (primer pago)</option><option value="unico">Pago único</option><option value="p17">Celulares 17 pagos</option></select></div>
-          <div class="field" id="plazoWrap"><label>Plazo</label><select id="n-plazo" onchange="calc()"></select></div>
-        </div>
-        <div class="field"><label>Monto del crédito</label><input id="n-monto" type="number" value="5000" step="500" oninput="calc()"></div>
-        <div class="field"><label>Artículo(s) que se vende(n) <span style="color:var(--faint);font-weight:400;font-size:.8rem">— opcional · celular, marca, modelo, IMEI…</span></label>
-          <div id="art-list"></div>
-          <button type="button" class="btn" style="margin-top:6px;font-size:.8rem" onclick="addArticulo()">➕ Agregar otro artículo</button>
-        </div>
-        <div class="calc" id="calc"></div>
-        <button class="btn-full" onclick="crearCredito()">Capturar crédito</button>
-      </section>
-      <section class="view" id="corte">
-        <div class="big-cut"><div class="l">Efectivo real en caja</div><div class="v" id="cut-tot">$0</div></div>
-        <table><thead><tr><th>Concepto</th><th class="n">Monto</th></tr></thead><tbody>
-          <tr><td>Saldo inicial de caja</td><td class="n" id="ct-ini">$0</td></tr>
-          <tr><td>Pagos en efectivo (ventanilla)</td><td class="n" id="ct-efe">$0</td></tr>
-          <tr><td>Enganches recibidos</td><td class="n" id="ct-eng">$0</td></tr>
-          <tr><td>Entregas de cobradores confirmadas</td><td class="n" id="ct-ent">$0</td></tr>
-          <tr><td style="color:var(--dim)">Pagos por banco (transf./depósito)*</td><td class="n" id="ct-banco" style="color:var(--dim)">$0</td></tr>
-          <tr><td style="color:var(--vio)">Asignado / entregado a otros puestos</td><td class="n" id="ct-ret" style="color:var(--vio)">$0</td></tr>
-        </tbody></table>
-        <div style="font-size:.72rem;color:var(--faint);margin-top:8px">*No es efectivo en caja: entró directo a banco.</div>
-        <button onclick="hacerCierreCaja(this)" style="width:100%;margin-top:12px;background:var(--acc);color:#1b2330;border:none;padding:12px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">🔒 Hacer cierre de caja</button>
-        <div style="font-size:.72rem;color:var(--faint);margin-top:6px;line-height:1.4">Cierra el corte: el efectivo pasa al administrador (lo verá en Conciliación) y tu caja queda en ceros para empezar de nuevo.</div>
-
-        <div class="sect-lbl">💸 Asignar / entregar efectivo a otro puesto</div>
-        <div style="font-size:.78rem;color:var(--dim);margin-bottom:8px;line-height:1.4">Manda efectivo de tu caja a otra sucursal, supervisor, JC o admin. Se descuenta de tu caja y el destino confirma.</div>
-        <select id="asg-dest-suc" style="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--txt);font-family:'Sora';font-size:.92rem;padding:10px 12px;border-radius:9px;margin-bottom:8px"></select>
-        <input id="asg-monto-suc" type="number" inputmode="numeric" placeholder="Monto $" style="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--txt);font-family:'Sora';font-size:.95rem;padding:10px 12px;border-radius:9px;margin-bottom:8px">
-        <button onclick="asgEnviarSuc(this)" style="width:100%;background:var(--vio);color:#fff;border:none;padding:10px;border-radius:9px;font-family:'Sora';font-weight:600;cursor:pointer">Asignar efectivo</button>
-
-        <div class="sect-lbl">📥 Efectivo por confirmar</div>
-        <div id="asg-inbox-suc" style="font-size:.85rem"></div>
-
-        <div class="sect-lbl">📤 Asignaciones que enviaste (pendientes)</div>
-        <div id="asg-sent-suc" style="font-size:.85rem"></div>
-
-        <div class="sect-lbl">Movimientos de hoy</div>
-        <table><thead><tr><th>Hora</th><th>Concepto</th><th class="n">Monto</th></tr></thead><tbody id="movs"></tbody></table>
-      </section>
-    </div>
-  </div>
-  </div>
-
-  <div id="view-resumen" style="display:none">
-    <div class="panel">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-        <h2 style="margin:0">📊 Resumen de mi sucursal</h2>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="perb" data-p="hoy" onclick="setPeriodoSuc('hoy')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:7px 13px;border-radius:8px;font-family:'Sora';font-weight:600;cursor:pointer">Hoy</button>
-          <button class="perb" data-p="semana" onclick="setPeriodoSuc('semana')" style="background:var(--acc);color:#1b2330;border:1px solid var(--line);padding:7px 13px;border-radius:8px;font-family:'Sora';font-weight:600;cursor:pointer">Semana</button>
-          <button class="perb" data-p="mes" onclick="setPeriodoSuc('mes')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:7px 13px;border-radius:8px;font-family:'Sora';font-weight:600;cursor:pointer">Mes</button>
-        </div>
-      </div>
-      <div id="res-sem" style="color:var(--acc);font-size:.82rem;font-weight:600;margin-top:8px"></div>
-      <div class="kpis" id="res-kpis" style="margin-top:14px"></div>
-      <div class="sect-lbl">Desempeño y objetivos por cobrador</div>
-      <div style="overflow-x:auto"><table><thead><tr><th>Cobrador</th><th class="n">Clientes</th><th class="n">Cartera</th><th class="n">Vencida</th><th class="n" style="color:var(--red)">Sin pago</th><th class="n">Cobrado</th><th class="n">Por entregar</th><th class="n" style="color:var(--vio)">Meta clientes (100%)</th><th class="n" style="color:var(--vio)">Meta cobranza (100%)</th><th class="n">% Clientes</th><th class="n">% Cobranza</th></tr></thead><tbody id="res-cob"></tbody></table></div>
-      <div style="font-size:.74rem;color:var(--faint);margin-top:8px;line-height:1.4">La <b style="color:var(--vio)">meta es el 100%</b> de la cartera del cobrador (no se captura, no se modifica). % Clientes = clientes cobrados ÷ clientes en cartera · % Cobranza = cobrado ÷ débito esperado. <b style="color:var(--red)">Sin pago</b> = clientes con cobro esperado que no abonaron. Cobrado no cuenta primer pago/descuentos.</div>
-    </div>
-  </div>
-
-  <div id="view-cartera" style="display:none">
-    <div class="panel">
-      <h2 style="margin:0 0 12px">📁 Cartera de crédito · mi sucursal</h2>
-      <div class="frow">
-        <div class="field"><label>Buscar</label><input id="cs-q" placeholder="Cliente, folio o teléfono…" oninput="pintaCartSuc()"></div>
-        <div class="field"><label>Cobrador / ruta</label><select id="cs-cob" onchange="pintaCartSuc()"><option value="">Todos</option></select></div>
-      </div>
-      <div class="frow">
-        <div class="field"><label>Modalidad</label><select id="cs-tipo" onchange="pintaCartSuc()"><option value="">Todas</option><option value="diario">Diario</option><option value="semanal">Semanal</option><option value="s16">Semanal 16</option><option value="s17">Semanal 17</option><option value="s21">21 semanas</option><option value="s31">31 semanas</option><option value="unico">Pago único</option><option value="p17">Celulares 17</option></select></div>
-        <div class="field"><label>Estado</label><select id="cs-est" onchange="pintaCartSuc()"><option value="">Todos</option><option value="act">Con saldo</option><option value="liq">Liquidados</option></select></div>
-      </div>
-      <div style="color:var(--dim);font-size:.85rem;margin:4px 0 10px" id="cs-count"></div>
-      <div style="overflow-x:auto"><table><thead><tr><th>Cliente</th><th>Cobrador</th><th>Modalidad</th><th class="n">Cuota</th><th class="n">Saldo</th></tr></thead><tbody id="cs-rows"></tbody></table></div>
-    </div>
-  </div>
-
-  <div id="view-oport" style="display:none">
-    <div class="panel">
-      <h2 style="margin:0 0 4px">🎯 Oportunidades · mi sucursal</h2>
-      <div style="color:var(--dim);font-size:.85rem;margin:0 0 12px">Clientes con posibilidad de <b style="color:var(--acc)">REFIN</b> (le faltan 2 tarifas o menos) o <b style="color:var(--grn)">crédito PARALELO</b> (ya pagó 50% o más · oferta hasta <span id="op-max">$4,000</span>).</div>
-      <div class="frow">
-        <div class="field"><label>Buscar</label><input id="op-q" placeholder="Cliente, folio o cobrador…" oninput="pintaOportSuc()"></div>
-        <div class="field"><label>Cobrador / ruta</label><select id="op-cob" onchange="pintaOportSuc()"><option value="">Todos</option></select></div>
-      </div>
-    </div>
-
-    <div class="panel" style="margin-top:14px">
-      <h3 style="margin:0 0 6px;color:var(--acc)">🔁 REFIN · <span id="op-nrefin">0</span></h3>
-      <div style="color:var(--faint);font-size:.8rem;margin:0 0 10px">Casi liquidados. Conviene reenganchar con un crédito nuevo.</div>
-      <div style="overflow-x:auto"><table><thead><tr><th>Cliente</th><th>Cobrador</th><th>Modalidad</th><th class="n">Cuota</th><th class="n">Saldo</th><th class="n">Faltan</th></tr></thead><tbody id="op-refin-rows"></tbody></table></div>
-    </div>
-
-    <div class="panel" style="margin-top:14px">
-      <h3 style="margin:0 0 6px;color:var(--grn)">➕ PARALELO · <span id="op-nparal">0</span></h3>
-      <div style="color:var(--faint);font-size:.8rem;margin:0 0 10px">Buen pagador (≥50% pagado). Puede llevar un segundo crédito sin liquidar el actual.</div>
-      <div style="overflow-x:auto"><table><thead><tr><th>Cliente</th><th>Cobrador</th><th>Modalidad</th><th class="n">% pagado</th><th class="n">Saldo</th><th class="n">Oferta</th></tr></thead><tbody id="op-paral-rows"></tbody></table></div>
-    </div>
-  </div>
-
-  <div id="view-mora" style="display:none">
-    <div class="panel">
-      <h2 style="margin:0 0 4px">📉 Aging de mora · mi sucursal</h2>
-      <div style="color:var(--dim);font-size:.85rem;margin:0 0 12px">Tu cartera clasificada por días de atraso. Mientras más a la derecha, más riesgo de no recuperar.</div>
-      <div class="frow">
-        <div class="field"><label>Cartera vigente</label><div id="ag-cartera" style="font-family:'Sora';font-weight:800;font-size:1.3rem">$0</div></div>
-        <div class="field"><label>Cartera vencida</label><div id="ag-vencida" style="font-family:'Sora';font-weight:800;font-size:1.3rem;color:var(--red)">$0</div></div>
-        <div class="field"><label>Índice de mora</label><div id="ag-indice" style="font-family:'Sora';font-weight:800;font-size:1.3rem">0%</div></div>
-      </div>
-    </div>
-    <div class="panel" style="margin-top:14px">
-      <h3 style="margin:0 0 10px">Cubetas de morosidad (por días de atraso)</h3>
-      <div style="overflow-x:auto"><table><thead><tr><th>Antigüedad</th><th class="n">Créditos</th><th class="n">Saldo</th><th>Distribución</th><th class="n">%</th></tr></thead><tbody id="ag-rows"></tbody></table></div>
-    </div>
-  </div>
-
-  <div id="view-contactos" style="display:none">
-    <div class="panel" id="suc-cierre-panel" style="margin-bottom:14px">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-        <div>
-          <h2 style="margin:0">🔒 Cierre de semana</h2>
-          <div id="suc-cierre-sem" style="color:var(--faint);font-size:.85rem;margin-top:2px"></div>
-        </div>
-        <button id="suc-cierre-btn" class="bd-b gold" style="width:auto;padding:9px 16px" onclick="toggleCierreSuc(this)">Cerrar semana de mi sucursal</button>
-      </div>
-      <div id="suc-cierre-estado" style="font-size:.85rem;margin-top:10px"></div>
-      <div id="suc-cierre-cobs" style="margin-top:8px"></div>
-    </div>
-    <div class="panel">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-        <div>
-          <h2 style="margin:0">📇 Contactos · no pagaron la semana anterior</h2>
-          <div id="ct-sem" style="color:var(--faint);font-size:.85rem;margin-top:2px"></div>
-        </div>
-        <div id="ct-resumen" style="display:flex;gap:8px;flex-wrap:wrap"></div>
-      </div>
-      <div class="frow" style="margin-top:12px">
-        <div class="field"><label>Buscar</label><input id="ct-q" placeholder="Cliente, dirección o cobrador…" oninput="pintaContactos()"></div>
-        <div class="field"><label>Estado</label><select id="ct-filtro" onchange="pintaContactos()"><option value="">Todos</option><option value="pend">Pendientes</option><option value="ges">Gestionados</option><option value="val">Validados</option></select></div>
-      </div>
-      <div id="ct-count" style="color:var(--dim);font-size:.85rem;margin:4px 0 10px"></div>
-      <div id="ct-list"></div>
-      <div style="font-size:.74rem;color:var(--faint);margin-top:10px;line-height:1.4">Visita a cada cliente que no pagó la semana pasada, anota el <b>resultado</b> y sube una <b>foto de evidencia</b>. El admin y el supervisor revisan y validan tu trabajo, y ven el avance en Números diarios.</div>
-    </div>
-  </div>
-</div>
-<div class="overlay" id="overlay"></div>
-<div class="toast" id="toast"></div>
-<script>
-/* ===== Sesión ===== */
-const TOKEN=(()=>{try{return localStorage.getItem('cobrapro_token')}catch(e){return null}})();
-const ME=(()=>{try{return JSON.parse(localStorage.getItem('cobrapro_user')||'null')}catch(e){return null}})();
-if(!TOKEN){ location.replace('index.html'); }
-function salir(){ try{localStorage.removeItem('cobrapro_token');localStorage.removeItem('cobrapro_user');}catch(e){} location.replace('index.html'); }
-if(ME&&ME.nombre){ var _en=document.getElementById('encName'); if(_en)_en.textContent='Caja · '+ME.nombre; }
-const BRAND=(()=>{try{return JSON.parse(localStorage.getItem('cobrapro_brand')||'null')||{nombre:'CobraPro'};}catch(e){return {nombre:'CobraPro'};}})();
-try{ if(BRAND.nombre){ var _h=document.querySelector('h1'); if(_h)_h.textContent=BRAND.nombre+' · Sucursal'; document.title=BRAND.nombre+' · Sucursal'; } }catch(e){}
-// ===== Motor de cálculo — las tarifas se cargan de la agencia (editable por su admin) =====
-let PROD={
-  diario:[{p:10,f:1.17,fijo:30},{p:20,f:1.23,fijo:60},{p:30,f:1.33,fijo:90}],
-  semanal:[{p:4,f:1.35,fijo:60},{p:8,f:1.43,fijo:120},{p:12,f:1.53,fijo:180},{p:16,f:1.63,fijo:240},{p:20,f:1.83,fijo:300}],
-  p17:[{p:17,f:1.73,fijo:270}],
-  s16:{factor:1.6,fijo:100,ppFactor:0.1,ppFijo:100,pagos:16},
-  s17:{factor:1.7,fijo:200,ppFactor:0.1,ppFijo:200,pagos:17},
-  s21:{factor:1.785,fijo:200,ppFactor:0.085,ppFijo:200,pagos:21},
-  s31:{factor:1.86,fijo:200,ppFactor:0.06,ppFijo:200,pagos:31},
-  unico:{base:2,factor:0.0183}
-};
-let diasUnico=15;
-function calcCredito(tipo,plazo,monto){
-  if(tipo==='s16'||tipo==='s17'||tipo==='s21'||tipo==='s31'){const DEF={s16:{factor:1.6,fijo:100,ppFactor:0.1,ppFijo:100,pagos:16},s17:{factor:1.7,fijo:200,ppFactor:0.1,ppFijo:200,pagos:17},s21:{factor:1.785,fijo:200,ppFactor:0.085,ppFijo:200,pagos:21},s31:{factor:1.86,fijo:200,ppFactor:0.06,ppFijo:200,pagos:31}};const c=PROD[tipo]||DEF[tipo];
-    const total=monto*c.factor+c.fijo;const primerPago=monto*c.ppFactor+c.ppFijo;const cuota=(total-primerPago)/(c.pagos-1);
-    return {total,pagos:c.pagos,cuota,com:(total-monto)/c.pagos,primerPago,descuentaPP:true,entregaCliente:monto-primerPago};}
-  if(tipo==='unico'){const u=PROD.unico||{base:2,factor:0.0183};const tap=monto+diasUnico*((u.base||0)+monto*(u.factor||0));const mor=4+tap*0.0183;return {total:tap,pagos:1,cuota:tap,com:0,mor,dias:diasUnico};}
-  const arr=PROD[tipo];const it=arr.find(x=>x.p===plazo)||arr[0];
-  const total=monto*it.f+it.fijo;return {total,pagos:it.p,cuota:total/it.p,com:(total-monto)/it.p};
-}
-// ===== Cartera de la sucursal =====
-let _clientes=[];
-let caja={inicial:0,efectivo:0,banco:0,enganches:0,entregasConfirmadas:0,ncob:0,ncred:0,coloc:0};
-let porEntregar=[];
-let movs=[];
-const tipoLbl={diario:'Diario',semanal:'Semanal',unico:'Pago único',p17:'Celulares 17'};
-const tipoCls={diario:'dia',semanal:'sem',unico:'uni',p17:'p17'};
-const semLbl={ok:'Al corriente',w:'Atrasado',bad:'Vencido'};
-const fmt=n=>'$'+Math.round(n).toLocaleString('es-MX');
-const _colors=['#f0b429','#5aa0e8','#3ecf8e','#b07ce0','#f0654d','#d6a35a'];
-let sel=null, formaPay='efectivo', payCtx=null;
-function uuid(){return 'cp-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);}
-async function api(method,path,body){
-  const r=await fetch(path,{method,headers:{'Content-Type':'application/json',Authorization:'Bearer '+TOKEN},body:body?JSON.stringify(body):undefined});
-  if(r.status===401){ salir(); throw new Error('Sesión expirada'); }
-  const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||('Error '+r.status)); return d;
-}
-let _bt=null;
-function buscar(){ clearTimeout(_bt); _bt=setTimeout(_buscar,250); }
-async function _buscar(){
-  const q=(document.getElementById('q').value||'').trim();
-  try{ _clientes=await api('GET','/api/clients?search='+encodeURIComponent(q)); pintar(); }
-  catch(e){ document.getElementById('cliRes').innerHTML='<div style="color:var(--red);padding:14px">'+e.message+'</div>'; }
-}
-function pintar(){
-  document.getElementById('cliRes').innerHTML=_clientes.map((c,i)=>{
-    const color=_colors[i%_colors.length]; const creds=c.creditos||[];
-    const tot=creds.reduce((a,cr)=>a+(cr.saldo||0),0);
-    const ini=(c.nombre||'').split(' ').map(w=>w[0]).slice(0,2).join('');
-    return `<div class="cli ${sel===c.id?'sel':''}" onclick="selCli(${c.id})">
-      <div class="cli-top"><div class="cli-ava" style="background:${color}">${ini}</div>
-        <div style="flex:1;min-width:0"><div class="cli-nm">${c.nombre||'—'}</div><div class="cli-sub">${c.tel||''} · ${c.prom||''}</div>
-          <div class="cli-addr">📍 ${[c.calle,c.col,c.ciudad,c.estado].filter(Boolean).join(', ')}</div></div>
-        <div class="cli-saldo"><div class="k">Saldo total</div><div class="v">${fmt(tot)}</div></div></div>
-      <div class="credits">${creds.map(cr=>{const liq=cr.saldo<1; return `<div class="crow">
-        <span class="tipo ${tipoCls[cr.tipo]||'sem'}">${tipoLbl[cr.tipo]||cr.tipo}</span>
-        <div class="cdata"><div class="l1">${cr.folio} · cuota ${fmt(cr.cuota)}</div><div class="l2">saldo ${fmt(cr.saldo)}</div></div>
-        <span class="pill ${liq?'ok':'w'}">${liq?'Liquidado':'Activo'}</span>
-        ${liq?'':`<button class="pay" onclick="event.stopPropagation();abrirPago(${c.id},${cr.id})">Cobrar</button>`}</div>`;}).join('')}</div>
-    </div>`;
-  }).join('') || '<div style="color:var(--faint);font-size:.85rem;padding:14px">Sin coincidencias.</div>';
-}
-function selCli(id){sel=sel===id?null:id;pintar();}
-function abrirPago(cid,saleId){
-  const c=_clientes.find(x=>x.id===cid); const cr=(c.creditos||[]).find(x=>x.id===saleId);
-  payCtx={saleId, cliente:c.nombre, folio:cr.folio, tel:c.tel||'', saldo:cr.saldo, tipoOld:cr.tipo, plazoOld:cr.plazo, promOld:cr.prom}; formaPay='efectivo';
-  document.getElementById('overlay').innerHTML=`<div class="modal">
-    <h3>Pago — ${c.nombre}</h3>
-    <div style="font-size:.78rem;color:var(--faint);margin-bottom:12px">${cr.folio} · ${tipoLbl[cr.tipo]||cr.tipo} · saldo ${fmt(cr.saldo)}</div>
-    <div class="amt-box"><div class="l">Monto recibido</div><input class="amt-input" id="payamt" value="${Math.round(Math.min(cr.cuota,cr.saldo))}" inputmode="numeric"></div>
-    <div style="font-size:.72rem;color:var(--dim);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Forma de pago</div>
-    <div class="forma" id="forma" style="grid-template-columns:1fr 1fr">
-      <button class="on" onclick="setForma('efectivo',this)">💵 Efectivo</button>
-      <button onclick="setForma('transferencia',this)">🏦 Transferencia</button>
-      <button onclick="setForma('deposito',this)">🧾 Depósito</button>
-      <button onclick="abrirRefin()" style="border-color:#b388ff;color:#b388ff">🔄 REFIN</button>
-    </div>
-    <div style="font-size:.65rem;color:var(--faint);margin-top:-4px;margin-bottom:8px">REFIN liquida el saldo actual y otorga un crédito nuevo descontando ese saldo.</div>
-    <div class="modal-actions"><button class="ma cancel" onclick="cerrar()">Cancelar</button><button class="ma ok" onclick="confirmPago()">Registrar y dar recibo</button></div>
-  </div>`;
-  document.getElementById('overlay').classList.add('on');
-}
-function abrirRefin(){
-  const saldo = payCtx.saldo||0;
-  document.getElementById('overlay').innerHTML=`<div class="modal">
-    <h3>🔄 REFIN — ${payCtx.cliente}</h3>
-    <div style="font-size:.78rem;color:var(--faint);margin-bottom:6px">Crédito anterior: <b>${payCtx.folio}</b> · saldo a liquidar <b style="color:var(--red)">${fmt(saldo)}</b></div>
-    <div class="amt-box"><div class="l">Nuevo monto a otorgar</div><input class="amt-input" id="ref-monto" placeholder="${Math.max(saldo*2,3000)}" inputmode="numeric" oninput="calcRefin()"></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
-      <div><div class="l" style="font-size:.7rem;color:var(--dim);margin-bottom:4px">Modalidad</div>
-        <select id="ref-tipo" style="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--ink);padding:9px;border-radius:7px;font-family:inherit" onchange="fillPlazosRefin();calcRefin()">
-          <option value="diario">Diario</option><option value="semanal" selected>Semanal</option><option value="s16">Semanal 16 (primer pago)</option><option value="s17">Semanal 17 (primer pago)</option><option value="s21">21 semanas (primer pago)</option><option value="s31">31 semanas (primer pago)</option><option value="unico">Pago único</option><option value="p17">Celulares 17 pagos</option>
-        </select></div>
-      <div id="ref-plazoWrap"><div class="l" style="font-size:.7rem;color:var(--dim);margin-bottom:4px">Plazo</div>
-        <select id="ref-plazo" style="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--ink);padding:9px;border-radius:7px;font-family:inherit" onchange="calcRefin()"></select></div>
-    </div>
-    <div id="ref-preview" style="background:rgba(179,136,255,.08);border:1px solid rgba(179,136,255,.3);border-radius:8px;padding:11px;margin-bottom:10px;font-size:.78rem;line-height:1.7">
-      <div style="display:flex;justify-content:space-between"><span>Saldo a liquidar</span><b style="color:var(--red)">${fmt(saldo)}</b></div>
-      <div style="display:flex;justify-content:space-between"><span>Nuevo monto</span><b id="rp-nm">$0</b></div>
-      <div style="display:flex;justify-content:space-between"><span>Total a pagar</span><b id="rp-total">$0</b></div>
-      <div style="display:flex;justify-content:space-between"><span>Cuota</span><b id="rp-cuota" style="color:var(--acc)">$0</b></div>
-      <div id="rp-pp-row" style="display:none;justify-content:space-between"><span>1er pago (Tarifa 1, se descuenta)</span><b id="rp-pp" style="color:var(--vio)">$0</b></div>
-      <div style="display:flex;justify-content:space-between;border-top:1px dashed rgba(255,255,255,.1);padding-top:6px;margin-top:6px"><span><b>Neto a entregar al cliente</b></span><b id="rp-neto" style="color:var(--grn)">$0</b></div>
-    </div>
-    <div class="modal-actions"><button class="ma cancel" onclick="cerrar()">Cancelar</button><button class="ma ok" style="background:#b388ff" onclick="confirmRefin()">Aplicar REFIN</button></div>
-  </div>`;
-  fillPlazosRefin(); calcRefin();
-}
-function fillPlazosRefin(){
-  const t=document.getElementById('ref-tipo').value; const w=document.getElementById('ref-plazoWrap');
-  const lbl='<div class="l" style="font-size:.7rem;color:var(--dim);margin-bottom:4px">Plazo</div>';
-  const stl="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--ink);padding:9px;border-radius:7px;font-family:inherit";
-  if(t==='unico'){ w.innerHTML=lbl+`<input id="ref-plazo" type="number" value="15" min="1" step="1" style="${stl}" oninput="calcRefin()">`; return; }
-  if(t==='p17'){ w.innerHTML=lbl+`<select id="ref-plazo" style="${stl}" onchange="calcRefin()"><option value="17">17 pagos fijos</option></select>`; return; }
-  if(t==='s16'){ w.innerHTML=lbl+`<select id="ref-plazo" style="${stl}" onchange="calcRefin()"><option value="16">16 semanas</option></select>`; return; }
-  if(t==='s17'){ w.innerHTML=lbl+`<select id="ref-plazo" style="${stl}" onchange="calcRefin()"><option value="17">17 semanas</option></select>`; return; }
-  if(t==='s21'){ w.innerHTML=lbl+`<select id="ref-plazo" style="${stl}" onchange="calcRefin()"><option value="21">21 semanas</option></select>`; return; }
-  if(t==='s31'){ w.innerHTML=lbl+`<select id="ref-plazo" style="${stl}" onchange="calcRefin()"><option value="31">31 semanas</option></select>`; return; }
-  w.innerHTML=lbl+`<select id="ref-plazo" style="${stl}" onchange="calcRefin()"></select>`;
-  const s=document.getElementById('ref-plazo'); s.innerHTML=PROD[t].map(x=>`<option value="${x.p}">${x.p} ${t==='semanal'?'semanas':'días'}</option>`).join(''); if(t==='semanal')s.value=12;
-}
-function calcRefin(){
-  const nm=parseFloat(document.getElementById('ref-monto').value)||0;
-  const t=document.getElementById('ref-tipo')?document.getElementById('ref-tipo').value:'semanal';
-  const plazo=+(document.getElementById('ref-plazo')?.value||0);
-  let r=null; try{ r=calcCredito(t,plazo,nm); }catch(e){}
-  const pp=(r&&r.descuentaPP)?(r.primerPago||0):0;
-  const neto=Math.max(0,nm-(payCtx.saldo||0)-pp);
-  document.getElementById('rp-nm').textContent=fmt(nm);
-  const cu=document.getElementById('rp-cuota'); if(cu) cu.textContent=fmt(r?r.cuota:0);
-  const tt=document.getElementById('rp-total'); if(tt) tt.textContent=fmt(r?r.total:0);
-  const ppr=document.getElementById('rp-pp-row'); const ppv=document.getElementById('rp-pp');
-  if(ppr&&ppv){ if(pp>0){ ppr.style.display='flex'; ppv.textContent='−'+fmt(pp); } else ppr.style.display='none'; }
-  document.getElementById('rp-neto').textContent=fmt(neto);
-}
-async function confirmRefin(){
-  const nuevoMonto=parseFloat(document.getElementById('ref-monto').value)||0;
-  const nuevoTipo=document.getElementById('ref-tipo').value;
-  const nuevoPlazo=parseInt(document.getElementById('ref-plazo').value)||12;
-  if(nuevoMonto<=0){ toast('Captura el nuevo monto'); return; }
-  if(nuevoMonto < (payCtx.saldo||0)){ toast('El nuevo monto debe ser ≥ saldo pendiente'); return; }
-  try{
-    const d=await api('POST','/api/sales/'+payCtx.saleId+'/refin',{nuevoMonto,nuevoTipo,nuevoPlazo,nuevoDias:nuevoPlazo,idempotencyKey:uuid()});
-    const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
-    const fecha=new Date().toLocaleDateString('es-MX');
-    movs.unshift({hora,txt:`REFIN ${d.oldFolio}→${d.nuevoFolio} · ${payCtx.cliente}`,monto:d.saldoLiquidado});
-    window._lastRecibo={cliente:payCtx.cliente,folio:d.nuevoFolio,forma:'REFIN',monto:fmt(d.saldoLiquidado),saldo:fmt(d.saldoNuevo),fecha,hora,tel:payCtx.tel,esRefin:true,oldFolio:d.oldFolio,neto:d.neto,nuevoMonto:d.nuevoMonto};
-    document.getElementById('overlay').innerHTML=`<div class="modal">
-      <h3>✓ REFIN aplicado</h3>
-      <div class="recibo">
-        <div class="rr"><span>Cliente</span><span class="v">${payCtx.cliente}</span></div>
-        <div class="rr"><span>Crédito anterior</span><span class="v">${d.oldFolio} <span style="color:var(--grn)">LIQUIDADO</span></span></div>
-        <div class="rr"><span>Saldo liquidado</span><span class="v">${fmt(d.saldoLiquidado)}</span></div>
-        <div class="rr"><span>Nuevo crédito</span><span class="v" style="color:var(--acc)">${d.nuevoFolio}</span></div>
-        <div class="rr"><span>Monto otorgado</span><span class="v">${fmt(d.nuevoMonto)}</span></div>
-        <div class="rr"><span>Cuota</span><span class="v">${fmt(d.nuevoCuota)}</span></div>
-        <div class="rr"><span><b>Neto entregado al cliente</b></span><span class="v" style="color:var(--grn)">${fmt(d.neto)}</span></div>
-        <div class="rr"><span>Fecha · hora</span><span class="v">${fecha} ${hora}</span></div>
-      </div>
-      <div class="modal-actions">
-        <button class="ma cancel" onclick="enviarWA()" ${payCtx.tel?'':'disabled style="opacity:.45"'}>📱 Enviar por WhatsApp</button>
-        <button class="ma ok" onclick="cerrar()">Cerrar</button>
-      </div>
-    </div>`;
-    caja.ncob++; await cargarCaja();
-  }catch(e){ toast(e.message); }
-}
-function setForma(f,el){formaPay=f;document.querySelectorAll('#forma button').forEach(b=>b.classList.remove('on'));el.classList.add('on');}
-const formaLbl={efectivo:'Efectivo',transferencia:'Transferencia',deposito:'Depósito',ajuste:'Ajuste'};
-async function confirmPago(){
-  const monto=parseFloat(document.getElementById('payamt').value)||0;
-  if(monto<=0){toast('Monto inválido');return;}
-  try{
-    const d=await api('POST','/api/sales/'+payCtx.saleId+'/pago',{monto,forma:formaPay,idempotencyKey:uuid()});
-    const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
-    const fecha=new Date().toLocaleDateString('es-MX');
-    movs.unshift({hora,txt:`Pago ${payCtx.folio} · ${formaLbl[formaPay]} — ${payCtx.cliente}`,monto});
-    window._lastRecibo={cliente:payCtx.cliente,folio:payCtx.folio,forma:formaLbl[formaPay],monto:fmt(monto),saldo:fmt(d.saldo),fecha,hora,tel:payCtx.tel};
-    document.getElementById('overlay').innerHTML=`<div class="modal">
-      <h3>✓ Pago registrado</h3>
-      <div class="recibo">
-        <div class="rr"><span>Folio crédito</span><span class="v">${payCtx.folio}</span></div>
-        <div class="rr"><span>Cliente</span><span class="v">${payCtx.cliente}</span></div>
-        <div class="rr"><span>Forma de pago</span><span class="v" style="color:var(--acc)">${formaLbl[formaPay]}</span></div>
-        <div class="rr"><span>Monto pagado</span><span class="v" style="color:var(--grn)">${fmt(monto)}</span></div>
-        <div class="rr"><span>Saldo restante</span><span class="v">${fmt(d.saldo)}</span></div>
-        <div class="rr"><span>Fecha · hora</span><span class="v">${fecha} ${hora}</span></div>
-      </div>
-      <div class="modal-actions">
-        <button class="ma cancel" onclick="enviarWA()" ${payCtx.tel?'':'disabled style="opacity:.45"'}>📱 Enviar por WhatsApp</button>
-        <button class="ma ok" onclick="cerrar()">Cerrar</button>
-      </div>
-    </div>`;
-    caja.ncob++; await cargarCaja();
-  }catch(e){ toast(e.message); }
-}
-function enviarWA(){
-  const r=window._lastRecibo; if(!r) return;
-  if(!r.tel){ toast('El cliente no tiene teléfono'); return; }
-  const num=String(r.tel).replace(/\D/g,''); const full=num.startsWith('52')?num:'52'+num;
-  let _ag='Su financiera'; try{ const b=JSON.parse(localStorage.getItem('cobrapro_brand')||'null'); if(b&&b.nombre) _ag=b.nombre; }catch(e){}
-  const msg = r.esRefin
-    ? `*REFIN aplicado — ${_ag}*\n\nCliente: ${r.cliente}\nCrédito anterior: ${r.oldFolio} (liquidado)\nNuevo crédito: ${r.folio}\nMonto del nuevo crédito: ${fmt(r.nuevoMonto)}\nSaldo nuevo: ${r.saldo}\nNeto recibido: ${fmt(r.neto)}\nFecha: ${r.fecha} ${r.hora}\n\nGracias por su confianza.`
-    : `*Comprobante de pago — ${_ag}*\n\nCliente: ${r.cliente}\nFolio: ${r.folio}\nMonto recibido: ${r.monto}\nForma: ${r.forma}\nSaldo restante: ${r.saldo}\nFecha: ${r.fecha} ${r.hora}\n\nGracias por su pago.`;
-  window.open(`https://wa.me/${full}?text=${encodeURIComponent(msg)}`,'_blank');
-}
-function cerrar(){document.getElementById('overlay').classList.remove('on');_buscar();}
-document.getElementById('overlay').onclick=e=>{if(e.target.id==='overlay')cerrar();};
-async function cargarCaja(){
-  try{ const d=await api('GET','/api/caja/hoy'); const cj=d.caja||{};
-    caja.inicial=cj.inicial||0; caja.efectivo=cj.efectivo||0; caja.banco=cj.banco||0; caja.entregasConfirmadas=cj.entregas||0; caja.retiros=cj.retiros||0;
-    caja.cobradoVent=cj.cobradoVent||0; caja.cobradoVentN=cj.cobradoVentN||0;
-    porEntregar=(d.porEntregar||[]).map((p,i)=>({id:p.id,prom:p.prom,monto:p.monto,color:_colors[i%_colors.length]}));
-  }catch(e){}
-  render();
-  if(typeof asgCargarSuc==='function') asgCargarSuc();
-}
-async function confirmarEntrega(id){
-  try{ await api('POST','/api/caja/entrega',{porEntregarId:id});
-    const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
-    movs.unshift({hora,txt:'Entrega de cobrador confirmada',monto:0});
-    await cargarCaja(); toast('✓ Entrega confirmada · ya en caja');
-  }catch(e){ toast(e.message); }
-}
-
-// ===== Nuevo crédito =====
-function fillPlazos(){
-  const t=document.getElementById('n-tipo').value;const w=document.getElementById('plazoWrap');const s=document.getElementById('n-plazo');
-  if(t==='unico'){w.innerHTML=`<label>Días de plazo</label><input id="n-plazo" type="number" value="15" min="1" step="1" oninput="diasUnico=+this.value||0;calc()">`;diasUnico=15;return;}
-  if(t==='p17'){w.innerHTML=`<label>Plazo</label><select id="n-plazo" onchange="calc()"><option value="17">17 pagos fijos</option></select>`;return;}
-  if(t==='s16'){w.innerHTML=`<label>Plazo</label><select id="n-plazo" onchange="calc()"><option value="16">16 semanas</option></select>`;return;}
-  if(t==='s17'){w.innerHTML=`<label>Plazo</label><select id="n-plazo" onchange="calc()"><option value="17">17 semanas</option></select>`;return;}
-  if(t==='s21'){w.innerHTML=`<label>Plazo</label><select id="n-plazo" onchange="calc()"><option value="21">21 semanas</option></select>`;return;}
-  if(t==='s31'){w.innerHTML=`<label>Plazo</label><select id="n-plazo" onchange="calc()"><option value="31">31 semanas</option></select>`;return;}
-  w.innerHTML=`<label>Plazo</label><select id="n-plazo" onchange="calc()"></select>`;
-  const sel2=document.getElementById('n-plazo');
-  sel2.innerHTML=PROD[t].map(x=>`<option value="${x.p}">${x.p} ${t==='semanal'?'semanas':'días'}</option>`).join('');
-  if(t==='semanal')sel2.value=12;
-}
-function calc(){
-  const t=document.getElementById('n-tipo').value;
-  const monto=+document.getElementById('n-monto').value||0;
-  const plazo=+(document.getElementById('n-plazo')?.value||0);
-  const r=calcCredito(t,plazo,monto);
-  const freq=t==='diario'?'diaria':t==='semanal'?'semanal':t==='p17'?'(17 pagos)':(t==='s16'||t==='s17'||t==='s21'||t==='s31')?'semanal':'única';
-  let extra= t==='unico'? `<div class="calc-row"><span>Moratorio por día</span><span class="v" style="color:var(--red)">${fmt(r.mor)}</span></div>` :
-             `<div class="calc-row"><span>Comisión por no pago</span><span class="v">${fmt(r.com)}</span></div>`;
-  if(r.descuentaPP){
-    document.getElementById('calc').innerHTML=`
-      <div class="calc-row"><span>Cargo por servicio</span><span class="v" style="color:var(--acc)">${fmt(r.total-monto)}</span></div>
-      <div class="calc-row"><span>Total a pagar</span><span class="v">${fmt(r.total)}</span></div>
-      <div class="calc-row"><span>1er pago (Tarifa 1, se descuenta)</span><span class="v" style="color:var(--vio)">${fmt(r.primerPago)}</span></div>
-      <div class="calc-row"><span>Entrega al cliente</span><span class="v" style="color:var(--grn)">${fmt(r.entregaCliente)}</span></div>
-      <div class="calc-row"><span>Pagos restantes</span><span class="v">${r.pagos-1} de ${fmt(r.cuota)}</span></div>
-      <div class="calc-row big"><span>Cuota semanal</span><span class="v">${fmt(r.cuota)}</span></div>`;
-    return;
-  }
-  document.getElementById('calc').innerHTML=`
-    <div class="calc-row"><span>Interés / cargo</span><span class="v" style="color:var(--acc)">${fmt(r.total-monto)}</span></div>
-    <div class="calc-row"><span>Total a pagar</span><span class="v">${fmt(r.total)}</span></div>
-    <div class="calc-row"><span>Número de pagos</span><span class="v">${r.pagos}${t==='unico'?' (al término)':''}</span></div>
-    ${extra}
-    <div class="calc-row big"><span>Cuota ${freq}</span><span class="v">${fmt(r.cuota)}</span></div>`;
-}
-async function agregarCreditoExistente(clienteId){
-  cerrar();
-  const t=document.getElementById('n-tipo').value; const monto=+document.getElementById('n-monto').value||0;
-  const plazo=+(document.getElementById('n-plazo')?.value||0);
-  const prom=document.getElementById('n-prom').value;
-  if(!prom){toast('Selecciona el cobrador para este crédito');return;}
-  try{
-    const d=await api('POST','/api/sales',{clienteExistenteId:clienteId,prom,tipo:t,plazo,monto,dias:plazo,articulos:leerArticulos()});
-    caja.ncred++; caja.coloc+=monto;
-    const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
-    movs.unshift({hora,txt:`Crédito ${d.folio} — ${d.cliente} (${prom}) · 2º crédito`,monto:0});
-    ['n-cli','n-tel','n-calle','n-col','n-ref','n-curp','n-ciudad','n-estado'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-    resetArticulos();
-    render(); _buscar();
-    toast(`✓ ${d.folio} agregado a ${d.cliente} · ahora tiene ${d.totalCreditosCliente} créditos · cuota ${fmt(d.cuota)}`);
-  }catch(e){ toast(e.message); }
-}
-async function hacerCierreCaja(btn){
-  const efectivoReal=caja.inicial+caja.efectivo+caja.entregasConfirmadas-(caja.retiros||0);
-  if(!confirm(`¿Hacer el cierre de caja?\n\nEfectivo real en caja: ${fmt(efectivoReal)}\n\nEste efectivo pasa al administrador (lo verá en Conciliación para recibirlo) y tu caja queda en CEROS. Esta acción no se puede deshacer.`)) return;
-  btn.disabled=true; btn.textContent='Cerrando…';
-  try{
-    const r=await api('POST','/api/caja/cierre');
-    toast('✓ Caja cerrada · '+fmt(r.efectivoCerrado)+' enviado al administrador');
-    await cargarCaja();
-  }catch(e){ toast(e.message); }
-  finally{ btn.disabled=false; btn.textContent='🔒 Hacer cierre de caja'; }
-}
-async function cargarJCSuc(){
-  try{
-    const jcs=await api('GET','/api/jc/lista');
-    const sel=document.getElementById('jc-sel-suc'); if(!sel) return;
-    if(!jcs.length){ document.getElementById('jc-wrap-suc').innerHTML='<div style="color:var(--faint);font-size:.82rem">No hay un JC en tu sucursal todavía.</div>'; }
-    else sel.innerHTML=jcs.map(j=>`<option value="${j.id}">${j.nombre}</option>`).join('');
-  }catch(e){}
-}
-async function entregarJCSuc(btn){
-  const sel=document.getElementById('jc-sel-suc'); const jcId=+(sel&&sel.value); const monto=+document.getElementById('jc-monto-suc').value;
-  if(!jcId){toast('No hay JC disponible');return;}
-  if(!(monto>0)){toast('Indica un monto válido');return;}
-  btn.disabled=true; btn.textContent='Entregando…';
-  try{ await api('POST','/api/jc-entregas',{jcId,monto}); document.getElementById('jc-monto-suc').value=''; toast('Efectivo asignado al JC'); cargarCaja(); }
-  catch(e){ toast(e.message); }
-  finally{ btn.disabled=false; btn.textContent='Entregar efectivo al JC'; }
-}
-async function asgCargarSuc(){
-  try{ const d=await api('GET','/api/asignaciones/destinos');
-    const sel=document.getElementById('asg-dest-suc'); if(sel) sel.innerHTML=(d.destinos||[]).map(x=>`<option value="${x.tipo}:${x.id}">${x.nombre}</option>`).join('')||'<option value="">No hay otros puestos</option>';
-  }catch(e){}
-  try{ const d=await api('GET','/api/asignaciones');
-    const box=document.getElementById('asg-inbox-suc'); if(box) box.innerHTML=(d.porConfirmar||[]).map(a=>`<div style="background:var(--surf-2);border:1px solid var(--line);border-radius:9px;padding:10px;margin-bottom:8px"><b>${fmt(a.monto)}</b> de <b>${a.fromNombre}</b>${a.nota?(' · '+a.nota):''}<div style="display:flex;gap:6px;margin-top:8px"><button onclick="asgConfirmarSuc(${a.id})" style="flex:1;background:var(--acc);color:#1b2330;border:none;padding:8px;border-radius:7px;font-family:'Sora';font-weight:700;cursor:pointer">Confirmar</button><button onclick="asgRechazarSuc(${a.id})" style="flex:1;background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:8px;border-radius:7px;font-family:'Sora';cursor:pointer">Rechazar</button></div></div>`).join('')||'<div style="color:var(--faint)">Nada por confirmar.</div>';
-    const sent=document.getElementById('asg-sent-suc'); const pend=(d.enviadas||[]).filter(a=>a.estado==='pendiente');
-    if(sent) sent.innerHTML=pend.map(a=>`<div style="background:var(--surf-2);border:1px solid var(--line);border-radius:9px;padding:10px;margin-bottom:8px"><b>${fmt(a.monto)}</b> a <b>${a.toNombre}</b> · ⏳ esperando que confirme${a.nota?(' · '+a.nota):''}<div style="margin-top:8px"><button onclick="asgRechazarSuc(${a.id})" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:8px 14px;border-radius:7px;font-family:'Sora';cursor:pointer">Cancelar y regresar a mi caja</button></div></div>`).join('')||'<div style="color:var(--faint)">No tienes asignaciones pendientes de que te confirmen.</div>';
-  }catch(e){}
-}
-async function asgEnviarSuc(btn){
-  const v=document.getElementById('asg-dest-suc').value; if(!v){toast('Elige un destino');return;}
-  const i=v.indexOf(':'); const toTipo=v.slice(0,i), toId=+v.slice(i+1);
-  const monto=+document.getElementById('asg-monto-suc').value; if(!(monto>0)){toast('Monto inválido');return;}
-  btn.disabled=true; btn.textContent='Asignando…';
-  try{ await api('POST','/api/asignaciones',{toTipo,toId,monto}); document.getElementById('asg-monto-suc').value=''; toast('✓ Asignado · pendiente de confirmación'); cargarCaja(); asgCargarSuc(); }
-  catch(e){ toast(e.message); }
-  finally{ btn.disabled=false; btn.textContent='Asignar efectivo'; }
-}
-async function asgConfirmarSuc(id){ try{ await api('POST','/api/asignaciones/'+id+'/recibir'); toast('✓ Recibido'); cargarCaja(); asgCargarSuc(); }catch(e){ toast(e.message); } }
-async function asgRechazarSuc(id){ if(!confirm('¿Rechazar? El efectivo regresa a quien lo envió.'))return; try{ await api('POST','/api/asignaciones/'+id+'/rechazar'); toast('Rechazado'); asgCargarSuc(); }catch(e){ toast(e.message); } }
-function addArticulo(v){
-  const w=document.getElementById('art-list'); if(!w) return;
-  const row=document.createElement('div'); row.style.cssText='display:flex;gap:6px;margin-bottom:6px';
-  const inp=document.createElement('input'); inp.type='text'; inp.className='art-inp'; inp.placeholder='Descripción del artículo';
-  inp.style.cssText='flex:1;background:var(--surf-2);border:1px solid var(--line);color:var(--ink);padding:9px;border-radius:7px;font-family:inherit';
-  if(v) inp.value=v;
-  const del=document.createElement('button'); del.type='button'; del.className='btn'; del.textContent='✕'; del.style.cssText='padding:0 11px';
-  del.onclick=()=>row.remove();
-  row.appendChild(inp); row.appendChild(del); w.appendChild(row);
-}
-function leerArticulos(){ return [...document.querySelectorAll('#art-list .art-inp')].map(i=>i.value.trim()).filter(Boolean); }
-function resetArticulos(){ const w=document.getElementById('art-list'); if(w){ w.innerHTML=''; addArticulo(); } }
-async function crearCredito(){
-  const nombre=document.getElementById('n-cli').value.trim();
-  const calle=document.getElementById('n-calle').value.trim();
-  const col=document.getElementById('n-col').value.trim();
-  const curp=(document.getElementById('n-curp').value||'').trim().toUpperCase();
-  const ciudad=document.getElementById('n-ciudad').value.trim();
-  const estado=document.getElementById('n-estado').value.trim();
-  if(!nombre){toast('Captura el nombre del cliente');return;}
-  if(!curp){toast('Captura la CURP del cliente (del INE)');return;}
-  if(!/^[A-Z]{4}\d{6}[A-Z0-9]{8}$/.test(curp)){toast('La CURP no tiene formato válido (18 caracteres)');return;}
-  if(!calle||!col){toast('El domicilio es obligatorio para la venta a crédito');return;}
-  if(!ciudad||!estado){toast('Captura ciudad/municipio y estado del cliente');return;}
-  const t=document.getElementById('n-tipo').value; const monto=+document.getElementById('n-monto').value||0;
-  const plazo=+(document.getElementById('n-plazo')?.value||0);
-  const tel=document.getElementById('n-tel').value||''; const prom=document.getElementById('n-prom').value;
-  if(!prom){toast('Esta sucursal no tiene cobradores dados de alta. Pídele al admin que cree el usuario cobrador y lo asigne a tu sucursal.');return;}
-  // fetch directo para poder leer el 409 estructurado de validación
-  try{
-    const r=await fetch('/api/sales',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+TOKEN},body:JSON.stringify({nombre,tel,calle,col,ciudad,estado,curp,prom,tipo:t,plazo,monto,dias:plazo,articulos:leerArticulos()})});
-    const d=await r.json().catch(()=>({}));
-    if(r.status===400 && d.error==='curp_invalida'){ toast(d.detalle); return; }
-    if(r.status===409 && d.error==='cliente_duplicado'){
-      const ex=d.clienteExistente||{};
-      const puedeAgregar=d.puedeAgregar && ex.mismaSucursal;
-      const opcionAgregar = puedeAgregar
-        ? `<div style="background:rgba(23,138,85,.08);border:1px solid rgba(23,138,85,.35);border-radius:8px;padding:12px;font-size:.82rem;line-height:1.55;margin-top:10px">¿Es un <b>segundo crédito autorizado</b> para el mismo cliente? Puedes colgárselo sin duplicar la persona. Cada crédito conserva su propio folio, saldo y cuota.</div>
-           <div class="modal-actions" style="margin-top:14px">
-             <button class="ma" onclick="cerrar()">Cancelar</button>
-             <button class="ma ok" style="background:var(--grn);border-color:var(--grn)" onclick="agregarCreditoExistente(${ex.id})">➕ Agregar 2º crédito a ${ex.nombre}</button>
-           </div>`
-        : `<div style="background:rgba(224,176,32,.08);border:1px solid rgba(224,176,32,.3);border-radius:8px;padding:12px;font-size:.8rem;line-height:1.55">Ese cliente pertenece a otra sucursal. Para un segundo crédito o renovación, pídele al <b>administrador o supervisor</b> que lo registre, o usa <b>REFIN</b> si el cliente quiere refinanciar su saldo.</div>
-           <div class="modal-actions"><button class="ma ok" onclick="cerrar()">Entendido</button></div>`;
-      document.getElementById('overlay').innerHTML=`<div class="modal">
-        <h3 style="color:#e0b020">⚠ Cliente ya existe</h3>
-        <div style="font-size:.85rem;line-height:1.6;color:var(--dim);margin:10px 0 4px">${d.detalle}</div>
-        ${opcionAgregar}
-      </div>`;
-      document.getElementById('overlay').classList.add('on');
-      return;
+app.use(cors({ origin: true, credentials: true }));
+app.use(express.json({ limit: '12mb' }));
+const PUBLIC_DIR = path.join(__dirname, 'public');
+app.use(express.static(PUBLIC_DIR, {
+  setHeaders: (res, path) => {
+    if (path.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
     }
-    if(!r.ok) throw new Error(d.error||('Error '+r.status));
-    caja.ncred++; caja.coloc+=monto;
-    const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
-    movs.unshift({hora,txt:`Crédito ${d.folio} — ${nombre} (${prom})`,monto:0});
-    ['n-cli','n-tel','n-calle','n-col','n-ref','n-curp','n-ciudad','n-estado'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-    resetArticulos();
-    render(); _buscar();
-    toast(`✓ ${d.folio} capturado · cuota ${fmt(d.cuota)} · en ruta de ${prom.split(' ')[0]}`);
-    mostrarPagareCapturado(d.id, d.folio);
-  }catch(e){ toast(e.message); }
-}
-function mostrarPagareCapturado(saleId, folio){
-  document.getElementById('overlay').innerHTML=`<div class="modal">
-    <h3 style="color:var(--grn)">✓ Crédito ${folio} capturado</h3>
-    <div style="font-size:.85rem;line-height:1.6;color:var(--dim);margin:10px 0 4px">El crédito entró a la ruta y a la cola de entrega del JC. Imprime el pagaré para que el cliente lo firme físicamente.</div>
-    <div class="modal-actions" style="margin-top:14px">
-      <button class="ma" onclick="cerrar()">Listo</button>
-      <button class="ma ok" style="background:var(--acc);border-color:var(--acc);color:#1b2330" onclick="imprimirPagare(${saleId})">🖨 Imprimir pagaré</button>
-    </div>
-  </div>`;
-  document.getElementById('overlay').classList.add('on');
-}
-async function abrirDesglose(prom){
-  const qs='semanas=12'+(prom?'&promotor='+encodeURIComponent(prom):'');
-  let d; try{ d=await api('GET','/api/reports/desglose?'+qs); }catch(e){ toast(e.message); return; }
-  const cur=prom||'';
-  const esc=s=>String(s||'').replace(/'/g,"\\'");
-  const cellTxt=(f,v)=> f.fmt==='money'?fmt(v) : f.fmt==='pct'?((Math.round(v*1000)/10).toFixed(1)+'%') : v.toLocaleString('es-MX');
-  const head=`<tr><th class="lbl">Concepto</th>${d.semanas.map(w=>`<th>${w.label}<div style="font-weight:400;font-size:.62rem;color:var(--faint)">${w.fecha}</div></th>`).join('')}</tr>`;
-  const body=d.filas.map(f=>`<tr><td class="lbl">${f.lbl}</td>${f.vals.map(v=>{
-    let color='';
-    if(f.k==='pctCobranzaDebito') color=v>=0.95?'color:var(--grn)':(v>=0.8?'color:var(--acc)':(v>0?'color:var(--red)':''));
-    else if(f.k==='pctSinPago'||f.k==='pctCarteraSinPago'||f.k==='pctDebitoSinPago') color=v>0.10?'color:var(--red)':(v>0.05?'color:var(--acc)':'');
-    else if(f.k==='cobranza'&&v>0) color='color:var(--grn)';
-    return `<td class="n" style="${color}">${cellTxt(f,v)}</td>`;
-  }).join('')}</tr>`).join('');
-  const tab=(lbl,val)=>`<button class="dg-tab ${cur===val?'on':''}" onclick="abrirDesglose('${esc(val)}')">${lbl}</button>`;
-  const tabs=tab('🏪 TOTAL sucursal','')+' '+(d.promotores.length?d.promotores.map(p=>tab('👤 '+p,p)).join(' '):'<span style="color:var(--faint);font-size:.78rem">Sin promotores</span>');
-  let ov=document.getElementById('dg-ov');
-  if(!ov){ ov=document.createElement('div'); ov.id='dg-ov'; ov.className='dgov'; ov.onclick=e=>{if(e.target===ov)ov.remove();}; document.body.appendChild(ov); }
-  ov.innerHTML=`<div class="dgbox">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><h3 style="margin:0;font-size:1.1rem">📋 Desglose de cartera</h3>
-      <span style="color:var(--dim);font-size:.78rem">${d.sucursal.nombre}</span>
-      <button onclick="document.getElementById('dg-ov').remove()" style="margin-left:auto;background:var(--surf-3);border:1px solid var(--line-2);color:var(--dim);border-radius:8px;padding:6px 12px;cursor:pointer;font-family:'Sora'">✕</button></div>
-    <div style="font-size:.74rem;color:var(--faint);margin-bottom:10px">Últimas ${d.semanas.length} semanas · ${cur?('Promotor: '+cur):'Total de la sucursal (suma de sus promotores)'}</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">${tabs}</div>
-    <div style="overflow:auto;border:1px solid var(--line);border-radius:10px;flex:1"><table class="dg-table">${''}<thead>${head}</thead><tbody>${body}</tbody></table></div>
-  </div>`;
-}
-async function abrirBandeja(){
-  let d; try{ d=await api('GET','/api/entregas/bandeja'); }catch(e){ toast(e.message); return; }
-  const esc=s=>String(s||'').replace(/'/g,"\\'");
-  const card=(c,modo)=>{
-    const f=new Date(c.createdAt).toLocaleDateString('es-MX',{day:'2-digit',month:'short'});
-    const acc = modo==='cola'
-      ? `<button class="bd-b gold" onclick="bdTomar(${c.saleId})">📥 Tomar</button>`
-      : modo==='mias'
-      ? `<button class="bd-b gold" onclick="abrirEntrega(${c.saleId},'${esc(c.cliente)}',${c.entregaMonto})">📦 Entregar + evidencia</button><button class="bd-b" onclick="bdSoltar(${c.saleId})">↩ Soltar</button>`
-      : `<div style="font-size:.72rem;color:var(--acc)">🔒 Lo entrega ${c.tomadoPor?c.tomadoPor.nombre:'—'}</div>`;
-    return `<div class="bd-card"><div style="font-weight:600">${c.cliente}</div>
-      <div style="font-size:.7rem;color:var(--faint)">${c.folio} · ruta ${c.prom||'—'} · ${f}</div>
-      <div style="font-size:.72rem;color:var(--dim);margin-top:3px">📍 ${c.dir||'—'}</div>
-      <div style="margin-top:5px;font-size:.8rem">Entrega: <b style="color:var(--grn)">${fmt(c.entregaMonto)}</b></div>${acc}</div>`;
-  };
-  const sec=(t,arr,modo,vacio)=>`<div style="font-size:.76rem;color:var(--dim);font-weight:600;margin:12px 0 6px">${t}</div><div class="bd-grid">${arr.length?arr.map(c=>card(c,modo)).join(''):'<div style="color:var(--faint);font-size:.82rem;padding:6px">'+vacio+'</div>'}</div>`;
-  let ov=document.getElementById('bd-ov');
-  if(!ov){ ov=document.createElement('div'); ov.id='bd-ov'; ov.className='dgov'; ov.onclick=e=>{if(e.target===ov)ov.remove();}; document.body.appendChild(ov); }
-  ov.innerHTML=`<div class="dgbox">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px"><h3 style="margin:0;font-size:1.1rem">📦 Bandeja de entregas</h3>
-      <button onclick="document.getElementById('bd-ov').remove()" style="margin-left:auto;background:var(--surf-3);border:1px solid var(--line-2);color:var(--dim);border-radius:8px;padding:6px 12px;cursor:pointer;font-family:'Sora'">✕</button></div>
-    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px"><div><span style="font-size:.74rem;color:var(--dim)">Tu efectivo disponible: </span><b style="color:var(--grn);font-size:1.05rem">${fmt(d.disponible)}</b></div>
-      <span style="font-size:.72rem;color:var(--faint);flex:1;min-width:200px">Usas lo que recibes del promotor o lo que te dota el admin. Si no alcanza, pide dotación.</span></div>
-    ${sec('Mis entregas por hacer',d.mias,'mias','No has tomado créditos.')}
-    ${sec('Por entregar (bandeja común)',d.bandeja,'cola','No hay créditos por entregar.')}
-    ${d.deOtros.length?sec('Tomados por otros',d.deOtros,'otros',''):''}
-  </div>`;
-}
-async function bdTomar(id){ try{ await api('POST','/api/entregas/'+id+'/tomar'); abrirBandeja(); }catch(e){ toast(e.message); } }
-async function bdSoltar(id){ try{ await api('POST','/api/entregas/'+id+'/soltar'); abrirBandeja(); }catch(e){ toast(e.message); } }
-let _ent={saleId:null,fotoCasa:null,fotoCliente:null,lat:null,lng:null,firma:null}, _firmaCanvas=null;
-function _entOv(html){ const ov=document.createElement('div'); ov.className='entov'; ov.style.cssText='position:fixed;inset:0;background:rgba(10,15,25,.6);z-index:10000;display:flex;align-items:flex-start;justify-content:center;padding:14px;overflow:auto'; ov.onclick=e=>{if(e.target===ov)ov.remove();}; ov.innerHTML=`<div style="background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:18px;width:min(460px,96vw)">${html}</div>`; document.body.appendChild(ov); return ov; }
-const _fbtn="display:flex;align-items:center;gap:10px;width:100%;padding:12px;margin-bottom:8px;background:var(--surf-2);border:1px dashed var(--line-2);border-radius:10px;color:var(--dim);font-family:Sora;font-size:.85rem;cursor:pointer;text-align:left";
-function abrirEntrega(saleId,cliente,monto){
-  _ent={saleId,fotoCasa:null,fotoCliente:null,lat:null,lng:null,firma:null};
-  _entOv(`<h3 style="margin:0 0 2px">Entregar crédito</h3><div style="font-size:.82rem;color:var(--dim);margin-bottom:12px">${cliente} · entrega ${fmt(monto)}</div>
-    <label id="fb-casa" style="${_fbtn}">🏠 <span id="fb-casa-t">Foto de la casa</span><input type="file" accept="image/*" capture="environment" style="display:none" onchange="leerFotoE(this,'casa')"></label>
-    <label id="fb-cli" style="${_fbtn}">🧍 <span id="fb-cli-t">Foto del cliente</span><input type="file" accept="image/*" capture="environment" style="display:none" onchange="leerFotoE(this,'cliente')"></label>
-    <button class="btn" style="width:100%;margin-bottom:8px;background:var(--surf-2);border:1px solid var(--line);color:var(--dim);padding:11px;border-radius:9px;font-family:Sora;cursor:pointer" id="geo-btn" onclick="capturarGeoE()">📍 Capturar ubicación GPS</button>
-    <div id="geo-txt" style="font-size:.76rem;color:var(--faint);margin-bottom:8px">Ubicación: sin capturar</div>
-    <button id="fb-pag" style="${_fbtn}" onclick="abrirPagareFirmaE()">📄 <span id="fb-pag-t">Pagaré — firma del cliente</span></button>
-    <button id="ent-ok" onclick="confirmarEntregaE(this)" style="width:100%;margin-top:4px;background:var(--acc);color:#1b2330;border:none;padding:12px;border-radius:9px;font-family:Sora;font-weight:700;cursor:pointer">Confirmar entrega</button>
-    <button onclick="this.closest('.entov').remove()" style="width:100%;margin-top:8px;background:var(--surf-2);border:1px solid var(--line);color:var(--dim);padding:10px;border-radius:9px;font-family:Sora;cursor:pointer">Cancelar</button>`);
-}
-function leerFotoE(input,cual){ const f=input.files&&input.files[0]; if(!f)return; const rd=new FileReader();
-  rd.onload=()=>{ const img=new Image(); img.onload=()=>{ const max=900; let w=img.width,h=img.height; if(w>max||h>max){ if(w>h){h=Math.round(h*max/w);w=max;}else{w=Math.round(w*max/h);h=max;} }
-    const cv=document.createElement('canvas'); cv.width=w; cv.height=h; cv.getContext('2d').drawImage(img,0,0,w,h); const data=cv.toDataURL('image/jpeg',0.55);
-    if(cual==='casa'){ _ent.fotoCasa=data; const el=document.getElementById('fb-casa'); el.style.borderColor='var(--grn)'; document.getElementById('fb-casa-t').textContent='✓ Foto de la casa lista'; }
-    else { _ent.fotoCliente=data; const el=document.getElementById('fb-cli'); el.style.borderColor='var(--grn)'; document.getElementById('fb-cli-t').textContent='✓ Foto del cliente lista'; } }; img.src=rd.result; };
-  rd.readAsDataURL(f); }
-function capturarGeoE(){ const t=document.getElementById('geo-txt'); if(!navigator.geolocation){ t.textContent='Sin GPS'; return; } t.textContent='Obteniendo ubicación…';
-  navigator.geolocation.getCurrentPosition(p=>{ _ent.lat=p.coords.latitude; _ent.lng=p.coords.longitude; t.textContent='✓ Ubicación capturada'; t.style.color='var(--grn)'; },()=>{ t.textContent='No se pudo obtener la ubicación'; },{enableHighAccuracy:true,timeout:10000}); }
-async function abrirPagareFirmaE(){
-  let d; try{ d=await api('GET','/api/sales/'+_ent.saleId+'/pagare'); }catch(e){ toast(e.message); return; }
-  const f=d.fecha?new Date(d.fecha):new Date(); const fechaTxt=f.toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'}); const M=n=>'$'+Math.round(n||0).toLocaleString('es-MX');
-  const ppTxt=d.descuentaPP?` El primer pago de ${M(d.primerPago)} se descuenta al inicio; el cliente recibe ${M(d.entregaMonto)}.`:'';
-  _entOv(`<h3 style="margin:0 0 8px">📄 Pagaré</h3>
-    <div style="background:#fff;color:#1b2330;border:1px solid var(--line);border-radius:10px;padding:13px;font-size:.78rem;line-height:1.5;max-height:42vh;overflow:auto">
-      <div style="text-align:center;font-weight:700">PAGARÉ</div>
-      <div style="display:flex;justify-content:space-between;margin:6px 0;font-size:.72rem"><span><b>Folio:</b> ${d.folio}</span><span><b>Bueno por:</b> ${M(d.total)}</span></div>
-      <div style="font-size:.72rem;margin-bottom:6px">${d.lugar||''}, a ${fechaTxt}</div>
-      <p style="margin:6px 0">Debo y pagaré incondicionalmente a la orden de <b>${d.acreedor}</b> la cantidad de <b>${M(d.total)}</b> (${numeroALetras(d.total)}), en <b>${d.pagos}</b> pagos ${d.freq} de <b>${M(d.cuota)}</b>.${ppTxt}</p>
-      <div style="font-size:.72rem"><b>Suscriptor:</b> ${d.cliente.nombre}<br><b>Domicilio:</b> ${d.cliente.domicilio}<br><b>CURP:</b> ${d.cliente.curp||'—'} · <b>Tel:</b> ${d.cliente.tel||'—'}</div>
-    </div>
-    <div style="font-size:.78rem;color:var(--dim);margin:12px 0 5px">Firma del cliente:</div>
-    <canvas id="firma-pad" width="600" height="220" style="width:100%;height:160px;background:#fff;border:1.5px dashed var(--line-2);border-radius:10px;touch-action:none"></canvas>
-    <div style="display:flex;gap:8px;margin-top:10px"><button onclick="limpiarFirmaE()" style="flex:1;background:var(--surf-2);border:1px solid var(--line);color:var(--dim);padding:10px;border-radius:9px;font-family:Sora;cursor:pointer">Borrar</button><button onclick="guardarFirmaE()" style="flex:1;background:var(--grn);border:none;color:#fff;padding:10px;border-radius:9px;font-family:Sora;font-weight:600;cursor:pointer">✓ Guardar firma</button></div>
-    <button onclick="this.closest('.entov').remove()" style="width:100%;margin-top:8px;background:var(--surf-2);border:1px solid var(--line);color:var(--dim);padding:10px;border-radius:9px;font-family:Sora;cursor:pointer">Cerrar</button>`);
-  initFirmaPadE(document.getElementById('firma-pad'));
-}
-function initFirmaPadE(canvas){ _firmaCanvas=canvas; const ctx=canvas.getContext('2d'); ctx.lineWidth=2.5; ctx.lineCap='round'; ctx.strokeStyle='#111'; let dr=false,last=null;
-  const pos=e=>{ const r=canvas.getBoundingClientRect(); const t=e.touches?e.touches[0]:e; return {x:(t.clientX-r.left)*(canvas.width/r.width),y:(t.clientY-r.top)*(canvas.height/r.height)}; };
-  const st=e=>{dr=true;last=pos(e);e.preventDefault();}; const mv=e=>{ if(!dr)return; const p=pos(e); ctx.beginPath(); ctx.moveTo(last.x,last.y); ctx.lineTo(p.x,p.y); ctx.stroke(); last=p; e.preventDefault(); }; const en=()=>{dr=false;};
-  canvas.addEventListener('mousedown',st); canvas.addEventListener('mousemove',mv); window.addEventListener('mouseup',en);
-  canvas.addEventListener('touchstart',st,{passive:false}); canvas.addEventListener('touchmove',mv,{passive:false}); canvas.addEventListener('touchend',en);
-  canvas._empty=()=>{ const px=ctx.getImageData(0,0,canvas.width,canvas.height).data; for(let i=3;i<px.length;i+=4){ if(px[i]>0) return false; } return true; }; }
-function limpiarFirmaE(){ if(_firmaCanvas) _firmaCanvas.getContext('2d').clearRect(0,0,_firmaCanvas.width,_firmaCanvas.height); }
-function guardarFirmaE(){ if(!_firmaCanvas||_firmaCanvas._empty()){ toast('El cliente debe firmar primero'); return; } _ent.firma=_firmaCanvas.toDataURL('image/png'); const p=document.getElementById('fb-pag'); p.style.borderColor='var(--grn)'; document.getElementById('fb-pag-t').textContent='✓ Pagaré firmado'; _firmaCanvas.closest('.entov').remove(); }
-async function confirmarEntregaE(btn){
-  if(!_ent.fotoCasa||!_ent.fotoCliente){ toast('Faltan las fotos: casa y cliente'); return; }
-  if(!_ent.firma){ toast('Falta la firma del pagaré'); return; }
-  btn.disabled=true; btn.textContent='Enviando…';
-  try{ await api('POST','/api/sales/'+_ent.saleId+'/entregar',{lat:_ent.lat,lng:_ent.lng,fotoCasa:_ent.fotoCasa,fotoCliente:_ent.fotoCliente,firma:_ent.firma});
-    document.querySelectorAll('.entov').forEach(o=>o.remove()); toast('Crédito entregado · pagaré firmado'); cargarCaja(); abrirBandeja();
-  }catch(e){ toast(e.message); btn.disabled=false; btn.textContent='Confirmar entrega'; }
-}
-function numeroALetras(num){
-  const u=['','UNO','DOS','TRES','CUATRO','CINCO','SEIS','SIETE','OCHO','NUEVE','DIEZ','ONCE','DOCE','TRECE','CATORCE','QUINCE','DIECISÉIS','DIECISIETE','DIECIOCHO','DIECINUEVE'];
-  const d=['','','VEINTE','TREINTA','CUARENTA','CINCUENTA','SESENTA','SETENTA','OCHENTA','NOVENTA'];
-  const ce=['','CIENTO','DOSCIENTOS','TRESCIENTOS','CUATROCIENTOS','QUINIENTOS','SEISCIENTOS','SETECIENTOS','OCHOCIENTOS','NOVECIENTOS'];
-  function cent(n){ if(n===0)return''; if(n===100)return'CIEN'; let r=''; const c=Math.floor(n/100),resto=n%100,de=Math.floor(resto/10),un=resto%10; if(c)r+=ce[c]+' '; if(resto<20)r+=u[resto]; else if(resto<30)r+=(resto===20?'VEINTE':'VEINTI'+u[un]); else {r+=d[de]; if(un)r+=' Y '+u[un];} return r.trim(); }
-  function mil(n){ if(n<1000)return cent(n); const m=Math.floor(n/1000),r=n%1000; let t=m===1?'MIL':cent(m)+' MIL'; if(r)t+=' '+cent(r); return t; }
-  function mill(n){ if(n<1000000)return mil(n); const m=Math.floor(n/1000000),r=n%1000000; let t=m===1?'UN MILLÓN':mil(m)+' MILLONES'; if(r)t+=' '+mil(r); return t; }
-  const e=Math.floor(num),c=Math.round((num-e)*100);
-  return (e===0?'CERO':mill(e))+' PESOS '+String(c).padStart(2,'0')+'/100 M.N.';
-}
-async function imprimirPagare(saleId){
-  let d; try{ d=await api('GET','/api/sales/'+saleId+'/pagare'); }catch(e){ toast(e.message); return; }
-  const f=d.fecha?new Date(d.fecha):new Date();
-  const fechaTxt=f.toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
-  const M=n=>'$'+Math.round(n||0).toLocaleString('es-MX');
-  const ppTxt=d.descuentaPP?` El primer pago de ${M(d.primerPago)} se descuenta al inicio; el cliente recibe ${M(d.entregaMonto)}.`:'';
-  const html=`<html><head><title>Pagaré ${d.folio}</title><style>
-    @page{margin:18mm}
-    body{font-family:'Times New Roman',Georgia,serif;color:#111;font-size:13px;line-height:1.7;max-width:720px;margin:0 auto;padding:10px}
-    .tit{text-align:center;font-size:22px;font-weight:bold;letter-spacing:3px;margin:0 0 4px}
-    .top{display:flex;justify-content:space-between;font-size:13px;margin:14px 0;border-bottom:2px solid #111;padding-bottom:6px}
-    .bueno{border:2px solid #111;padding:4px 10px;font-weight:bold}
-    .lugar{font-size:12px;margin:10px 0;text-align:right}
-    p{margin:12px 0;text-align:justify}
-    .susc{margin-top:20px;font-size:12.5px;line-height:1.9}
-    .firma{margin-top:60px;text-align:center}
-    .firma .l{border-top:1px solid #111;width:300px;margin:0 auto;padding-top:6px;font-size:12px}
-    @media print{button{display:none}}
-  </style></head><body onload="window.print()">
-    <div class="tit">PAGARÉ</div>
-    <div class="top"><span><b>Folio:</b> ${d.folio}</span><span class="bueno">Bueno por ${M(d.total)} M.N.</span></div>
-    <div class="lugar">${d.lugar||''}, a ${fechaTxt}.</div>
-    <p>Debo y pagaré incondicionalmente a la orden de <b>${d.acreedor}</b>, en esta ciudad o en el lugar que se me requiera, la cantidad de <b>${M(d.total)}</b> (<b>${numeroALetras(d.total)}</b>), valor recibido a mi entera satisfacción, que me obligo a cubrir en <b>${d.pagos}</b> pagos ${d.freq} de <b>${M(d.cuota)}</b> cada uno, a partir de la fecha de suscripción del presente.${ppTxt}</p>
-    <p style="font-size:12px;color:#333">En caso de mora, este pagaré causará intereses moratorios a la tasa pactada, desde la fecha de vencimiento hasta su total liquidación, conforme a los artículos 170 y demás relativos de la Ley General de Títulos y Operaciones de Crédito.</p>
-    <div class="susc"><b>SUSCRIPTOR (DEUDOR):</b><br>
-      Nombre: ${d.cliente.nombre}<br>
-      Domicilio: ${d.cliente.domicilio}<br>
-      CURP: ${d.cliente.curp||'________________'} &nbsp; Teléfono: ${d.cliente.tel||'____________'}</div>
-    <div class="firma"><div class="l">Firma del suscriptor</div></div>
-  </body></html>`;
-  const w=window.open('','_blank'); if(!w){ toast('Permite las ventanas emergentes para imprimir'); return; }
-  w.document.write(html); w.document.close();
-  cerrar();
-}
-function render(){
-  document.getElementById('k-cob').textContent=fmt(caja.cobradoVent||0);
-  document.getElementById('k-ncob').textContent=(caja.cobradoVentN||0)+' pagos';
-  document.getElementById('k-cred').textContent=caja.ncred;
-  document.getElementById('k-coloc').textContent=fmt(caja.coloc)+' colocado';
-  const efectivoReal=caja.inicial+caja.efectivo+caja.entregasConfirmadas-(caja.retiros||0);
-  document.getElementById('k-caja').textContent=fmt(efectivoReal);
-  document.getElementById('cut-tot').textContent=fmt(efectivoReal);
-  document.getElementById('ct-ini').textContent=fmt(caja.inicial);
-  document.getElementById('ct-efe').textContent=fmt(caja.efectivo);
-  document.getElementById('ct-eng').textContent=fmt(0);
-  document.getElementById('ct-ent').textContent=fmt(caja.entregasConfirmadas);
-  document.getElementById('ct-banco').textContent=fmt(caja.banco);
-  const ctr=document.getElementById('ct-ret'); if(ctr) ctr.textContent=(caja.retiros>0?'−':'')+fmt(caja.retiros||0);
-  document.getElementById('movs').innerHTML= movs.length? movs.map(m=>`<tr><td class="mono" style="color:var(--faint);font-size:.78rem">${m.hora}</td><td>${m.txt}</td><td class="n">${m.monto>0?fmt(m.monto):'—'}</td></tr>`).join('') : '<tr><td colspan="3" style="color:var(--faint);font-size:.82rem;text-align:center;padding:16px">Sin movimientos aún.</td></tr>';
-}
-function toast(t){const el=document.getElementById('toast');el.textContent=t;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2800);}
-
-/* ===== Vistas: Operación / Resumen / Cartera ===== */
-function setVw(vw){
-  document.querySelectorAll('.snb').forEach(b=>{const on=b.dataset.vw===vw;b.style.background=on?'var(--acc)':'var(--surf-2)';b.style.color=on?'#1b2330':'var(--txt)';});
-  document.getElementById('view-op').style.display=vw==='op'?'':'none';
-  document.getElementById('view-resumen').style.display=vw==='resumen'?'':'none';
-  document.getElementById('view-cartera').style.display=vw==='cartera'?'':'none';
-  document.getElementById('view-contactos').style.display=vw==='contactos'?'':'none';
-  document.getElementById('view-oport').style.display=vw==='oport'?'':'none';
-  document.getElementById('view-mora').style.display=vw==='mora'?'':'none';
-  if(vw==='resumen') cargarResumen();
-  if(vw==='cartera') cargarCartSuc();
-  if(vw==='contactos') cargarContactos();
-  if(vw==='oport') cargarOportSuc();
-  if(vw==='mora') cargarMoraSuc();
-}
-let _periodoSuc='semana', _dashSuc=null, _cobObj={};
-function setPeriodoSuc(p){
-  _periodoSuc=p;
-  document.querySelectorAll('.perb').forEach(b=>{const on=b.dataset.p===p;b.style.background=on?'var(--acc)':'var(--surf-2)';b.style.color=on?'#1b2330':'var(--txt)';});
-  cargarResumen();
-}
-async function cargarResumen(){
-  try{
-    const d=await api('GET','/api/dashboard?periodo='+_periodoSuc);
-    _dashSuc=d; pintaResumen(d);
   }
-  catch(e){ document.getElementById('res-kpis').innerHTML='<div style="color:var(--red);padding:10px">'+e.message+'</div>'; }
+}));
+
+/* ---------- Almacén multitenant: una FILA por agencia (id=0 = registro del sistema) ----------
+   - PostgreSQL si hay DATABASE_URL (Render); si no, archivo JSON local.
+   - Cada tenant tiene su propio blob completo (users, clients, sales, ...).
+   - id=0 guarda el "sistema": lista de agencias, superadmins e índice usuario→agencia.
+   - El acceso por petición se aísla con AsyncLocalStorage; `db` apunta al blob de la agencia
+     del request en curso, así el resto del código (db.users, db.sales, ...) no cambia. */
+const { AsyncLocalStorage } = require('async_hooks');
+const als = new AsyncLocalStorage();
+const USE_PG = !!process.env.DATABASE_URL;
+let pool = null;
+if (USE_PG) { const { Pool } = require('pg'); pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { require: true, rejectUnauthorized: false } }); }
+
+let SYS = null;                 // registro del sistema (fila id=0)
+const tenantCache = {};         // {tid: blob} en memoria
+
+async function loadRow(id) {
+  if (USE_PG) {
+    await pool.query('CREATE TABLE IF NOT EXISTS cobrapro_state (id INT PRIMARY KEY, data JSONB)');
+    const r = await pool.query('SELECT data FROM cobrapro_state WHERE id = $1', [id]);
+    return r.rows[0] ? r.rows[0].data : null;
+  }
+  try { const all = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); return all[id] != null ? all[id] : null; } catch { return null; }
 }
-function _sucFechaCorta(iso){ if(!iso) return ''; const [y,m,d]=iso.split('-').map(Number); const dd=new Date(y,m-1,d); const dias=['domingo','lunes','martes','miércoles','jueves','viernes','sábado']; const mes=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']; return dias[dd.getDay()]+' '+String(d).padStart(2,'0')+'-'+mes[m-1]; }
-function pintaResumen(d){
-  const t=d.totales||{};
-  const elSem=document.getElementById('res-sem');
-  if(elSem){ if(d.semanaDesdeISO){ elSem.textContent='Semana configurada: inicia '+_sucFechaCorta(d.semanaDesdeISO)+' · termina '+_sucFechaCorta(d.semanaHastaISO); elSem.style.display=''; } else { elSem.style.display='none'; } }
-  const cob=(d.por_cobrador||[]).slice().sort((a,b)=>(b.comisionable||0)-(a.comisionable||0));
-  // KPIs de la sucursal = SUMA de sus cobradores (cuadra con la tabla de abajo)
-  const sum=(f)=>cob.reduce((a,c)=>a+(c[f]||0),0);
-  const cartera=sum('cartera'), vencida=sum('atraso_monto'), atrClientes=sum('atraso_clientes');
-  const cobrado=sum('comisionable'), npagos=sum('npagos'), porEntregar=sum('por_entregar'), clientes=sum('clientes'), sinPago=sum('nopago');
-  const per=_periodoSuc==='hoy'?'hoy':(_periodoSuc==='mes'?'mes':'semana');
-  document.getElementById('res-kpis').innerHTML=[
-    ['g','Cobrado ('+per+')',fmt(cobrado),npagos+' pagos'],
-    ['','Cartera activa',fmt(cartera),clientes+' créditos en ruta'],
-    ['r','Cartera vencida',fmt(vencida),atrClientes+' clientes en atraso'],
-    ['r','Clientes sin pago ('+per+')',sinPago,'cobro esperado y no abonaron'],
-    ['b','Colocado ('+per+')',fmt(t.monto_colocado_periodo||0),(t.nuevos_creditos_periodo||0)+' créditos nuevos'],
-    ['v','Efectivo por entregar',fmt(porEntregar),'en ruta de cobradores'],
-  ].map(k=>`<div class="kpi ${k[0]}"><div class="l">${k[1]}</div><div class="v">${k[2]}</div><div class="s">${k[3]}</div></div>`).join('');
-  document.getElementById('res-cob').innerHTML=cob.map(c=>{
-    const metaCli=c.clientes_vigentes!=null?c.clientes_vigentes:(c.clientes||0);
-    const metaCob=c.debito||0;
-    const cobrados=c.clientes_cobrados!=null?c.clientes_cobrados:(c.npagos||0);
-    const pc=metaCli>0?Math.min(999,Math.round(cobrados/metaCli*100)):0;
-    const pcob=metaCob>0?Math.min(999,Math.round((c.comisionable||0)/metaCob*100)):0;
-    const colC=metaCli>0?(pc>=100?'var(--grn)':pc>=70?'var(--acc)':'var(--red)'):'var(--faint)';
-    const colB=metaCob>0?(pcob>=100?'var(--grn)':pcob>=70?'var(--acc)':'var(--red)'):'var(--faint)';
-    return `<tr data-cob="${(c.nombre||'').replace(/"/g,'&quot;')}">
-      <td>${c.nombre}</td><td class="n">${c.clientes||0}</td><td class="n">${fmt(c.cartera||0)}</td>
-      <td class="n" style="color:${c.atraso_monto>0?'var(--red)':'var(--faint)'}">${fmt(c.atraso_monto||0)}</td>
-      <td class="n" style="color:${(c.nopago||0)>0?'var(--red)':'var(--faint)'};font-weight:600">${c.nopago||0}</td>
-      <td class="n"><b>${fmt(c.comisionable||0)}</b></td><td class="n">${fmt(c.por_entregar||0)}</td>
-      <td class="n" style="color:var(--vio);font-weight:600">${metaCli}</td>
-      <td class="n" style="color:var(--vio);font-weight:600">${fmt(metaCob)}</td>
-      <td class="n" style="color:${colC};font-weight:700">${metaCli>0?pc+'%':'—'}</td>
-      <td class="n" style="color:${colB};font-weight:700">${metaCob>0?pcob+'%':'—'}</td>
-    </tr>`;
-  }).join('')||'<tr><td colspan="11" style="text-align:center;color:var(--faint);padding:16px">Sin cobradores en esta sucursal.</td></tr>';
+function saveRow(id, data) {
+  if (USE_PG) {
+    pool.query('INSERT INTO cobrapro_state (id, data) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET data = $2', [id, data])
+      .catch(e => console.error('❌ Error al guardar fila ' + id + ':', e.message));
+  } else {
+    let all = {}; try { all = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch {}
+    all[id] = data; fs.writeFileSync(DB_FILE, JSON.stringify(all, null, 2));
+  }
+}
+const loadSystem = () => loadRow(0);
+const saveSystem = () => saveRow(0, SYS);
+
+// blob en blanco para una agencia nueva (con su admin inicial y branding)
+function blankTenant(brandNombre, adminUser, adminPass, adminNombre) {
+  return {
+    users: [{ id: 1, nombre: adminNombre || 'Administrador', usuario: (adminUser || 'admin').toLowerCase(), rol: 'admin', sucursalId: null, passwordHash: bcrypt.hashSync(adminPass || 'admin123', 8), activo: true, createdAt: new Date().toISOString() }],
+    sucursales: [], clients: [], sales: [], movimientos: [], caja: {}, porEntregar: [],
+    gestiones: [], cortes: [], transferencias: [], recolecciones: [], jcEntregas: [], jcCierres: [], asignaciones: [], contactos: [], cierresSemana: [],
+    objetivos: { suc: {}, cob: {} },
+    config: { corteAutoHora: '19:00', corteAutoDias: [1, 2, 3, 4, 5, 6], semanaInicio: 4, brand: { nombre: brandNombre || 'CobraPro' }, tarifas: JSON.parse(JSON.stringify(DEFAULT_TARIFAS)) }, _idem: {}
+  };
+}
+function normalizeTenant(b) {
+  b.cortes = b.cortes || []; b.gestiones = b.gestiones || []; b.transferencias = b.transferencias || [];
+  b.recolecciones = b.recolecciones || []; b.caja = b.caja || {}; b.porEntregar = b.porEntregar || [];
+  b.jcEntregas = b.jcEntregas || []; b.jcCierres = b.jcCierres || [];
+  b.asignaciones = b.asignaciones || [];
+  b.contactos = b.contactos || [];
+  b.cierresSemana = b.cierresSemana || [];
+  b.objetivos = b.objetivos || { suc: {}, cob: {} }; b.objetivos.suc = b.objetivos.suc || {}; b.objetivos.cob = b.objetivos.cob || {};
+  b.flujo = b.flujo || [];
+  b.config = b.config || {}; if (!b.config.corteAutoHora) b.config.corteAutoHora = '19:00';
+  if (!b.config.corteAutoDias) b.config.corteAutoDias = [1, 2, 3, 4, 5, 6];
+  if (b.config.semanaInicio == null) b.config.semanaInicio = 4;
+  b.config.brand = b.config.brand || { nombre: 'CobraPro' };
+  b.config.tarifas = b.config.tarifas || JSON.parse(JSON.stringify(DEFAULT_TARIFAS));
+  if (!b.config.tarifas.s16) b.config.tarifas.s16 = JSON.parse(JSON.stringify(DEFAULT_TARIFAS.s16));
+  if (!b.config.tarifas.s17) b.config.tarifas.s17 = JSON.parse(JSON.stringify(DEFAULT_TARIFAS.s17));
+  if (!b.config.tarifas.s21) b.config.tarifas.s21 = JSON.parse(JSON.stringify(DEFAULT_TARIFAS.s21));
+  if (!b.config.tarifas.s31) b.config.tarifas.s31 = JSON.parse(JSON.stringify(DEFAULT_TARIFAS.s31));
+  b._idem = b._idem || {};
+  if(b.config.creditosVoz == null) b.config.creditosVoz = 0;
+  b.config.voz = b.config.voz || { despacho:'', acreedor:'', telContacto:'', whatsapp:'' };
+  (b.cortes || []).forEach(c => { if (c.estado === 'pendiente' && !(c.totalEfectivo > 0)) { c.estado = 'recibido'; c.recibidoAt = c.recibidoAt || new Date().toISOString(); c.recibidoBy = c.recibidoBy || 'sin efectivo'; } });
+  return b;
+}
+async function getTenant(tid) {
+  tid = +tid;
+  if (tenantCache[tid]) return tenantCache[tid];
+  const blob = await loadRow(tid);
+  if (!blob) return null;
+  tenantCache[tid] = normalizeTenant(blob);
+  return tenantCache[tid];
+}
+// `db` apunta dinámicamente al blob de la agencia del request (vía AsyncLocalStorage)
+const db = new Proxy({}, {
+  get(_, p) { const s = als.getStore(); return s && s.db ? s.db[p] : undefined; },
+  set(_, p, v) { const s = als.getStore(); if (s && s.db) s.db[p] = v; return true; },
+  has(_, p) { const s = als.getStore(); return s && s.db ? (p in s.db) : false; },
+  deleteProperty(_, p) { const s = als.getStore(); if (s && s.db) delete s.db[p]; return true; },
+  ownKeys() { const s = als.getStore(); return s && s.db ? Reflect.ownKeys(s.db) : []; },
+  getOwnPropertyDescriptor(_, p) { const s = als.getStore(); return s && s.db ? Object.getOwnPropertyDescriptor(s.db, p) : undefined; }
+});
+function saveDB() { const s = als.getStore(); if (s && s.tenantId != null) saveRow(s.tenantId, s.db); }
+function nextId(coll) { return (db[coll] || []).reduce((m, x) => Math.max(m, x.id), 0) + 1; }
+
+/* ---------- Motor de cálculo real (factores Credia) ---------- */
+const DEFAULT_TARIFAS = {
+  diario:  [{ p: 10, f: 1.17, fijo: 30 }, { p: 20, f: 1.23, fijo: 60 }, { p: 30, f: 1.33, fijo: 90 }],
+  semanal: [{ p: 4, f: 1.35, fijo: 60 }, { p: 8, f: 1.43, fijo: 120 }, { p: 12, f: 1.53, fijo: 180 }, { p: 16, f: 1.63, fijo: 240 }, { p: 20, f: 1.83, fijo: 300 }],
+  p17:     [{ p: 17, f: 1.73, fijo: 270 }],
+  s16:     { factor: 1.6, fijo: 100, ppFactor: 0.1, ppFijo: 100, pagos: 16 },
+  s17:     { factor: 1.7, fijo: 200, ppFactor: 0.1, ppFijo: 200, pagos: 17 },
+  s21:     { factor: 1.785, fijo: 200, ppFactor: 0.085, ppFijo: 200, pagos: 21 },
+  s31:     { factor: 1.86, fijo: 200, ppFactor: 0.06, ppFijo: 200, pagos: 31 },
+  unico:   { base: 2, factor: 0.0183 }
+};
+function tarifasActuales() { return (db && db.config && db.config.tarifas) ? db.config.tarifas : DEFAULT_TARIFAS; }
+function calcCredito(tipo, plazo, monto, dias) {
+  const T = tarifasActuales();
+  if (tipo === 's16' || tipo === 's17' || tipo === 's21' || tipo === 's31') {
+    const c = T[tipo] || DEFAULT_TARIFAS[tipo];
+    const r2 = x => Math.round(x * 100) / 100;
+    const total = r2(monto * c.factor + c.fijo);
+    const pagos = c.pagos;
+    const primerPago = r2(monto * c.ppFactor + c.ppFijo);
+    const cuota = r2((total - primerPago) / (pagos - 1)); // pagos 2..N (Tarifa 2)
+    return { total, pagos, cuota, primerPago, descuentaPP: true, entregaCliente: r2(monto - primerPago) };
+  }
+  if (tipo === 'unico') { const u = T.unico || DEFAULT_TARIFAS.unico; const tap = monto + (dias || 15) * ((u.base||0) + monto * (u.factor||0)); return { total: tap, pagos: 1, cuota: tap }; }
+  const arr = T[tipo] || T.semanal || DEFAULT_TARIFAS.semanal; const it = arr.find(x => x.p === plazo) || arr[0];
+  const total = monto * it.f + it.fijo; return { total, pagos: it.p, cuota: total / it.p };
+}
+function genPassword() { const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let p = ''; for (let i = 0; i < 8; i++) p += c[Math.floor(Math.random() * c.length)]; return p; }
+function saldoDe(saleId) { return db.movimientos.filter(m => m.saleId === saleId).reduce((s, m) => s + (m.cargo || 0) - (m.abono || 0), 0); }
+
+/* ---------- Oportunidades comerciales: REFIN y PARALELO ----------
+   REFIN: le faltan 2 tarifas o menos por liquidar (saldo <= 2*cuota).
+   PARALELO: ya pagó >= 50% del crédito vigente; oferta tope OFERTA_PARALELO_MAX.
+   % pagado = (total - saldo)/total. Para créditos nuevos es exacto;
+   para importados depende de que 'total' traiga la deuda origen. */
+const OFERTA_PARALELO_MAX = 4000;
+function oportunidadDe(sale) {
+  const saldo = saldoDe(sale.id);
+  const cuota = +sale.cuota || 0;
+  const total = +sale.total || 0;
+  const out = { refin: false, paralelo: false, pctPagado: 0, oferta: 0, saldo };
+  if (saldo <= 0) return out;                                  // ya liquidado, sin oferta
+  out.pctPagado = total > 0 ? Math.max(0, Math.min(100, Math.round((total - saldo) / total * 100))) : 0;
+  if (cuota > 0 && saldo <= 2 * cuota) { out.refin = true; return out; }   // REFIN tiene prioridad
+  if (total > 0 && out.pctPagado >= 50) { out.paralelo = true; out.oferta = OFERTA_PARALELO_MAX; }
+  return out;
 }
 
-/* ===== Contactos (sucursal): no pagaron la semana anterior · gestión + evidencia ===== */
-let _ctData=null, _ctSemana='', _ctEvid={};
-const CT_RESULTADOS=['Pagó en la visita','Prometió pagar','Convenio de pago','No se encontraba','Se negó a pagar','Domicilio no localizado','Cliente ilocalizable','Otro'];
-function _ctChip(lbl,val,col){ return `<div style="background:var(--surf-2);border:1px solid var(--line);border-radius:9px;padding:6px 12px;text-align:center"><div style="font-size:.66rem;color:var(--faint)">${lbl}</div><div style="font-size:1.05rem;font-weight:700;color:${col||'var(--txt)'}">${val}</div></div>`; }
-/* ===== Cierre de semana (sucursal) ===== */
-let _cierreSuc=null;
-async function cargarCierreSuc(){
-  try{
-    const d=await api('GET','/api/cierre-semana'); _cierreSuc=d;
-    const mi=(d.sucursales||[])[0]||null;
-    try{ const s=new Date(d.semana+'T00:00:00'); document.getElementById('suc-cierre-sem').textContent='Semana del '+_sucFechaCorta(d.semana)+' al '+_sucFechaCorta(new Date(s.getTime()+6*86400000).toISOString().slice(0,10)); }catch(e){}
-    const est=document.getElementById('suc-cierre-estado'), btn=document.getElementById('suc-cierre-btn'), cobsEl=document.getElementById('suc-cierre-cobs');
-    if(!mi){ est.textContent='Sin cobradores en tu sucursal.'; cobsEl.innerHTML=''; return; }
-    const faltan=mi.totalCob-mi.cobCerrados;
-    if(mi.cerrada){ est.innerHTML='<span style="color:var(--grn);font-weight:600">✓ Tu sucursal ya cerró la semana'+(mi.cerradaPor?' ('+mi.cerradaPor+')':'')+'.</span>'+(d.adminCerrada?' El admin ya cerró la semana.':' Esperando validación del admin.'); btn.textContent='Reabrir sucursal'; btn.classList.remove('gold'); }
-    else { est.innerHTML= faltan>0 ? '<span style="color:var(--acc)">Faltan '+faltan+' de '+mi.totalCob+' cobradores por cerrar.</span> Puedes cerrar de todas formas.' : '<span style="color:var(--grn)">Todos tus cobradores ya cerraron.</span> Ya puedes cerrar tu sucursal.'; btn.textContent='Cerrar semana de mi sucursal'; btn.classList.add('gold'); }
-    cobsEl.innerHTML='<div style="display:flex;flex-wrap:wrap;gap:6px">'+(mi.cobradores||[]).map(c=>`<span style="font-size:.78rem;padding:4px 9px;border-radius:8px;border:1px solid var(--line);background:var(--surf-2);color:${c.cerrado?'var(--grn)':'var(--dim)'}">${c.cerrado?'✓':'○'} ${c.nombre}</span>`).join('')+'</div>';
-  }catch(e){ const est=document.getElementById('suc-cierre-estado'); if(est) est.textContent='No se pudo cargar el estado.'; }
+/* ---------- Semilla de agencia DEMO (datos de ejemplo, solo para la primera agencia migrada si está vacía) ---------- */
+function seedDemo(brandNombre) {
+  const b = blankTenant(brandNombre || 'CobraPro', 'admin', 'admin123', 'Administrador');
+  b.sucursales = ['Amecameca', 'Chalco', 'Ozumba', 'Tláhuac', 'Tepetlixpa', 'Juchitepec'].map((n, i) => ({ id: i + 1, nombre: n }));
+  const c1 = calcCredito('semanal', 12, 6000);
+  const c2 = calcCredito('diario', 20, 3000);
+  b.clients = [
+    { id: 1, nombre: 'María González', tel: '5544120098', calle: 'Calle Hidalgo 24', col: 'Centro', sucursalId: 1, prom: 'Ana Reyes' },
+    { id: 2, nombre: 'Pedro Jiménez', tel: '5544120134', calle: 'Av. Juárez 110', col: 'San Miguel', sucursalId: 1, prom: 'Ana Reyes' },
+  ];
+  b.sales = [
+    { id: 1, folio: 'F-1042', clientId: 1, tipo: 'semanal', plazo: 12, monto: 6000, cuota: c1.cuota, total: c1.total, prom: 'Ana Reyes', sucursalId: 1, createdAt: new Date().toISOString() },
+    { id: 2, folio: 'F-1043', clientId: 2, tipo: 'diario', plazo: 20, monto: 3000, cuota: c2.cuota, total: c2.total, prom: 'Ana Reyes', sucursalId: 1, createdAt: new Date().toISOString() },
+  ];
+  b.movimientos = [
+    { id: 1, saleId: 1, fecha: '05/03/2026', concepto: 'Disposición de crédito', origen: 'Sucursal Amecameca', cargo: c1.total, abono: 0 },
+    { id: 2, saleId: 1, fecha: '12/03/2026', concepto: 'Abono semana 1', origen: 'Ruta · A. Reyes', cargo: 0, abono: c1.cuota, forma: 'efectivo' },
+    { id: 3, saleId: 2, fecha: '06/03/2026', concepto: 'Disposición de crédito', origen: 'Sucursal Amecameca', cargo: c2.total, abono: 0 },
+  ];
+  b.caja = { '1': { inicial: 2000, efectivo: 0, banco: 0, entregas: 0, retiros: 0 } };
+  b.porEntregar = [{ id: 1, sucursalId: 1, prom: 'Ana Reyes', monto: 8400 }];
+  return b;
 }
-async function toggleCierreSuc(btn){
-  const mi=_cierreSuc&&(_cierreSuc.sucursales||[])[0];
-  const cerrar=!(mi&&mi.cerrada);
-  btn.disabled=true;
-  try{ await api('POST','/api/cierre-semana/'+(cerrar?'cerrar':'reabrir'),{}); toast(cerrar?'✓ Sucursal cerrada':'Sucursal reabierta'); await cargarCierreSuc(); }
-  catch(e){ toast(e.message); } finally{ btn.disabled=false; }
+
+/* ---------- Auth (multitenant) ---------- */
+async function auth(req, res, next) {
+  const t = (req.headers.authorization || '').replace('Bearer ', '');
+  let payload;
+  try { payload = jwt.verify(t, JWT_SECRET); } catch { return res.status(401).json({ error: 'No autorizado' }); }
+  req.user = payload;
+  if (payload.tenantId != null) {
+    const blob = await getTenant(payload.tenantId);
+    if (!blob) return res.status(401).json({ error: 'Agencia no encontrada' });
+    return als.run({ tenantId: +payload.tenantId, db: blob }, () => next());
+  }
+  // superadmin sin agencia seleccionada (solo endpoints /api/super/*)
+  return next();
 }
-async function cargarContactos(){
-  cargarCierreSuc();
-  document.getElementById('ct-list').innerHTML='<div style="color:var(--faint);padding:12px">Cargando…</div>';
-  try{
-    const r=await api('GET','/api/contactos');
-    _ctData=r; _ctSemana=r.semana||''; _ctEvid={};
-    try{ const s=new Date(_ctSemana+'T00:00:00'); document.getElementById('ct-sem').textContent='Semana del '+s.toLocaleDateString('es-MX',{day:'2-digit',month:'short'})+' al '+new Date(s.getTime()+6*86400000).toLocaleDateString('es-MX',{day:'2-digit',month:'short'}); }catch(e){}
-    const t=r.resumen||{total:0,gestionados:0,validados:0};
-    document.getElementById('ct-resumen').innerHTML=_ctChip('No pagaron',t.total)+_ctChip('Gestionados',t.gestionados,'var(--acc)')+_ctChip('Validados',t.validados,'var(--grn)');
-    pintaContactos();
-  }catch(e){ document.getElementById('ct-list').innerHTML='<div style="color:var(--red);padding:12px">'+e.message+'</div>'; }
+function rol(...roles) { return (req, res, next) => roles.includes(req.user.rol) ? next() : res.status(403).json({ error: 'Permiso insuficiente' }); }
+function superOnly(req, res, next) { return req.user && req.user.super ? next() : res.status(403).json({ error: 'Solo superadmin' }); }
+function idem(req, res, next) {
+  const k = req.body && req.body.idempotencyKey;
+  if (k && db._idem[k]) return res.json({ ok: true, duplicado: true });
+  req._idemKey = k; next();
 }
-function pintaContactos(){
-  if(!_ctData) return;
-  const q=(document.getElementById('ct-q').value||'').toLowerCase();
-  const f=document.getElementById('ct-filtro').value;
-  let rows=(_ctData.rows||[]).slice().sort((a,b)=>(b.monto_atraso||0)-(a.monto_atraso||0));
-  rows=rows.filter(r=>{
-    if(q){ const hay=((r.nombre||'')+' '+(r.direccion||'')+' '+(r.cobrador||'')).toLowerCase(); if(!hay.includes(q)) return false; }
-    const g=r.gestion; const gestionado=!!(g&&(g.resultado||g.tieneEvidencia));
-    if(f==='pend' && gestionado) return false;
-    if(f==='ges' && !gestionado) return false;
-    if(f==='val' && !(g&&g.validado)) return false;
-    return true;
+function markIdem(req) { if (req._idemKey) { db._idem[req._idemKey] = true; } }
+
+app.post('/api/auth/login', async (req, res) => {
+  const usuario = (req.body.usuario || '').toLowerCase().trim();
+  const password = req.body.password || '';
+  // ¿superadmin?
+  const su = (SYS.superUsers || []).find(x => x.usuario === usuario);
+  if (su && bcrypt.compareSync(password, su.passwordHash)) {
+    const token = jwt.sign({ super: true, nombre: su.nombre, usuario: su.usuario }, JWT_SECRET, { expiresIn: '12h' });
+    return res.json({ token, super: true, user: { nombre: su.nombre, usuario: su.usuario, rol: 'super' }, brand: { nombre: 'CobraPro · Panel maestro' } });
+  }
+  // usuario de agencia: el índice global dice a qué agencia pertenece
+  const tid = SYS.userIndex ? SYS.userIndex[usuario] : null;
+  if (tid == null) return res.status(401).json({ error: 'Usuario o contraseña inválidos' });
+  const tnt = (SYS.tenants || []).find(t => t.id === +tid);
+  if (tnt && tnt.activo === false) return res.status(403).json({ error: 'Esta agencia está suspendida. Contacta a soporte.' });
+  const blob = await getTenant(tid);
+  const u = blob && blob.users.find(x => x.usuario === usuario && x.activo);
+  if (!u || !bcrypt.compareSync(password, u.passwordHash)) return res.status(401).json({ error: 'Usuario o contraseña inválidos' });
+  const brand = (blob.config && blob.config.brand) || { nombre: 'CobraPro' };
+  const token = jwt.sign({ id: u.id, rol: u.rol, nombre: u.nombre, sucursalId: u.sucursalId, tenantId: +tid }, JWT_SECRET, { expiresIn: '12h' });
+  res.json({ token, user: { id: u.id, nombre: u.nombre, rol: u.rol, sucursalId: u.sucursalId, usuario: u.usuario }, brand });
+});
+app.get('/api/auth/me', auth, (req, res) => res.json(req.user));
+app.get('/api/brand', auth, (req, res) => {
+  if (req.user.tenantId != null) return res.json((db.config && db.config.brand) || { nombre: 'CobraPro' });
+  res.json({ nombre: 'CobraPro · Panel maestro' });
+});
+
+/* ---------- SUPERADMIN: gestión de agencias ---------- */
+app.get('/api/super/tenants', auth, superOnly, (req, res) => {
+  const list = (SYS.tenants || []).map(t => {
+    const b = tenantCache[t.id];
+    return { id: t.id, nombre: t.nombre, activo: t.activo !== false, createdAt: t.createdAt,
+      stats: b ? { usuarios: (b.users || []).length, sucursales: (b.sucursales || []).length, clientes: (b.clients || []).length } : null };
   });
-  document.getElementById('ct-count').textContent=rows.length+' cliente(s)';
-  document.getElementById('ct-list').innerHTML=rows.map(r=>{
-    const g=r.gestion||{};
-    const opts='<option value="">— elige —</option>'+CT_RESULTADOS.map(o=>`<option ${g.resultado===o?'selected':''}>${o}</option>`).join('');
-    let estado;
-    if(g.validado) estado='<span style="color:var(--grn);font-weight:700">✓ Validado'+(g.validadoPor?' · '+g.validadoPor:'')+'</span>';
-    else if(g.resultado||g.tieneEvidencia) estado='<span style="color:var(--acc);font-weight:700">⏳ Gestionado · pendiente de validar</span>';
-    else estado='<span style="color:var(--faint)">Sin gestionar</span>';
-    const evBadge=g.tieneEvidencia?'<span style="color:var(--grn);font-size:.76rem">✓ evidencia subida</span>':'';
-    return `<div class="bd-card" data-cid="${r.clientId}" style="margin-bottom:10px">
-      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
-        <div><div style="font-weight:700">${r.nombre}</div><div style="font-size:.78rem;color:var(--faint)">${r.direccion||''}</div>
-          <div style="font-size:.78rem;color:var(--dim);margin-top:3px">🧍 ${r.cobrador||'—'} · ${r.tel||'sin tel'}</div></div>
-        <div style="text-align:right"><div style="color:var(--red);font-weight:700">${fmt(r.monto_atraso||0)}</div>
-          <div style="font-size:.72rem;color:var(--faint)">atraso</div>
-          <div style="font-size:.72rem;color:var(--faint);margin-top:2px">Últ. pago: ${r.ultima_fecha_pago||'—'}</div></div>
-      </div>
-      <div style="margin-top:8px;font-size:.8rem">${estado}</div>
-      <div class="field" style="margin-top:8px"><label>Resultado de la visita</label><select class="ct-res">${opts}</select></div>
-      <input class="ct-nota" placeholder="Nota (opcional)" value="${(g.nota||'').replace(/"/g,'&quot;')}" style="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--txt);font-family:'Sora';padding:9px;border-radius:8px;margin-top:6px;box-sizing:border-box">
-      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
-        <label class="bd-b" style="flex:1;min-width:130px;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer">📷 <span class="ct-foto-t">${g.tieneEvidencia?'Cambiar evidencia':'Subir evidencia'}</span><input type="file" accept="image/*" capture="environment" style="display:none" onchange="ctLeerFoto(this,${r.clientId})"></label>
-        ${g.tieneEvidencia?`<button class="bd-b" style="flex:0 0 auto" onclick="ctVerFoto(${g.id})">👁 Ver</button>`:''}
-        <button class="bd-b gold" style="flex:1;min-width:120px" onclick="ctGuardar(${r.clientId},this)">💾 Guardar</button>
-      </div>
-      <div class="ct-foto-badge" style="margin-top:4px">${evBadge}</div>
-    </div>`;
-  }).join('')||'<div style="color:var(--faint);padding:16px;text-align:center">Ningún cliente quedó sin pago la semana anterior. 🎉</div>';
-}
-function ctLeerFoto(input,cid){
-  const f=input.files&&input.files[0]; if(!f)return; const rd=new FileReader();
-  rd.onload=()=>{ const img=new Image(); img.onload=()=>{ let w=img.width,h=img.height; const mx=1000; if(w>mx||h>mx){ const k=mx/Math.max(w,h); w=Math.round(w*k); h=Math.round(h*k); } const cv=document.createElement('canvas'); cv.width=w; cv.height=h; cv.getContext('2d').drawImage(img,0,0,w,h); _ctEvid[cid]=cv.toDataURL('image/jpeg',0.55); const card=document.querySelector('.bd-card[data-cid="'+cid+'"]'); if(card){ card.querySelector('.ct-foto-t').textContent='✓ Foto lista (sin guardar)'; card.querySelector('.ct-foto-badge').innerHTML='<span style="color:var(--acc);font-size:.76rem">● foto pendiente de guardar</span>'; } }; img.src=rd.result; };
-  rd.readAsDataURL(f);
-}
-async function ctGuardar(cid,btn){
-  const card=document.querySelector('.bd-card[data-cid="'+cid+'"]'); if(!card)return;
-  const resultado=card.querySelector('.ct-res').value;
-  const nota=card.querySelector('.ct-nota').value;
-  const evidencia=_ctEvid[cid]||null;
-  if(!resultado && !evidencia){ toast('Anota el resultado o sube una evidencia'); return; }
-  btn.disabled=true; const _t=btn.textContent; btn.textContent='Guardando…';
-  try{
-    const body={ semana:_ctSemana, clientId:cid, resultado, nota }; if(evidencia) body.evidencia=evidencia;
-    await api('POST','/api/contactos',body);
-    delete _ctEvid[cid];
-    toast('Gestión guardada'); await cargarContactos();
-  }catch(e){ toast(e.message); btn.textContent=_t; btn.disabled=false; }
-}
-async function ctVerFoto(id){
-  try{
-    const r=await api('GET','/api/contactos/'+id+'/evidencia');
-    const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;background:rgba(10,15,25,.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:18px'; ov.onclick=()=>ov.remove();
-    const img=r.evidencia?`<img src="${r.evidencia}" style="max-width:100%;max-height:72vh;border-radius:10px;display:block">`:'<div style="color:var(--faint);padding:30px">Sin imagen</div>';
-    const box=document.createElement('div'); box.style.cssText='background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:14px;max-width:640px;width:100%'; box.onclick=e=>e.stopPropagation();
-    box.innerHTML=`<div style="display:flex;justify-content:space-between;margin-bottom:8px"><b>Evidencia</b><button class="bd-b" style="width:auto;padding:5px 12px" onclick="this.closest('div').parentNode.remove()">✕</button></div>${r.resultado?'<div style="margin-bottom:6px"><b>'+r.resultado+'</b></div>':''}${r.nota?'<div style="color:var(--dim);margin-bottom:6px">'+r.nota+'</div>':''}${img}`;
-    ov.appendChild(box); document.body.appendChild(ov);
-  }catch(e){ toast(e.message); }
-}
+  res.json(list);
+});
+app.post('/api/super/tenants', auth, superOnly, async (req, res) => {
+  const { nombre, adminUsuario, adminPassword, adminNombre } = req.body;
+  if (!nombre || !adminUsuario) return res.status(400).json({ error: 'Nombre de agencia y usuario admin son obligatorios' });
+  const uname = adminUsuario.toLowerCase().trim();
+  if (SYS.userIndex && SYS.userIndex[uname] != null) return res.status(409).json({ error: 'Ese usuario admin ya está en uso por otra agencia' });
+  SYS.seqTenant = (SYS.seqTenant || 0) + 1;
+  const tid = SYS.seqTenant;
+  const pass = (adminPassword && adminPassword.length >= 4) ? adminPassword : genPassword();
+  const blob = blankTenant(nombre, uname, pass, adminNombre || 'Administrador');
+  tenantCache[tid] = blob; saveRow(tid, blob);
+  SYS.tenants.push({ id: tid, nombre, activo: true, createdAt: new Date().toISOString() });
+  SYS.userIndex = SYS.userIndex || {}; SYS.userIndex[uname] = tid;
+  saveSystem();
+  res.status(201).json({ id: tid, nombre, adminUsuario: uname, adminPassword: pass });
+});
+app.patch('/api/super/tenants/:id', auth, superOnly, (req, res) => {
+  const t = (SYS.tenants || []).find(x => x.id === +req.params.id);
+  if (!t) return res.status(404).json({ error: 'Agencia no encontrada' });
+  if (typeof req.body.activo === 'boolean') t.activo = req.body.activo;
+  if (req.body.nombre) { t.nombre = req.body.nombre; const b = tenantCache[t.id]; if (b) { b.config = b.config || {}; b.config.brand = b.config.brand || {}; b.config.brand.nombre = req.body.nombre; saveRow(t.id, b); } }
+  saveSystem();
+  res.json({ ok: true });
+});
+// el superadmin "entra" a una agencia para dar soporte (token con rol admin acotado a ese tenant)
+app.post('/api/super/enter/:id', auth, superOnly, async (req, res) => {
+  const tid = +req.params.id;
+  const blob = await getTenant(tid);
+  if (!blob) return res.status(404).json({ error: 'Agencia no encontrada' });
+  const t = (SYS.tenants || []).find(x => x.id === tid);
+  const token = jwt.sign({ id: 0, rol: 'admin', nombre: 'Soporte (superadmin)', sucursalId: null, tenantId: tid, super: true }, JWT_SECRET, { expiresIn: '6h' });
+  res.json({ token, user: { id: 0, nombre: 'Soporte', rol: 'admin', sucursalId: null, usuario: 'soporte' }, brand: (blob.config && blob.config.brand) || { nombre: t ? t.nombre : 'CobraPro' } });
+});
 
-let _cartSuc=[];
-const TIPO_LBL={diario:'Diario',semanal:'Semanal',s16:'Semanal 16',s17:'Semanal 17',s21:'21 sem',s31:'31 sem',unico:'Pago único',p17:'Cel 17'};
-async function cargarCartSuc(){
-  try{ _cartSuc=(await api('GET','/api/sales')).filter(s=>s.entregado!==false);
-    const cobs=[...new Set(_cartSuc.map(s=>s.prom).filter(Boolean))].sort();
-    const sel=document.getElementById('cs-cob'); if(sel) sel.innerHTML='<option value="">Todos</option>'+cobs.map(c=>`<option>${c}</option>`).join('');
-    pintaCartSuc();
-  }catch(e){ document.getElementById('cs-rows').innerHTML='<tr><td colspan="5" style="color:var(--red);padding:10px">'+e.message+'</td></tr>'; }
-}
-function pintaCartSuc(){
-  const q=(document.getElementById('cs-q').value||'').toLowerCase();
-  const fc=document.getElementById('cs-cob').value, ft=document.getElementById('cs-tipo').value, fe=document.getElementById('cs-est').value;
-  const rows=_cartSuc.filter(s=>{
-    if(fc && s.prom!==fc) return false;
-    if(ft && s.tipo!==ft) return false;
-    if(fe==='act' && !(s.saldo>0)) return false;
-    if(fe==='liq' && s.saldo>0) return false;
-    if(q){ const blob=((s.cliente||'')+' '+(s.folio||'')+' '+(s.tel||'')).toLowerCase(); if(!blob.includes(q)) return false; }
-    return true;
+/* ---------- Usuarios (panel de alta de usuarios y contraseñas) ---------- */
+app.get('/api/users', auth, rol('admin', 'supervisor'), (req, res) => {
+  res.json(db.users.map(u => ({ id: u.id, nombre: u.nombre, usuario: u.usuario, rol: u.rol, sucursalId: u.sucursalId, activo: u.activo, createdAt: u.createdAt })));
+});
+app.post('/api/users', auth, rol('admin'), (req, res) => {
+  const { nombre, usuario, rol: r, sucursalId, password } = req.body;
+  if (!nombre || !usuario || !r) return res.status(400).json({ error: 'nombre, usuario y rol son obligatorios' });
+  const uname = usuario.toLowerCase().trim();
+  if (db.users.some(u => u.usuario === uname)) return res.status(409).json({ error: 'Ese usuario ya existe' });
+  if (SYS.userIndex && SYS.userIndex[uname] != null) return res.status(409).json({ error: 'Ese usuario ya está en uso (debe ser único en todo el sistema)' });
+  const plain = (password && password.length >= 4) ? password : genPassword();
+  const u = { id: nextId('users'), nombre, usuario: uname, rol: r, sucursalId: sucursalId || null, passwordHash: bcrypt.hashSync(plain, 8), activo: true, createdAt: new Date().toISOString() };
+  db.users.push(u); saveDB();
+  // registra el usuario en el índice global para que pueda iniciar sesión
+  const tid = als.getStore().tenantId;
+  SYS.userIndex = SYS.userIndex || {}; SYS.userIndex[uname] = tid; saveSystem();
+  res.status(201).json({ id: u.id, nombre: u.nombre, usuario: u.usuario, rol: u.rol, sucursalId: u.sucursalId, passwordGenerada: plain });
+});
+app.patch('/api/users/:id', auth, rol('admin'), (req, res) => {
+  const u = db.users.find(x => x.id == req.params.id);
+  if (!u) return res.status(404).json({ error: 'Usuario no encontrado' });
+  if (typeof req.body.activo === 'boolean') u.activo = req.body.activo;
+  if (req.body.nombre) u.nombre = String(req.body.nombre).trim();
+  if (req.body.rol && ['admin','supervisor','sucursal','cobrador','jc'].includes(req.body.rol)) u.rol = req.body.rol;
+  if (req.body.sucursalId !== undefined) {
+    const sid = req.body.sucursalId === null || req.body.sucursalId === '' ? null : +req.body.sucursalId;
+    if ((u.rol === 'cobrador' || u.rol === 'sucursal' || u.rol === 'jc') && !sid) return res.status(400).json({ error: 'Un cobrador, JC o usuario de sucursal debe tener una sucursal asignada.' });
+    u.sucursalId = sid;
+  }
+  let nueva = null;
+  if (req.body.resetPassword) { nueva = genPassword(); u.passwordHash = bcrypt.hashSync(nueva, 8); }
+  saveDB();
+  res.json({ ok: true, passwordGenerada: nueva, usuario: { id: u.id, nombre: u.nombre, rol: u.rol, sucursalId: u.sucursalId } });
+});
+
+/* ---------- Catálogos ---------- */
+app.get('/api/sucursales', auth, (req, res) => res.json(db.sucursales.filter(s => s.activo !== false)));
+app.post('/api/sucursales', auth, rol('admin'), (req, res) => {
+  const nombre = (req.body.nombre || '').trim();
+  if (!nombre) return res.status(400).json({ error: 'Nombre de sucursal requerido' });
+  if (db.sucursales.find(s => s.activo !== false && (s.nombre || '').toLowerCase() === nombre.toLowerCase()))
+    return res.status(409).json({ error: 'Ya existe una sucursal con ese nombre' });
+  const suc = { id: nextId('sucursales'), nombre };
+  db.sucursales.push(suc); saveDB();
+  res.status(201).json(suc);
+});
+app.patch('/api/sucursales/:id', auth, rol('admin'), (req, res) => {
+  const s = db.sucursales.find(x => x.id === +req.params.id);
+  if (!s) return res.status(404).json({ error: 'Sucursal no encontrada' });
+  const nombre = (req.body.nombre || '').trim();
+  if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
+  s.nombre = nombre; saveDB();
+  res.json(s);
+});
+app.delete('/api/sucursales/:id', auth, rol('admin'), (req, res) => {
+  const id = +req.params.id;
+  const s = db.sucursales.find(x => x.id === id);
+  if (!s) return res.status(404).json({ error: 'Sucursal no encontrada' });
+  const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
+  const credAct = db.sales.filter(x => x.sucursalId === id && activos.has(x.clientId) && saldoDe(x.id) > 0);
+  if (credAct.length) return res.status(409).json({ error: `No se puede eliminar "${s.nombre}": tiene ${credAct.length} crédito(s) activo(s). Transfiérelos a otra sucursal primero.` });
+  const usuarios = db.users.filter(u => u.activo && u.sucursalId === id);
+  if (usuarios.length) return res.status(409).json({ error: `No se puede eliminar "${s.nombre}": tiene ${usuarios.length} usuario(s) asignado(s). Reasígnalos primero.` });
+  s.activo = false; s.bajaAt = new Date().toISOString(); saveDB();
+  res.json({ ok: true });
+});
+
+/* ---------- Clientes / cartera ---------- */
+app.get('/api/clients', auth, (req, res) => {
+  const q = (req.query.search || '').toLowerCase();
+  const prom = req.query.prom;
+  const out = db.clients.filter(c => c.activo !== false)
+    .filter(c => !prom || c.prom === prom)
+    .filter(c => !q || [c.nombre, c.tel, c.calle, c.col, c.prom].join(' ').toLowerCase().includes(q))
+    .map(c => ({ ...c, creditos: db.sales.filter(s => s.clientId === c.id).map(s => ({ ...s, saldo: saldoDe(s.id) })) }));
+  res.json(out);
+});
+app.get('/api/sales', auth, (req, res) => {
+  const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
+  const miSuc = (req.user.rol === 'sucursal') ? Number(req.user.sucursalId || 0) : null;
+  res.json(db.sales.filter(s => activos.has(s.clientId) && (miSuc == null || s.sucursalId === miSuc)).map(s => {
+    const c = db.clients.find(x => x.id === s.clientId) || {};
+    const { entrega, ...rest } = s;
+    return { ...rest, saldo: saldoDe(s.id), cliente: c.nombre, tel: c.tel || '', calle: c.calle || '', col: c.col || '', tieneEvidencia: !!entrega };
+  }));
+});
+/* ---------- Oportunidades: listado de candidatos a REFIN / PARALELO ---------- */
+app.get('/api/oportunidades', auth, (req, res) => {
+  let ventas = db.sales.filter(s => s.entregado !== false);
+  if (req.user.rol === 'cobrador') ventas = ventas.filter(s => s.prom === req.user.nombre);
+  else if (req.user.rol === 'sucursal') ventas = ventas.filter(s => Number(s.sucursalId) === Number(req.user.sucursalId || 0));
+  else if (req.query.sucursalId) ventas = ventas.filter(s => Number(s.sucursalId) === Number(req.query.sucursalId)); // admin/supervisor: filtro opcional
+  const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
+  const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
+  const refin = [], paralelo = [];
+  ventas.forEach(s => {
+    if (!activos.has(s.clientId)) return;
+    const op = oportunidadDe(s);
+    if (!op.refin && !op.paralelo) return;
+    const c = db.clients.find(x => x.id === s.clientId) || {};
+    const row = {
+      saleId: s.id, folio: s.folio, cliente: c.nombre || '—', tel: c.tel || '',
+      dir: [c.calle, c.col].filter(Boolean).join(', '), cobrador: s.prom || '—',
+      sucursal: sucMap[s.sucursalId] || '—', sucursalId: s.sucursalId,
+      tipo: s.tipo, cuota: s.cuota || 0, total: s.total || 0,
+      saldo: op.saldo, pctPagado: op.pctPagado, oferta: op.oferta
+    };
+    if (op.refin) refin.push(row); else paralelo.push(row);
   });
-  document.getElementById('cs-count').textContent=rows.length+' crédito(s) · saldo total '+fmt(rows.reduce((a,s)=>a+Math.max(0,s.saldo||0),0));
-  document.getElementById('cs-rows').innerHTML=rows.slice(0,500).map(s=>`<tr><td>${s.cliente||'—'}<div style="font-size:.74rem;color:var(--faint)">${s.folio||''}</div></td><td>${s.prom||'—'}</td><td>${TIPO_LBL[s.tipo]||s.tipo}</td><td class="n">${fmt(s.cuota||0)}</td><td class="n" style="color:${s.saldo>0?'var(--txt)':'var(--grn)'}">${s.saldo>0?fmt(s.saldo):'Liquidado'}</td></tr>`).join('')||'<tr><td colspan="5" style="text-align:center;color:var(--faint);padding:16px">Sin resultados.</td></tr>';
-}
-/* ===== Aging de mora (mi sucursal) ===== */
-async function cargarMoraSuc(){
-  try{
-    const d=await api('GET','/api/reports/aging');
-    document.getElementById('ag-cartera').textContent=fmt(d.saldoTotal);
-    document.getElementById('ag-vencida').textContent=fmt(d.carteraVencida);
-    document.getElementById('ag-indice').textContent=d.indiceMora+'%';
-    const col={corriente:'var(--grn)',b1:'#9bbf2e',b2:'var(--acc)',b3:'#e08a1e',b4:'#dc6a1e',b5:'var(--red)'};
-    document.getElementById('ag-rows').innerHTML=d.buckets.map(b=>`<tr><td>${b.lbl}</td><td class="n">${b.creditos}</td><td class="n">${fmt(b.saldo)}</td><td style="min-width:110px"><div style="background:var(--surf-2);border-radius:6px;height:15px;overflow:hidden"><i style="display:block;height:100%;width:${b.pct}%;background:${col[b.k]||'var(--acc)'}"></i></div></td><td class="n">${b.pct}%</td></tr>`).join('');
-  }catch(e){ document.getElementById('ag-rows').innerHTML='<tr><td colspan="5" style="color:var(--red);padding:10px">'+e.message+'</td></tr>'; }
-}
-document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));t.classList.add('on');document.getElementById(t.dataset.v).classList.add('on');});
+  refin.sort((a, b) => a.saldo - b.saldo);           // los más cerca de liquidar primero
+  paralelo.sort((a, b) => b.pctPagado - a.pctPagado); // los que más han pagado primero
+  res.json({ refin, paralelo, ofertaParaleloMax: OFERTA_PARALELO_MAX, totales: { refin: refin.length, paralelo: paralelo.length } });
+});
 
-/* ===== Oportunidades: REFIN / PARALELO ===== */
-let _oport={refin:[],paralelo:[]};
-async function cargarOportSuc(){
-  try{
-    _oport=await api('GET','/api/oportunidades');
-    document.getElementById('op-max').textContent=fmt(_oport.ofertaParaleloMax||4000);
-    const cobs=[...new Set([..._oport.refin,..._oport.paralelo].map(r=>r.cobrador).filter(Boolean))].sort();
-    const sel=document.getElementById('op-cob'); if(sel) sel.innerHTML='<option value="">Todos</option>'+cobs.map(c=>`<option>${c}</option>`).join('');
-    pintaOportSuc();
-  }catch(e){ document.getElementById('op-refin-rows').innerHTML='<tr><td colspan="6" style="color:var(--red);padding:10px">'+e.message+'</td></tr>'; }
-}
-function pintaOportSuc(){
-  const q=(document.getElementById('op-q').value||'').toLowerCase();
-  const fc=document.getElementById('op-cob').value;
-  const filtra=r=>{ if(fc && r.cobrador!==fc) return false; if(q){ const b=((r.cliente||'')+' '+(r.folio||'')+' '+(r.cobrador||'')).toLowerCase(); if(!b.includes(q)) return false; } return true; };
-  const rf=_oport.refin.filter(filtra), pl=_oport.paralelo.filter(filtra);
-  document.getElementById('op-nrefin').textContent=rf.length;
-  document.getElementById('op-nparal').textContent=pl.length;
-  document.getElementById('op-refin-rows').innerHTML=rf.map(r=>{
-    const faltan=r.cuota>0?Math.ceil(r.saldo/r.cuota):'—';
-    return `<tr><td>${r.cliente}<div style="font-size:.74rem;color:var(--faint)">${r.folio||''}${r.tel?' · '+r.tel:''}</div></td><td>${r.cobrador}</td><td>${TIPO_LBL[r.tipo]||r.tipo}</td><td class="n">${fmt(r.cuota)}</td><td class="n">${fmt(r.saldo)}</td><td class="n" style="color:var(--acc)">${faltan} tarifa(s)</td></tr>`;
-  }).join('')||'<tr><td colspan="6" style="text-align:center;color:var(--faint);padding:16px">Sin candidatos a REFIN.</td></tr>';
-  document.getElementById('op-paral-rows').innerHTML=pl.map(r=>
-    `<tr><td>${r.cliente}<div style="font-size:.74rem;color:var(--faint)">${r.folio||''}${r.tel?' · '+r.tel:''}</div></td><td>${r.cobrador}</td><td>${TIPO_LBL[r.tipo]||r.tipo}</td><td class="n" style="color:var(--grn)">${r.pctPagado}%</td><td class="n">${fmt(r.saldo)}</td><td class="n" style="color:var(--grn)">hasta ${fmt(r.oferta)}</td></tr>`
-  ).join('')||'<tr><td colspan="6" style="text-align:center;color:var(--faint);padding:16px">Sin candidatos a PARALELO.</td></tr>';
-}
-setInterval(()=>document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'}),1000);
-document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'});
-async function _init(){
-  try{ const t=await api('GET','/api/tarifas'); if(t&&t.semanal) PROD=t; }catch(e){}
-  try{
-    const cob=await api('GET','/api/cobradores');
-    document.getElementById('n-prom').innerHTML = cob.length
-      ? cob.map(c=>`<option>${c.nombre}</option>`).join('')
-      : '<option value="">— sin cobradores en esta sucursal —</option>';
-  }catch(e){}
-  fillPlazos(); calc(); _buscar(); cargarCaja(); cargarJCSuc(); addArticulo();
-// Ping de ubicación para el rastreo del admin/supervisor (mientras la app está abierta)
-function _pingUbic(){ if(!navigator.geolocation) return; navigator.geolocation.getCurrentPosition(function(p){ try{ api('POST','/api/ubicacion/ping',{lat:p.coords.latitude,lng:p.coords.longitude}); }catch(e){} }, function(){}, {enableHighAccuracy:false,timeout:8000,maximumAge:120000}); }
-_pingUbic(); setInterval(_pingUbic, 180000);
+/* ---------- Mapa de clientes ---------- */
+app.get('/api/mapa', auth, rol('admin', 'supervisor'), (req, res) => {
+  const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
+  const activos = db.clients.filter(c => c.activo !== false);
+  const out = []; let pendientes = 0, sumLat = 0, sumLng = 0, nLoc = 0;
+  for (const c of activos) {
+    const sales = db.sales.filter(s => s.clientId === c.id);
+    const saldo = sales.reduce((a, s) => a + Math.max(0, saldoDe(s.id)), 0);
+    let maxAtraso = 0, cuotaRef = 1;
+    sales.forEach(s => { if (saldoDe(s.id) > 0) { const at = calcAtraso(s); if (at.montoAtraso > maxAtraso) maxAtraso = at.montoAtraso; cuotaRef = s.cuota || cuotaRef; } });
+    let estado = 'corriente';
+    if (saldo <= 0) estado = 'liquidado';
+    else if (maxAtraso <= 0) estado = 'corriente';
+    else estado = maxAtraso > cuotaRef * 3 ? 'vencido' : 'atraso';
+    const has = typeof c.lat === 'number' && typeof c.lng === 'number';
+    if (has) { sumLat += c.lat; sumLng += c.lng; nLoc++; } else pendientes++;
+    out.push({ id: c.id, nombre: c.nombre, tel: c.tel || '', dir: [c.calle, c.col].filter(Boolean).join(', '),
+      sucursal: sucMap[c.sucursalId] || '—', cobrador: c.prom || '—', saldo, estado,
+      lat: has ? c.lat : null, lng: has ? c.lng : null });
+  }
+  const centro = nLoc ? [sumLat / nLoc, sumLng / nLoc] : [19.4326, -99.1332];
+  res.json({ clientes: out, pendientes, ubicados: nLoc, total: activos.length, centro });
+});
+app.post('/api/clients/:id/ubicar', auth, rol('admin', 'supervisor'), (req, res) => {
+  const c = db.clients.find(x => x.id == req.params.id);
+  if (!c) return res.status(404).json({ error: 'Cliente no encontrado' });
+  const { lat, lng, src } = req.body;
+  if (typeof lat !== 'number' || typeof lng !== 'number') return res.status(400).json({ error: 'lat/lng requeridos' });
+  c.lat = lat; c.lng = lng; c.geoSrc = src || 'manual'; saveDB();
+  res.json({ ok: true });
+});
 
+/* ---------- Geocodificación masiva por dirección (corre en el servidor) ----------
+   El navegador NO puede geocodificar 914 direcciones contra Nominatim: no puede
+   mandar User-Agent (header prohibido) y OSM bloquea el uso masivo => 0 ubicados.
+   Aquí se hace en el backend con User-Agent válido, 1 req/seg, guardando el avance
+   cada 10 clientes (reanudable si Render reinicia). ----------------------------- */
+function _limpiaSuc(n) { return String(n || '').replace(/\s*\b(I{1,3}|IV|V|VI|\d+)\b\s*$/i, '').trim(); }
+function _normMuni(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim(); }
+// Coordenadas fijas de respaldo por municipio (cuando Nominatim falla, nadie se queda sin pin)
+const MUNI_COORDS = {
+  'puebla': { lat: 19.0414, lng: -98.2063 },
+  'apizaco': { lat: 19.4131, lng: -98.1453 },
+  'cholula': { lat: 19.0630, lng: -98.3030 },
+  'san pedro cholula': { lat: 19.0633, lng: -98.3072 },
+  'san andres cholula': { lat: 19.0530, lng: -98.3010 },
+  'cuautla': { lat: 18.8125, lng: -98.9536 },
+  'tlaxcala': { lat: 19.3139, lng: -98.2404 }
+};
+function _muniFijo(muni) {
+  const k = _normMuni(muni);
+  if (MUNI_COORDS[k]) return MUNI_COORDS[k];
+  for (const m in MUNI_COORDS) { if (k.includes(m) || m.includes(k)) return MUNI_COORDS[m]; }
+  return null;
 }
-_init();
-</script>
-<script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){});});}</script>
-</body>
-</html>
+async function _geocode(q) {
+  try {
+    const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=mx&q=' + encodeURIComponent(q);
+    const r = await fetch(url, { headers: { 'User-Agent': 'CobraPro/1.0 (soporte@legaxia.uk)', 'Accept': 'application/json', 'Accept-Language': 'es' } });
+    if (!r.ok) return null;
+    const a = await r.json();
+    if (a && a[0] && a[0].lat) return { lat: parseFloat(a[0].lat), lng: parseFloat(a[0].lon) };
+  } catch (e) {}
+  return null;
+}
+function _extraeColonia(s) {
+  s = String(s || '');
+  const m = s.match(/\b(?:col(?:onia)?\.?|barrio|barr?\.?|fracc(?:ionamiento)?\.?|u\.?\s?h\.?|unidad\s+hab\w*|ampliaci[oó]n|secc(?:i[oó]n)?\.?)\s+([^,;]+)/i);
+  if (m && m[1]) return m[1].replace(/\s+\d.*$/, '').trim();          // "Col Centro 12" -> "Centro"
+  const parts = s.split(',').map(x => x.trim()).filter(Boolean);
+  if (parts.length >= 2) { const last = parts[parts.length - 1]; if (last && !/^\d/.test(last)) return last; }
+  return '';
+}
+function _zonaKey(col, muni) { return (String(col || '') + '|' + String(muni || '')).toLowerCase(); }
+function _gruposPendientes() {
+  const sucMap = {}; (db.sucursales || []).forEach(s => sucMap[s.id] = s.nombre);
+  const grupos = {};
+  for (const c of (db.clients || [])) {
+    if (c.activo === false || typeof c.lat === 'number') continue;
+    if (![c.calle, c.col, c.ciudad].filter(Boolean).length) continue;
+    const muni = _limpiaSuc(sucMap[c.sucursalId] || '');
+    const col = c.col || _extraeColonia(c.calle);
+    const key = _zonaKey(col, muni);
+    (grupos[key] = grupos[key] || { col, muni, clientes: [] }).clientes.push(c);
+  }
+  return grupos;
+}
+function _asignaZona(clientes, r) {
+  let n = 0;
+  for (const c of clientes) {
+    c.lat = r.lat + (Math.random() - 0.5) * 0.006;   // ~±300 m para que no se encimen
+    c.lng = r.lng + (Math.random() - 0.5) * 0.006;
+    c.geoSrc = 'zona'; n++;
+  }
+  return n;
+}
+// Paso 1: coloca al instante las zonas ya cacheadas y devuelve las que faltan por geocodificar
+app.post('/api/mapa/geocode/preparar', auth, rol('admin', 'supervisor'), (req, res) => {
+  db.geoCache = db.geoCache || {};
+  const grupos = _gruposPendientes();
+  const zonas = []; let yaUbicados = 0;
+  for (const key of Object.keys(grupos)) {
+    const g = grupos[key]; const r = db.geoCache[key];
+    if (r) yaUbicados += _asignaZona(g.clientes, r);
+    else zonas.push({ col: g.col, muni: g.muni, count: g.clientes.length });
+  }
+  if (yaUbicados) saveDB();
+  res.json({ yaUbicados, zonas, totalZonas: Object.keys(grupos).length });
+});
+// Paso 2: geocodifica UNA zona (User-Agent del servidor) y la reparte a sus clientes pendientes
+app.post('/api/mapa/geocode/zona', auth, rol('admin', 'supervisor'), async (req, res) => {
+  const { col, muni } = req.body || {};
+  db.geoCache = db.geoCache || {};
+  const key = _zonaKey(col, muni);
+  let r = db.geoCache[key];
+  if (!r) {
+    r = await _geocode([col, muni, 'México'].filter(Boolean).join(', '));
+    if (!r && muni) r = await _geocode([muni, 'México'].join(', '));   // fallback al municipio (Nominatim)
+    if (!r && muni) r = _muniFijo(muni);                                // último recurso: tabla fija
+    if (r) db.geoCache[key] = r;
+  }
+  if (!r) return res.json({ ok: false, ubicados: 0 });
+  const g = _gruposPendientes()[key];
+  const n = g ? _asignaZona(g.clientes, r) : 0;
+  saveDB();
+  res.json({ ok: true, ubicados: n });
+});
+
+// Respaldo: descarga TODO el estado de la agencia como JSON (para no depender solo de Render)
+app.get('/api/admin/backup', auth, rol('admin'), (req, res) => {
+  const s = als.getStore();
+  const blob = (s && s.db) ? s.db : {};
+  const brand = (blob.config && blob.config.brand && blob.config.brand.nombre) || 'cobrapro';
+  const fecha = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+  const nombre = ('respaldo_' + brand + '_' + fecha).replace(/[^a-zA-Z0-9_-]/g, '_') + '.json';
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="' + nombre + '"');
+  res.send(JSON.stringify(blob, null, 2));
+});
+
+/* ---------- Flujo JC (Jefe de Crédito): efectivo y entrega de créditos ---------- */
+function jcCajaDe(jcId) {
+  const recibido = db.jcEntregas.filter(e => e.jcId == jcId && e.estado === 'recibido').reduce((a, e) => a + (e.monto || 0), 0);
+  // efectivo que el admin le dotó directamente (igual que el supervisor)
+  const dotado = (db.flujo || []).filter(m => m.clase === 'dotacion' && m.destino && m.destino.tipo === 'jc' && m.destino.id == jcId).reduce((a, m) => a + (m.monto || 0), 0);
+  const entregado = db.sales.filter(s => s.entrega && s.entrega.jcId == jcId).reduce((a, s) => a + (s.entregaMonto != null ? s.entregaMonto : (s.monto || 0)), 0);
+  const recolectado = (db.recolecciones || []).filter(r => r.tipo === 'jc' && r.ref == jcId).reduce((a, r) => a + (r.monto || 0), 0);
+  const asign = asignNeto('jc', jcId);
+  return { recibido, dotado, entregado, recolectado, asign, saldo: recibido + dotado - entregado - recolectado + asign };
+}
+// ===== Posición de efectivo de quien entrega (nadie usa dinero propio: usa lo recibido/dotado) =====
+function entregaMontoDe(s) { return s.entregaMonto != null ? s.entregaMonto : (s.monto || 0); }
+function cajaRealDe(sid) { const c = db.caja[String(sid)] || {}; return (c.inicial || 0) + (c.efectivo || 0) + (c.entregas || 0) - (c.retiros || 0); }
+function supervisorCajaDe(uid) {
+  const dot = (db.flujo || []).filter(m => m.clase === 'dotacion' && m.destino && m.destino.tipo === 'supervisor' && m.destino.id == uid).reduce((a, m) => a + m.monto, 0);
+  const entregado = db.sales.filter(s => s.entrega && s.entrega.por && s.entrega.por.rol === 'supervisor' && s.entrega.por.id == uid).reduce((a, s) => a + entregaMontoDe(s), 0);
+  return dot - entregado + asignNeto('supervisor', uid);
+}
+// ===== Asignaciones de efectivo entre puestos (confirmadas mueven caja; el promotor solo envía) =====
+function asignEntrada(tipo, id) { return (db.asignaciones || []).filter(a => a.estado === 'recibido' && a.toTipo === tipo && (tipo === 'admin' || String(a.toId) === String(id))).reduce((s, a) => s + (a.monto || 0), 0); }
+function asignSalidaViva(tipo, id) { return (db.asignaciones || []).filter(a => (a.estado === 'pendiente' || a.estado === 'recibido') && a.fromTipo === tipo && (tipo === 'admin' || String(a.fromId) === String(id))).reduce((s, a) => s + (a.monto || 0), 0); }
+function asignNeto(tipo, id) { return asignEntrada(tipo, id) - asignSalidaViva(tipo, id); }
+function sucDeUser(user) { const me = db.users.find(u => u.id === user.id); return me ? me.sucursalId : (user.sucursalId || null); }
+function posicionCash(user) {
+  if (user.rol === 'admin') return flujoSaldo();
+  if (user.rol === 'supervisor') return supervisorCajaDe(user.id);
+  if (user.rol === 'jc') return jcCajaDe(user.id).saldo;
+  if (user.rol === 'sucursal') return cajaRealDe(sucDeUser(user));
+  return 0;
+}
+function reservadoPor(user) {
+  return db.sales.filter(s => s.entregado !== true && s.tomadoPor && s.tomadoPor.rol === user.rol && s.tomadoPor.id === user.id).reduce((a, s) => a + entregaMontoDe(s), 0);
+}
+function disponibleEntrega(user) { return posicionCash(user) - reservadoPor(user); }
+function scopeSucDe(user) { return (user.rol === 'admin' || user.rol === 'supervisor') ? null : sucDeUser(user); }
+// Entregas: TODO el personal (sucursal/JC/supervisor/admin) ve y opera créditos por entregar de CUALQUIER sucursal.
+function scopeEntregas(user) { return null; }
+// JC disponibles en la sucursal (para que el cobrador elija a quién entregar)
+app.get('/api/jc/lista', auth, (req, res) => {
+  let jcs = db.users.filter(u => u.rol === 'jc' && u.activo);
+  if (req.user.rol === 'cobrador' || req.user.rol === 'sucursal') {
+    const me = db.users.find(u => u.id === req.user.id);
+    if (me && me.sucursalId) jcs = jcs.filter(j => j.sucursalId === me.sucursalId);
+  }
+  res.json(jcs.map(j => ({ id: j.id, nombre: j.nombre })));
+});
+// Cobrador asigna efectivo a un JC (queda pendiente de que el JC lo reciba)
+app.post('/api/jc-entregas', auth, rol('cobrador', 'sucursal'), (req, res) => {
+  const { jcId, monto, nota } = req.body;
+  const m = +monto;
+  if (!jcId || !(m > 0)) return res.status(400).json({ error: 'Selecciona un JC e indica un monto válido' });
+  const jc = db.users.find(u => u.id == jcId && u.rol === 'jc' && u.activo);
+  if (!jc) return res.status(404).json({ error: 'JC no encontrado' });
+  const me = db.users.find(u => u.id === req.user.id);
+  // El efectivo sale de lo que el promotor trae en mano (su "por entregar").
+  if (req.user.rol === 'cobrador') {
+    const mis = db.porEntregar.filter(p => p.prom === req.user.nombre);
+    const disp = mis.reduce((a, p) => a + p.monto, 0);
+    if (m > disp + 0.5) return res.status(409).json({ error: `Solo traes $${Math.round(disp).toLocaleString('es-MX')} en efectivo por entregar; no puedes asignar $${Math.round(m).toLocaleString('es-MX')} al JC.` });
+    let restante = m;
+    for (const pe of mis) { if (restante <= 0) break; const take = Math.min(pe.monto, restante); pe.monto -= take; restante -= take; }
+    db.porEntregar = db.porEntregar.filter(p => p.monto > 0.5);
+  } else if (req.user.rol === 'sucursal') {
+    // sale de la caja física de la sucursal
+    const sid = String(me ? me.sucursalId : (req.user.sucursalId || 1));
+    db.caja[sid] = db.caja[sid] || { inicial: 0, efectivo: 0, banco: 0, entregas: 0, retiros: 0 };
+    const disp = (db.caja[sid].inicial || 0) + (db.caja[sid].efectivo || 0) + (db.caja[sid].entregas || 0) - (db.caja[sid].retiros || 0);
+    if (m > disp + 0.5) return res.status(409).json({ error: `La caja solo tiene $${Math.round(disp).toLocaleString('es-MX')} en efectivo; no puedes asignar $${Math.round(m).toLocaleString('es-MX')} al JC.` });
+    db.caja[sid].retiros = (db.caja[sid].retiros || 0) + m;
+  }
+  const ent = { id: nextId('jcEntregas'), cobradorId: req.user.id, cobradorNombre: req.user.nombre, jcId: jc.id, jcNombre: jc.nombre, monto: m, nota: nota || '', estado: 'pendiente', sucursalId: me ? me.sucursalId : null, fechaDDMM: fechaMxHoyDDMM(), creadoEn: new Date().toISOString() };
+  db.jcEntregas.push(ent); saveDB();
+  res.status(201).json(ent);
+});
+// Listado de entregas (cobrador ve las suyas; JC las dirigidas a él; admin todas)
+app.get('/api/jc-entregas', auth, (req, res) => {
+  let list = db.jcEntregas;
+  if (req.user.rol === 'cobrador') list = list.filter(e => e.cobradorId === req.user.id);
+  else if (req.user.rol === 'jc') list = list.filter(e => e.jcId === req.user.id);
+  res.json(list.slice().reverse());
+});
+// JC confirma que recibió el efectivo → entra a su caja
+app.post('/api/jc-entregas/:id/recibir', auth, rol('jc'), (req, res) => {
+  const e = db.jcEntregas.find(x => x.id == req.params.id);
+  if (!e) return res.status(404).json({ error: 'Entrega no encontrada' });
+  if (e.jcId !== req.user.id) return res.status(403).json({ error: 'Esa entrega no es para ti' });
+  if (e.estado === 'recibido') return res.status(409).json({ error: 'Ya estaba recibida' });
+  e.estado = 'recibido'; e.recibidoEn = new Date().toISOString(); saveDB();
+  res.json({ ok: true, caja: jcCajaDe(req.user.id) });
+});
+
+/* ===== Asignación de efectivo entre puestos (con confirmación del que recibe) ===== */
+function puestoDe(user) {
+  if (user.rol === 'sucursal') return { tipo: 'sucursal', id: sucDeUser(user) };
+  if (user.rol === 'supervisor') return { tipo: 'supervisor', id: user.id };
+  if (user.rol === 'jc') return { tipo: 'jc', id: user.id };
+  if (user.rol === 'admin') return { tipo: 'admin', id: user.id };
+  if (user.rol === 'cobrador') return { tipo: 'cobrador', id: user.id };
+  return null;
+}
+function porEntregarDe(nombre) { return db.porEntregar.filter(p => p.prom === nombre).reduce((a, p) => a + (p.monto || 0), 0); }
+function disponibleAsignar(user) { return user.rol === 'cobrador' ? porEntregarDe(user.nombre) : posicionCash(user); }
+function nombrePuesto(tipo, id) {
+  if (tipo === 'sucursal') { const s = db.sucursales.find(x => x.id == id); return 'Sucursal ' + (s ? s.nombre : id); }
+  const u = db.users.find(x => x.id == id);
+  return (tipo === 'jc' ? 'JC ' : tipo === 'supervisor' ? 'Supervisor ' : tipo === 'admin' ? 'Admin ' : '') + (u ? u.nombre : id);
+}
+function esMiPuesto(user, tipo, id) { const p = puestoDe(user); if (!p) return false; if (tipo === 'admin') return p.tipo === 'admin'; return p.tipo === tipo && String(p.id) === String(id); }
+
+app.get('/api/asignaciones/destinos', auth, (req, res) => {
+  const me = puestoDe(req.user);
+  const out = [];
+  db.sucursales.filter(s => s.activo !== false).forEach(s => out.push({ tipo: 'sucursal', id: s.id, nombre: 'Sucursal ' + s.nombre, caja: Math.round(cajaRealDe(s.id)) }));
+  db.users.filter(u => u.rol === 'jc' && u.activo).forEach(u => out.push({ tipo: 'jc', id: u.id, nombre: 'JC ' + u.nombre, caja: Math.round(jcCajaDe(u.id).saldo) }));
+  db.users.filter(u => u.rol === 'supervisor' && u.activo).forEach(u => out.push({ tipo: 'supervisor', id: u.id, nombre: 'Supervisor ' + u.nombre, caja: Math.round(supervisorCajaDe(u.id)) }));
+  db.users.filter(u => u.rol === 'admin' && u.activo).forEach(u => out.push({ tipo: 'admin', id: u.id, nombre: 'Admin ' + u.nombre }));
+  const destinos = out.filter(d => !(me && d.tipo === me.tipo && String(d.id) === String(me.id)));
+  res.json({ disponible: Math.round(disponibleAsignar(req.user)), puesto: me, destinos });
+});
+
+app.post('/api/asignaciones', auth, (req, res) => {
+  const { toTipo, toId, nota } = req.body; const monto = +req.body.monto;
+  if (!(monto > 0)) return res.status(400).json({ error: 'Monto inválido' });
+  if (!['sucursal', 'supervisor', 'jc', 'admin'].includes(toTipo)) return res.status(400).json({ error: 'Destino inválido. No se puede asignar a un promotor.' });
+  // validar que el destino existe
+  if (toTipo === 'sucursal') { if (!db.sucursales.find(s => s.id == toId)) return res.status(404).json({ error: 'Sucursal no encontrada' }); }
+  else { if (!db.users.find(u => u.id == toId && u.rol === toTipo && u.activo)) return res.status(404).json({ error: 'Destino no encontrado' }); }
+  const from = puestoDe(req.user);
+  if (from && from.tipo === toTipo && String(from.id) === String(toId)) return res.status(400).json({ error: 'No puedes asignarte a ti mismo' });
+  const disp = disponibleAsignar(req.user);
+  if (monto > disp + 0.5) return res.status(409).json({ error: `Solo tienes $${Math.round(disp).toLocaleString('es-MX')} disponible; no puedes asignar $${Math.round(monto).toLocaleString('es-MX')}.` });
+  // Débito inmediato del que envía:
+  if (req.user.rol === 'cobrador') {
+    // consume su efectivo en mano (por entregar), como al entregar al JC
+    let restante = monto; const mis = db.porEntregar.filter(p => p.prom === req.user.nombre);
+    for (const pe of mis) { if (restante <= 0) break; const take = Math.min(pe.monto, restante); pe.monto -= take; restante -= take; }
+    db.porEntregar = db.porEntregar.filter(p => p.monto > 0.5);
+  } else if (req.user.rol === 'sucursal') {
+    const sid = String(sucDeUser(req.user)); db.caja[sid] = db.caja[sid] || { inicial: 0, efectivo: 0, banco: 0, entregas: 0, retiros: 0 };
+    db.caja[sid].retiros = (db.caja[sid].retiros || 0) + monto;
+  } // jc/supervisor/admin: el débito se refleja vía asignSalidaViva en su posición
+  const a = { id: nextId('asignaciones'), fromTipo: from.tipo, fromId: from.id, fromNombre: req.user.nombre, toTipo, toId: toTipo === 'admin' ? toId : (+toId), toNombre: nombrePuesto(toTipo, toId), monto: Math.round(monto), nota: nota || '', estado: 'pendiente', fecha: fechaMxHoyDDMM(), creadoEn: new Date().toISOString() };
+  db.asignaciones.push(a); saveDB();
+  res.status(201).json(a);
+});
+
+app.get('/api/asignaciones', auth, (req, res) => {
+  const all = db.asignaciones || [];
+  const porConfirmar = all.filter(a => a.estado === 'pendiente' && esMiPuesto(req.user, a.toTipo, a.toId)).reverse();
+  const enviadas = all.filter(a => { const p = puestoDe(req.user); return p && a.fromTipo === p.tipo && String(a.fromId) === String(p.id); }).slice(-40).reverse();
+  const recibidas = all.filter(a => a.estado === 'recibido' && esMiPuesto(req.user, a.toTipo, a.toId)).slice(-40).reverse();
+  res.json({ porConfirmar, enviadas, recibidas, disponible: Math.round(disponibleAsignar(req.user)) });
+});
+
+app.post('/api/asignaciones/:id/recibir', auth, (req, res) => {
+  const a = (db.asignaciones || []).find(x => x.id == req.params.id);
+  if (!a) return res.status(404).json({ error: 'Asignación no encontrada' });
+  if (a.estado !== 'pendiente') return res.status(409).json({ error: 'Esa asignación ya no está pendiente' });
+  if (!esMiPuesto(req.user, a.toTipo, a.toId)) return res.status(403).json({ error: 'Esa asignación no es para ti' });
+  a.estado = 'recibido'; a.recibidoEn = new Date().toISOString(); a.recibidoPor = req.user.nombre;
+  // crédito al que recibe:
+  if (a.toTipo === 'sucursal') {
+    const sid = String(a.toId); db.caja[sid] = db.caja[sid] || { inicial: 0, efectivo: 0, banco: 0, entregas: 0, retiros: 0 };
+    db.caja[sid].inicial = (db.caja[sid].inicial || 0) + a.monto;
+  } // jc/supervisor/admin: el crédito se refleja vía asignEntrada en su posición
+  saveDB();
+  res.json({ ok: true });
+});
+
+app.post('/api/asignaciones/:id/rechazar', auth, (req, res) => {
+  const a = (db.asignaciones || []).find(x => x.id == req.params.id);
+  if (!a) return res.status(404).json({ error: 'Asignación no encontrada' });
+  if (a.estado !== 'pendiente') return res.status(409).json({ error: 'Esa asignación ya no está pendiente' });
+  const p = puestoDe(req.user);
+  const soyDestino = esMiPuesto(req.user, a.toTipo, a.toId);
+  const soyOrigen = p && a.fromTipo === p.tipo && String(a.fromId) === String(p.id);
+  if (!soyDestino && !soyOrigen) return res.status(403).json({ error: 'No puedes rechazar esta asignación' });
+  a.estado = 'rechazado'; a.rechazadoEn = new Date().toISOString();
+  // reembolso al que envió:
+  if (a.fromTipo === 'cobrador') {
+    const u = db.users.find(x => x.id == a.fromId);
+    db.porEntregar.push({ id: nextId('porEntregar'), sucursalId: u ? u.sucursalId : null, prom: a.fromNombre, monto: a.monto });
+  } else if (a.fromTipo === 'sucursal') {
+    const sid = String(a.fromId); db.caja[sid] = db.caja[sid] || { inicial: 0, efectivo: 0, banco: 0, entregas: 0, retiros: 0 };
+    db.caja[sid].retiros = Math.max(0, (db.caja[sid].retiros || 0) - a.monto);
+  } // jc/supervisor/admin: al quedar 'rechazado' deja de contar en asignSalidaViva
+  saveDB();
+  res.json({ ok: true });
+});
+/* ---------- Admin/supervisor JALA el efectivo "por entregar" de un cobrador ----------
+   Para cuando nadie de la sucursal lo recogió. Baja el "por entregar" del cobrador y
+   acredita el destino: ADMIN/tesorería (default, vía ledger de flujo) o la caja de su sucursal.
+   No hay doble conteo: flujoSaldo() ya considera el flujo; aquí solo movemos el efectivo de
+   "en ruta" a la caja elegida. */
+app.post('/api/cobrador/recibir-efectivo', auth, rol('admin', 'supervisor'), (req, res) => {
+  const prom = req.body.prom;
+  const cob = db.users.find(u => u.rol === 'cobrador' && u.nombre === prom);
+  if (!cob) return res.status(404).json({ error: 'Cobrador no encontrado' });
+  const disp = porEntregarDe(prom);
+  if (disp <= 0.5) return res.status(409).json({ error: 'Ese cobrador no trae efectivo por entregar' });
+  let monto = (req.body.monto != null) ? +req.body.monto : disp;
+  if (!(monto > 0)) return res.status(400).json({ error: 'Monto inválido' });
+  if (monto > disp + 0.5) return res.status(409).json({ error: `Ese cobrador solo trae $${Math.round(disp).toLocaleString('es-MX')} por entregar` });
+  monto = Math.round(monto);
+  const destino = req.body.destino === 'sucursal' ? 'sucursal' : 'admin'; // default: admin/tesorería
+  // 1. baja el "por entregar" del cobrador
+  let restante = monto; const mis = db.porEntregar.filter(p => p.prom === prom);
+  for (const pe of mis) { if (restante <= 0) break; const take = Math.min(pe.monto, restante); pe.monto -= take; restante -= take; }
+  db.porEntregar = db.porEntregar.filter(p => p.monto > 0.5);
+  // 2. acredita el destino
+  let destinoNombre;
+  if (destino === 'sucursal') {
+    const sid = String(cob.sucursalId || 1);
+    db.caja[sid] = db.caja[sid] || { inicial: 0, efectivo: 0, banco: 0, entregas: 0, retiros: 0 };
+    db.caja[sid].entregas = (db.caja[sid].entregas || 0) + monto;
+    destinoNombre = 'Caja ' + ((db.sucursales.find(s => s.id == cob.sucursalId) || {}).nombre || 'sucursal');
+  } else {
+    flujoAgregar('entrada', 'recoleccion', `Efectivo recibido de ${prom} (cobrador) · por ${req.user.nombre}`, monto, null, req.user.nombre);
+    destinoNombre = 'Admin / Tesorería';
+  }
+  saveDB();
+  res.json({ ok: true, recibido: monto, destino, destinoNombre, restante: Math.round(porEntregarDe(prom)) });
+});
+// Panel del JC
+app.get('/api/jc/panel', auth, rol('jc'), (req, res) => {
+  const me = db.users.find(u => u.id === req.user.id);
+  const sucId = me ? me.sucursalId : null;
+  const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
+  const pendientes = db.jcEntregas.filter(e => e.jcId === req.user.id && e.estado === 'pendiente').reverse();
+  const recibidas = db.jcEntregas.filter(e => e.jcId === req.user.id && e.estado === 'recibido').reverse();
+  // créditos por entregar: de su sucursal, no entregados
+  const porEntregar = db.sales.filter(s => s.entregado === false && (!s.tomadoPor || (s.tomadoPor.rol === 'jc' && s.tomadoPor.id === req.user.id))).map(s => {
+    const cli = db.clients.find(c => c.id === s.clientId) || {};
+    return { id: s.id, folio: s.folio, cliente: cli.nombre, tel: cli.tel || '', dir: [cli.calle, cli.col].filter(Boolean).join(', '), monto: s.monto, cobrador: s.prom, sucursal: sucMap[s.sucursalId] || '—', createdAt: s.createdAt };
+  }).reverse();
+  const entregados = db.sales.filter(s => s.entrega && s.entrega.jcId === req.user.id).map(s => {
+    const cli = db.clients.find(c => c.id === s.clientId) || {};
+    return { id: s.id, folio: s.folio, cliente: cli.nombre, monto: s.monto, fecha: s.entrega.fecha, lat: s.entrega.lat, lng: s.entrega.lng, fotoCasa: s.entrega.fotoCasa, fotoCliente: s.entrega.fotoCliente };
+  }).reverse();
+  res.json({ caja: jcCajaDe(req.user.id), sucursal: (db.sucursales.find(s => s.id === sucId) || {}).nombre || null, pendientes, recibidas: recibidas.slice(0, 30), porEntregar, entregados: entregados.slice(0, 30) });
+});
+// Reenviar un crédito existente a la cola de entrega del JC (para reconciliar)
+app.post('/api/sales/:id/pendiente-entrega', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
+  const s = db.sales.find(x => x.id == req.params.id);
+  if (!s) return res.status(404).json({ error: 'Crédito no encontrado' });
+  if (req.user.rol === 'sucursal') { const me = db.users.find(u => u.id === req.user.id); if (!me || s.sucursalId !== me.sucursalId) return res.status(403).json({ error: 'Ese crédito no es de tu sucursal' }); }
+  s.entregado = false; if (s.entrega) delete s.entrega;
+  saveDB();
+  res.json({ ok: true });
+});
+// JC entrega un crédito al cliente con evidencia
+app.post('/api/sales/:id/entregar', auth, rol('admin', 'supervisor', 'sucursal', 'jc'), (req, res) => {
+  const s = db.sales.find(x => x.id == req.params.id);
+  if (!s) return res.status(404).json({ error: 'Crédito no encontrado' });
+  if (s.entregado === true || s.entrega) return res.status(409).json({ error: 'Ese crédito ya fue entregado' });
+  const { lat, lng, fotoCasa, fotoCliente, firma } = req.body;
+  if (!fotoCasa || !fotoCliente) return res.status(400).json({ error: 'Sube la foto de la casa y la foto del cliente' });
+  if (!firma) return res.status(400).json({ error: 'Falta la firma del pagaré del cliente' });
+  const esJefe = req.user.rol === 'admin' || req.user.rol === 'supervisor';
+  // si lo tomó alguien más, no permitir entregarlo (salvo admin/supervisor)
+  if (s.tomadoPor && !(s.tomadoPor.rol === req.user.rol && s.tomadoPor.id === req.user.id) && !esJefe)
+    return res.status(409).json({ error: 'Ese crédito lo tomó ' + s.tomadoPor.nombre });
+  const scope = scopeEntregas(req.user);
+  if (scope != null && s.sucursalId !== scope) return res.status(403).json({ error: 'Ese crédito no es de tu sucursal' });
+  const monto = entregaMontoDe(s);
+  // efectivo disponible (liberando la reserva de ESTE crédito si ya lo tenías tomado)
+  let disp = posicionCash(req.user) - reservadoPor(req.user);
+  if (s.tomadoPor && s.tomadoPor.rol === req.user.rol && s.tomadoPor.id === req.user.id) disp += monto;
+  if (disp < monto - 0.5) return res.status(409).json({ error: `No tienes suficiente efectivo para entregar este crédito. Disponible $${Math.round(disp).toLocaleString('es-MX')}, este crédito entrega $${Math.round(monto).toLocaleString('es-MX')} al cliente. Pide que te doten o recibe efectivo de un promotor.` });
+  const cli = db.clients.find(c => c.id === s.clientId) || {};
+  s.entregado = true;
+  s.entrega = {
+    por: { rol: req.user.rol, id: req.user.id, nombre: req.user.nombre },
+    jcId: req.user.rol === 'jc' ? req.user.id : null, jcNombre: req.user.nombre,
+    fecha: new Date().toISOString(), lat: typeof lat === 'number' ? lat : null, lng: typeof lng === 'number' ? lng : null, fotoCasa, fotoCliente, firma
+  };
+  delete s.tomadoPor;
+  // descuento por posición del que entrega (el JC y el supervisor se descuentan solos vía jcCajaDe / supervisorCajaDe)
+  if (req.user.rol === 'sucursal') {
+    const sid = String(sucDeUser(req.user));
+    db.caja[sid] = db.caja[sid] || { inicial: 0, efectivo: 0, banco: 0, entregas: 0, retiros: 0 };
+    db.caja[sid].retiros = (db.caja[sid].retiros || 0) + monto;
+  } else if (req.user.rol === 'admin') {
+    flujoAgregar('salida', 'entrega', `Entrega de crédito ${s.folio} · ${cli.nombre || ''}`, monto, null, req.user.nombre);
+  }
+  if (cli && (typeof cli.lat !== 'number') && typeof lat === 'number') { cli.lat = lat; cli.lng = lng; cli.geoSrc = 'entrega'; }
+  saveDB();
+  res.json({ ok: true, posicion: Math.round(posicionCash(req.user)), caja: req.user.rol === 'jc' ? jcCajaDe(req.user.id) : undefined });
+});
+// ===== BANDEJA DE ENTREGAS (cola común; todos menos el promotor) =====
+app.get('/api/entregas/bandeja', auth, rol('admin', 'supervisor', 'sucursal', 'jc'), (req, res) => {
+  const scope = scopeEntregas(req.user);
+  const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
+  const map = s => { const c = db.clients.find(x => x.id === s.clientId) || {}; return { saleId: s.id, folio: s.folio, cliente: c.nombre || '—', dir: [c.calle, c.col, c.ciudad].filter(Boolean).join(', '), tel: c.tel || '', prom: s.prom, sucursal: sucMap[s.sucursalId] || '—', tipo: s.tipo, monto: s.monto, entregaMonto: entregaMontoDe(s), createdAt: s.createdAt, tomadoPor: s.tomadoPor || null }; };
+  const pend = db.sales.filter(s => s.entregado !== true && (scope == null || s.sucursalId === scope));
+  const mine = s => s.tomadoPor && s.tomadoPor.rol === req.user.rol && s.tomadoPor.id === req.user.id;
+  res.json({
+    rol: req.user.rol, posicion: Math.round(posicionCash(req.user)), disponible: Math.round(disponibleEntrega(req.user)),
+    bandeja: pend.filter(s => !s.tomadoPor).map(map).reverse(),
+    mias: pend.filter(mine).map(map).reverse(),
+    deOtros: pend.filter(s => s.tomadoPor && !mine(s)).map(map).reverse()
+  });
+});
+app.post('/api/entregas/:id/tomar', auth, rol('admin', 'supervisor', 'sucursal', 'jc'), (req, res) => {
+  const s = db.sales.find(x => x.id == req.params.id);
+  if (!s) return res.status(404).json({ error: 'Crédito no encontrado' });
+  if (s.entregado === true) return res.status(409).json({ error: 'Ese crédito ya fue entregado' });
+  if (s.tomadoPor && !(s.tomadoPor.rol === req.user.rol && s.tomadoPor.id === req.user.id)) return res.status(409).json({ error: 'Ese crédito ya lo tomó ' + s.tomadoPor.nombre });
+  const scope = scopeEntregas(req.user);
+  if (scope != null && s.sucursalId !== scope) return res.status(403).json({ error: 'Ese crédito no es de tu sucursal' });
+  const monto = entregaMontoDe(s);
+  if (disponibleEntrega(req.user) < monto - 0.5) return res.status(409).json({ error: `No tienes suficiente efectivo para tomar este crédito. Disponible $${Math.round(disponibleEntrega(req.user)).toLocaleString('es-MX')}, entrega $${Math.round(monto).toLocaleString('es-MX')}. Pide que te doten o recibe efectivo de un promotor.` });
+  s.tomadoPor = { rol: req.user.rol, id: req.user.id, nombre: req.user.nombre, at: new Date().toISOString() };
+  saveDB();
+  res.json({ ok: true });
+});
+app.post('/api/entregas/:id/soltar', auth, rol('admin', 'supervisor', 'sucursal', 'jc'), (req, res) => {
+  const s = db.sales.find(x => x.id == req.params.id);
+  if (!s) return res.status(404).json({ error: 'Crédito no encontrado' });
+  if (!s.tomadoPor) return res.json({ ok: true });
+  const mine = s.tomadoPor.rol === req.user.rol && s.tomadoPor.id === req.user.id;
+  const esJefe = req.user.rol === 'admin' || req.user.rol === 'supervisor';
+  if (!mine && !esJefe) return res.status(403).json({ error: 'Ese crédito lo tomó ' + s.tomadoPor.nombre });
+  delete s.tomadoPor; saveDB();
+  res.json({ ok: true });
+});
+// JC hace su cierre del día (deja registro; el efectivo puede quedarse o recolectarse aparte)
+app.post('/api/jc/cierre', auth, rol('jc'), (req, res) => {
+  const hoy = fechaMxHoyISO();
+  const ddmm = fechaMxHoyDDMM();
+  const recibidoHoy = db.jcEntregas.filter(e => e.jcId === req.user.id && e.estado === 'recibido' && e.fechaDDMM === ddmm).reduce((a, e) => a + e.monto, 0);
+  const entregadoHoy = db.sales.filter(s => s.entrega && s.entrega.jcId === req.user.id && s.entrega.fecha && fechaMxDeISO(s.entrega.fecha) === ddmm).reduce((a, s) => a + s.monto, 0);
+  const caja = jcCajaDe(req.user.id);
+  const cierre = { id: nextId('jcCierres'), jcId: req.user.id, jcNombre: req.user.nombre, fecha: hoy, recibidoHoy, entregadoHoy, saldoFinal: caja.saldo, creadoEn: new Date().toISOString() };
+  db.jcCierres = db.jcCierres || []; db.jcCierres.push(cierre); saveDB();
+  res.json({ ok: true, cierre });
+});
+// Ver evidencia de entrega de un crédito (admin/supervisor todos; cobrador solo sus clientes)
+app.get('/api/sales/:id/entrega', auth, (req, res) => {
+  const s = db.sales.find(x => x.id == req.params.id);
+  if (!s) return res.status(404).json({ error: 'Crédito no encontrado' });
+  const role = req.user.rol;
+  const allowed = ['admin', 'supervisor', 'jc', 'sucursal'].includes(role) || (role === 'cobrador' && s.prom === req.user.nombre);
+  if (!allowed) return res.status(403).json({ error: 'Sin permiso' });
+  const cli = db.clients.find(c => c.id === s.clientId) || {};
+  res.json({ entrega: s.entrega || null, cliente: cli.nombre, folio: s.folio });
+});
+// Datos para el pagaré (cliente + importe), usado por sucursal (PDF) y JC (firma)
+app.get('/api/sales/:id/pagare', auth, (req, res) => {
+  const s = db.sales.find(x => x.id == req.params.id);
+  if (!s) return res.status(404).json({ error: 'Crédito no encontrado' });
+  const role = req.user.rol;
+  const allowed = ['admin', 'supervisor', 'jc', 'sucursal'].includes(role) || (role === 'cobrador' && s.prom === req.user.nombre);
+  if (!allowed) return res.status(403).json({ error: 'Sin permiso' });
+  const c = db.clients.find(x => x.id === s.clientId) || {};
+  const brand = (db.config && db.config.brand && db.config.brand.nombre) || 'CobraPro';
+  const suc = db.sucursales.find(x => x.id === s.sucursalId);
+  const freq = s.tipo === 'diario' ? 'diarios' : (s.tipo === 'unico' ? 'único' : 'semanales');
+  const pagos = s.tipo === 'unico' ? 1 : s.plazo;
+  res.json({
+    folio: s.folio, fecha: s.createdAt, acreedor: brand,
+    lugar: [c.ciudad, c.estado].filter(Boolean).join(', ') || (suc ? suc.nombre : ''),
+    cliente: { nombre: c.nombre || '—', domicilio: [c.calle, c.col, c.ciudad, c.estado].filter(Boolean).join(', ') || '—', curp: c.curp || '', tel: c.tel || '' },
+    monto: s.monto, total: s.total, cuota: s.cuota, pagos, freq, tipo: s.tipo,
+    primerPago: s.primerPago || 0, descuentaPP: !!s.descuentaPP, entregaMonto: s.entregaMonto != null ? s.entregaMonto : s.monto,
+    articulos: s.articulos || [],
+    firma: !!(s.entrega && s.entrega.firma)
+  });
+});
+// Resumen para admin
+app.get('/api/jc/resumen', auth, rol('admin', 'supervisor'), (req, res) => {
+  const jcs = db.users.filter(u => u.rol === 'jc');
+  const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
+  res.json(jcs.map(j => ({ id: j.id, nombre: j.nombre, sucursal: sucMap[j.sucursalId] || '—', caja: jcCajaDe(j.id),
+    pendientesRecibir: db.jcEntregas.filter(e => e.jcId === j.id && e.estado === 'pendiente').length,
+    entregados: db.sales.filter(s => s.entrega && s.entrega.jcId === j.id).length })));
+});
+
+app.delete('/api/clients/:id', auth, rol('admin', 'supervisor'), (req, res) => {
+  const id = +req.params.id;
+  const c = db.clients.find(x => x.id === id);
+  if (!c) return res.status(404).json({ error: 'Cliente no encontrado' });
+  c.activo = false; c.bajaAt = new Date().toISOString(); c.bajaBy = req.user.nombre;
+  saveDB();
+  res.json({ ok: true });
+});
+app.patch('/api/clients/:id', auth, rol('admin', 'supervisor'), (req, res) => {
+  const id = +req.params.id;
+  const c = db.clients.find(x => x.id === id);
+  if (!c) return res.status(404).json({ error: 'Cliente no encontrado' });
+  const { nombre, tel, calle, col, ciudad, estado, curp, prom, sucursalId } = req.body;
+  if (ciudad !== undefined) c.ciudad = ciudad;
+  if (estado !== undefined) c.estado = estado;
+  if (curp !== undefined) {
+    const cn = String(curp || '').trim().toUpperCase();
+    if (cn && !/^[A-Z]{4}\d{6}[A-Z0-9]{8}$/.test(cn)) return res.status(400).json({ error: 'La CURP no tiene formato válido (18 caracteres).' });
+    if (cn) { const dupC = db.clients.find(x => x.id !== id && x.activo !== false && (x.curp || '').trim().toUpperCase() === cn); if (dupC) return res.status(409).json({ error: `La CURP ${cn} ya pertenece a "${dupC.nombre}".` }); }
+    c.curp = cn;
+  }
+  // si cambia el teléfono, validar que no choque con otro cliente activo
+  if (tel !== undefined && tel !== c.tel) {
+    const telNorm = String(tel || '').replace(/\D/g, '');
+    if (telNorm.length >= 10) {
+      const dup = db.clients.find(x => x.id !== id && x.activo !== false && (x.tel || '').replace(/\D/g, '') === telNorm);
+      if (dup) return res.status(409).json({ error: `El teléfono ${tel} ya pertenece a "${dup.nombre}"` });
+    }
+  }
+  const antesNombre = c.nombre;
+  if (nombre !== undefined) c.nombre = nombre;
+  if (tel !== undefined) c.tel = tel;
+  if (calle !== undefined) c.calle = calle;
+  if (col !== undefined) c.col = col;
+  if (sucursalId !== undefined) c.sucursalId = +sucursalId;
+  // si cambia el cobrador, propaga a sus créditos vigentes (reasignación de cartera)
+  if (prom !== undefined && prom !== c.prom) {
+    c.prom = prom;
+    db.sales.filter(s => s.clientId === id && saldoDe(s.id) > 0).forEach(s => { s.prom = prom; if (sucursalId !== undefined) s.sucursalId = +sucursalId; });
+  } else if (sucursalId !== undefined) {
+    db.sales.filter(s => s.clientId === id && saldoDe(s.id) > 0).forEach(s => { s.sucursalId = +sucursalId; });
+  }
+  c.editadoAt = new Date().toISOString(); c.editadoBy = req.user.nombre;
+  saveDB();
+  res.json({ ok: true, cliente: c });
+});
+app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
+  const { nombre, tel, calle, col, ciudad, estado, curp, sucursalId, prom, tipo, plazo, monto, dias, force, clienteExistenteId, articulos } = req.body;
+
+  let client;
+  if (clienteExistenteId) {
+    // Agregar un crédito ADICIONAL a un cliente que ya existe (sin duplicar la persona)
+    client = db.clients.find(c => c.id === +clienteExistenteId && c.activo !== false);
+    if (!client) return res.status(404).json({ error: 'Cliente existente no encontrado' });
+    if (req.user.rol === 'sucursal' && client.sucursalId !== req.user.sucursalId)
+      return res.status(403).json({ error: `Ese cliente pertenece a otra sucursal. No puedes agregarle créditos desde aquí.` });
+  } else {
+    if (!nombre || !calle || !col) return res.status(400).json({ error: 'Domicilio (calle y colonia) obligatorio en la venta' });
+    const curpNorm = String(curp || '').trim().toUpperCase();
+    // Validación por CURP: evita registrar dos veces a la misma persona
+    if (curpNorm && !force) {
+      if (!/^[A-Z]{4}\d{6}[A-Z0-9]{8}$/.test(curpNorm))
+        return res.status(400).json({ error: 'curp_invalida', detalle: 'La CURP no tiene el formato válido (18 caracteres del INE). Verifícala.' });
+      const dupC = db.clients.find(c => c.activo !== false && (c.curp || '').trim().toUpperCase() === curpNorm);
+      if (dupC) {
+        const sucDup = db.sucursales.find(s => s.id === dupC.sucursalId);
+        const credAct = db.sales.find(s => s.clientId === dupC.id && saldoDe(s.id) > 0);
+        const mismaSuc = String(dupC.sucursalId) === String(sucursalId || req.user.sucursalId || 1);
+        return res.status(409).json({
+          error: 'cliente_duplicado', porCurp: true,
+          detalle: `La CURP ${curpNorm} ya está registrada a nombre de "${dupC.nombre}"${sucDup ? ' (sucursal ' + sucDup.nombre + ')' : ''}.` +
+            (credAct ? ` Tiene un crédito ACTIVO ${credAct.folio} con saldo $${Math.round(saldoDe(credAct.id))}${!mismaSuc ? ' en OTRA sucursal' : ''}.` : ' Sin crédito activo.'),
+          clienteExistente: { id: dupC.id, nombre: dupC.nombre, sucursalId: dupC.sucursalId, sucursal: sucDup ? sucDup.nombre : null, tieneCreditoActivo: !!credAct, folioActivo: credAct ? credAct.folio : null, otraSucursal: !mismaSuc, mismaSucursal: mismaSuc },
+          puedeForzar: req.user.rol === 'admin' || req.user.rol === 'supervisor',
+          puedeAgregar: req.user.rol !== 'sucursal' || mismaSuc
+        });
+      }
+    }
+    // Validación: teléfono ya ocupado por otro cliente / crédito activo
+    const telNorm = String(tel || '').replace(/\D/g, '');
+    if (telNorm.length >= 10 && !force) {
+      const dup = db.clients.find(c => c.activo !== false && (c.tel || '').replace(/\D/g, '') === telNorm);
+      if (dup) {
+        const sucDup = db.sucursales.find(s => s.id === dup.sucursalId);
+        const credAct = db.sales.find(s => s.clientId === dup.id && saldoDe(s.id) > 0);
+        const mismaSuc = String(dup.sucursalId) === String(sucursalId || req.user.sucursalId || 1);
+        return res.status(409).json({
+          error: 'cliente_duplicado',
+          detalle: `El teléfono ${tel} ya pertenece a "${dup.nombre}"${sucDup ? ' (sucursal ' + sucDup.nombre + ')' : ''}.` +
+            (credAct ? ` Tiene un crédito ACTIVO ${credAct.folio} con saldo $${Math.round(saldoDe(credAct.id))}${!mismaSuc ? ' en OTRA sucursal' : ''}.` : ' Sin crédito activo.'),
+          clienteExistente: { id: dup.id, nombre: dup.nombre, sucursalId: dup.sucursalId, sucursal: sucDup ? sucDup.nombre : null, tieneCreditoActivo: !!credAct, folioActivo: credAct ? credAct.folio : null, otraSucursal: !mismaSuc, mismaSucursal: mismaSuc },
+          puedeForzar: req.user.rol === 'admin' || req.user.rol === 'supervisor',
+          puedeAgregar: req.user.rol !== 'sucursal' || mismaSuc   // se le puede colgar un 2º crédito
+        });
+      }
+    }
+    const sucFinal = req.user.rol === 'sucursal' ? (req.user.sucursalId || 1) : (sucursalId || req.user.sucursalId || 1);
+    client = { id: nextId('clients'), nombre, tel: tel || '', calle, col, ciudad: ciudad || '', estado: estado || '', curp: String(curp || '').trim().toUpperCase(), sucursalId: sucFinal, prom: prom || '' };
+    db.clients.push(client);
+  }
+
+  const r = calcCredito(tipo, +plazo, +monto, +dias);
+  const folio = 'F-' + (1100 + nextId('sales'));
+  const promFinal = prom || client.prom || '';
+  const sucCred = req.user.rol === 'sucursal' ? (req.user.sucursalId || 1) : (clienteExistenteId ? client.sucursalId : (sucursalId || req.user.sucursalId || 1));
+  const sale = { id: nextId('sales'), folio, clientId: client.id, tipo, plazo: +plazo, monto: +monto, cuota: r.cuota, total: r.total, prom: promFinal, sucursalId: sucCred, entregado: false, createdAt: new Date().toISOString() };
+  const artLimpios = Array.isArray(articulos) ? articulos.map(x => String(x || '').trim()).filter(Boolean).slice(0, 30) : [];
+  if (artLimpios.length) sale.articulos = artLimpios;
+  if (r.descuentaPP) { sale.primerPago = r.primerPago; sale.descuentaPP = true; sale.entregaMonto = r.entregaCliente; }
+  db.sales.push(sale);
+  db.movimientos.push({ id: nextId('movimientos'), saleId: sale.id, fecha: fechaMxHoyDDMM(), concepto: 'Disposición de crédito', origen: 'Sucursal', cargo: r.total, abono: 0 });
+  // Productos que descuentan el primer pago: se registra de inmediato como abono (el cliente recibe monto − primer pago)
+  if (r.descuentaPP && r.primerPago > 0) {
+    db.movimientos.push({ id: nextId('movimientos'), saleId: sale.id, fecha: fechaMxHoyDDMM(), concepto: 'Primer pago descontado al inicio', origen: 'Origen del crédito', cargo: 0, abono: r.primerPago, forma: 'descuento', sucursalCobro: sucCred, sucursalCredito: sucCred });
+  }
+  saveDB();
+  const nCreditos = db.sales.filter(s => s.clientId === client.id).length;
+  res.status(201).json({ ...sale, saldo: saldoDe(sale.id), cliente: client.nombre, agregadoAExistente: !!clienteExistenteId, totalCreditosCliente: nCreditos });
+});
+
+/* ---------- Estado de cuenta (libro de cargos y abonos) ---------- */
+app.get('/api/sales/:id/movimientos', auth, (req, res) => {
+  const id = +req.params.id;
+  let saldo = 0;
+  const rows = db.movimientos.filter(m => m.saleId === id).map(m => { saldo += (m.cargo || 0) - (m.abono || 0); return { ...m, saldo }; });
+  res.json({ movimientos: rows, saldo });
+});
+
+/* ---------- Pago (idempotente, con forma de pago) ---------- */
+function calcAtraso(sale){
+  const cuota = sale.cuota || 0;
+  // ancla del calendario: si hubo reestructura, el reloj se reinicia desde esa fecha
+  const anchor = sale.reestructuraAt ? new Date(sale.reestructuraAt) : (sale.createdAt ? new Date(sale.createdAt) : new Date());
+  const dias = Math.max(0, Math.floor((Date.now() - anchor.getTime())/86400000));
+  let cuotasDebidas = 0;
+  if (sale.tipo === 'diario') cuotasDebidas = Math.min(sale.plazo || 0, dias);
+  else if (sale.tipo === 'semanal') cuotasDebidas = Math.min(sale.plazo || 0, Math.floor(dias/7));
+  else if (sale.tipo === 's16' || sale.tipo === 's17' || sale.tipo === 's21' || sale.tipo === 's31') cuotasDebidas = Math.min(sale.plazo || 0, Math.floor(dias/7));
+  else if (sale.tipo === 'unico') cuotasDebidas = dias >= (sale.plazo || 0) ? 1 : 0;
+  else if (sale.tipo === 'p17') cuotasDebidas = Math.min(17, Math.floor(dias / ((sale.plazo || 270)/17)));
+  // saldo base: total original, o el saldo reprogramado si hubo reestructura
+  const saldoBase = sale.saldoBaseReestructura != null ? sale.saldoBaseReestructura : (sale.total || 0);
+  const saldoActual = saldoDe(sale.id);
+  const expectedSaldo = Math.max(0, saldoBase - cuotasDebidas * cuota);
+  const montoAtraso = Math.max(0, saldoActual - expectedSaldo);
+  const cuotasAtraso = cuota > 0 ? Math.round(montoAtraso / cuota) : 0;
+  const cuotasPagadas = cuota > 0 ? Math.max(0, Math.round((saldoBase - saldoActual)/cuota)) : 0;
+  const diasAtraso = sale.tipo === 'diario' ? cuotasAtraso
+                   : (sale.tipo === 'semanal' || sale.tipo === 's16' || sale.tipo === 's17' || sale.tipo === 's21' || sale.tipo === 's31') ? cuotasAtraso*7
+                   : sale.tipo === 'unico' ? Math.max(0, dias - (sale.plazo||0))
+                   : cuotasAtraso * Math.round((sale.plazo||270)/17);
+  return { cuotasDebidas, cuotasPagadas, cuotasAtraso, montoAtraso, diasAtraso };
+}
+
+app.post('/api/sales/:id/pago', auth, idem, (req, res) => {
+  const id = +req.params.id; const { monto, forma } = req.body;
+  if (!(monto > 0)) return res.status(400).json({ error: 'Monto inválido' });
+  if (forma === 'ajuste' && req.user.rol !== 'admin' && req.user.rol !== 'supervisor') {
+    return res.status(403).json({ error: 'Solo administrador o supervisor pueden registrar ajustes' });
+  }
+  const sale = db.sales.find(s => s.id === id); if (!sale) return res.status(404).json({ error: 'Crédito no encontrado' });
+  const f = forma || 'efectivo';
+  // No se permite abonar a un crédito ya liquidado ni exceder el saldo (evita saldos negativos).
+  if (f !== 'ajuste') {
+    const saldoVigente = saldoDe(id);
+    if (saldoVigente <= 0) return res.status(409).json({ error: 'Este crédito ya está liquidado (saldo $0). No admite más abonos.' });
+    if (+monto > saldoVigente + 1) return res.status(409).json({ error: `El abono ($${Math.round(+monto)}) excede el saldo pendiente. El máximo a pagar es $${Math.round(saldoVigente)}.` });
+  }
+  // Regla: tras entregar su corte del día, el cobrador no puede registrar más cobros.
+  if (req.user.rol === 'cobrador' && corteHechoHoy(req.user.nombre)) {
+    return res.status(423).json({ error: 'Ya entregaste tu corte de hoy. No puedes registrar más cobros hasta mañana. Si recibiste dinero después del corte, repórtalo a tu sucursal.' });
+  }
+  const sidCredito = String(sale.sucursalId || 1);
+  // El dinero FÍSICO entra a la caja de QUIEN RECIBE el pago (no a la del crédito).
+  const sidCobro = String(req.user.sucursalId || sidCredito);
+  db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: fechaMxHoyDDMM(), concepto: 'Abono', origen: req.user.nombre, cargo: 0, abono: +monto, forma: f, sucursalCobro: +sidCobro, sucursalCredito: +sidCredito });
+  db.caja[sidCobro] = db.caja[sidCobro] || { inicial: 0, efectivo: 0, banco: 0, entregas: 0 };
+  if (req.user.rol === 'cobrador') {
+    // cobro en ruta: el efectivo NO entra a caja, va a "por entregar" a nombre del cobrador en SU sucursal
+    if (f === 'efectivo') {
+      let pe = db.porEntregar.find(p => p.prom === req.user.nombre && String(p.sucursalId) === sidCobro);
+      if (pe) pe.monto += +monto; else db.porEntregar.push({ id: nextId('porEntregar'), sucursalId: +sidCobro, prom: req.user.nombre, monto: +monto });
+    } else if (f === 'transferencia' || f === 'deposito') { db.caja[sidCobro].banco += +monto; }
+  } else {
+    // ventanilla / admin / supervisor: el dinero entra a la caja de la sucursal que lo recibió
+    if (f === 'efectivo') db.caja[sidCobro].efectivo += +monto;
+    else if (f === 'transferencia' || f === 'deposito') db.caja[sidCobro].banco += +monto;
+    // Cobrado en ventanilla (acumulado del periodo) — se reinicia en cada cierre de caja
+    if (f !== 'ajuste') {
+      db.caja[sidCobro].cobradoVent = (db.caja[sidCobro].cobradoVent || 0) + (+monto);
+      db.caja[sidCobro].cobradoVentN = (db.caja[sidCobro].cobradoVentN || 0) + 1;
+    }
+  }
+  markIdem(req); saveDB();
+  res.status(201).json({ ok: true, saldo: saldoDe(id), cobroCruzado: sidCobro !== sidCredito });
+});
+
+/* ---------- REFIN: liquida el saldo del crédito viejo y genera uno nuevo ---------- */
+app.post('/api/sales/:id/refin', auth, rol('admin','supervisor','sucursal'), idem, (req, res) => {
+  const id = +req.params.id;
+  const old = db.sales.find(s => s.id === id);
+  if (!old) return res.status(404).json({ error: 'Crédito no encontrado' });
+  const saldoActual = saldoDe(id);
+  if (saldoActual <= 0) return res.status(400).json({ error: 'Este crédito ya está liquidado, no aplica REFIN' });
+
+  const { nuevoMonto, nuevoTipo, nuevoPlazo, nuevoDias, nuevoProm } = req.body;
+  const monto = +nuevoMonto;
+  if (!monto || monto <= 0) return res.status(400).json({ error: 'Nuevo monto inválido' });
+  if (monto < saldoActual) return res.status(400).json({ error: `El nuevo monto ($${monto}) debe ser ≥ al saldo pendiente ($${Math.round(saldoActual)})` });
+
+  const tipo = nuevoTipo || old.tipo || 'semanal';
+  const plazo = +nuevoPlazo || old.plazo || 12;
+  const prom = nuevoProm || old.prom;
+  const r = calcCredito(tipo, plazo, monto, +nuevoDias || plazo);
+
+  // El cliente solo recibe físicamente el NETO (lo demás liquida el crédito viejo y el primer pago).
+  const primerPago = (r.descuentaPP && r.primerPago > 0) ? r.primerPago : 0;
+  const neto = Math.max(0, monto - saldoActual - primerPago);
+
+  const hoy = fechaMxHoyDDMM();
+  // 1. liquida el viejo con un abono forma=refin
+  db.movimientos.push({
+    id: nextId('movimientos'), saleId: id, fecha: hoy,
+    concepto: 'Liquidación por REFIN',
+    origen: req.user.nombre + ' (REFIN ventanilla)',
+    cargo: 0, abono: saldoActual, forma: 'refin'
+  });
+  // 2. nuevo crédito → va a la BANDEJA DE ENTREGAS. NO cuenta en cartera hasta entregarse (igual que un crédito nuevo).
+  const folio = 'F-' + (1100 + nextId('sales'));
+  const nuevo = {
+    id: nextId('sales'), folio, clientId: old.clientId,
+    tipo, plazo, monto, cuota: r.cuota, total: r.total,
+    prom, sucursalId: old.sucursalId,
+    refinDe: old.id, entregado: false,
+    entregaMonto: neto,   // efectivo real a entregar al cliente (monto − saldo liquidado − primer pago)
+    createdAt: new Date().toISOString(), createdBy: req.user.nombre,
+  };
+  if (r.descuentaPP) { nuevo.primerPago = r.primerPago; nuevo.descuentaPP = true; }
+  db.sales.push(nuevo);
+  // 3. disposición del nuevo crédito
+  db.movimientos.push({
+    id: nextId('movimientos'), saleId: nuevo.id, fecha: hoy,
+    concepto: `Disposición REFIN (descuenta $${Math.round(saldoActual)} del crédito ${old.folio})`,
+    origen: 'Sucursal: ' + req.user.nombre,
+    cargo: r.total, abono: 0
+  });
+  // 3b. primer pago descontado al inicio (no se considera cobranza; forma=descuento)
+  if (r.descuentaPP && r.primerPago > 0) {
+    db.movimientos.push({ id: nextId('movimientos'), saleId: nuevo.id, fecha: hoy, concepto: 'Primer pago descontado al inicio', origen: 'Origen del crédito (REFIN)', cargo: 0, abono: r.primerPago, forma: 'descuento', sucursalCobro: old.sucursalId, sucursalCredito: old.sucursalId });
+  }
+
+  markIdem(req); saveDB();
+  res.status(201).json({
+    ok: true,
+    oldFolio: old.folio, saldoLiquidado: saldoActual,
+    nuevoFolio: nuevo.folio, nuevoSaleId: nuevo.id,
+    nuevoMonto: monto, nuevoTotal: r.total, nuevoCuota: r.cuota, primerPago,
+    saldoNuevo: saldoDe(nuevo.id), neto
+  });
+});
+
+/* ---------- Reestructura: cambia el modelo de pago + cargo, SIN liquidar (no genera ingreso ficticio) ---------- */
+app.post('/api/sales/:id/reestructura', auth, rol('admin', 'supervisor'), (req, res) => {
+  const id = +req.params.id;
+  const sale = db.sales.find(s => s.id === id);
+  if (!sale) return res.status(404).json({ error: 'Crédito no encontrado' });
+  const saldoActual = saldoDe(id);
+  if (saldoActual <= 0) return res.status(400).json({ error: 'Este crédito ya está liquidado, no aplica reestructura' });
+
+  const { nuevoTipo, nuevoPlazo, cargoExtra, motivo } = req.body;
+  const tipo = nuevoTipo || sale.tipo;
+  const plazo = +nuevoPlazo;
+  const cargo = Math.max(0, +cargoExtra || 0);
+  if (!plazo || plazo <= 0) return res.status(400).json({ error: 'Plazo inválido' });
+
+  const hoy = fechaMxHoyDDMM();
+  // 1. cargo real sobre el saldo insoluto (NO es abono, no infla cobranza)
+  if (cargo > 0) {
+    db.movimientos.push({
+      id: nextId('movimientos'), saleId: id, fecha: hoy,
+      concepto: 'Cargo por reestructura' + (motivo ? ' — ' + motivo : ''),
+      origen: 'Supervisor: ' + req.user.nombre,
+      cargo: cargo, abono: 0, forma: 'reestructura'
+    });
+  }
+  // 2. nuevo saldo base y cuota reprogramada (sin factor: se reparte el saldo insoluto + cargo)
+  const nuevoSaldoBase = saldoActual + cargo;
+  const nuevaCuota = Math.round(nuevoSaldoBase / plazo);
+  // 3. cambia el modelo EN EL MISMO crédito; reinicia el reloj del calendario
+  const tipoAnt = sale.tipo, plazoAnt = sale.plazo, cuotaAnt = sale.cuota;
+  sale.tipo = tipo; sale.plazo = plazo; sale.cuota = nuevaCuota;
+  sale.saldoBaseReestructura = nuevoSaldoBase;
+  sale.reestructuraAt = new Date().toISOString();
+  sale.historialReestructura = sale.historialReestructura || [];
+  sale.historialReestructura.push({
+    fecha: sale.reestructuraAt, por: req.user.nombre,
+    de: { tipo: tipoAnt, plazo: plazoAnt, cuota: cuotaAnt },
+    a: { tipo, plazo, cuota: nuevaCuota }, cargo, saldoAntes: saldoActual, motivo: motivo || ''
+  });
+  saveDB();
+  res.json({
+    ok: true, folio: sale.folio,
+    saldoAntes: saldoActual, cargo, nuevoSaldo: saldoDe(id),
+    de: { tipo: tipoAnt, plazo: plazoAnt, cuota: cuotaAnt },
+    a: { tipo, plazo, cuota: nuevaCuota }
+  });
+});
+
+/* ---------- Supervisor: cargo / abono / condonación ---------- */
+app.post('/api/sales/:id/cargo', auth, rol('admin', 'supervisor'), idem, (req, res) => {
+  const id = +req.params.id; const { monto, concepto } = req.body;
+  db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: fechaMxHoyDDMM(), concepto: concepto || 'Cargo manual', origen: 'Supervisor: ' + req.user.nombre, cargo: +monto, abono: 0 });
+  markIdem(req); saveDB(); res.json({ ok: true, saldo: saldoDe(id) });
+});
+app.post('/api/sales/:id/abono', auth, rol('admin', 'supervisor'), idem, (req, res) => {
+  const id = +req.params.id;
+  db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: fechaMxHoyDDMM(), concepto: 'Abono manual', origen: 'Supervisor: ' + req.user.nombre, cargo: 0, abono: +req.body.monto });
+  markIdem(req); saveDB(); res.json({ ok: true, saldo: saldoDe(id) });
+});
+app.post('/api/sales/:id/condonar', auth, rol('admin', 'supervisor'), idem, (req, res) => {
+  const id = +req.params.id;
+  db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: fechaMxHoyDDMM(), concepto: 'Condonación: ' + (req.body.motivo || 'ajuste'), origen: 'Supervisor: ' + req.user.nombre, cargo: 0, abono: +req.body.monto });
+  markIdem(req); saveDB(); res.json({ ok: true, saldo: saldoDe(id) });
+});
+app.post('/api/sales/:id/aplicar-mora', auth, (req, res) => {
+  const id = +req.params.id; const monto = +req.body.monto || 25;
+  db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: fechaMxHoyDDMM(), concepto: 'Moratorio automático', origen: 'Sistema', cargo: monto, abono: 0, auto: true });
+  saveDB(); res.json({ ok: true, saldo: saldoDe(id) });
+});
+
+/* ---------- Caja de sucursal ---------- */
+app.get('/api/caja/hoy', auth, (req, res) => {
+  const sid = String(req.user.sucursalId || req.query.sucursalId || 1);
+  const c = db.caja[sid] || { inicial: 0, efectivo: 0, banco: 0, entregas: 0 };
+  const pe = db.porEntregar.filter(p => String(p.sucursalId) === sid);
+  res.json({ caja: c, efectivoReal: c.inicial + c.efectivo + c.entregas - (c.retiros||0), porEntregar: pe });
+});
+app.post('/api/caja/entrega', auth, (req, res) => {
+  const pe = db.porEntregar.find(p => p.id == req.body.porEntregarId);
+  if (!pe) return res.status(404).json({ error: 'No encontrado' });
+  const sid = String(pe.sucursalId); db.caja[sid] = db.caja[sid] || { inicial: 0, efectivo: 0, banco: 0, entregas: 0 };
+  db.caja[sid].entregas += pe.monto;
+  db.porEntregar = db.porEntregar.filter(p => p.id !== pe.id);
+  saveDB(); res.json({ ok: true });
+});
+
+/* ---------- Cobrador en ruta ---------- */
+app.get('/api/mi-ruta', auth, (req, res) => {
+  const ventas = db.sales.filter(s => s.prom === req.user.nombre && s.entregado !== false);
+  const hoy = fechaMxHoyDDMM();
+  res.json(ventas.map(s => {
+    const c = db.clients.find(x => x.id === s.clientId) || {};
+    if (c.activo === false) return null;
+    const totalAbonado = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0).reduce((a,m)=>a+m.abono,0);
+    const at = calcAtraso(s, totalAbonado);
+    // Cobros de HOY a este cliente. Propios (origen=cobrador) vs externos (ventanilla/JC/otros sobre su cliente).
+    const movsHoyAll = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0 && m.forma !== 'descuento' && m.forma !== 'refin' && m.fecha === hoy);
+    const movsHoy = movsHoyAll.filter(m => m.origen === req.user.nombre);
+    const movsExt = movsHoyAll.filter(m => m.origen !== req.user.nombre);
+    const cobradoHoy = movsHoy.reduce((a,m)=>a+m.abono,0);
+    const formaHoy = movsHoy.length ? (movsHoy[movsHoy.length-1].forma || 'efectivo') : null;
+    const pagoExterno = movsExt.reduce((a,m)=>a+m.abono,0);                 // suma para avance/comisión, NO para entregar
+    const externoForma = movsExt.length ? (movsExt[movsExt.length-1].forma || 'efectivo') : null;
+    return { id: s.id, folio: s.folio, nombre: c.nombre || '—', dir: [c.calle, c.col].filter(Boolean).join(', '), tel: c.tel || '', tipo: s.tipo, cuota: s.cuota, saldo: saldoDe(s.id),
+      cobradoHoy, formaHoy, pagoExterno, externoForma,
+      atraso: at.montoAtraso, diasAtraso: at.diasAtraso, cuotasAtraso: at.cuotasAtraso, cuotasDebidas: at.cuotasDebidas, cuotasPagadas: at.cuotasPagadas, tieneEvidencia: !!s.entrega, op: oportunidadDe(s) };
+  }).filter(Boolean));
+});
+/* ---------- Comisión del propio cobrador (semana en curso, tasa que fija el Admin) ----------
+   Misma lógica que /api/reports/comisiones: acredita por dueño del crédito, incluye
+   efectivo/transferencia/depósito/refin, excluye 'descuento'. */
+app.get('/api/mi-comision', auth, rol('cobrador'), (req, res) => {
+  const desdeMs = _desdePeriodo('semana');
+  const tasa = (db.config && db.config.tasaCobrador) || 5;
+  const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
+  const ids = new Set(db.sales.filter(s => s.prom === req.user.nombre && activos.has(s.clientId)).map(s => s.id));
+  const movs = db.movimientos.filter(m => ids.has(m.saleId) && m.abono > 0 && m.forma !== 'descuento' && _parseFechaMx(m.fecha) >= desdeMs);
+  const efe = movs.filter(m => !m.forma || m.forma === 'efectivo').reduce((a,m)=>a+m.abono,0);
+  const tra = movs.filter(m => m.forma === 'transferencia').reduce((a,m)=>a+m.abono,0);
+  const dep = movs.filter(m => m.forma === 'deposito').reduce((a,m)=>a+m.abono,0);
+  const ref = movs.filter(m => m.forma === 'refin').reduce((a,m)=>a+m.abono,0);
+  const cobranza = efe + tra + dep + ref;
+  res.json({ periodo: 'semana', tasa, cobranza, comision: Math.round(cobranza * tasa / 100), npagos: movs.length, desglose: { efectivo: efe, transferencia: tra, deposito: dep, refin: ref } });
+});
+// Evidencias de entrega del cobrador (incluye clientes dados de baja)
+app.get('/api/mi-evidencias', auth, rol('cobrador'), (req, res) => {
+  const out = db.sales.filter(s => s.prom === req.user.nombre && s.entrega).map(s => {
+    const c = db.clients.find(x => x.id === s.clientId) || {};
+    return { saleId: s.id, folio: s.folio, cliente: c.nombre || '—', activo: c.activo !== false, fecha: s.entrega.fecha };
+  }).sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+  res.json(out);
+});
+app.get('/api/cobradores', auth, (req, res) => {
+  const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
+  // Una encargada de sucursal solo ve a SUS cobradores (los dados de alta en su sucursal).
+  const esSucursal = req.user.rol === 'sucursal';
+  const users = db.users.filter(u => u.rol === 'cobrador' && u.activo && (!esSucursal || u.sucursalId === req.user.sucursalId));
+  const lista = users.map(u => ({ id: u.id, nombre: u.nombre, sucursal: sucMap[u.sucursalId] || null, esUsuario: true }));
+  if (req.query.conCartera && !esSucursal) {
+    const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
+    const nombresUsuario = new Set(users.map(u => u.nombre));
+    const promsCartera = {};
+    db.sales.filter(s => activos.has(s.clientId) && saldoDe(s.id) > 0 && s.prom).forEach(s => {
+      if (nombresUsuario.has(s.prom)) return;
+      promsCartera[s.prom] = promsCartera[s.prom] || { nombre: s.prom, sucursal: sucMap[s.sucursalId] || null, clientes: new Set() };
+      promsCartera[s.prom].clientes.add(s.clientId);
+    });
+    Object.values(promsCartera).forEach(p => lista.push({ nombre: p.nombre, sucursal: p.sucursal, esUsuario: false, nClientes: p.clientes.size }));
+  }
+  lista.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+  res.json(lista);
+});
+app.post('/api/sales/:id/gestion', auth, idem, (req, res) => {
+  db.gestiones.push({ id: nextId('gestiones'), saleId: +req.params.id, fecha: new Date().toISOString(), tipo: req.body.tipo || 'nopago', detalle: req.body.detalle || '', por: req.user.nombre });
+  markIdem(req); saveDB(); res.json({ ok: true });
+});
+
+/* ---------- Dashboard agregado ---------- */
+function _parseFechaMx(s){ if(!s) return 0; const [d,m,y]=s.split('/'); return new Date(+y,+m-1,+d).getTime(); }
+function _desdePeriodo(periodo){
+  // Ancla en HOY (hora de México) para que coincida con Números diarios, no en UTC del servidor
+  const mx = new Date(fechaMxHoyISO()+'T00:00:00');
+  if(periodo==='hoy') return mx.getTime();
+  if(periodo==='mes') return new Date(mx.getFullYear(),mx.getMonth(),1).getTime();
+  // semana: mismo ciclo configurable que Números diarios
+  return _inicioCiclo(mx.getTime());
+}
+app.get('/api/dashboard', auth, (req,res)=>{
+  const periodo=req.query.periodo||'semana';
+  const desde=_desdePeriodo(periodo);
+  const miSuc = (req.user.rol==='sucursal') ? Number(req.user.sucursalId||0) : null;
+  const activeClients=db.clients.filter(c=>c.activo!==false);
+  const activeClientIds=new Set(activeClients.map(c=>c.id));
+  const sales=db.sales.filter(s=>activeClientIds.has(s.clientId) && s.entregado!==false && (miSuc==null || s.sucursalId===miSuc)), clients=activeClients, sucursales=db.sucursales.filter(s=>s.activo!==false && (miSuc==null || s.id===miSuc));
+  const _saleIds=new Set(sales.map(s=>s.id));
+  const abonos=db.movimientos.filter(m=>m.abono>0 && _parseFechaMx(m.fecha)>=desde && _saleIds.has(m.saleId));
+  const nuevos=sales.filter(s=>s.createdAt && new Date(s.createdAt).getTime()>=desde);
+  // atraso acumulado por sale
+  function atrasoDe(s){
+    const totAb=db.movimientos.filter(m=>m.saleId===s.id && m.abono>0).reduce((a,m)=>a+m.abono,0);
+    return calcAtraso(s,totAb);
+  }
+  const por_sucursal=sucursales.map(suc=>{
+    const ventas_suc=sales.filter(s=>s.sucursalId===suc.id);
+    const abonos_suc=abonos.filter(m=>{ const s=sales.find(x=>x.id===m.saleId); return s && s.sucursalId===suc.id; });
+    const recuperado=abonos_suc.reduce((a,m)=>a+m.abono,0);
+    const comisionable=abonos_suc.filter(m=>m.forma!=='descuento').reduce((a,m)=>a+m.abono,0);
+    const nuevos_suc=nuevos.filter(s=>s.sucursalId===suc.id);
+    const caja=db.caja[String(suc.id)]||{inicial:0,efectivo:0,banco:0,entregas:0};
+    const enc=db.users.find(u=>u.rol==='sucursal' && u.sucursalId===suc.id);
+    let atraso_monto=0, atraso_clientes=0, esperado_acum=0;
+    ventas_suc.forEach(s=>{ if(saldoDe(s.id)<=0)return; const at=atrasoDe(s); esperado_acum+=at.cuotasDebidas*s.cuota; if(at.montoAtraso>0){ atraso_monto+=at.montoAtraso; atraso_clientes++; } });
+    // Clientes sin pago en el periodo (riesgo): vigente, no único, no nuevo del periodo, sin abono en el periodo
+    const pagaronSuc=new Set(abonos_suc.map(m=>{const s=sales.find(x=>x.id===m.saleId); return s?s.clientId:null;}).filter(v=>v!=null));
+    const nopagoSuc=new Set();
+    ventas_suc.forEach(s=>{ if(saldoDe(s.id)<=0||s.tipo==='unico')return; const ct=s.createdAt?new Date(s.createdAt).getTime():0; if(ct>=desde)return; if(!pagaronSuc.has(s.clientId)) nopagoSuc.add(s.clientId); });
+    return {id:suc.id, nombre:suc.nombre, encargada:enc?enc.nombre:'—',
+      pagos_recibidos:recuperado, comisionable, npagos:abonos_suc.length, nopago:nopagoSuc.size,
+      creditos_captados:nuevos_suc.length, colocado:nuevos_suc.reduce((a,s)=>a+s.monto,0),
+      efectivo_caja:(caja.inicial||0)+(caja.efectivo||0)+(caja.entregas||0)-(caja.retiros||0), banco:caja.banco||0,
+      por_entregar:db.porEntregar.filter(p=>p.sucursalId===suc.id).reduce((a,p)=>a+p.monto,0),
+      cartera:ventas_suc.reduce((a,s)=>a+saldoDe(s.id),0), creditos:ventas_suc.length,
+      atraso_monto, atraso_clientes, esperado_acum };
+  });
+  const cobradores=db.users.filter(u=>u.rol==='cobrador'&&u.activo && (miSuc==null || Number(u.sucursalId)===miSuc));
+  const por_cobrador=cobradores.map(c=>{
+    const sus_sales=sales.filter(s=>s.prom===c.nombre);
+    const sus_abonos=abonos.filter(m=>{ const s=sales.find(x=>x.id===m.saleId); return s && s.prom===c.nombre; });
+    const recuperado=sus_abonos.reduce((a,m)=>a+m.abono,0);
+    const comisionable=sus_abonos.filter(m=>m.forma!=='descuento').reduce((a,m)=>a+m.abono,0);
+    const cartera=sus_sales.reduce((a,s)=>a+saldoDe(s.id),0);
+    const por_entregar=db.porEntregar.filter(p=>p.prom===c.nombre).reduce((a,p)=>a+p.monto,0);
+    const suc=sucursales.find(s=>s.id===c.sucursalId);
+    let atraso_monto=0, atraso_clientes=0, esperado_acum=0;
+    sus_sales.forEach(s=>{ if(saldoDe(s.id)<=0)return; const at=atrasoDe(s); esperado_acum+=at.cuotasDebidas*s.cuota; if(at.montoAtraso>0){ atraso_monto+=at.montoAtraso; atraso_clientes++; } });
+    // Clientes sin pago en el periodo (riesgo): vigente, no único, no nuevo del periodo, sin abono en el periodo
+    const pagaronCob=new Set(sus_abonos.map(m=>{const s=sales.find(x=>x.id===m.saleId); return s?s.clientId:null;}).filter(v=>v!=null));
+    const nopagoCob=new Set();
+    sus_sales.forEach(s=>{ if(saldoDe(s.id)<=0||s.tipo==='unico')return; const ct=s.createdAt?new Date(s.createdAt).getTime():0; if(ct>=desde)return; if(!pagaronCob.has(s.clientId)) nopagoCob.add(s.clientId); });
+    // Ranking + objetivos al 100%: unidades nuevas del periodo, débito esperado, clientes vigentes y clientes cobrados
+    const unidades = nuevos.filter(s=>s.prom===c.nombre).length;
+    const vigentes = sus_sales.filter(s=>saldoDe(s.id)>0);
+    const debito = vigentes.reduce((a,s)=>a+(s.cuota||0),0);
+    const clientes_vigentes = new Set(vigentes.map(s=>s.clientId)).size;
+    const clientes_cobrados = pagaronCob.size;
+    const pct_cob = debito>0 ? Math.round(comisionable/debito*100) : 0;
+    // Crecimiento de clientes en el periodo: altas (créditos nuevos) − bajas (liquidados en el periodo)
+    let bajas=0;
+    sus_sales.forEach(s=>{
+      const ms=db.movimientos.filter(m=>m.saleId===s.id);
+      const saldoIni=ms.filter(m=>_parseFechaMx(m.fecha)<desde).reduce((a,m)=>a+(m.cargo||0)-(m.abono||0),0);
+      if(saldoIni>0.5 && saldoDe(s.id)<=0.5) bajas++;
+    });
+    const crecimiento = unidades - bajas;
+    return {id:c.id, nombre:c.nombre, sucursal:suc?suc.nombre:'—', sucursalId:c.sucursalId,
+      clientes:sus_sales.length, cartera, pagos_recibidos:recuperado, comisionable, npagos:sus_abonos.length, nopago:nopagoCob.size, por_entregar,
+      unidades, debito, clientes_vigentes, clientes_cobrados, pct_cob, bajas, crecimiento,
+      atraso_monto, atraso_clientes, esperado_acum };
+  });
+  const pagos_recientes=abonos.slice(-40).reverse().map(m=>{
+    const s=sales.find(x=>x.id===m.saleId)||{}; const c=clients.find(x=>x.id===s.clientId)||{};
+    const suc=sucursales.find(x=>x.id===s.sucursalId);
+    return {fecha:m.fecha, cliente:c.nombre||'—', folio:s.folio, prom:s.prom||'—', forma:m.forma||'efectivo', monto:m.abono, sucursal:suc?suc.nombre:'—'};
+  });
+  const totales={
+    creditos_activos: sales.filter(s=>saldoDe(s.id)>0).length,
+    creditos_totales: sales.length,
+    monto_colocado_total: sales.reduce((a,s)=>a+s.monto,0),
+    saldo_pendiente: sales.reduce((a,s)=>a+saldoDe(s.id),0),
+    recuperado_periodo: abonos.reduce((a,m)=>a+m.abono,0),
+    npagos_periodo: abonos.length,
+    nuevos_creditos_periodo: nuevos.length,
+    monto_colocado_periodo: nuevos.reduce((a,s)=>a+s.monto,0),
+    cobrado_periodo: abonos.filter(m=>m.forma!=='descuento').reduce((a,m)=>a+m.abono,0),
+    utilidad_periodo: Math.round(abonos.filter(m=>m.forma!=='descuento').reduce((a,m)=>{ const s=sales.find(x=>x.id===m.saleId); return a + (s&&s.total>0 ? m.abono*((s.total-s.monto)/s.total) : 0); },0)),
+    en_caja_efectivo: (miSuc==null?Object.values(db.caja):[db.caja[String(miSuc)]||{}]).reduce((a,c)=>a+((c.inicial||0)+(c.efectivo||0)+(c.entregas||0)-(c.retiros||0)),0),
+    en_caja_banco: (miSuc==null?Object.values(db.caja):[db.caja[String(miSuc)]||{}]).reduce((a,c)=>a+(c.banco||0),0),
+    por_entregar: db.porEntregar.filter(p=>miSuc==null||p.sucursalId===miSuc).reduce((a,p)=>a+p.monto,0),
+    atraso_total: por_cobrador.reduce((a,c)=>a+c.atraso_monto,0),
+    clientes_atrasados: por_cobrador.reduce((a,c)=>a+c.atraso_clientes,0),
+  };
+  const _wkFin = desde + 7*86400000 - 1;
+  res.json({periodo, desde:new Date(desde).toISOString(),
+    semanaInicioDia:_diaSemanaInicio(),
+    semanaDesdeISO:(periodo==='semana'?_isoDe(desde):null),
+    semanaHastaISO:(periodo==='semana'?_isoDe(_wkFin):null),
+    totales, por_sucursal, por_cobrador, pagos_recientes});
+});
+app.get('/api/reports/pagos', auth, (req,res)=>{
+  const {desde,hasta,forma,prom,sucursalId}=req.query;
+  const t1=desde?new Date(desde).getTime():0, t2=hasta?new Date(hasta).getTime():Number.MAX_SAFE_INTEGER;
+  const out=db.movimientos.filter(m=>m.abono>0).filter(m=>{
+    const t=_parseFechaMx(m.fecha); if(!(t>=t1&&t<=t2)) return false;
+    const s=db.sales.find(x=>x.id===m.saleId)||{};
+    if(forma && (m.forma||'efectivo')!==forma) return false;
+    if(prom && s.prom!==prom) return false;
+    if(sucursalId && String(s.sucursalId)!==String(sucursalId)) return false;
+    return true;
+  }).map(m=>{
+    const s=db.sales.find(x=>x.id===m.saleId)||{}; const c=db.clients.find(x=>x.id===s.clientId)||{};
+    const suc=db.sucursales.find(x=>x.id===s.sucursalId);
+    return {fecha:m.fecha, cliente:c.nombre||'—', folio:s.folio, prom:s.prom||'—', forma:m.forma||'efectivo', monto:m.abono, sucursal:suc?suc.nombre:'—', sucursalId:s.sucursalId};
+  });
+  res.json(out);
+});
+
+/* ---------- No pagos (riesgo): un crédito tiene "cobro esperado" hoy / esta semana ---------- */
+// Fechas programadas de cobro para semanal / celulares-17 (los diarios se evalúan por rango).
+function _fechasProgSrv(s){
+  const out=[]; const P=s.plazo||0; if(!s.createdAt) return out; const created=new Date(s.createdAt);
+  const semanal = (s.tipo==='semanal'||s.tipo==='s16'||s.tipo==='s17'||s.tipo==='s21'||s.tipo==='s31');
+  if(semanal){ for(let i=1;i<=P;i++){ const d=new Date(created); d.setDate(d.getDate()+i*7); out.push(d.getTime()); } }
+  else if(s.tipo==='p17'){ const iv=Math.max(1,Math.round((P||270)/17)); for(let i=1;i<=17;i++){ const d=new Date(created); d.setDate(d.getDate()+i*iv); out.push(d.getTime()); } }
+  return out;
+}
+// ¿Se esperaba un cobro de este crédito en el día [dStart,dEnd)? (no cuenta la venta nueva del día)
+function _esperaCobroDia(s, dStart, dEnd){
+  const c = s.createdAt ? new Date(s.createdAt).getTime() : 0;
+  if(!c || c >= dStart) return false;                       // creado hoy o después: es venta nueva, no se le exige cobro hoy
+  if(s.tipo==='unico'){ const d=new Date(s.createdAt); d.setDate(d.getDate()+(s.plazo||0)); const t=d.getTime(); return t>=dStart && t<dEnd; }
+  if(s.tipo==='diario'){
+    if(new Date(dStart).getDay()===0) return false;         // domingo: no se cobra (cuadra con débito = cuota x 6)
+    const fin=new Date(s.createdAt); fin.setDate(fin.getDate()+(s.plazo||0));
+    return dStart <= fin.getTime();                         // dentro del plazo
+  }
+  // semanal / cel-17: solo el día que les toca
+  return _fechasProgSrv(s).some(t=> t>=dStart && t<dEnd);
+}
+
+/* ---------- Números diarios (scoreboard de cobranza por gerencia/sucursal) ---------- */
+app.get('/api/reports/numeros-diarios', auth, rol('admin','supervisor'), (req,res)=>{
+  const diaISO = req.query.dia || fechaMxHoyISO();
+  const dStart = new Date(diaISO+'T00:00:00').getTime();
+  const dEnd = dStart + 86400000;
+  const inicioDia = (req.query.inicio!=null && req.query.inicio!=='') ? Math.min(6,Math.max(0,+req.query.inicio)) : _diaSemanaInicio();
+  const wkStart = _inicioCiclo(dStart, inicioDia);
+  const wkFinTs = wkStart + 7*86400000;            // fin (exclusivo) del ciclo completo
+  // Acumulado = toda la semana transcurrida hasta HOY (o la semana completa si es pasada). NO se corta por el día elegido.
+  const wkEnd = Math.min(Date.now(), wkFinTs);
+  const wkFin = wkFinTs - 1;                        // para mostrar "Termina"
+  const activos = new Set(db.clients.filter(c=>c.activo!==false).map(c=>c.id));
+  const sales = db.sales.filter(s=>activos.has(s.clientId) && s.entregado!==false);
+  const sucursales = db.sucursales.filter(s=>s.activo!==false);
+  const abonos = db.movimientos.filter(m=>m.abono>0 && m.forma!=='descuento');
+  const saleSuc = {}; sales.forEach(s=>{ saleSuc[s.id]={suc:s.sucursalId, cli:s.clientId}; });
+  // Avance de contactos: semana objetivo (la última cerrada por admin, o la anterior por tiempo)
+  const prevIso = _semanaContactos();
+  const contactosPrev = _listaContactos(prevIso);
+  const _avSuc = sid => { const r=contactosPrev.filter(x=>x.sucursalId===sid); return { total:r.length, gestionados:r.filter(x=>x.gestion&&(x.gestion.resultado||x.gestion.tieneEvidencia)).length, validados:r.filter(x=>x.gestion&&x.gestion.validado).length }; };
+  const rows = sucursales.map(suc=>{
+    const activeVs = sales.filter(s=>s.sucursalId===suc.id && saldoDe(s.id)>0);
+    const clientes_totales = new Set(activeVs.map(s=>s.clientId)).size;
+    const debito_total = activeVs.reduce((a,s)=>a+(s.cuota||0),0);
+    let diaColl=0, acumColl=0; const diaCli=new Set(), acumCli=new Set();
+    for(const m of abonos){ const ref=saleSuc[m.saleId]; if(!ref||ref.suc!==suc.id) continue; const t=_parseFechaMx(m.fecha);
+      if(t>=wkStart && t<wkEnd){ acumColl+=m.abono; acumCli.add(ref.cli); }
+      if(t>=dStart && t<dEnd){ diaColl+=m.abono; diaCli.add(ref.cli); } }
+    // No pagos (riesgo): clientes con cobro esperado que NO abonaron (día y acumulado de la semana)
+    const espDia=new Set(), espSem=new Set();
+    activeVs.forEach(s=>{
+      const ct = s.createdAt ? new Date(s.createdAt).getTime() : 0;
+      if(_esperaCobroDia(s, dStart, dEnd)) espDia.add(s.clientId);
+      if(s.tipo!=='unico' && !(ct>=wkStart && ct<wkEnd)) espSem.add(s.clientId); // esperado en la semana (= reporte semanal)
+    });
+    const dia_nopago=[...espDia].filter(id=>!diaCli.has(id)).length;
+    const acum_nopago=[...espSem].filter(id=>!acumCli.has(id)).length;
+    return { id:suc.id, gerencia:suc.nombre, clientes_totales, debito_total,
+      dia_clientes:diaCli.size, dia_coll:diaColl, dia_nopago,
+      acum_clientes:acumCli.size, acum_coll:acumColl, acum_nopago,
+      contactos:_avSuc(suc.id),
+      objetivo: db.objetivos.suc[String(suc.id)] || null };
+  });
+  const total = rows.reduce((a,r)=>({clientes_totales:a.clientes_totales+r.clientes_totales, debito_total:a.debito_total+r.debito_total, dia_clientes:a.dia_clientes+r.dia_clientes, dia_coll:a.dia_coll+r.dia_coll, dia_nopago:a.dia_nopago+r.dia_nopago, acum_clientes:a.acum_clientes+r.acum_clientes, acum_coll:a.acum_coll+r.acum_coll, acum_nopago:a.acum_nopago+r.acum_nopago, contactos:{total:a.contactos.total+r.contactos.total, gestionados:a.contactos.gestionados+r.contactos.gestionados, validados:a.contactos.validados+r.contactos.validados}}), {clientes_totales:0,debito_total:0,dia_clientes:0,dia_coll:0,dia_nopago:0,acum_clientes:0,acum_coll:0,acum_nopago:0,contactos:{total:0,gestionados:0,validados:0}});
+  res.json({ dia:diaISO, semanaInicioDia:inicioDia, semanaDesdeISO:_isoDe(wkStart), semanaHastaISO:_isoDe(wkFin), semanaDesde:new Date(wkStart).toISOString(), semanaContactos:prevIso, rows, total });
+});
+
+/* ---------- Objetivos (metas por sucursal y por cobrador) ---------- */
+app.get('/api/objetivos', auth, (req,res)=>{
+  res.json({ suc: db.objetivos.suc || {}, cob: db.objetivos.cob || {} });
+});
+app.post('/api/objetivos/suc', auth, rol('admin','supervisor'), (req,res)=>{
+  const { sucursalId, clientes, debito } = req.body;
+  const sid = String(sucursalId);
+  if(!db.sucursales.find(s=>String(s.id)===sid)) return res.status(404).json({ error:'Sucursal no encontrada' });
+  db.objetivos.suc[sid] = { clientes: Math.max(0, +clientes||0), debito: Math.max(0, +debito||0), actualizado: new Date().toISOString() };
+  saveDB(); res.json({ ok:true, objetivo: db.objetivos.suc[sid] });
+});
+app.post('/api/objetivos/cob', auth, rol('admin','supervisor','sucursal'), (req,res)=>{
+  const { cobrador, clientes, cobranza } = req.body;
+  const nombre = String(cobrador||'').trim();
+  if(!nombre) return res.status(400).json({ error:'Falta el cobrador' });
+  const u = db.users.find(x=>x.rol==='cobrador' && x.nombre===nombre);
+  if(!u) return res.status(404).json({ error:'Cobrador no encontrado' });
+  if(req.user.rol==='sucursal' && Number(u.sucursalId)!==Number(req.user.sucursalId)) return res.status(403).json({ error:'Ese cobrador no es de tu sucursal' });
+  db.objetivos.cob[nombre] = { clientes: Math.max(0, +clientes||0), cobranza: Math.max(0, +cobranza||0), actualizado: new Date().toISOString() };
+  saveDB(); res.json({ ok:true, objetivo: db.objetivos.cob[nombre] });
+});
+
+/* ---------- CONTACTOS: clientes que NO pagaron la semana inmediata anterior ---------- */
+// Día de inicio de semana configurable por agencia (0=dom..6=sáb; default 4=jueves → ciclo jue→mié)
+function _diaSemanaInicio(){ const c=db.config&&db.config.semanaInicio; return (c==null?4:Math.min(6,Math.max(0,+c))); }
+function _isoDe(ts){ const d=new Date(ts); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+// Inicio (00:00 hora local) de la semana-ciclo que contiene refTs, según el día de inicio
+function _inicioCiclo(refTs, inicioDia){
+  inicioDia = (inicioDia==null) ? _diaSemanaInicio() : Math.min(6,Math.max(0,+inicioDia));
+  const d=new Date(refTs); const base=new Date(d.getFullYear(),d.getMonth(),d.getDate());
+  const diff=((base.getDay()-inicioDia)+7)%7;
+  base.setDate(base.getDate()-diff);
+  return base.getTime();
+}
+// Límites de la semana (ciclo) que contiene refTs
+function _semanaCiclo(refTs, inicioDia){
+  const start=_inicioCiclo(refTs, inicioDia);
+  const endD=new Date(start); endD.setDate(endD.getDate()+7);
+  return { start, end:endD.getTime(), iso:_isoDe(start) };
+}
+function _semanaDesdeISO(iso){ const [y,mo,d]=iso.split('-').map(Number); const start=new Date(y,mo-1,d); start.setHours(0,0,0,0); const end=new Date(start); end.setDate(end.getDate()+7); return { start:start.getTime(), end:end.getTime(), iso }; }
+// ISO de inicio de la semana actual (hora de México) y de la inmediata anterior
+function _semanaActualISO(){ return _isoDe(_inicioCiclo(new Date(fechaMxHoyISO()+'T00:00:00').getTime())); }
+function _semanaAnteriorISO(){ const ini=_inicioCiclo(new Date(fechaMxHoyISO()+'T00:00:00').getTime()); return _isoDe(_inicioCiclo(ini-86400000)); }
+// Registro de cierre de una semana (get-or-create)
+function _cierreGet(iso){ let r=db.cierresSemana.find(c=>c.semana===iso); if(!r){ r={ semana:iso, cobradores:{}, sucursales:{}, admin:null }; db.cierresSemana.push(r); } return r; }
+// Semana objetivo de CONTACTOS: la última cerrada por el admin si existe; si no, la anterior por tiempo
+function _semanaContactos(){
+  const cerradas=(db.cierresSemana||[]).filter(c=>c.admin&&c.admin.cerrado).map(c=>c.semana).sort();
+  const ult=cerradas[cerradas.length-1];
+  const prev=_semanaAnteriorISO();
+  return (ult && ult>=prev) ? ult : prev;
+}
+// Última fecha de pago (dd/mm/aaaa) del cliente, o null
+function _ultimaFechaPago(clientId){
+  const ids=new Set(db.sales.filter(s=>s.clientId===clientId).map(s=>s.id));
+  let best=0, str=null;
+  for(const m of db.movimientos){ if(m.abono>0 && ids.has(m.saleId)){ const t=_parseFechaMx(m.fecha); if(t>best){ best=t; str=m.fecha; } } }
+  return str;
+}
+// Lista de clientes que NO pagaron en la semana (iso). Se une con la gestión guardada.
+// Último pago (timestamp) de un crédito concreto (ignora el cargo de migración)
+function _ultPagoSale(saleId){
+  let best=0;
+  for(const m of db.movimientos){ if(m.saleId===saleId && m.abono>0){ const t=_parseFechaMx(m.fecha); if(t>best) best=t; } }
+  return best||0;
+}
+// Vencido acumulado de un crédito = cuota × semanas sin pagar (tope al saldo).
+// Crédito normal: usa el atraso real del calendario. Importado: lo estima desde el último pago.
+function _vencidoDe(sale){
+  const saldo = saldoDe(sale.id);
+  if(saldo<=0) return 0;
+  const ca = calcAtraso(sale);
+  if(ca.montoAtraso > 0) return Math.min(saldo, Math.round(ca.montoAtraso));
+  const cuota = sale.cuota>0 ? sale.cuota : (sale.plazo>0 ? Math.round((sale.total||0)/sale.plazo) : 0);
+  if(cuota<=0) return 0;
+  const ult = _ultPagoSale(sale.id);
+  const ancla = ult || (sale.createdAt ? new Date(sale.createdAt).getTime() : Date.now());
+  const semanas = Math.max(1, Math.floor((Date.now() - ancla) / (7*86400000)));
+  return Math.min(saldo, Math.round(cuota * semanas));
+}
+function _listaContactos(iso){
+  const wb=_semanaDesdeISO(iso);
+  const activos=new Set(db.clients.filter(c=>c.activo!==false).map(c=>c.id));
+  const sales=db.sales.filter(s=>activos.has(s.clientId) && s.entregado!==false && saldoDe(s.id)>0);
+  const saleCli={}; sales.forEach(s=>saleCli[s.id]=s.clientId);
+  const pagoSemana=new Set();
+  for(const m of db.movimientos){ if(m.abono>0 && saleCli[m.saleId]!=null){ const t=_parseFechaMx(m.fecha); if(t>=wb.start && t<wb.end) pagoSemana.add(saleCli[m.saleId]); } }
+  const espCli=new Map();
+  sales.forEach(s=>{ if(s.tipo==='unico')return; const ct=s.createdAt?new Date(s.createdAt).getTime():0; if(ct>=wb.end)return; if(!espCli.has(s.clientId)) espCli.set(s.clientId, s); });
+  const rows=[];
+  espCli.forEach((s,clientId)=>{
+    if(pagoSemana.has(clientId)) return; // sí pagó esa semana → no es contacto
+    const c=db.clients.find(x=>x.id===clientId)||{};
+    let atraso=0; db.sales.filter(x=>x.clientId===clientId && saldoDe(x.id)>0).forEach(x=>{ atraso+=_vencidoDe(x); });
+    const rec=db.contactos.find(k=>k.semana===iso && k.clientId===clientId)||null;
+    rows.push({ clientId, saleId:s.id, sucursalId:s.sucursalId, cobrador:s.prom||'—',
+      nombre:c.nombre||'—', direccion:[c.calle,c.col,c.ciudad].filter(Boolean).join(', '), tel:c.tel||'',
+      monto_atraso:Math.round(atraso), ultima_fecha_pago:_ultimaFechaPago(clientId),
+      gestion: rec? { id:rec.id, resultado:rec.resultado||'', nota:rec.nota||'', tieneEvidencia:!!rec.evidencia, por:rec.por||null, fecha:rec.fecha||null, validado:!!rec.validado, validadoPor:rec.validadoPor||null, validadoFecha:rec.validadoFecha||null, llamado:!!(rec.llamadas&&rec.llamadas.length), ultimaLlamada:rec.ultimaLlamada||null } : null });
+  });
+  return rows;
+}
+// Resumen de avance (total / gestionados / validados) opcionalmente por sucursal
+function _avanceContactos(iso, sucursalId){
+  let rows=_listaContactos(iso);
+  if(sucursalId!=null) rows=rows.filter(r=>r.sucursalId===sucursalId);
+  const total=rows.length;
+  const gestionados=rows.filter(r=>r.gestion && (r.gestion.resultado || r.gestion.tieneEvidencia)).length;
+  const validados=rows.filter(r=>r.gestion && r.gestion.validado).length;
+  return { total, gestionados, validados };
+}
+// Listado de contactos (sucursal ve los suyos; admin/supervisor todos)
+app.get('/api/contactos', auth, rol('admin','supervisor','sucursal','cobrador'), (req,res)=>{
+  const iso = req.query.semana || _semanaContactos();
+  let rows=_listaContactos(iso);
+  if(req.user.rol==='sucursal') rows=rows.filter(r=>Number(r.sucursalId)===Number(req.user.sucursalId));
+  else if(req.user.rol==='cobrador') rows=rows.filter(r=>r.cobrador===req.user.nombre);
+  const resumen={ total:rows.length, gestionados:rows.filter(r=>r.gestion&&(r.gestion.resultado||r.gestion.tieneEvidencia)).length, validados:rows.filter(r=>r.gestion&&r.gestion.validado).length };
+  res.json({ semana:iso, rows, resumen });
+});
+// Guardar gestión / evidencia de un contacto (queda pendiente de validar)
+app.post('/api/contactos', auth, rol('admin','supervisor','sucursal','cobrador'), (req,res)=>{
+  const { semana, clientId, resultado, nota, evidencia } = req.body;
+  const iso = semana || _semanaContactos();
+  const cid = +clientId;
+  if(!cid) return res.status(400).json({ error:'Falta el cliente' });
+  // alcance: sucursal/cobrador solo su cartera
+  const venta = db.sales.find(s=>s.clientId===cid);
+  if(req.user.rol==='sucursal' && venta && Number(venta.sucursalId)!==Number(req.user.sucursalId)) return res.status(403).json({ error:'Ese cliente no es de tu sucursal' });
+  if(req.user.rol==='cobrador' && venta && venta.prom!==req.user.nombre) return res.status(403).json({ error:'Ese cliente no es de tu ruta' });
+  let rec=db.contactos.find(k=>k.semana===iso && k.clientId===cid);
+  if(!rec){ rec={ id:nextId('contactos'), semana:iso, clientId:cid }; db.contactos.push(rec); }
+  if(resultado!=null) rec.resultado=String(resultado).slice(0,80);
+  if(nota!=null) rec.nota=String(nota).slice(0,500);
+  if(evidencia!=null) rec.evidencia=evidencia;     // dataURL base64
+  rec.por=req.user.nombre; rec.fecha=new Date().toISOString();
+  rec.validado=false; rec.validadoPor=null; rec.validadoFecha=null;   // toda gestión nueva entra sin validar
+  saveDB(); res.json({ ok:true, id:rec.id });
+});
+// Ver evidencia/nota de un contacto
+app.get('/api/contactos/:id/evidencia', auth, rol('admin','supervisor','sucursal','cobrador'), (req,res)=>{
+  const rec=db.contactos.find(k=>k.id==req.params.id);
+  if(!rec) return res.status(404).json({ error:'Contacto no encontrado' });
+  res.json({ evidencia:rec.evidencia||null, nota:rec.nota||'', resultado:rec.resultado||'', por:rec.por||null, validado:!!rec.validado, validadoPor:rec.validadoPor||null });
+});
+// Validar (o rechazar) un contacto — solo admin/supervisor
+app.post('/api/contactos/:id/validar', auth, rol('admin','supervisor'), (req,res)=>{
+  const rec=db.contactos.find(k=>k.id==req.params.id);
+  if(!rec) return res.status(404).json({ error:'Contacto no encontrado' });
+  rec.validado = req.body.validado!==false;
+  rec.validadoPor = req.user.nombre; rec.validadoFecha=new Date().toISOString();
+  saveDB(); res.json({ ok:true, validado:rec.validado });
+});
+
+/* ---------- CIERRE DE SEMANA (cobrador → sucursal → admin) ---------- */
+// Estado del cierre de la semana (scoped por rol). Permite ver quién ya cerró.
+app.get('/api/cierre-semana', auth, (req,res)=>{
+  const iso = req.query.semana || _semanaActualISO();
+  const rec = db.cierresSemana.find(c=>c.semana===iso) || { semana:iso, cobradores:{}, sucursales:{}, admin:null };
+  const sucs = db.sucursales.filter(s=>s.activo!==false);
+  const cobs = db.users.filter(u=>u.rol==='cobrador' && u.activo);
+  const porSuc = sucs.map(s=>{
+    const sc = cobs.filter(c=>Number(c.sucursalId)===Number(s.id));
+    return {
+      id:s.id, nombre:s.nombre, totalCob:sc.length,
+      cobCerrados: sc.filter(c=>rec.cobradores[c.nombre]&&rec.cobradores[c.nombre].cerrado).length,
+      cobradores: sc.map(c=>({ nombre:c.nombre, cerrado: !!(rec.cobradores[c.nombre]&&rec.cobradores[c.nombre].cerrado), fecha: rec.cobradores[c.nombre]?rec.cobradores[c.nombre].fecha:null })),
+      cerrada: !!(rec.sucursales[String(s.id)]&&rec.sucursales[String(s.id)].cerrado),
+      cerradaPor: rec.sucursales[String(s.id)]?rec.sucursales[String(s.id)].por:null
+    };
+  });
+  let scope = porSuc;
+  if(req.user.rol==='sucursal') scope = porSuc.filter(s=>Number(s.id)===Number(req.user.sucursalId));
+  const miCerrado = req.user.rol==='cobrador' ? !!(rec.cobradores[req.user.nombre]&&rec.cobradores[req.user.nombre].cerrado) : null;
+  res.json({
+    semana: iso,
+    adminCerrada: !!(rec.admin&&rec.admin.cerrado), adminPor: rec.admin?rec.admin.por:null, adminFecha: rec.admin?rec.admin.fecha:null,
+    miCerrado, sucursales: scope,
+    resumen: { totSuc: porSuc.length, sucCerradas: porSuc.filter(s=>s.cerrada).length,
+               totCob: cobs.length, cobCerrados: cobs.filter(c=>rec.cobradores[c.nombre]&&rec.cobradores[c.nombre].cerrado).length },
+    semanaContactos: _semanaContactos()
+  });
+});
+// Cerrar la semana al nivel del que llama
+app.post('/api/cierre-semana/cerrar', auth, rol('admin','supervisor','sucursal','cobrador'), (req,res)=>{
+  const iso = req.body.semana || _semanaActualISO();
+  const rec = _cierreGet(iso); const now=new Date().toISOString();
+  if(req.user.rol==='cobrador') rec.cobradores[req.user.nombre]={ cerrado:true, fecha:now, por:req.user.nombre };
+  else if(req.user.rol==='sucursal') rec.sucursales[String(req.user.sucursalId)]={ cerrado:true, fecha:now, por:req.user.nombre };
+  else rec.admin={ cerrado:true, fecha:now, por:req.user.nombre };   // admin/supervisor: cierre global → habilita contactos/reportes
+  saveDB(); res.json({ ok:true, semana:iso, nivel:req.user.rol });
+});
+// Reabrir (deshacer cierre) al nivel del que llama
+app.post('/api/cierre-semana/reabrir', auth, rol('admin','supervisor','sucursal','cobrador'), (req,res)=>{
+  const iso = req.body.semana || _semanaActualISO();
+  const rec = _cierreGet(iso);
+  if(req.user.rol==='cobrador') delete rec.cobradores[req.user.nombre];
+  else if(req.user.rol==='sucursal') delete rec.sucursales[String(req.user.sucursalId)];
+  else rec.admin=null;
+  saveDB(); res.json({ ok:true, semana:iso });
+});
+// Hora de México (CDMX/Edomex = UTC-6 todo el año desde 2023, sin horario de verano)
+function nowMx(){ return new Date(Date.now() - 6*3600*1000); }function fechaMxHoyDDMM(){ const d=nowMx(); return `${String(d.getUTCDate()).padStart(2,'0')}/${String(d.getUTCMonth()+1).padStart(2,'0')}/${d.getUTCFullYear()}`; }
+function fechaMxDeISO(iso){ const d=new Date(new Date(iso).getTime() - 6*3600*1000); return `${String(d.getUTCDate()).padStart(2,'0')}/${String(d.getUTCMonth()+1).padStart(2,'0')}/${d.getUTCFullYear()}`; }
+function fechaMxHoyISO(){ const d=nowMx(); return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`; }
+function horaMxHHMM(){ const d=nowMx(); let h=d.getUTCHours(); const m=String(d.getUTCMinutes()).padStart(2,'0'); const ap=h<12?'a.m.':'p.m.'; h=h%12||12; return `${String(h).padStart(2,'0')}:${m} ${ap}`; }
+// ¿el cobrador ya entregó su corte de hoy? (para bloquear cobros posteriores)
+function corteHechoHoy(nombre){ return !!db.cortes.find(c => c.prom === nombre && c.fecha === fechaMxHoyISO()); }
+function generarCorte(user, isAuto){
+  if (!user || !user.nombre) return { error: 'Usuario inválido' };
+  const fecha = fechaMxHoyISO();
+  if (db.cortes.find(c => c.prom === user.nombre && c.fecha === fecha)) return { duplicate: true };
+  const hoy = fechaMxHoyDDMM();
+  const pagos = db.movimientos.filter(m => m.abono > 0 && m.origen === user.nombre && m.fecha === hoy);
+  const efectivoBruto = pagos.filter(m => (m.forma||'efectivo') === 'efectivo').reduce((a,m)=>a+m.abono,0);
+  const banco = pagos.filter(m => m.forma === 'transferencia' || m.forma === 'deposito').reduce((a,m)=>a+m.abono,0);
+  // descontar el efectivo que el promotor ya entregó al JC hoy (no lo debe entregar dos veces)
+  const aJC = db.jcEntregas.filter(e => e.cobradorId === user.id && e.fechaDDMM === hoy).reduce((a,e)=>a+e.monto,0);
+  const efectivo = Math.max(0, efectivoBruto - aJC);
+  const tieneEfectivo = efectivo > 0;
+  const corte = {
+    id: nextId('cortes'), prom: user.nombre, sucursalId: user.sucursalId || null,
+    fecha, totalEfectivo: efectivo, efectivoBruto, entregadoAlJC: aJC, totalBanco: banco, npagos: pagos.length,
+    items: pagos.map(m => ({ saleId: m.saleId, monto: m.abono, forma: m.forma||'efectivo' })),
+    horaEntrega: horaMxHHMM(),
+    auto: !!isAuto, by: isAuto ? 'sistema' : 'cobrador',
+    // si no hay efectivo que entregar, el corte se cierra solo (no hay nada que el admin reciba)
+    estado: tieneEfectivo ? 'pendiente' : 'recibido',
+    recibidoAt: tieneEfectivo ? null : new Date().toISOString(),
+    recibidoBy: tieneEfectivo ? null : 'sin efectivo',
+    createdAt: new Date().toISOString()
+  };
+  db.cortes.push(corte); saveDB();
+  return { corte };
+}
+function checkAutoCorte(){
+  for (const t of (SYS && SYS.tenants ? SYS.tenants : [])) {
+    if (t.activo === false) continue;
+    const blob = tenantCache[t.id];
+    if (!blob || !blob.config) continue;
+    als.run({ tenantId: t.id, db: blob }, () => {
+      const now = nowMx();
+      const [hh, mm] = (db.config.corteAutoHora || '19:00').split(':').map(Number);
+      const dow = now.getUTCDay();
+      const dayList = db.config.corteAutoDias || [1,2,3,4,5,6];
+      if (!dayList.includes(dow)) return;
+      if (now.getUTCHours() < hh || (now.getUTCHours() === hh && now.getUTCMinutes() < mm)) return;
+      db.users.filter(u => u.rol === 'cobrador' && u.activo).forEach(u => generarCorte(u, true));
+    });
+  }
+}
+setInterval(checkAutoCorte, 60_000);
+
+app.post('/api/corte', auth, (req, res) => {
+  let user = req.user;
+  if (req.body.prom && (req.user.rol === 'admin' || req.user.rol === 'supervisor')) {
+    const u = db.users.find(x => x.nombre === req.body.prom);
+    if (!u) return res.status(404).json({ error: 'Cobrador no encontrado' });
+    user = u;
+  }
+  if (user.rol !== 'cobrador') return res.status(400).json({ error: 'El usuario no es cobrador' });
+  const r = generarCorte(user, false);
+  if (r.duplicate) return res.status(409).json({ error: 'Ya hay un corte registrado hoy para ' + user.nombre });
+  res.json({ ok: true, corte: r.corte });
+});
+app.get('/api/mi-corte', auth, (req, res) => {
+  const fecha = fechaMxHoyISO();
+  const corte = db.cortes.find(c => c.prom === req.user.nombre && c.fecha === fecha);
+  res.json({ corte: corte || null });
+});
+// Cierre de caja de la SUCURSAL: cierra el corte, manda el efectivo al admin y deja la caja en ceros
+app.post('/api/caja/cierre', auth, rol('sucursal'), (req, res) => {
+  const me = db.users.find(u => u.id === req.user.id);
+  const sid = String(me ? me.sucursalId : (req.user.sucursalId || 1));
+  const suc = db.sucursales.find(s => String(s.id) === sid);
+  const c = db.caja[sid] || { inicial: 0, efectivo: 0, banco: 0, entregas: 0, retiros: 0 };
+  c.retiros = c.retiros || 0;
+  const efectivoReal = Math.max(0, (c.inicial || 0) + (c.efectivo || 0) + (c.entregas || 0) - c.retiros);
+  const banco = c.banco || 0;
+  const fecha = fechaMxHoyISO();
+  const tiene = efectivoReal > 0;
+  const corte = {
+    id: nextId('cortes'), tipo: 'sucursal', prom: (suc ? suc.nombre : 'Sucursal'), sucursalId: +sid,
+    fecha, totalEfectivo: efectivoReal, efectivoBruto: efectivoReal, entregadoAlJC: 0, totalBanco: banco, npagos: 0,
+    horaEntrega: horaMxHHMM(), by: 'sucursal',
+    estado: tiene ? 'pendiente' : 'recibido',
+    recibidoAt: tiene ? null : new Date().toISOString(), recibidoBy: tiene ? null : 'sin efectivo',
+    createdAt: new Date().toISOString()
+  };
+  db.cortes.push(corte);
+  // dejar la caja en ceros (el efectivo cerrado ya quedó en el corte para el admin)
+  db.caja[sid] = { inicial: 0, efectivo: 0, banco: 0, entregas: 0, retiros: 0, cobradoVent: 0, cobradoVentN: 0 };
+  saveDB();
+  res.json({ ok: true, corte, efectivoCerrado: efectivoReal, banco });
+});
+// El admin/supervisor recibe (confirma) un corte pendiente — sirve para cobradores y sucursales
+app.post('/api/cortes/:id/recibir', auth, rol('admin', 'supervisor'), (req, res) => {
+  const c = db.cortes.find(x => x.id == req.params.id);
+  if (!c) return res.status(404).json({ error: 'Corte no encontrado' });
+  if (c.estado === 'recibido') return res.status(409).json({ error: 'Ese corte ya estaba recibido' });
+  c.estado = 'recibido'; c.recibidoAt = new Date().toISOString(); c.recibidoBy = req.user.nombre;
+  if (c.tipo === 'sucursal' && c.totalEfectivo > 0) flujoAgregar('entrada', 'cierre', `Cierre de caja · ${c.prom}`, c.totalEfectivo, null, req.user.nombre);
+  saveDB();
+  res.json({ ok: true });
+});
+app.get('/api/cortes', auth, (req, res) => {
+  const { fecha, prom } = req.query;
+  let out = db.cortes;
+  if (fecha) out = out.filter(c => c.fecha === fecha);
+  if (prom) out = out.filter(c => c.prom === prom);
+  if (req.user.rol === 'cobrador') out = out.filter(c => c.prom === req.user.nombre);
+  res.json(out.sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||'')));
+});
+app.delete('/api/cortes/:id', auth, rol('admin','supervisor'), (req, res) => {
+  const id = +req.params.id;
+  const i = db.cortes.findIndex(c => c.id === id);
+  if (i < 0) return res.status(404).json({ error: 'Corte no encontrado' });
+  db.cortes.splice(i, 1); saveDB();
+  res.json({ ok: true });
+});
+app.get('/api/config', auth, (req, res) => res.json(db.config || {}));
+app.get('/api/tarifas', auth, (req, res) => res.json((db.config && db.config.tarifas) || DEFAULT_TARIFAS));
+app.get('/api/config/comisiones', auth, (req, res) => {
+  const c = (db.config && db.config.comisiones) || {};
+  res.json({
+    cob: c.cob != null ? c.cob : ((db.config && db.config.tasaCobrador) || 5),
+    meta: c.meta != null ? c.meta : 85,
+    bono: c.bono != null ? c.bono : 600,
+    mora: c.mora != null ? c.mora : 1.5,
+    coloc: c.coloc != null ? c.coloc : 80
+  });
+});
+app.put('/api/config/comisiones', auth, rol('admin'), (req, res) => {
+  const { cob, meta, bono, mora, coloc } = req.body || {};
+  db.config = db.config || {};
+  db.config.comisiones = { cob: +cob || 0, meta: +meta || 0, bono: +bono || 0, mora: +mora || 0, coloc: +coloc || 0 };
+  db.config.tasaCobrador = +cob || 0; // el reporte de comisiones usa esto
+  saveDB();
+  res.json({ ok: true, comisiones: db.config.comisiones });
+});
+app.put('/api/tarifas', auth, rol('admin'), (req, res) => {
+  const t = req.body || {};
+  // validación mínima de estructura
+  const okArr = a => Array.isArray(a) && a.every(x => typeof x.p === 'number' && typeof x.f === 'number' && typeof x.fijo === 'number');
+  if (!okArr(t.diario) || !okArr(t.semanal) || !okArr(t.p17) || !t.unico || typeof t.unico.base !== 'number' || typeof t.unico.factor !== 'number')
+    return res.status(400).json({ error: 'Estructura de tarifas inválida' });
+  const okPP = s => s && typeof s.factor === 'number' && typeof s.fijo === 'number' && typeof s.ppFactor === 'number' && typeof s.ppFijo === 'number' && typeof s.pagos === 'number';
+  db.config = db.config || {};
+  db.config.tarifas = { diario: t.diario, semanal: t.semanal, p17: t.p17, unico: { base: t.unico.base, factor: t.unico.factor },
+    s16: okPP(t.s16) ? t.s16 : DEFAULT_TARIFAS.s16, s17: okPP(t.s17) ? t.s17 : DEFAULT_TARIFAS.s17,
+    s21: okPP(t.s21) ? t.s21 : DEFAULT_TARIFAS.s21, s31: okPP(t.s31) ? t.s31 : DEFAULT_TARIFAS.s31 };
+  saveDB();
+  res.json(db.config.tarifas);
+});
+app.post('/api/tarifas/reset', auth, rol('admin'), (req, res) => {
+  db.config = db.config || {};
+  db.config.tarifas = JSON.parse(JSON.stringify(DEFAULT_TARIFAS));
+  saveDB(); res.json(db.config.tarifas);
+});
+app.patch('/api/config', auth, rol('admin','supervisor'), (req, res) => {
+  db.config = db.config || {};
+  if (req.body.corteAutoHora) db.config.corteAutoHora = req.body.corteAutoHora;
+  if (Array.isArray(req.body.corteAutoDias)) db.config.corteAutoDias = req.body.corteAutoDias;
+  if (req.body.semanaInicio != null) db.config.semanaInicio = Math.min(6, Math.max(0, +req.body.semanaInicio));
+  if (req.body.brandNombre && req.user.rol === 'admin') {
+    db.config.brand = db.config.brand || {};
+    db.config.brand.nombre = String(req.body.brandNombre).trim();
+    const t = (SYS.tenants || []).find(x => x.id === als.getStore().tenantId);
+    if (t) { t.nombre = db.config.brand.nombre; saveSystem(); }
+  }
+  saveDB(); res.json(db.config);
+});
+app.get('/api/config/semana', auth, (req, res) => {
+  res.json({ semanaInicio: _diaSemanaInicio() });
+});
+
+/* ---------- Reporte de cartera por cobrador ---------- */
+function _tipoLblSrv(t){ return ({diario:'Diario',semanal:'Semanal',unico:'Pago único',p17:'Celulares 17'})[t] || t; }
+function _ultimas16Cuotas(sale, abonos){
+  const created = sale.createdAt ? new Date(sale.createdAt) : new Date();
+  const ahora = new Date();
+  const cuota = sale.cuota || 0;
+  let fechas = [];
+  if (sale.tipo === 'diario')    for (let i=1; i<=(sale.plazo||0); i++) { const d=new Date(created); d.setDate(d.getDate()+i); fechas.push(d); }
+  else if (sale.tipo === 'semanal') for (let i=1; i<=(sale.plazo||0); i++) { const d=new Date(created); d.setDate(d.getDate()+i*7); fechas.push(d); }
+  else if (sale.tipo === 'unico') { const d=new Date(created); d.setDate(d.getDate()+(sale.plazo||0)); fechas.push(d); }
+  else if (sale.tipo === 'p17') { const iv=Math.max(1, Math.round((sale.plazo||270)/17)); for (let i=1; i<=17; i++) { const d=new Date(created); d.setDate(d.getDate()+i*iv); fechas.push(d); } }
+  const estados = fechas.map((fecha, i) => {
+    if (fecha > ahora) return 'x';
+    const cutoff = new Date(fecha); cutoff.setDate(cutoff.getDate()+1);
+    const acumPagado = abonos.filter(m => _parseFechaMx(m.fecha) <= cutoff.getTime()).reduce((a,m)=>a+m.abono, 0);
+    return acumPagado >= (i+1)*cuota ? 'p' : 'n';
+  });
+  let u = estados.slice(-16); while (u.length < 16) u.unshift('x');
+  return u;
+}
+/* ---------- Reportes nuevos: colocación, REFIN, comisiones ---------- */
+app.get('/api/reports/colocacion', auth, rol('admin','supervisor'), (req, res) => {
+  const bucket = (req.query.bucket || 'dia').toLowerCase(); // dia | semana
+  const dias = Math.max(1, Math.min(180, +req.query.dias || 30));
+  const ahora = new Date();
+  const desde = new Date(); desde.setDate(desde.getDate() - dias);
+  const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
+  const ventas = db.sales.filter(s => s.createdAt && activos.has(s.clientId) && new Date(s.createdAt) >= desde);
+  const buckets = {};
+  ventas.forEach(s => {
+    const d = new Date(s.createdAt);
+    let key;
+    if (bucket === 'semana') {
+      const _ini = _diaSemanaInicio(); const wk = new Date(d); wk.setDate(d.getDate() - ((d.getDay() - _ini + 7) % 7));
+      key = wk.toISOString().slice(0,10);
+    } else { key = d.toISOString().slice(0,10); }
+    buckets[key] = buckets[key] || { fecha: key, creditos: 0, monto: 0 };
+    buckets[key].creditos++; buckets[key].monto += s.monto || 0;
+  });
+  // serie completa con ceros donde no hubo nada
+  const serie = [];
+  if (bucket === 'semana') {
+    const start = new Date(desde); start.setDate(start.getDate() - ((start.getDay() - _diaSemanaInicio() + 7)%7));
+    for (let d = new Date(start); d <= ahora; d.setDate(d.getDate()+7)) {
+      const k = d.toISOString().slice(0,10);
+      serie.push(buckets[k] || { fecha: k, creditos: 0, monto: 0 });
+    }
+  } else {
+    for (let d = new Date(desde); d <= ahora; d.setDate(d.getDate()+1)) {
+      const k = d.toISOString().slice(0,10);
+      serie.push(buckets[k] || { fecha: k, creditos: 0, monto: 0 });
+    }
+  }
+  // breakdowns por sucursal y por cobrador
+  const porSucursal = db.sucursales.map(suc => {
+    const vs = ventas.filter(s => s.sucursalId === suc.id);
+    return { id: suc.id, nombre: suc.nombre, creditos: vs.length, monto: vs.reduce((a,s)=>a+(s.monto||0),0) };
+  }).filter(s => s.creditos > 0).sort((a,b)=>b.monto-a.monto);
+  const cobs = {};
+  ventas.forEach(s => { if (!s.prom) return; cobs[s.prom] = cobs[s.prom] || { nombre: s.prom, creditos: 0, monto: 0 }; cobs[s.prom].creditos++; cobs[s.prom].monto += s.monto||0; });
+  const porCobrador = Object.values(cobs).sort((a,b)=>b.monto-a.monto);
+  res.json({
+    bucket, dias,
+    serie,
+    totales: { creditos: ventas.length, monto: ventas.reduce((a,s)=>a+(s.monto||0),0) },
+    porSucursal, porCobrador,
+  });
+});
+
+app.get('/api/reports/refin', auth, rol('admin','supervisor'), (req, res) => {
+  const desde = req.query.desde ? new Date(req.query.desde) : new Date(Date.now() - 30*86400000);
+  const hasta = req.query.hasta ? new Date(req.query.hasta) : new Date();
+  const refins = db.movimientos.filter(m => m.forma === 'refin' && m.abono > 0).map(m => {
+    const fechaMs = _parseFechaMx(m.fecha);
+    if (fechaMs < desde.getTime() || fechaMs > hasta.getTime()+86400000) return null;
+    const oldSale = db.sales.find(s => s.id === m.saleId);
+    if (!oldSale) return null;
+    const cliente = db.clients.find(c => c.id === oldSale.clientId) || {};
+    const suc = db.sucursales.find(s => s.id === oldSale.sucursalId);
+    const nuevo = db.sales.find(s => s.refinDe === oldSale.id);
+    return {
+      fecha: m.fecha,
+      cliente: cliente.nombre || '—',
+      cobrador: oldSale.prom || '—',
+      sucursal: suc ? suc.nombre : '—',
+      oldFolio: oldSale.folio, saldoLiquidado: m.abono,
+      nuevoFolio: nuevo ? nuevo.folio : null,
+      nuevoMonto: nuevo ? nuevo.monto : 0,
+      neto: nuevo ? (nuevo.monto - m.abono) : 0,
+      operador: m.origen
+    };
+  }).filter(Boolean).sort((a,b)=>_parseFechaMx(b.fecha)-_parseFechaMx(a.fecha));
+  const totales = {
+    n: refins.length,
+    saldoLiquidado: refins.reduce((a,r)=>a+r.saldoLiquidado,0),
+    nuevoMonto: refins.reduce((a,r)=>a+r.nuevoMonto,0),
+    neto: refins.reduce((a,r)=>a+r.neto,0),
+  };
+  res.json({ desde: desde.toISOString(), hasta: hasta.toISOString(), refins, totales });
+});
+
+app.get('/api/reports/recoleccion', auth, rol('admin', 'supervisor'), (req, res) => {
+  const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
+  const porCobrador = (db.porEntregar || []).filter(p => p.monto > 0).map(p => ({
+    tipo: 'cobrador', ref: p.prom, cobrador: p.prom, sucursal: sucMap[p.sucursalId] || '—', monto: p.monto
+  })).sort((a, b) => b.monto - a.monto);
+  const porSucursal = db.sucursales.map(s => {
+    const caja = db.caja[String(s.id)] || {};
+    // recolectable = efectivo cobrado + entregas de cobradores − lo ya recolectado (NO incluye el fondo inicial)
+    const efectivo = Math.max(0, (caja.efectivo || 0) + (caja.entregas || 0) - (caja.retiros || 0));
+    const enc = db.users.find(u => u.rol === 'sucursal' && u.sucursalId === s.id);
+    return { tipo: 'sucursal', ref: s.id, sucursalId: s.id, sucursal: s.nombre, encargada: enc ? enc.nombre : '—', efectivo };
+  }).filter(s => s.efectivo > 0).sort((a, b) => b.efectivo - a.efectivo);
+  const porJC = db.users.filter(u => u.rol === 'jc' && u.activo).map(j => {
+    const caja = jcCajaDe(j.id);
+    return { tipo: 'jc', ref: j.id, jc: j.nombre, sucursal: sucMap[j.sucursalId] || '—', monto: caja.saldo, recibido: caja.recibido, entregado: caja.entregado };
+  }).filter(j => j.monto > 0).sort((a, b) => b.monto - a.monto);
+  res.json({
+    generadoEn: new Date().toISOString(),
+    porCobrador, porSucursal, porJC,
+    totalCobradores: porCobrador.reduce((a, c) => a + c.monto, 0),
+    totalSucursales: porSucursal.reduce((a, s) => a + s.efectivo, 0),
+    totalJC: porJC.reduce((a, j) => a + j.monto, 0),
+    totalGeneral: porCobrador.reduce((a, c) => a + c.monto, 0) + porSucursal.reduce((a, s) => a + s.efectivo, 0) + porJC.reduce((a, j) => a + j.monto, 0),
+  });
+});
+// ===== TESORERÍA / FLUJO DEL ADMIN =====
+function flujoAgregar(tipo, clase, concepto, monto, destino, by) {
+  db.flujo = db.flujo || [];
+  db.flujo.push({ id: nextId('flujo'), fecha: new Date().toISOString(), fechaTxt: fechaMxHoyDDMM(), tipo, clase, concepto, monto: Math.round(monto), destino: destino || null, by: by || 'admin' });
+}
+function flujoSaldo() { return (db.flujo || []).reduce((a, m) => a + (m.tipo === 'entrada' ? m.monto : -m.monto), 0) + asignNeto('admin', null); }
+app.get('/api/flujo', auth, rol('admin', 'supervisor'), (req, res) => {
+  const movs = (db.flujo || []).slice().sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+  let run = 0; const conSaldo = movs.map(m => { run += (m.tipo === 'entrada' ? m.monto : -m.monto); return { ...m, saldo: run }; }).reverse();
+  const T = { recibido: 0, inyectado: 0, dotado: 0, egresos: 0 };
+  (db.flujo || []).forEach(m => {
+    if (m.clase === 'recoleccion' || m.clase === 'cierre') T.recibido += m.monto;
+    else if (m.clase === 'inyeccion') T.inyectado += m.monto;
+    else if (m.clase === 'dotacion') T.dotado += m.monto;
+    else if (m.clase === 'egreso') T.egresos += m.monto;
+  });
+  const dotadoPor = {};
+  (db.flujo || []).filter(m => m.clase === 'dotacion' && m.destino).forEach(m => { const k = m.destino.tipo + ':' + m.destino.id; dotadoPor[k] = (dotadoPor[k] || 0) + m.monto; });
+  const sucursales = db.sucursales.filter(s => s.activo !== false).map(s => { const c = db.caja[String(s.id)] || {}; return { id: s.id, nombre: s.nombre, caja: Math.round((c.inicial || 0) + (c.efectivo || 0) + (c.entregas || 0) - (c.retiros || 0)), dotado: dotadoPor['sucursal:' + s.id] || 0 }; });
+  const jcs = db.users.filter(u => u.rol === 'jc' && u.activo).map(u => ({ id: u.id, nombre: u.nombre, caja: Math.round(jcCajaDe(u.id).saldo), dotado: dotadoPor['jc:' + u.id] || 0 }));
+  const supervisores = db.users.filter(u => u.rol === 'supervisor' && u.activo).map(u => ({ id: u.id, nombre: u.nombre, dotado: dotadoPor['supervisor:' + u.id] || 0 }));
+  res.json({ saldo: flujoSaldo(), totales: T, destinos: { sucursales, jcs, supervisores }, movimientos: conSaldo.slice(0, 120) });
+});
+// ===== TESORERÍA CONSOLIDADA: TODO el dinero del sistema en una sola vista (solo admin) =====
+app.get('/api/tesoreria', auth, rol('admin'), (req, res) => {
+  const sucursales = db.sucursales.filter(s => s.activo !== false).map(s => {
+    const c = db.caja[String(s.id)] || {};
+    return { id: s.id, nombre: s.nombre,
+      efectivo: Math.round((c.inicial||0)+(c.efectivo||0)+(c.entregas||0)-(c.retiros||0)),
+      banco: Math.round(c.banco||0) };
+  });
+  const jc = db.users.filter(u => u.rol === 'jc' && u.activo)
+    .map(u => ({ id: u.id, nombre: u.nombre, saldo: Math.round(jcCajaDe(u.id).saldo) }));
+  const supervisores = db.users.filter(u => u.rol === 'supervisor' && u.activo)
+    .map(u => ({ id: u.id, nombre: u.nombre, saldo: Math.round(supervisorCajaDe(u.id)) }));
+  const porEntregar = (db.porEntregar||[])
+    .filter(p => (p.monto||0) !== 0)
+    .map(p => ({ prom: p.prom, sucursalId: p.sucursalId, monto: Math.round(p.monto||0) }));
+  const cortesPend = (db.cortes||[])
+    .filter(c => c.tipo === 'sucursal' && c.estado === 'pendiente')
+    .map(c => ({ id: c.id, prom: c.prom, sucursalId: c.sucursalId, totalEfectivo: Math.round(c.totalEfectivo||0), totalBanco: Math.round(c.totalBanco||0) }));
+
+  const T = {
+    tesoreriaAdmin: Math.round(flujoSaldo()),
+    sucursalesEfectivo: sucursales.reduce((a,s)=>a+s.efectivo,0),
+    sucursalesBanco: sucursales.reduce((a,s)=>a+s.banco,0),
+    cajasJC: jc.reduce((a,x)=>a+x.saldo,0),
+    cajasSupervisor: supervisores.reduce((a,x)=>a+x.saldo,0),
+    enRutaPorEntregar: porEntregar.reduce((a,p)=>a+p.monto,0),
+    enTransitoCortes: cortesPend.reduce((a,c)=>a+c.totalEfectivo,0)
+  };
+  const granTotalEfectivo = T.tesoreriaAdmin + T.sucursalesEfectivo + T.cajasJC + T.cajasSupervisor + T.enRutaPorEntregar + T.enTransitoCortes;
+  const granTotal = granTotalEfectivo + T.sucursalesBanco;
+
+  res.json({
+    granTotal, granTotalEfectivo,
+    totales: T,
+    detalle: {
+      sucursales, jc, supervisores,
+      enRuta: porEntregar,
+      enTransito: cortesPend
+    }
+  });
+});
+app.post('/api/flujo/inyeccion', auth, rol('admin'), (req, res) => {
+  const monto = +req.body.monto; if (!(monto > 0)) return res.status(400).json({ error: 'Monto inválido' });
+  flujoAgregar('entrada', 'inyeccion', 'Inyección de capital' + (req.body.nota ? ' · ' + req.body.nota : ''), monto, null, req.user.nombre);
+  saveDB(); res.json({ ok: true, saldo: flujoSaldo() });
+});
+app.post('/api/flujo/egreso', auth, rol('admin'), (req, res) => {
+  const monto = +req.body.monto; if (!(monto > 0)) return res.status(400).json({ error: 'Monto inválido' });
+  const tipos = { nomina_empleados: 'Nómina empleados', nomina_admin: 'Nómina ADMIN', otro: 'Otro gasto' };
+  const base = tipos[req.body.tipo] || 'Otro gasto';
+  const concepto = base + (req.body.detalle ? ' · ' + req.body.detalle : '');
+  flujoAgregar('salida', 'egreso', concepto, monto, null, req.user.nombre);
+  saveDB(); res.json({ ok: true, saldo: flujoSaldo() });
+});
+app.post('/api/flujo/dotacion', auth, rol('admin'), (req, res) => {
+  const monto = +req.body.monto; const { destinoTipo, destinoId, nota } = req.body;
+  if (!(monto > 0)) return res.status(400).json({ error: 'Monto inválido' });
+  if (destinoTipo === 'cobrador') return res.status(403).json({ error: 'No se puede asignar dinero a un promotor. El promotor solo entrega efectivo, nunca lo recibe.' });
+  let nombre = '', destino = null;
+  if (destinoTipo === 'sucursal') {
+    const s = db.sucursales.find(x => x.id == destinoId); if (!s) return res.status(404).json({ error: 'Sucursal no encontrada' });
+    const sid = String(s.id); db.caja[sid] = db.caja[sid] || { inicial: 0, efectivo: 0, banco: 0, entregas: 0, retiros: 0 };
+    db.caja[sid].inicial = (db.caja[sid].inicial || 0) + monto;
+    nombre = s.nombre; destino = { tipo: 'sucursal', id: s.id, nombre };
+  } else if (destinoTipo === 'jc') {
+    const jc = db.users.find(u => u.id == destinoId && u.rol === 'jc'); if (!jc) return res.status(404).json({ error: 'JC no encontrado' });
+    db.jcEntregas.push({ id: nextId('jcEntregas'), cobradorId: req.user.id, cobradorNombre: 'Admin · dotación', jcId: jc.id, jcNombre: jc.nombre, monto: Math.round(monto), nota: nota || '', estado: 'recibido', sucursalId: jc.sucursalId || null, fechaDDMM: fechaMxHoyDDMM(), creadoEn: new Date().toISOString(), origen: 'dotacion-admin', recibidoEn: new Date().toISOString() });
+    nombre = jc.nombre; destino = { tipo: 'jc', id: jc.id, nombre };
+  } else if (destinoTipo === 'supervisor') {
+    const sv = db.users.find(u => u.id == destinoId && u.rol === 'supervisor'); if (!sv) return res.status(404).json({ error: 'Supervisor no encontrado' });
+    nombre = sv.nombre; destino = { tipo: 'supervisor', id: sv.id, nombre };
+  } else return res.status(400).json({ error: 'Destino inválido' });
+  flujoAgregar('salida', 'dotacion', `Dotación a ${destino.tipo === 'jc' ? 'JC ' : destino.tipo === 'supervisor' ? 'Supervisor ' : ''}${nombre}` + (nota ? ' · ' + nota : ''), monto, destino, req.user.nombre);
+  saveDB(); res.json({ ok: true, saldo: flujoSaldo(), destino });
+});
+// ===== REPORTE DE ENTREGAS (de todos) =====
+app.get('/api/reports/entregas', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
+  const scope = scopeSucDe(req.user);
+  const r = _rangoReporte(req.query);
+  const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
+  const rolLbl = { admin: 'Admin', supervisor: 'Supervisor', sucursal: 'Sucursal', jc: 'JC' };
+  let ent = db.sales.filter(s => s.entrega && (scope == null || s.sucursalId === scope));
+  ent = ent.filter(s => { const t = new Date(s.entrega.fecha).getTime(); return (!r.desde || t >= r.desde) && (!r.hasta || t <= r.hasta); });
+  const lista = ent.map(s => {
+    const c = db.clients.find(x => x.id === s.clientId) || {};
+    const por = s.entrega.por || { rol: 'jc', nombre: s.entrega.jcNombre || '—' };
+    return { folio: s.folio, cliente: c.nombre || '—', sucursal: sucMap[s.sucursalId] || '—', ruta: s.prom || '—', entregadoPor: por.nombre, rolEntrega: rolLbl[por.rol] || por.rol, fecha: s.entrega.fecha, monto: entregaMontoDe(s), tieneEvidencia: !!(s.entrega.fotoCasa || s.entrega.firma), saleId: s.id };
+  }).sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+  const porPersona = {};
+  lista.forEach(e => { const k = e.entregadoPor + ' (' + e.rolEntrega + ')'; porPersona[k] = porPersona[k] || { quien: e.entregadoPor, rol: e.rolEntrega, n: 0, monto: 0 }; porPersona[k].n++; porPersona[k].monto += e.monto; });
+  res.json({ total: lista.length, montoTotal: lista.reduce((a, e) => a + e.monto, 0), porPersona: Object.values(porPersona).sort((a, b) => b.monto - a.monto), entregas: lista.slice(0, 300) });
+});
+// ===== ALERTA: QUIÉN NO HA VENDIDO =====
+app.get('/api/reports/sin-ventas', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
+  const scope = scopeSucDe(req.user);
+  const inicio = (req.query.inicio != null && req.query.inicio !== '') ? Math.min(Math.max(+req.query.inicio, 0), 6) : _diaSemanaInicio();
+  const sem = _ultimasSemanas(4, inicio); // últimas 4 semanas operativas
+  const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
+  let cobs = db.users.filter(u => u.rol === 'cobrador' && u.activo && (scope == null || u.sucursalId === scope));
+  const lista = cobs.map(u => {
+    const ventas = db.sales.filter(s => s.prom === u.nombre && s.sucursalId === u.sucursalId);
+    const porSemana = sem.map(w => ventas.filter(s => { const t = new Date(s.createdAt).getTime(); return t >= w.desde && t <= w.hasta; }).length);
+    const ultima = ventas.length ? Math.max(...ventas.map(s => new Date(s.createdAt).getTime())) : null;
+    // semanas consecutivas sin vender (desde la más reciente hacia atrás)
+    let sinVender = 0; for (let i = porSemana.length - 1; i >= 0; i--) { if (porSemana[i] === 0) sinVender++; else break; }
+    return { cobrador: u.nombre, sucursal: sucMap[u.sucursalId] || '—', ventasSemana: porSemana[porSemana.length - 1], porSemana, semanasSinVender: sinVender, ultimaVenta: ultima ? new Date(ultima).toISOString() : null, totalVentas: ventas.length };
+  }).sort((a, b) => b.semanasSinVender - a.semanasSinVender);
+  res.json({ semanas: sem.map(w => ({ label: w.label, rango: w.rango })), inicio, cobradores: lista, sinVenderEstaSemana: lista.filter(c => c.ventasSemana === 0).length, total: lista.length });
+});
+// ===== RASTREO DE EQUIPO (ubicación de la gente en campo) =====
+app.post('/api/ubicacion/ping', auth, rol('cobrador', 'jc', 'sucursal', 'supervisor'), (req, res) => {
+  const lat = +req.body.lat, lng = +req.body.lng;
+  if (!isFinite(lat) || !isFinite(lng)) return res.status(400).json({ error: 'coords inválidas' });
+  db.ubicaciones = db.ubicaciones || {};
+  const me = db.users.find(u => u.id === req.user.id) || {};
+  db.ubicaciones[req.user.id] = { userId: req.user.id, nombre: req.user.nombre, rol: req.user.rol, sucursalId: me.sucursalId || null, lat, lng, at: new Date().toISOString() };
+  saveDB();
+  res.json({ ok: true });
+});
+app.get('/api/ubicacion/equipo', auth, rol('admin', 'supervisor'), (req, res) => {
+  db.ubicaciones = db.ubicaciones || {};
+  const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
+  const rolLbl = { cobrador: 'Promotor', jc: 'JC', sucursal: 'Sucursal', supervisor: 'Supervisor' };
+  const ahora = Date.now();
+  const gente = Object.values(db.ubicaciones).map(u => ({ ...u, sucursal: sucMap[u.sucursalId] || '—', rolLbl: rolLbl[u.rol] || u.rol, minutos: Math.round((ahora - new Date(u.at).getTime()) / 60000) }))
+    .filter(u => isFinite(u.lat) && isFinite(u.lng))
+    .sort((a, b) => a.minutos - b.minutos);
+  res.json({ gente });
+});
+
+// ===== REPORTE DE ENTREGAS (de todos) — fin =====
+// Limpia los datos de PRUEBA de la agencia actual (conserva usuarios, sucursales y configuración)
+app.post('/api/admin/reset-datos', auth, rol('admin'), (req, res) => {
+  if (req.body.confirmar !== 'BORRAR') return res.status(400).json({ error: "Para confirmar envía { confirmar: 'BORRAR' }" });
+  db.clients = [];
+  db.sales = [];
+  db.movimientos = [];
+  db.caja = {};
+  db.porEntregar = [];
+  db.cortes = [];
+  db.recolecciones = [];
+  db.jcEntregas = [];
+  db.jcCierres = [];
+  db.flujo = [];
+  db.transferencias = [];
+  db.ubicaciones = {};
+  saveDB();
+  res.json({ ok: true, mensaje: 'Datos de prueba borrados. Se conservaron usuarios, sucursales y configuración.' });
+});
+// ===== IMPORTACIÓN MASIVA (migración de base existente) =====
+// body: { commit:bool, confirmar:'IMPORTAR', password:'cobra2026', items:[{suc,sucCode,ruta,nombre,tel,domicilio,monto,total,cuota,saldo}] }
+function _slug(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''); }
+app.post('/api/admin/import-bulk', auth, rol('admin'), (req, res) => {
+  const items = Array.isArray(req.body.items) ? req.body.items : [];
+  if (!items.length) return res.status(400).json({ error: 'No se recibieron registros (items vacío).' });
+  const sucNames = [...new Set(items.map(i => i.suc).filter(Boolean))];
+  const rutas = [...new Set(items.map(i => i.suc + '||' + i.ruta))];
+  const sumaSaldo = items.reduce((a, i) => a + (+i.saldo || 0), 0);
+  const sucNuevas = sucNames.filter(n => !db.sucursales.find(s => (s.nombre || '').toLowerCase() === n.toLowerCase()));
+
+  if (!req.body.commit) {
+    return res.json({
+      preview: true,
+      sucursales: sucNames.length, sucursalesNuevas: sucNuevas.length,
+      cobradores: rutas.length, creditos: items.length, sumaSaldo,
+      porSucursal: sucNames.map(n => ({ sucursal: n, creditos: items.filter(i => i.suc === n).length, saldo: items.filter(i => i.suc === n).reduce((a, i) => a + (+i.saldo || 0), 0) })),
+      muestra: items.slice(0, 3)
+    });
+  }
+  if (req.body.confirmar !== 'IMPORTAR') return res.status(400).json({ error: "Para ejecutar envía commit:true y confirmar:'IMPORTAR'." });
+  const pass = (req.body.password && req.body.password.length >= 4) ? req.body.password : 'cobra2026';
+  const tid = als.getStore().tenantId;
+  SYS.userIndex = SYS.userIndex || {};
+
+  // 1) sucursales (find-or-create)
+  const sucId = {};
+  sucNames.forEach(n => {
+    let s = db.sucursales.find(x => (x.nombre || '').toLowerCase() === n.toLowerCase());
+    if (!s) { s = { id: nextId('sucursales'), nombre: n }; db.sucursales.push(s); }
+    sucId[n] = s.id;
+  });
+  // 2) cobradores (uno por ruta) — reutiliza si ya existe (permite carga por lotes)
+  const usados = new Set(Object.keys(SYS.userIndex).concat(db.users.map(u => u.usuario)));
+  const logins = [];
+  rutas.forEach(key => {
+    const [suc, ruta] = key.split('||');
+    let u = db.users.find(x => x.rol === 'cobrador' && x.nombre === ruta && x.sucursalId === sucId[suc]);
+    if (!u) {
+      let base = 'lf_' + _slug(ruta); let usuario = base, k = 1;
+      while (usados.has(usuario)) { usuario = base + (++k); }
+      usados.add(usuario);
+      u = { id: nextId('users'), nombre: ruta, usuario, rol: 'cobrador', sucursalId: sucId[suc], passwordHash: bcrypt.hashSync(pass, 8), activo: true, createdAt: new Date().toISOString() };
+      db.users.push(u); SYS.userIndex[usuario] = tid;
+    }
+    logins.push({ ruta, sucursal: suc, usuario: u.usuario });
+  });
+  // 3) clientes + créditos + saldo de apertura (folio continúa donde quedó por sucursal)
+  const seq = {}; let creados = 0;
+  const hoy = fechaMxHoyDDMM();
+  items.forEach(it => {
+    const sid = sucId[it.suc];
+    const client = { id: nextId('clients'), nombre: it.nombre, tel: it.tel || '', calle: it.domicilio || '—', col: '', ciudad: '', estado: '', curp: '', sucursalId: sid, prom: it.ruta };
+    db.clients.push(client);
+    const code = it.sucCode || 'GEN';
+    if (seq[code] == null) seq[code] = db.sales.filter(s => String(s.folio || '').startsWith('IMP-' + code + '-')).length;
+    seq[code]++;
+    const folio = 'IMP-' + code + '-' + String(seq[code]).padStart(4, '0');
+    const cuota = +it.cuota || 0, total = +it.total || +it.saldo || 0, saldo = +it.saldo || 0;
+    const plazo = cuota > 0 ? Math.max(1, Math.round(total / cuota)) : 1;
+    const sale = { id: nextId('sales'), folio, clientId: client.id, tipo: 'semanal', plazo, monto: +it.monto || 0, cuota, total, prom: it.ruta, sucursalId: sid, entregado: true, importado: true, createdAt: new Date().toISOString() };
+    db.sales.push(sale);
+    // saldo de apertura = saldo actual (snapshot). saldoDe() = cargo - abono = saldo
+    db.movimientos.push({ id: nextId('movimientos'), saleId: sale.id, fecha: hoy, concepto: 'Saldo inicial (migración)', origen: 'Importación', cargo: saldo, abono: 0 });
+    creados++;
+  });
+  saveDB(); saveSystem();
+  res.json({ ok: true, sucursales: sucNames.length, cobradores: rutas.length, creditos: creados, sumaSaldo, passwordCobradores: pass, logins });
+});
+
+app.post('/api/recoleccion', auth, rol('admin', 'supervisor'), (req, res) => {
+  const { tipo, ref, motivo } = req.body;
+  const fecha = new Date().toISOString();
+  let monto = 0, nombre = '';
+  if (tipo === 'cobrador') {
+    const entries = db.porEntregar.filter(p => p.prom === ref);
+    monto = entries.reduce((a, p) => a + p.monto, 0);
+    if (monto <= 0) return res.status(400).json({ error: 'Ese cobrador no trae efectivo por recolectar' });
+    db.porEntregar = db.porEntregar.filter(p => p.prom !== ref);
+    nombre = ref;
+    // el "check" del administrador cierra los cortes pendientes de ese cobrador
+    (db.cortes || []).filter(c => c.prom === ref && c.estado !== 'recibido').forEach(c => {
+      c.estado = 'recibido'; c.recibidoAt = fecha; c.recibidoBy = req.user.nombre;
+    });
+  } else if (tipo === 'sucursal') {
+    const sid = String(ref);
+    const c = db.caja[sid] || { inicial: 0, efectivo: 0, banco: 0, entregas: 0, retiros: 0 };
+    c.retiros = c.retiros || 0;
+    const disponible = Math.max(0, (c.efectivo || 0) + (c.entregas || 0) - c.retiros);
+    if (disponible <= 0) return res.status(400).json({ error: 'Esa sucursal no tiene efectivo por recolectar' });
+    c.retiros += disponible; db.caja[sid] = c; monto = disponible;
+    const suc = db.sucursales.find(s => s.id === +sid); nombre = suc ? suc.nombre : ('Sucursal ' + sid);
+  } else if (tipo === 'jc') {
+    const jc = db.users.find(u => u.id == ref && u.rol === 'jc');
+    if (!jc) return res.status(404).json({ error: 'JC no encontrado' });
+    const caja = jcCajaDe(jc.id);
+    if (caja.saldo <= 0) return res.status(400).json({ error: 'Ese JC no trae efectivo por recolectar' });
+    monto = caja.saldo; nombre = jc.nombre;
+    // el registro de recolección (abajo) lo descuenta de su caja vía jcCajaDe
+  } else return res.status(400).json({ error: 'Tipo inválido' });
+  db.recolecciones = db.recolecciones || [];
+  const reg = { id: nextId('recolecciones'), tipo, ref, nombre, monto, fecha, por: req.user.nombre, motivo: motivo || '' };
+  db.recolecciones.push(reg);
+  flujoAgregar('entrada', 'recoleccion', `Recolección · ${nombre} (${tipo})`, monto, null, req.user.nombre);
+  saveDB();
+  res.json({ ok: true, registro: reg });
+});
+app.get('/api/recolecciones', auth, rol('admin', 'supervisor'), (req, res) => {
+  res.json((db.recolecciones || []).slice().reverse());
+});
+
+app.get('/api/reports/comisiones', auth, rol('admin','supervisor'), (req, res) => {
+  const periodo = req.query.periodo || 'semana';
+  const desdeMs = _desdePeriodo(periodo);
+  const tasa = (db.config && db.config.tasaCobrador) || 5; // % por defecto
+  const cobradores = db.users.filter(u => u.rol === 'cobrador' && u.activo);
+  const sucActivos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
+  const out = cobradores.map(c => {
+    const sus_sales = db.sales.filter(s => s.prom === c.nombre && sucActivos.has(s.clientId));
+    const sus_movs = db.movimientos.filter(m => {
+      const s = sus_sales.find(x => x.id === m.saleId);
+      return s && m.abono > 0 && m.forma !== 'descuento' && _parseFechaMx(m.fecha) >= desdeMs;
+    });
+    const efe = sus_movs.filter(m => !m.forma || m.forma === 'efectivo').reduce((a,m)=>a+m.abono,0);
+    const tra = sus_movs.filter(m => m.forma === 'transferencia').reduce((a,m)=>a+m.abono,0);
+    const dep = sus_movs.filter(m => m.forma === 'deposito').reduce((a,m)=>a+m.abono,0);
+    const ref = sus_movs.filter(m => m.forma === 'refin').reduce((a,m)=>a+m.abono,0);
+    const total = efe + tra + dep + ref;
+    const suc = db.sucursales.find(s => s.id === c.sucursalId);
+    return { nombre: c.nombre, sucursal: suc?suc.nombre:'—', efectivo:efe, transferencia:tra, deposito:dep, refin:ref, total, comision: total * tasa/100 };
+  }).sort((a,b)=>b.total-a.total);
+  res.json({ periodo, tasa, cobradores: out, totales: {
+    efectivo: out.reduce((a,c)=>a+c.efectivo,0),
+    transferencia: out.reduce((a,c)=>a+c.transferencia,0),
+    deposito: out.reduce((a,c)=>a+c.deposito,0),
+    refin: out.reduce((a,c)=>a+c.refin,0),
+    total: out.reduce((a,c)=>a+c.total,0),
+    comision: out.reduce((a,c)=>a+c.comision,0),
+  }});
+});
+
+/* ---------- Reporte gerencial (rollup por niveles, con rango y utilidad) ---------- */
+function _rangoReporte(q) {
+  // desde/hasta en YYYY-MM-DD tienen prioridad; si no, usa periodo
+  if (q.desde || q.hasta) {
+    const d = q.desde ? new Date(q.desde + 'T00:00:00') : new Date(2000, 0, 1);
+    const h = q.hasta ? new Date(q.hasta + 'T23:59:59') : new Date();
+    return { desde: d.getTime(), hasta: h.getTime(), modo: 'rango', label: `${q.desde || '—'} a ${q.hasta || 'hoy'}` };
+  }
+  const periodo = q.periodo || 'semana';
+  return { desde: _desdePeriodo(periodo), hasta: Date.now(), modo: periodo, label: periodo };
+}
+function _kpisVentas(sales, desde, hasta) {
+  let cartera = 0, creditosAct = 0, atrasoMonto = 0, atrasoCli = 0, colocado = 0, ncoloc = 0, cobrado = 0, npagos = 0, utilidad = 0;
+  const cliSet = new Set(), ratio = {};
+  function atrasoDe(s) { const totAb = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0).reduce((a, m) => a + m.abono, 0); return calcAtraso(s, totAb); }
+  sales.forEach(s => {
+    ratio[s.id] = s.total > 0 ? (s.total - s.monto) / s.total : 0;
+    const saldo = saldoDe(s.id);
+    if (saldo > 0) { cartera += saldo; creditosAct++; cliSet.add(s.clientId); const at = atrasoDe(s); if (at.montoAtraso > 0) { atrasoMonto += at.montoAtraso; atrasoCli++; } }
+    if (s.createdAt) { const t = new Date(s.createdAt).getTime(); if (t >= desde && t <= hasta) { colocado += s.monto; ncoloc++; } }
+  });
+  const ids = new Set(sales.map(s => s.id));
+  db.movimientos.filter(m => m.abono > 0 && m.forma !== 'descuento' && ids.has(m.saleId)).forEach(m => {
+    const t = _parseFechaMx(m.fecha); if (t >= desde && t <= hasta) { cobrado += m.abono; npagos++; utilidad += m.abono * (ratio[m.saleId] || 0); }
+  });
+  return { cartera, clientes: cliSet.size, creditosActivos: creditosAct, atrasoMonto, vencido: atrasoMonto, atrasoClientes: atrasoCli,
+    morosidad: cartera > 0 ? +(atrasoMonto / cartera * 100).toFixed(1) : 0, colocado, ncoloc, cobrado, npagos, utilidad: Math.round(utilidad) };
+}
+app.get('/api/reports/gerencial', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
+  const { desde, hasta, label, modo } = _rangoReporte(req.query);
+  const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
+  const esGerente = req.user.rol === 'sucursal';
+  const miSuc = esGerente ? (db.users.find(u => u.id === req.user.id) || {}).sucursalId : null;
+  let sucursales = db.sucursales.filter(s => s.activo !== false);
+  if (esGerente) sucursales = sucursales.filter(s => s.id === miSuc);
+  const kp = sales => _kpisVentas(sales, desde, hasta);
+  const porSucursal = sucursales.map(suc => {
+    const ventasSuc = db.sales.filter(s => s.sucursalId === suc.id && activos.has(s.clientId));
+    const enc = db.users.find(u => u.rol === 'sucursal' && u.sucursalId === suc.id);
+    const cobradores = db.users.filter(u => u.rol === 'cobrador' && u.activo && u.sucursalId === suc.id);
+    const promotores = cobradores.map(cob => ({ promotor: cob.nombre, ...kp(ventasSuc.filter(s => s.prom === cob.nombre)) }));
+    return { id: suc.id, sucursal: suc.nombre, gerente: enc ? enc.nombre : '—', ...kp(ventasSuc), promotores };
+  });
+  const todas = db.sales.filter(s => (esGerente ? s.sucursalId === miSuc : true) && activos.has(s.clientId));
+  res.json({ periodo: modo, rango: label, generado: new Date().toISOString(), nivel: esGerente ? 'sucursal' : 'empresa', empresa: kp(todas), sucursales: porSucursal });
+});
+// Drill-down: clientes de una sucursal o de un promotor (con cobrado/vencido en el rango)
+app.get('/api/reports/gerencial-clientes', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
+  const { desde, hasta } = _rangoReporte(req.query);
+  const sucursalId = req.query.sucursalId ? +req.query.sucursalId : null;
+  const promotor = req.query.promotor || null;
+  if (req.user.rol === 'sucursal') { const me = db.users.find(u => u.id === req.user.id); if (!me || (sucursalId && sucursalId !== me.sucursalId)) return res.status(403).json({ error: 'Fuera de tu sucursal' }); }
+  const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
+  let sales = db.sales.filter(s => activos.has(s.clientId));
+  if (sucursalId) sales = sales.filter(s => s.sucursalId === sucursalId);
+  if (promotor) sales = sales.filter(s => s.prom === promotor);
+  const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
+  const rows = sales.map(s => {
+    const c = db.clients.find(x => x.id === s.clientId) || {};
+    const totAb = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0).reduce((a, m) => a + m.abono, 0);
+    const at = calcAtraso(s, totAb);
+    const cobradoPeriodo = db.movimientos.filter(m => m.abono > 0 && m.forma !== 'descuento' && m.saleId === s.id && _parseFechaMx(m.fecha) >= desde && _parseFechaMx(m.fecha) <= hasta).reduce((a, m) => a + m.abono, 0);
+    const saldo = saldoDe(s.id);
+    return { saleId: s.id, folio: s.folio, cliente: c.nombre || '—', tel: c.tel || '', prom: s.prom, sucursal: sucMap[s.sucursalId] || '—',
+      monto: s.monto, total: s.total, saldo, cobradoPeriodo, vencido: at.montoAtraso, diasAtraso: at.diasAtraso,
+      estado: saldo <= 0 ? 'liquidado' : (at.montoAtraso > 0 ? (at.diasAtraso > 30 ? 'vencido' : 'atraso') : 'corriente') };
+  }).sort((a, b) => b.saldo - a.saldo);
+  res.json({ total: rows.length, sumSaldo: Math.round(rows.reduce((a, r) => a + r.saldo, 0)), sumCobrado: Math.round(rows.reduce((a, r) => a + r.cobradoPeriodo, 0)), clientes: rows });
+});
+
+// ===== DESGLOSE DE CARTERA SEMANAL (modelo de control por sucursal/promotor) =====
+function _isoWeek(ms) {
+  const d = new Date(ms); const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const day = t.getUTCDay() || 7; t.setUTCDate(t.getUTCDate() + 4 - day);
+  const yStart = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+  return Math.ceil((((t - yStart) / 86400000) + 1) / 7);
+}
+function _ultimasSemanas(n, inicioDia) {
+  inicioDia = (inicioDia == null ? 4 : inicioDia); // 0=dom..6=sab · 4=jueves (ciclo típico jue→mié)
+  const now = nowMx();
+  const base = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const day = new Date(base).getUTCDay();
+  const diff = (day - inicioDia + 7) % 7;
+  const iniEsta = base - diff * 86400000;
+  const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  const dias = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+  const out = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const ini = iniEsta - i * 7 * 86400000;
+    const fin = ini + 7 * 86400000 - 1;
+    const di = new Date(ini), df = new Date(fin);
+    out.push({ iso: _isoWeek(ini), desde: ini, hasta: fin, label: 'Sem ' + _isoWeek(ini), fecha: `${dias[di.getUTCDay()]} ${String(di.getUTCDate()).padStart(2, '0')} ${meses[di.getUTCMonth()]}`, rango: `${String(di.getUTCDate()).padStart(2,'0')}/${String(di.getUTCMonth()+1).padStart(2,'0')}–${String(df.getUTCDate()).padStart(2,'0')}/${String(df.getUTCMonth()+1).padStart(2,'0')}` });
+  }
+  return out;
+}
+/* ---------- Aging de mora (cubetas de morosidad) ---------- */
+app.get('/api/reports/aging', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
+  let ventas = db.sales.filter(s => s.entregado !== false);
+  if (req.user.rol === 'sucursal') ventas = ventas.filter(s => Number(s.sucursalId) === Number(req.user.sucursalId || 0));
+  else if (req.query.sucursalId) ventas = ventas.filter(s => Number(s.sucursalId) === Number(req.query.sucursalId));
+  const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
+  const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
+  const BK = [
+    { k: 'corriente', lbl: 'Al corriente', min: 0, max: 0 },
+    { k: 'b1', lbl: '1–7 días', min: 1, max: 7 },
+    { k: 'b2', lbl: '8–14 días', min: 8, max: 14 },
+    { k: 'b3', lbl: '15–30 días', min: 15, max: 30 },
+    { k: 'b4', lbl: '31–60 días', min: 31, max: 60 },
+    { k: 'b5', lbl: '60+ días', min: 61, max: Infinity }
+  ];
+  const blank = () => ({ creditos: 0, saldo: 0, enRiesgo: 0 });
+  const tot = {}; BK.forEach(b => tot[b.k] = blank());
+  const porSuc = {};
+  let saldoTotal = 0, moraMonto = 0, creditosMora = 0;
+  ventas.forEach(s => {
+    if (!activos.has(s.clientId)) return;
+    const saldo = saldoDe(s.id);
+    if (saldo <= 0) return;
+    const at = calcAtraso(s);
+    const d = at.diasAtraso || 0;
+    const b = BK.find(x => d >= x.min && d <= x.max) || BK[0];
+    tot[b.k].creditos++; tot[b.k].saldo += saldo; tot[b.k].enRiesgo += at.montoAtraso || 0;
+    saldoTotal += saldo;
+    if (d > 0) { moraMonto += at.montoAtraso || 0; creditosMora++; }
+    const sid = s.sucursalId;
+    if (!porSuc[sid]) { porSuc[sid] = { sucursalId: sid, nombre: sucMap[sid] || '—', buckets: {}, saldo: 0, mora: 0, creditosMora: 0 }; BK.forEach(x => porSuc[sid].buckets[x.k] = 0); }
+    const ps = porSuc[sid]; ps.buckets[b.k] += saldo; ps.saldo += saldo;
+    if (d > 0) { ps.mora += at.montoAtraso || 0; ps.creditosMora++; }
+  });
+  const buckets = BK.map(b => ({ k: b.k, lbl: b.lbl, creditos: tot[b.k].creditos, saldo: Math.round(tot[b.k].saldo), enRiesgo: Math.round(tot[b.k].enRiesgo), pct: saldoTotal > 0 ? Math.round(tot[b.k].saldo / saldoTotal * 100) : 0 }));
+  const carteraVencida = saldoTotal - tot.corriente.saldo;
+  const indiceMora = saldoTotal > 0 ? Math.round(carteraVencida / saldoTotal * 1000) / 10 : 0;
+  const porSucursal = Object.values(porSuc).map(p => ({ ...p, saldo: Math.round(p.saldo), mora: Math.round(p.mora), buckets: Object.fromEntries(Object.entries(p.buckets).map(([k, v]) => [k, Math.round(v)])), pctMora: p.saldo > 0 ? Math.round((p.saldo - p.buckets.corriente) / p.saldo * 1000) / 10 : 0 })).sort((a, b) => b.pctMora - a.pctMora);
+  res.json({ buckets, saldoTotal: Math.round(saldoTotal), carteraVencida: Math.round(carteraVencida), moraMonto: Math.round(moraMonto), creditosMora, indiceMora, porSucursal });
+});
+app.get('/api/reports/desglose', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
+  const n = Math.min(Math.max(+req.query.semanas || 12, 1), 26);
+  const inicio = (req.query.inicio != null && req.query.inicio !== '') ? Math.min(Math.max(+req.query.inicio, 0), 6) : _diaSemanaInicio();
+  const semanas = _ultimasSemanas(n, inicio);
+  const esGerente = req.user.rol === 'sucursal';
+  const miSuc = esGerente ? (db.users.find(u => u.id === req.user.id) || {}).sucursalId : null;
+  let sucursales = db.sucursales.filter(s => s.activo !== false).map(s => ({ id: s.id, nombre: s.nombre }));
+  if (esGerente) sucursales = sucursales.filter(s => s.id === miSuc);
+  const qSuc = req.query.sucursalId ? +req.query.sucursalId : null;
+  if (esGerente && qSuc && qSuc !== miSuc) return res.status(403).json({ error: 'Fuera de tu sucursal' });
+  // admin/supervisor sin sucursal elegida => nivel EMPRESA (todas las sucursales juntas)
+  const empresa = !esGerente && !qSuc;
+  const sucursalId = esGerente ? miSuc : qSuc;
+  const promotor = req.query.promotor || null;
+  let suc = null, promotores = [], sales;
+  if (empresa) {
+    sales = db.sales.slice();
+  } else {
+    suc = db.sucursales.find(s => s.id === sucursalId) || { id: sucursalId, nombre: '—' };
+    const cobs = db.users.filter(u => u.rol === 'cobrador' && u.sucursalId === sucursalId).map(u => u.nombre);
+    const enVentas = [...new Set(db.sales.filter(s => s.sucursalId === sucursalId).map(s => s.prom).filter(Boolean))];
+    promotores = [...new Set([...cobs, ...enVentas])].sort();
+    sales = db.sales.filter(s => s.sucursalId === sucursalId);
+    if (promotor) sales = sales.filter(s => s.prom === promotor);
+  }
+  const nivel = empresa ? 'empresa' : (promotor ? 'promotor' : 'sucursal');
+  // precomputar movimientos por venta con timestamp
+  const movsPorVenta = new Map();
+  sales.forEach(s => {
+    const ms = db.movimientos.filter(m => m.saleId === s.id).map(m => ({ ts: _parseFechaMx(m.fecha), cargo: m.cargo || 0, abono: m.abono || 0, forma: m.forma }));
+    movsPorVenta.set(s.id, ms);
+  });
+  const clienteActivo = id => { const c = db.clients.find(x => x.id === id); return c ? c.activo !== false : true; };
+  const expSemanal = s => s.tipo === 'diario' ? (s.cuota || 0) * 6 : (s.tipo === 'unico' ? 0 : (s.cuota || 0));
+
+  const F = {
+    valorCartera: [], debito: [], totalClientes: [], sinPago: [], pctSinPago: [], debitoSinPago: [], pctDebitoSinPago: [],
+    carteraSinPago: [], pctCarteraSinPago: [], liquidados: [], eliminados: [], ventas: [], valorVentas: [], debitoVentas: [], cobranza: [], pctCobranzaDebito: []
+  };
+  semanas.forEach(w => {
+    let valorCartera = 0, debito = 0, totalClientes = 0, sinPago = 0, debitoSinPago = 0, carteraSinPago = 0, liquidados = 0, ventas = 0, valorVentas = 0, debitoVentas = 0, cobranza = 0;
+    sales.forEach(s => {
+      const createdTs = new Date(s.createdAt).getTime();
+      const existed = createdTs <= w.hasta;
+      const createdEsta = createdTs >= w.desde && createdTs <= w.hasta;
+      const ms = movsPorVenta.get(s.id) || [];
+      let saldoIni = 0, saldoFin = 0, abonoSem = 0;
+      ms.forEach(m => {
+        if (m.ts < w.desde) saldoIni += m.cargo - m.abono;
+        if (m.ts <= w.hasta) saldoFin += m.cargo - m.abono;
+        if (m.ts >= w.desde && m.ts <= w.hasta && m.forma !== 'descuento') abonoSem += m.abono;
+      });
+      // cobranza: todo abono real de la semana sobre créditos existentes
+      if (existed) cobranza += abonoSem;
+      // ventas de la semana
+      if (createdEsta) { ventas++; valorVentas += s.monto || 0; debitoVentas += s.cuota || 0; }
+      const vigente = existed && (saldoIni > 0.5 || createdEsta) && clienteActivo(s.clientId);
+      if (vigente) {
+        totalClientes++;
+        valorCartera += Math.max(0, saldoFin);
+        const exp = expSemanal(s);
+        debito += exp;
+        // sin pago: vigente que NO es venta nueva de la semana, con cobro esperado, y no abonó
+        if (!createdEsta && exp > 0 && abonoSem < 0.5) { sinPago++; debitoSinPago += exp; carteraSinPago += Math.max(0, saldoFin); }
+      }
+      // liquidados: tenía saldo al inicio y quedó en cero esta semana
+      if (existed && saldoIni > 0.5 && saldoFin < 0.5) liquidados++;
+    });
+    const eliminados = 0; // sin fecha de baja por crédito; se reporta 0 hasta tener marca temporal
+    F.valorCartera.push(Math.round(valorCartera));
+    F.debito.push(Math.round(debito));
+    F.totalClientes.push(totalClientes);
+    F.sinPago.push(sinPago);
+    F.pctSinPago.push(totalClientes ? sinPago / totalClientes : 0);
+    F.debitoSinPago.push(Math.round(debitoSinPago));
+    F.pctDebitoSinPago.push(debito ? debitoSinPago / debito : 0);
+    F.carteraSinPago.push(Math.round(carteraSinPago));
+    F.pctCarteraSinPago.push(valorCartera ? carteraSinPago / valorCartera : 0);
+    F.liquidados.push(liquidados);
+    F.eliminados.push(eliminados);
+    F.ventas.push(ventas);
+    F.valorVentas.push(Math.round(valorVentas));
+    F.debitoVentas.push(Math.round(debitoVentas));
+    F.cobranza.push(Math.round(cobranza));
+    F.pctCobranzaDebito.push(debito ? cobranza / debito : 0);
+  });
+  const filas = [
+    { k: 'valorCartera', lbl: 'Valor de la cartera', fmt: 'money' },
+    { k: 'debito', lbl: 'Débito (cobranza esperada)', fmt: 'money' },
+    { k: 'totalClientes', lbl: 'Total de clientes', fmt: 'int' },
+    { k: 'sinPago', lbl: 'Clientes sin pago', fmt: 'int' },
+    { k: 'pctSinPago', lbl: '% de clientes sin pago', fmt: 'pct' },
+    { k: 'debitoSinPago', lbl: 'Débito clientes sin pago', fmt: 'money' },
+    { k: 'pctDebitoSinPago', lbl: '% débito no pagos', fmt: 'pct' },
+    { k: 'carteraSinPago', lbl: 'Cartera clientes sin pago', fmt: 'money' },
+    { k: 'pctCarteraSinPago', lbl: '% cartera sin pago', fmt: 'pct' },
+    { k: 'liquidados', lbl: 'Clientes liquidados', fmt: 'int' },
+    { k: 'eliminados', lbl: 'Clientes eliminados', fmt: 'int' },
+    { k: 'ventas', lbl: 'Número de ventas', fmt: 'int' },
+    { k: 'valorVentas', lbl: 'Valor de ventas', fmt: 'money' },
+    { k: 'debitoVentas', lbl: 'Débito de ventas', fmt: 'money' },
+    { k: 'cobranza', lbl: 'Cobranza total', fmt: 'money' },
+    { k: 'pctCobranzaDebito', lbl: 'Cobranza / débito', fmt: 'pct' }
+  ].map(f => ({ ...f, vals: F[f.k] }));
+  res.json({
+    nivel, sucursal: suc ? { id: suc.id, nombre: suc.nombre } : null, sucursales, promotores,
+    scope: empresa ? 'EMPRESA' : (promotor || 'TOTAL'), generado: new Date().toISOString(),
+    semanas: semanas.map(w => ({ label: w.label, fecha: w.fecha, iso: w.iso, rango: w.rango })), filas
+  });
+});
+
+app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, res) => {
+  const promFilter = req.query.prom;
+  const cobradores = db.users.filter(u => u.rol === 'cobrador' && u.activo);
+  const sel = (promFilter && promFilter !== 'all') ? cobradores.filter(c => c.nombre === promFilter) : cobradores;
+  const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
+  const reportes = sel.map(cob => {
+    const suc = db.sucursales.find(s => s.id === cob.sucursalId);
+    const enc = db.users.find(u => u.rol === 'sucursal' && u.sucursalId === cob.sucursalId);
+    const sus_sales = db.sales.filter(s => s.prom === cob.nombre && activos.has(s.clientId));
+    const clientes = sus_sales.map(s => {
+      const c = db.clients.find(x => x.id === s.clientId) || {};
+      const abonos = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0);
+      return {
+        nombre: c.nombre || '—',
+        dir: [c.calle, c.col].filter(Boolean).join(', ') || '—',
+        tel: c.tel || '',
+        folio: s.folio,
+        modalidad: _tipoLblSrv(s.tipo),
+        saldo: saldoDe(s.id), cuota: s.cuota,
+        estados: _ultimas16Cuotas(s, abonos),
+      };
+    });
+    const totalP = clientes.reduce((a,c)=>a+c.estados.filter(e=>e==='p').length, 0);
+    const totalN = clientes.reduce((a,c)=>a+c.estados.filter(e=>e==='n').length, 0);
+    return {
+      cobrador: cob.nombre, sucursal: suc ? suc.nombre : '—', encargada: enc ? enc.nombre : '—',
+      kpis: {
+        clientes: clientes.length,
+        cartera: clientes.reduce((a,x)=>a+x.saldo, 0),
+        atrasoMonto: clientes.filter(c=>c.estados.includes('n')).reduce((a,c)=>a+c.saldo, 0),
+        atrasoClientes: clientes.filter(c=>c.estados.includes('n')).length,
+        eficiencia: (totalP+totalN)>0 ? (totalP/(totalP+totalN)*100) : 0,
+        totalP, totalN
+      },
+      clientes
+    };
+  });
+  res.json({ generadoEn: new Date().toISOString(), reportes });
+});
+
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v6', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, pagoExterno: true, recibirEfectivoCobrador: true, ts: Date.now() }));
+
+/* ---------- Transferencias de cliente entre cobradores ---------- */
+app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
+  const { clientId, nuevoProm, nuevaSucursalId, motivo } = req.body;
+  const c = db.clients.find(x => x.id === +clientId);
+  if (!c) return res.status(404).json({ error: 'Cliente no encontrado' });
+  if (!nuevoProm) return res.status(400).json({ error: 'Indica el cobrador destino' });
+  const deProm = c.prom || '—';
+  if (nuevoProm === deProm && (!nuevaSucursalId || +nuevaSucursalId === c.sucursalId)) {
+    return res.status(400).json({ error: 'El cliente ya está asignado a ese cobrador' });
+  }
+  const fecha = new Date().toISOString();
+  // reasigna el cliente y TODOS sus créditos vigentes (saldo > 0); el historial de movimientos queda intacto (van por saleId)
+  const activosSales = db.sales.filter(s => s.clientId === c.id && saldoDe(s.id) > 0);
+  activosSales.forEach(s => {
+    s.historialCobrador = s.historialCobrador || [];
+    s.historialCobrador.push({ de: s.prom || '—', a: nuevoProm, fecha, por: req.user.nombre });
+    s.prom = nuevoProm;
+    if (nuevaSucursalId) s.sucursalId = +nuevaSucursalId;
+  });
+  c.prom = nuevoProm;
+  if (nuevaSucursalId) c.sucursalId = +nuevaSucursalId;
+  db.transferencias = db.transferencias || [];
+  const reg = {
+    id: nextId('transferencias'), clientId: c.id, cliente: c.nombre,
+    de: deProm, a: nuevoProm, nCreditos: activosSales.length,
+    fecha, por: req.user.nombre, motivo: motivo || ''
+  };
+  db.transferencias.push(reg);
+  saveDB();
+  res.status(201).json({ ok: true, transferidos: activosSales.length, registro: reg });
+});
+app.get('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
+  const log = (db.transferencias || []).slice().reverse();
+  res.json(log);
+});
+app.post('/api/transferencias/lote', auth, rol('admin', 'supervisor'), (req, res) => {
+  const { clientIds, nuevoProm, nuevaSucursalId, motivo } = req.body;
+  if (!Array.isArray(clientIds) || !clientIds.length) return res.status(400).json({ error: 'Selecciona al menos un cliente' });
+  if (!nuevoProm) return res.status(400).json({ error: 'Indica el cobrador destino' });
+  const fecha = new Date().toISOString();
+  let totalClientes = 0, totalCreditos = 0;
+  const fuentes = new Set(); const detalles = [];
+  clientIds.forEach(cid => {
+    const c = db.clients.find(x => x.id === +cid);
+    if (!c) return;
+    if (c.prom === nuevoProm && (!nuevaSucursalId || +nuevaSucursalId === c.sucursalId)) return;
+    const deProm = c.prom || '—'; fuentes.add(deProm);
+    const activos = db.sales.filter(s => s.clientId === c.id && saldoDe(s.id) > 0);
+    activos.forEach(s => {
+      s.historialCobrador = s.historialCobrador || [];
+      s.historialCobrador.push({ de: s.prom || '—', a: nuevoProm, fecha, por: req.user.nombre });
+      s.prom = nuevoProm;
+      if (nuevaSucursalId) s.sucursalId = +nuevaSucursalId;
+    });
+    c.prom = nuevoProm;
+    if (nuevaSucursalId) c.sucursalId = +nuevaSucursalId;
+    totalClientes++; totalCreditos += activos.length;
+    detalles.push({ cliente: c.nombre, de: deProm, nCreditos: activos.length });
+  });
+  if (!totalClientes) return res.status(400).json({ error: 'Ningún cliente requería transferencia (ya estaban asignados al destino)' });
+  db.transferencias = db.transferencias || [];
+  const deTxt = fuentes.size === 1 ? [...fuentes][0] : `${fuentes.size} cobradores`;
+  const reg = {
+    id: nextId('transferencias'), clientId: null,
+    cliente: `Lote · ${totalClientes} cliente(s)`, de: deTxt, a: nuevoProm,
+    nCreditos: totalCreditos, fecha, por: req.user.nombre, motivo: motivo || '', lote: true, detalles
+  };
+  db.transferencias.push(reg);
+  saveDB();
+  res.status(201).json({ ok: true, totalClientes, totalCreditos, registro: reg });
+});
+
+// Sirve el portal (index.html) en "/" y en cualquier ruta que NO sea /api
+
+/* ════════════════════════════════════════════════════════════════
+   MÓDULO DE VOZ (llamadas IVR multitenant vía bridge Zadarma)
+   - Cada agencia llama a sus no-pagos con SUS datos (config.voz / brand)
+   - Créditos por agencia: los carga el Super Admin; 1 crédito = 1 llamada CONTESTADA
+   - Cada llamada queda reportada en Contactos (estilo log de Fantasma)
+   ════════════════════════════════════════════════════════════════ */
+const IVR_BRIDGE_URL   = process.env.IVR_BRIDGE_URL || 'https://ivr.legaxia.uk';
+const IVR_BRIDGE_TOKEN = process.env.IVR_API_TOKEN  || 'legaxi_2026_secreto_xyz123';
+function _tid(){ const s = als.getStore(); return s ? s.tenantId : null; }
+
+// Registra (o acumula) en Contactos que ya se llamó al cliente. Equivalente al seguimiento_log de Fantasma.
+function _registrarLlamadaContacto(clientId, info){
+  const iso = _semanaContactos();
+  let rec = db.contactos.find(k => k.semana===iso && k.clientId===clientId);
+  if(!rec){ rec = { id: nextId('contactos'), semana: iso, clientId }; db.contactos.push(rec); }
+  rec.llamadas = rec.llamadas || [];
+  rec.llamadas.push({ fecha:new Date().toISOString(), resultado:info.resultado, contesto:!!info.contesto, duracion:info.duracion||0, disposition:info.disposition||'', grabacion:info.grabacion||null });
+  rec.ultimaLlamada = { fecha:new Date().toISOString(), resultado:info.resultado, contesto:!!info.contesto, grabacion:info.grabacion||null };
+  const humano = rec.por && rec.por !== 'IVR (automático)';
+  if(!humano && !rec.evidencia){ rec.resultado = String(info.resultado).slice(0,80); rec.por = 'IVR (automático)'; rec.fecha = new Date().toISOString(); }
+  const linea = `📞 ${fechaMxHoyDDMM()} · ${info.resultado}` + (info.grabacion ? ' · 🎙️' : '');
+  rec.nota = (rec.nota ? rec.nota + '\n' : '') + linea;
+  if(rec.nota.length > 1500) rec.nota = rec.nota.slice(-1500);
+  return rec;
+}
+
+// Vista previa: a quién se llamaría (no-pagos de la semana con teléfono)
+app.get('/api/voz/candidatos', auth, rol('admin','supervisor'), (req,res)=>{
+  let rows = _listaContactos(_semanaContactos()).filter(r => String(r.tel||'').replace(/\D/g,'').length >= 10);
+  if(req.user.rol==='sucursal') rows = rows.filter(r => Number(r.sucursalId)===Number(req.user.sucursalId));
+  res.json({ total: rows.length, creditosVoz: (db.config&&db.config.creditosVoz)||0,
+    candidatos: rows.map(r=>({ clientId:r.clientId, nombre:r.nombre, tel:r.tel, saldo:r.monto_atraso, sucursalId:r.sucursalId, yaLlamado: !!(r.gestion && r.gestion.llamado) })) });
+});
+
+// Lanzar lote de llamadas para ESTA agencia (gate por créditos; marca = datos de la agencia)
+app.post('/api/voz/lanzar', auth, rol('admin','supervisor'), async (req,res)=>{
+  const tid = _tid();
+  const creditos = (db.config&&db.config.creditosVoz)||0;
+  if(creditos<=0) return res.status(402).json({ error:'sin_creditos', detalle:'Esta agencia no tiene créditos de voz. Pide al Super Admin que recargue.' });
+  const marca = Object.assign(
+    { despacho: (db.config&&db.config.brand&&db.config.brand.nombre) || 'CobraPro' },
+    (db.config&&db.config.voz) || {}
+  );
+  let rows = _listaContactos(_semanaContactos()).filter(r => String(r.tel||'').replace(/\D/g,'').length >= 10);
+  if(req.body.sucursalId!=null)  rows = rows.filter(r => Number(r.sucursalId)===Number(req.body.sucursalId));
+  if(req.body.soloNoLlamados)    rows = rows.filter(r => !(r.gestion && r.gestion.llamado));
+  rows.sort((a,b)=>(b.monto_atraso||0)-(a.monto_atraso||0)); // prioriza MAYOR atraso, igual que la tabla
+  rows = rows.slice(0, creditos); // con créditos limitados, marca primero a los que más deben
+  if(!rows.length) return res.json({ ok:true, enviados:0, mensaje:'No hay clientes por llamar' });
+  const clientes = rows.map(r=>({ nombre:r.nombre, telefono:r.tel, saldo:r.monto_atraso, clientId:r.clientId }));
+  try{
+    const resp = await fetch(IVR_BRIDGE_URL + '/api/llamar-lote', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + IVR_BRIDGE_TOKEN },
+      body: JSON.stringify({ tenantId: tid, marca, clientes })
+    });
+    const data = await resp.json().catch(()=>({}));
+    if(!resp.ok) return res.status(502).json({ error:'bridge_error', detalle:data.error || ('HTTP '+resp.status), lote:data.lote||null });
+    res.json({ ok:true, enviados: clientes.length, creditosVoz: creditos, marca, bridge: data });
+  }catch(e){ res.status(502).json({ error:'bridge_inaccesible', detalle:e.message }); }
+});
+
+// Estado del lote en curso (proxy al bridge)
+app.get('/api/voz/estado', auth, rol('admin','supervisor'), async (req,res)=>{
+  try{
+    const resp = await fetch(IVR_BRIDGE_URL + '/api/status', { signal: AbortSignal.timeout(5000) });
+    const data = await resp.json();
+    res.json({ ok:true, creditosVoz:(db.config&&db.config.creditosVoz)||0, consumo:(db.config&&db.config.vozConsumo)||0, bridge:data });
+  }catch(e){ res.json({ ok:false, creditosVoz:(db.config&&db.config.creditosVoz)||0, error:'bridge_inaccesible' }); }
+});
+
+// Resultado de la llamada (lo manda el bridge; SIN JWT → resolvemos tenant por tenantId)
+app.post('/api/voz/resultado', async (req,res)=>{
+  const token = (req.headers.authorization||'').replace(/^Bearer\s+/i,'').trim();
+  const expected = process.env.IVR_API_TOKEN || 'legaxi_2026_secreto_xyz123';
+  if(expected && token!==expected) return res.status(401).json({ error:'Token inválido' });
+  const { tenantId, telefono, disposition, duration, event, grabacionUrl } = req.body || {};
+  if(tenantId==null) return res.status(400).json({ error:'tenantId requerido' });
+  if(!telefono)      return res.status(400).json({ error:'telefono requerido' });
+  const blob = await getTenant(+tenantId);
+  if(!blob) return res.status(404).json({ error:'agencia no encontrada' });
+  als.run({ tenantId:+tenantId, db:blob }, ()=>{
+    const tel10 = String(telefono).replace(/\D/g,'').slice(-10);
+    const cli = db.clients.find(c => String(c.tel||'').replace(/\D/g,'').slice(-10)===tel10);
+    if(!cli){ saveRow(+tenantId, blob); return res.json({ ok:true, sinCliente:true }); }
+    if(event==='NOTIFY_RECORD' && grabacionUrl){
+      const rec = db.contactos.find(k => k.semana===_semanaContactos() && k.clientId===cli.id);
+      if(rec){
+        if(rec.ultimaLlamada) rec.ultimaLlamada.grabacion = grabacionUrl;
+        if(rec.llamadas && rec.llamadas.length) rec.llamadas[rec.llamadas.length-1].grabacion = grabacionUrl;
+        rec.nota = (rec.nota ? rec.nota+'\n' : '') + `🎙️ ${grabacionUrl}`;
+      }
+      saveRow(+tenantId, blob); return res.json({ ok:true, grabacion:true });
+    }
+    const dur = parseInt(duration)||0;
+    const disp = String(disposition||'unknown').toLowerCase();
+    let resultado, contesto=false;
+    if(disp==='answered' && dur>=5){ resultado=`✅ Contestó (${dur}s)`; contesto=true; }
+    else if(disp==='answered'){ resultado=`⚠️ Colgó rápido (${dur}s)`; }
+    else if(disp==='busy'){ resultado='⏰ Ocupado'; }
+    else if(disp==='no-answer' || disp==='noanswer'){ resultado='❌ Sin respuesta'; }
+    else if(disp==='cancel' || disp==='cancelled'){ resultado='🚫 Cancelada'; }
+    else if(disp==='failed'){ resultado='⚠️ Falló (número inválido)'; }
+    else { resultado=`${disp} (${dur}s)`; contesto = dur>5; }
+    _registrarLlamadaContacto(cli.id, { resultado, contesto, duracion:dur, disposition:disp, grabacion:grabacionUrl||null });
+    if(contesto){
+      db.config = db.config || {};
+      db.config.creditosVoz = Math.max(0, ((db.config.creditosVoz)||0) - 1);
+      db.config.vozConsumo  = ((db.config.vozConsumo)||0) + 1;
+    }
+    saveRow(+tenantId, blob);
+    res.json({ ok:true, resultado, contesto, creditosVoz:(db.config&&db.config.creditosVoz)||0 });
+  });
+});
+
+// ── Super Admin: cargar créditos y fijar la marca (datos) de una agencia ──
+app.post('/api/super/tenants/:id/voz', auth, superOnly, async (req,res)=>{
+  const tid = +req.params.id;
+  const blob = await getTenant(tid);
+  if(!blob) return res.status(404).json({ error:'Agencia no encontrada' });
+  blob.config = blob.config || {};
+  const { creditos, recargar, despacho, acreedor, telContacto, whatsapp } = req.body || {};
+  if(despacho!=null || acreedor!=null || telContacto!=null || whatsapp!=null){
+    blob.config.voz = blob.config.voz || {};
+    if(despacho!=null)    blob.config.voz.despacho    = String(despacho).slice(0,60);
+    if(acreedor!=null)    blob.config.voz.acreedor    = String(acreedor).slice(0,60);
+    if(telContacto!=null) blob.config.voz.telContacto = String(telContacto).replace(/[^\d]/g,'').slice(0,15);
+    if(whatsapp!=null)    blob.config.voz.whatsapp    = String(whatsapp).replace(/[^\d]/g,'').slice(0,15);
+  }
+  if(creditos!=null) blob.config.creditosVoz = Math.max(0, Math.round(+creditos));
+  if(recargar!=null) blob.config.creditosVoz = Math.max(0, ((blob.config.creditosVoz)||0) + Math.round(+recargar));
+  saveRow(tid, blob);
+  res.json({ ok:true, creditosVoz: blob.config.creditosVoz||0, voz: blob.config.voz||{} });
+});
+
+// ── Super Admin: consumo de voz por agencia ──
+app.get('/api/super/voz/consumo', auth, superOnly, async (req,res)=>{
+  const out = [];
+  for(const t of (SYS.tenants||[])){
+    const b = await getTenant(t.id); if(!b) continue;
+    out.push({ id:t.id, nombre:t.nombre, creditosVoz:(b.config&&b.config.creditosVoz)||0, consumo:(b.config&&b.config.vozConsumo)||0, voz:(b.config&&b.config.voz)||null });
+  }
+  res.json(out);
+});
+
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api')) return next();
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
+});
+
+/* ---------- Arranque (multitenant) ---------- */
+(async () => {
+  const hayIndex = fs.existsSync(path.join(PUBLIC_DIR, 'index.html'));
+  console.log('📁 Carpeta public:', PUBLIC_DIR);
+  console.log('📄 index.html encontrado:', hayIndex ? 'SÍ' : 'NO  ← revisa que public/ esté junto a server.js');
+
+  SYS = await loadSystem();
+  if (!SYS) {
+    // Primer arranque del modelo multitenant: crear el sistema y migrar datos existentes.
+    SYS = { tenants: [], superUsers: [], userIndex: {}, seqTenant: 0 };
+    SYS.superUsers.push({ nombre: 'Super Admin', usuario: 'super', passwordHash: bcrypt.hashSync(process.env.SUPER_PASS || 'super123', 8) });
+
+    const existing = await loadRow(1); // datos previos del sistema mono-tenant (si los hay)
+    if (existing && existing.users) {
+      // migra los datos actuales como Agencia #1, conservando todo
+      existing.config = existing.config || {};
+      existing.config.brand = existing.config.brand || { nombre: 'LeGaXi / Credia' };
+      normalizeTenant(existing);
+      tenantCache[1] = existing; saveRow(1, existing);
+      SYS.seqTenant = 1;
+      SYS.tenants.push({ id: 1, nombre: existing.config.brand.nombre, activo: true, createdAt: new Date().toISOString() });
+      (existing.users || []).forEach(u => { if (u.usuario) SYS.userIndex[u.usuario] = 1; });
+      console.log('🔄 Datos existentes migrados a la Agencia #1 (' + existing.config.brand.nombre + ').');
+    } else {
+      // instalación nueva y limpia: una agencia DEMO de ejemplo
+      const demo = seedDemo('CobraPro Demo');
+      tenantCache[1] = demo; saveRow(1, demo);
+      SYS.seqTenant = 1;
+      SYS.tenants.push({ id: 1, nombre: 'CobraPro Demo', activo: true, createdAt: new Date().toISOString() });
+      (demo.users || []).forEach(u => { if (u.usuario) SYS.userIndex[u.usuario] = 1; });
+      console.log('🌱 Agencia DEMO creada (admin / admin123).');
+    }
+    saveSystem();
+    console.log('🛡  Superadmin creado (super / ' + (process.env.SUPER_PASS || 'super123') + ').');
+  } else {
+    // precarga las agencias en memoria (para login rápido y cron)
+    SYS.userIndex = SYS.userIndex || {};
+    for (const t of (SYS.tenants || [])) { try { await getTenant(t.id); } catch (e) {} }
+  }
+  app.listen(PORT, () => console.log('🚀 CobraPro multitenant en puerto ' + PORT + (USE_PG ? ' (PostgreSQL)' : ' (archivo local)')));
+})().catch(e => { console.error('❌ Error fatal al iniciar:', e); process.exit(1); });
