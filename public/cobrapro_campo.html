@@ -140,7 +140,7 @@
       </div>
     </div>
     <div class="strip">
-      <div class="st"><div class="l">Cobrado</div><div class="v g" id="s-cob">$0</div></div>
+      <div class="st"><div class="l">Cobranza acumulada</div><div class="v g" id="s-cob">$0</div></div>
       <div class="st"><div class="l">Visitas</div><div class="v" id="s-vis">0/0</div></div>
       <div class="st"><div class="l">Recuperación</div><div class="v" id="s-rec">0%</div></div>
     </div>
@@ -268,11 +268,14 @@ async function cargarRuta(){ try{ clientes=await api('GET','/api/mi-ruta'); reco
 function reconstruirEstado(){
   // Reconstruye lo cobrado HOY desde el servidor para que el panel no se reinicie al re-entrar.
   (clientes||[]).forEach(c=>{
-    if((c.cobradoHoy||0)>0 && !(estado[c.id] && estado[c.id].status)){
-      estado[c.id]={status:'pagado', monto:c.cobradoHoy, forma:c.formaHoy||'efectivo', hora:'hoy', fromServer:true};
-    } else if((c.pagoExterno||0)>0 && !(estado[c.id] && estado[c.id].status)){
-      // Pagó en sucursal/JC: cuenta para tu avance, NO es efectivo que tú entregues.
-      estado[c.id]={status:'pagado', monto:c.pagoExterno, forma:c.externoForma||'efectivo', hora:'hoy', fromServer:true, externo:true};
+    const propio=c.cobradoHoy||0, ext=c.pagoExterno||0;
+    if((propio>0 || ext>0) && !(estado[c.id] && estado[c.id].status)){
+      // Cobranza acumulada del cliente = lo que cobró el promotor + lo que pagó en sucursal/JC.
+      // monto = total (avance) · montoPropio = lo que TÚ entregas · montoExterno = NO se entrega.
+      estado[c.id]={ status:'pagado',
+        monto: propio+ext, montoPropio: propio, montoExterno: ext,
+        forma: propio>0 ? (c.formaHoy||'efectivo') : (c.externoForma||'efectivo'),
+        hora:'hoy', fromServer:true, externo: propio>0 ? false : true };
     }
   });
 }
@@ -400,7 +403,7 @@ function render(){
         ${c.atraso>0?`<div><div class="k">Atraso</div><div class="v" style="color:var(--red)">${fmt(c.atraso)} · ${c.diasAtraso}d</div></div>`:''}
       </div>
       ${liq?`<div class="done-tag" style="color:var(--grn)">✓ Liquidado · sin saldo por cobrar</div>`
-       :`${done?(e.externo?`<div class="done-tag" style="color:var(--acc)">✓ Pagó en sucursal ${fmt(e.monto)} · cuenta para tu avance</div>`:`<div class="done-tag">✓ Cobrado ${fmt(e.monto)} · ${formaLbl[e.forma]||''} · ${e.hora} — puedes volver a cobrar</div>`):(visited?`<div class="done-tag" style="color:var(--acc)">● ${e.statusLbl} · ${e.hora}</div>`:'')}
+       :`${done?(e.externo?`<div class="done-tag" style="color:var(--acc)">✓ Pagó en sucursal ${fmt(e.monto)} · cuenta para tu avance</div>`:`<div class="done-tag">✓ Cobrado ${fmt(e.montoPropio!=null?e.montoPropio:e.monto)} · ${formaLbl[e.forma]||''} · ${e.hora}${(e.montoExterno>0)?` · +${fmt(e.montoExterno)} en sucursal`:''} — puedes volver a cobrar</div>`):(visited?`<div class="done-tag" style="color:var(--acc)">● ${e.statusLbl} · ${e.hora}</div>`:'')}
         <div class="cact">
           <button class="b cobrar" onclick="abrirCobro(${c.id})">Cobrar</button>
           <button class="b ghost" onclick="recordatorio(${c.id})" title="Recordatorio de pago">🔔</button>
@@ -412,9 +415,10 @@ function render(){
   // stats (siempre sobre el total, no sobre filtrados)
   const cob=Object.values(estado).filter(e=>e.status==='pagado');
   const totCob=cob.reduce((a,e)=>a+e.monto,0);
-  // efectivo/banco = lo que TÚ cobraste (para entregar). Los pagos en sucursal/JC (externo) suman al avance pero NO aquí.
-  const efectivo=cob.filter(e=>e.forma==='efectivo'&&!e.externo).reduce((a,e)=>a+e.monto,0);
-  const banco=cob.filter(e=>(e.forma==='transferencia'||e.forma==='deposito')&&!e.externo).reduce((a,e)=>a+e.monto,0);
+  // efectivo/banco = SOLO lo que TÚ cobraste (para entregar). La parte de sucursal/JC no se entrega.
+  const propioDe=e=> (e.montoPropio!=null ? e.montoPropio : (e.externo?0:e.monto));
+  const efectivo=cob.filter(e=>e.forma==='efectivo').reduce((a,e)=>a+propioDe(e),0);
+  const banco=cob.filter(e=>e.forma==='transferencia'||e.forma==='deposito').reduce((a,e)=>a+propioDe(e),0);
   const ajuste=cob.filter(e=>e.forma==='ajuste').reduce((a,e)=>a+e.monto,0);
   const vis=Object.values(estado).filter(e=>e.status).length;
   document.getElementById('s-cob').textContent=fmt(totCob);
