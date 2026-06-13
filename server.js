@@ -2491,11 +2491,12 @@ app.get('/api/reports/aging', auth, rol('admin', 'supervisor', 'sucursal'), (req
     const ps = porSuc[sid]; ps.buckets[b.k] += saldo; ps.saldo += saldo;
     if (d > 0) { ps.mora += at.montoAtraso || 0; ps.creditosMora++; }
   });
-  const buckets = BK.map(b => ({ k: b.k, lbl: b.lbl, creditos: tot[b.k].creditos, saldo: Math.round(tot[b.k].saldo), enRiesgo: Math.round(tot[b.k].enRiesgo), pct: saldoTotal > 0 ? Math.round(tot[b.k].saldo / saldoTotal * 100) : 0 }));
-  const carteraVencida = saldoTotal - tot.corriente.saldo;
-  const indiceMora = saldoTotal > 0 ? Math.round(carteraVencida / saldoTotal * 1000) / 10 : 0;
-  const porSucursal = Object.values(porSuc).map(p => ({ ...p, saldo: Math.round(p.saldo), mora: Math.round(p.mora), buckets: Object.fromEntries(Object.entries(p.buckets).map(([k, v]) => [k, Math.round(v)])), pctMora: p.saldo > 0 ? Math.round((p.saldo - p.buckets.corriente) / p.saldo * 1000) / 10 : 0 })).sort((a, b) => b.pctMora - a.pctMora);
-  res.json({ buckets, saldoTotal: Math.round(saldoTotal), carteraVencida: Math.round(carteraVencida), moraMonto: Math.round(moraMonto), creditosMora, indiceMora, porSucursal });
+  // La MORA real = débito vencido (cuotas no pagadas × cuota) = enRiesgo. NO el saldo total del crédito.
+  const buckets = BK.map(b => ({ k: b.k, lbl: b.lbl, creditos: tot[b.k].creditos, saldo: Math.round(tot[b.k].saldo), mora: Math.round(tot[b.k].enRiesgo), pct: moraMonto > 0 ? Math.round(tot[b.k].enRiesgo / moraMonto * 100) : 0 }));
+  const saldoEnRiesgo = saldoTotal - tot.corriente.saldo; // saldo expuesto (créditos con algún atraso) — referencia, NO es la mora
+  const indiceMora = saldoTotal > 0 ? Math.round(moraMonto / saldoTotal * 1000) / 10 : 0; // débito vencido / cartera total
+  const porSucursal = Object.values(porSuc).map(p => ({ ...p, saldo: Math.round(p.saldo), mora: Math.round(p.mora), buckets: Object.fromEntries(Object.entries(p.buckets).map(([k, v]) => [k, Math.round(v)])), pctMora: p.saldo > 0 ? Math.round(p.mora / p.saldo * 1000) / 10 : 0 })).sort((a, b) => b.mora - a.mora);
+  res.json({ buckets, saldoTotal: Math.round(saldoTotal), saldoEnRiesgo: Math.round(saldoEnRiesgo), moraMonto: Math.round(moraMonto), creditosMora, indiceMora, porSucursal });
 });
 /* ---------- P&L mensual (estado de resultados) ----------
    Ingreso = intereses cobrados (cobranza del mes × % interés configurable, porque la cartera
@@ -2705,7 +2706,7 @@ app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, 
   res.json({ generadoEn: new Date().toISOString(), reportes });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v7', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v8', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
