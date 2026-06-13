@@ -539,10 +539,12 @@ app.get('/api/admin/backup', auth, rol('admin'), (req, res) => {
 /* ---------- Flujo JC (Jefe de Crédito): efectivo y entrega de créditos ---------- */
 function jcCajaDe(jcId) {
   const recibido = db.jcEntregas.filter(e => e.jcId == jcId && e.estado === 'recibido').reduce((a, e) => a + (e.monto || 0), 0);
+  // efectivo que el admin le dotó directamente (igual que el supervisor)
+  const dotado = (db.flujo || []).filter(m => m.clase === 'dotacion' && m.destino && m.destino.tipo === 'jc' && m.destino.id == jcId).reduce((a, m) => a + (m.monto || 0), 0);
   const entregado = db.sales.filter(s => s.entrega && s.entrega.jcId == jcId).reduce((a, s) => a + (s.entregaMonto != null ? s.entregaMonto : (s.monto || 0)), 0);
   const recolectado = (db.recolecciones || []).filter(r => r.tipo === 'jc' && r.ref == jcId).reduce((a, r) => a + (r.monto || 0), 0);
   const asign = asignNeto('jc', jcId);
-  return { recibido, entregado, recolectado, asign, saldo: recibido - entregado - recolectado + asign };
+  return { recibido, dotado, entregado, recolectado, asign, saldo: recibido + dotado - entregado - recolectado + asign };
 }
 // ===== Posición de efectivo de quien entrega (nadie usa dinero propio: usa lo recibido/dotado) =====
 function entregaMontoDe(s) { return s.entregaMonto != null ? s.entregaMonto : (s.monto || 0); }
@@ -1093,6 +1095,10 @@ app.post('/api/sales/:id/refin', auth, rol('admin','supervisor','sucursal'), ide
   const prom = nuevoProm || old.prom;
   const r = calcCredito(tipo, plazo, monto, +nuevoDias || plazo);
 
+  // El cliente solo recibe físicamente el NETO (lo demás liquida el crédito viejo y el primer pago).
+  const primerPago = (r.descuentaPP && r.primerPago > 0) ? r.primerPago : 0;
+  const neto = Math.max(0, monto - saldoActual - primerPago);
+
   const hoy = fechaMxHoyDDMM();
   // 1. liquida el viejo con un abono forma=refin
   db.movimientos.push({
@@ -1101,16 +1107,17 @@ app.post('/api/sales/:id/refin', auth, rol('admin','supervisor','sucursal'), ide
     origen: req.user.nombre + ' (REFIN ventanilla)',
     cargo: 0, abono: saldoActual, forma: 'refin'
   });
-  // 2. nuevo crédito
+  // 2. nuevo crédito → va a la BANDEJA DE ENTREGAS. NO cuenta en cartera hasta entregarse (igual que un crédito nuevo).
   const folio = 'F-' + (1100 + nextId('sales'));
   const nuevo = {
     id: nextId('sales'), folio, clientId: old.clientId,
     tipo, plazo, monto, cuota: r.cuota, total: r.total,
     prom, sucursalId: old.sucursalId,
-    refinDe: old.id, entregado: true,
+    refinDe: old.id, entregado: false,
+    entregaMonto: neto,   // efectivo real a entregar al cliente (monto − saldo liquidado − primer pago)
     createdAt: new Date().toISOString(), createdBy: req.user.nombre,
   };
-  if (r.descuentaPP) { nuevo.primerPago = r.primerPago; nuevo.descuentaPP = true; nuevo.entregaMonto = r.entregaCliente; }
+  if (r.descuentaPP) { nuevo.primerPago = r.primerPago; nuevo.descuentaPP = true; }
   db.sales.push(nuevo);
   // 3. disposición del nuevo crédito
   db.movimientos.push({
@@ -1124,8 +1131,6 @@ app.post('/api/sales/:id/refin', auth, rol('admin','supervisor','sucursal'), ide
     db.movimientos.push({ id: nextId('movimientos'), saleId: nuevo.id, fecha: hoy, concepto: 'Primer pago descontado al inicio', origen: 'Origen del crédito (REFIN)', cargo: 0, abono: r.primerPago, forma: 'descuento', sucursalCobro: old.sucursalId, sucursalCredito: old.sucursalId });
   }
 
-  const primerPago = (r.descuentaPP && r.primerPago > 0) ? r.primerPago : 0;
-  const neto = monto - saldoActual - primerPago;
   markIdem(req); saveDB();
   res.status(201).json({
     ok: true,
@@ -1230,14 +1235,34 @@ app.get('/api/mi-ruta', auth, (req, res) => {
     if (c.activo === false) return null;
     const totalAbonado = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0).reduce((a,m)=>a+m.abono,0);
     const at = calcAtraso(s, totalAbonado);
-    // Lo que ESTE cobrador cobró hoy a este cliente (para que su panel no se reinicie al re-entrar)
-    const movsHoy = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0 && m.forma !== 'descuento' && m.fecha === hoy && m.origen === req.user.nombre);
+    // Cobros de HOY a este cliente. Propios (origen=cobrador) vs externos (ventanilla/JC/otros sobre su cliente).
+    const movsHoyAll = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0 && m.forma !== 'descuento' && m.forma !== 'refin' && m.fecha === hoy);
+    const movsHoy = movsHoyAll.filter(m => m.origen === req.user.nombre);
+    const movsExt = movsHoyAll.filter(m => m.origen !== req.user.nombre);
     const cobradoHoy = movsHoy.reduce((a,m)=>a+m.abono,0);
     const formaHoy = movsHoy.length ? (movsHoy[movsHoy.length-1].forma || 'efectivo') : null;
+    const pagoExterno = movsExt.reduce((a,m)=>a+m.abono,0);                 // suma para avance/comisión, NO para entregar
+    const externoForma = movsExt.length ? (movsExt[movsExt.length-1].forma || 'efectivo') : null;
     return { id: s.id, folio: s.folio, nombre: c.nombre || '—', dir: [c.calle, c.col].filter(Boolean).join(', '), tel: c.tel || '', tipo: s.tipo, cuota: s.cuota, saldo: saldoDe(s.id),
-      cobradoHoy, formaHoy,
+      cobradoHoy, formaHoy, pagoExterno, externoForma,
       atraso: at.montoAtraso, diasAtraso: at.diasAtraso, cuotasAtraso: at.cuotasAtraso, cuotasDebidas: at.cuotasDebidas, cuotasPagadas: at.cuotasPagadas, tieneEvidencia: !!s.entrega, op: oportunidadDe(s) };
   }).filter(Boolean));
+});
+/* ---------- Comisión del propio cobrador (semana en curso, tasa que fija el Admin) ----------
+   Misma lógica que /api/reports/comisiones: acredita por dueño del crédito, incluye
+   efectivo/transferencia/depósito/refin, excluye 'descuento'. */
+app.get('/api/mi-comision', auth, rol('cobrador'), (req, res) => {
+  const desdeMs = _desdePeriodo('semana');
+  const tasa = (db.config && db.config.tasaCobrador) || 5;
+  const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
+  const ids = new Set(db.sales.filter(s => s.prom === req.user.nombre && activos.has(s.clientId)).map(s => s.id));
+  const movs = db.movimientos.filter(m => ids.has(m.saleId) && m.abono > 0 && m.forma !== 'descuento' && _parseFechaMx(m.fecha) >= desdeMs);
+  const efe = movs.filter(m => !m.forma || m.forma === 'efectivo').reduce((a,m)=>a+m.abono,0);
+  const tra = movs.filter(m => m.forma === 'transferencia').reduce((a,m)=>a+m.abono,0);
+  const dep = movs.filter(m => m.forma === 'deposito').reduce((a,m)=>a+m.abono,0);
+  const ref = movs.filter(m => m.forma === 'refin').reduce((a,m)=>a+m.abono,0);
+  const cobranza = efe + tra + dep + ref;
+  res.json({ periodo: 'semana', tasa, cobranza, comision: Math.round(cobranza * tasa / 100), npagos: movs.length, desglose: { efectivo: efe, transferencia: tra, deposito: dep, refin: ref } });
 });
 // Evidencias de entrega del cobrador (incluye clientes dados de baja)
 app.get('/api/mi-evidencias', auth, rol('cobrador'), (req, res) => {
