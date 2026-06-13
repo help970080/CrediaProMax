@@ -403,7 +403,8 @@ function render(){
        :`${done?(e.externo?`<div class="done-tag" style="color:var(--acc)">✓ Pagó en sucursal ${fmt(e.monto)} · cuenta para tu avance</div>`:`<div class="done-tag">✓ Cobrado ${fmt(e.monto)} · ${formaLbl[e.forma]||''} · ${e.hora} — puedes volver a cobrar</div>`):(visited?`<div class="done-tag" style="color:var(--acc)">● ${e.statusLbl} · ${e.hora}</div>`:'')}
         <div class="cact">
           <button class="b cobrar" onclick="abrirCobro(${c.id})">Cobrar</button>
-          <button class="b ghost" onclick="whatsapp(${c.id})" title="WhatsApp">✆</button>
+          <button class="b ghost" onclick="recordatorio(${c.id})" title="Recordatorio de pago">🔔</button>
+          <button class="b ghost" onclick="whatsapp(${c.id})" title="Abrir WhatsApp">✆</button>
           <button class="b ghost" onclick="abrirNoPago(${c.id})" title="Sin pago">⊘</button>
         </div>`}
     </div>`;
@@ -511,10 +512,26 @@ function confirmarCobro(){
   document.getElementById('overlay').classList.add('on');
   render();
 }
+function _brand(){ try{ const b=JSON.parse(localStorage.getItem('cobrapro_brand')||'null'); return (b&&b.nombre)?b.nombre:'Su financiera'; }catch(e){ return 'Su financiera'; } }
 function enviarWA(){
   const r=window._lastRecibo; if(!r||!r.tel){toast('Cliente sin teléfono');return;}
   const num=String(r.tel).replace(/\D/g,''); const full=num.startsWith('52')?num:'52'+num;
-  const msg=`*Comprobante de pago — LeGaXi*\n\nCliente: ${r.cliente}\nFolio: ${r.folio}\nMonto recibido: ${r.monto}\nForma: ${r.forma}\nSaldo restante: ${r.saldo}\nFecha: ${r.fecha} ${r.hora}\n\nGracias por su pago.`;
+  const msg=`*Comprobante de pago — ${_brand()}*\n\nCliente: ${r.cliente}\nFolio: ${r.folio}\nMonto recibido: ${r.monto}\nForma: ${r.forma}\nSaldo restante: ${r.saldo}\nFecha: ${r.fecha} ${r.hora}\n\nGracias por su pago.`;
+  window.open(`https://wa.me/${full}?text=${encodeURIComponent(msg)}`,'_blank');
+}
+/* Recordatorio de pago: cordial si está al corriente, firme si trae atraso */
+function recordatorio(id){
+  const c=clientes.find(x=>x.id===id); if(!c){return;}
+  if(!c.tel){ toast('Cliente sin teléfono'); return; }
+  const num=String(c.tel).replace(/\D/g,''); const full=num.startsWith('52')?num:'52'+num;
+  const ag=_brand();
+  const enAtraso=(c.atraso||0)>0 || (c.diasAtraso||0)>0;
+  let msg;
+  if(enAtraso){
+    msg=`*Aviso de pago pendiente — ${ag}*\n\nSr(a). ${c.nombre}, su crédito presenta un atraso de ${c.diasAtraso||0} día(s)`+((c.atraso||0)>0?` por ${fmt(c.atraso)}`:'')+`.\nSaldo total: ${fmt(c.saldo)}.\n\nLe solicitamos regularizar su pago a la brevedad para evitar cargos por mora y afectaciones en su historial crediticio.\nQuedamos atentos a su pago el día de hoy.`;
+  } else {
+    msg=`*Recordatorio de pago — ${ag}*\n\nHola ${c.nombre}, le recordamos amablemente su pago`+(c.cuota?` de ${fmt(c.cuota)}`:'')+`.\nSaldo actual: ${fmt(c.saldo)}.\n\nAgradecemos su puntualidad y confianza. Cualquier duda, con gusto le atendemos.`;
+  }
   window.open(`https://wa.me/${full}?text=${encodeURIComponent(msg)}`,'_blank');
 }
 function whatsapp(id){
