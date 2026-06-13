@@ -178,6 +178,16 @@
 
     <section class="view" id="resumen">
       <div class="big-cut"><div class="l">Efectivo en mano (acumulado)</div><div class="v" id="cut-ef">$0</div></div>
+      <div class="res-card" id="comision-card" style="border-color:var(--grn)">
+        <h3>💰 Mi comisión de la semana</h3>
+        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px">
+          <div style="font-family:'Sora';font-weight:800;font-size:1.9rem;color:var(--grn)" id="cm-ganado">$0</div>
+          <div style="font-size:.8rem;color:var(--dim)">ganado al momento</div>
+        </div>
+        <div class="res-row"><span>Cobranza de la semana</span><span class="v" id="cm-cobranza">$0</span></div>
+        <div class="res-row"><span>Tasa configurada (Admin)</span><span class="v" id="cm-tasa">—</span></div>
+        <div style="font-size:.72rem;color:var(--faint);margin-top:8px;line-height:1.4">Cuenta todo lo cobrado a tus clientes esta semana, incluido lo que paguen en sucursal. Se actualiza al sincronizar.</div>
+      </div>
       <div class="res-card" id="cierre-card">
         <h3>🔒 Cierre de semana</h3>
         <div id="cierre-estado" style="font-size:.85rem;color:var(--dim);margin-bottom:10px">Cargando…</div>
@@ -260,6 +270,9 @@ function reconstruirEstado(){
   (clientes||[]).forEach(c=>{
     if((c.cobradoHoy||0)>0 && !(estado[c.id] && estado[c.id].status)){
       estado[c.id]={status:'pagado', monto:c.cobradoHoy, forma:c.formaHoy||'efectivo', hora:'hoy', fromServer:true};
+    } else if((c.pagoExterno||0)>0 && !(estado[c.id] && estado[c.id].status)){
+      // Pagó en sucursal/JC: cuenta para tu avance, NO es efectivo que tú entregues.
+      estado[c.id]={status:'pagado', monto:c.pagoExterno, forma:c.externoForma||'efectivo', hora:'hoy', fromServer:true, externo:true};
     }
   });
 }
@@ -333,7 +346,7 @@ async function flush(){
       }
       break; // error transitorio (sin conexión / servidor caído): se reintenta después
     }
-  } } finally { _flushing=false; queue=cola.length; render(); if(_did>0){ cargarRuta(); asgCargarCob(); } }
+  } } finally { _flushing=false; queue=cola.length; render(); if(_did>0){ cargarRuta(); asgCargarCob(); cargarComision(); } }
 }
 window.addEventListener('online', flush);
 
@@ -387,7 +400,7 @@ function render(){
         ${c.atraso>0?`<div><div class="k">Atraso</div><div class="v" style="color:var(--red)">${fmt(c.atraso)} · ${c.diasAtraso}d</div></div>`:''}
       </div>
       ${liq?`<div class="done-tag" style="color:var(--grn)">✓ Liquidado · sin saldo por cobrar</div>`
-       :`${done?`<div class="done-tag">✓ Cobrado ${fmt(e.monto)} · ${formaLbl[e.forma]||''} · ${e.hora} — puedes volver a cobrar</div>`:(visited?`<div class="done-tag" style="color:var(--acc)">● ${e.statusLbl} · ${e.hora}</div>`:'')}
+       :`${done?(e.externo?`<div class="done-tag" style="color:var(--acc)">✓ Pagó en sucursal ${fmt(e.monto)} · cuenta para tu avance</div>`:`<div class="done-tag">✓ Cobrado ${fmt(e.monto)} · ${formaLbl[e.forma]||''} · ${e.hora} — puedes volver a cobrar</div>`):(visited?`<div class="done-tag" style="color:var(--acc)">● ${e.statusLbl} · ${e.hora}</div>`:'')}
         <div class="cact">
           <button class="b cobrar" onclick="abrirCobro(${c.id})">Cobrar</button>
           <button class="b ghost" onclick="whatsapp(${c.id})" title="WhatsApp">✆</button>
@@ -398,8 +411,9 @@ function render(){
   // stats (siempre sobre el total, no sobre filtrados)
   const cob=Object.values(estado).filter(e=>e.status==='pagado');
   const totCob=cob.reduce((a,e)=>a+e.monto,0);
-  const efectivo=cob.filter(e=>e.forma==='efectivo').reduce((a,e)=>a+e.monto,0);
-  const banco=cob.filter(e=>e.forma==='transferencia'||e.forma==='deposito').reduce((a,e)=>a+e.monto,0);
+  // efectivo/banco = lo que TÚ cobraste (para entregar). Los pagos en sucursal/JC (externo) suman al avance pero NO aquí.
+  const efectivo=cob.filter(e=>e.forma==='efectivo'&&!e.externo).reduce((a,e)=>a+e.monto,0);
+  const banco=cob.filter(e=>(e.forma==='transferencia'||e.forma==='deposito')&&!e.externo).reduce((a,e)=>a+e.monto,0);
   const ajuste=cob.filter(e=>e.forma==='ajuste').reduce((a,e)=>a+e.monto,0);
   const vis=Object.values(estado).filter(e=>e.status).length;
   document.getElementById('s-cob').textContent=fmt(totCob);
@@ -579,7 +593,7 @@ document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
   t.classList.add('on');document.getElementById(t.dataset.v).classList.add('on');
-  if(t.dataset.v==='resumen') cargarCierreCob();
+  if(t.dataset.v==='resumen'){ cargarCierreCob(); cargarComision(); }
 });
 /* ===== Cierre de semana (cobrador) ===== */
 let _cierreCob=null;
@@ -603,7 +617,16 @@ async function toggleCierreCob(btn){
   try{ await api('POST','/api/cierre-semana/'+(cerrar?'cerrar':'reabrir'),{}); toast(cerrar?'✓ Cerraste tu semana':'Semana reabierta'); await cargarCierreCob(); }
   catch(e){ toast(e.message); } finally{ btn.disabled=false; }
 }
-cargarRuta(); flush(); checkMiCorte(); cargarJC(); cargarCierreCob();
+/* ===== Comisión de la semana (cobrador) ===== */
+async function cargarComision(){
+  try{
+    const d=await api('GET','/api/mi-comision');
+    const g=document.getElementById('cm-ganado'); if(g) g.textContent=fmt(d.comision||0);
+    const cb=document.getElementById('cm-cobranza'); if(cb) cb.textContent=fmt(d.cobranza||0);
+    const ts=document.getElementById('cm-tasa'); if(ts) ts.textContent=(d.tasa||0)+'%';
+  }catch(e){}
+}
+cargarRuta(); flush(); checkMiCorte(); cargarJC(); cargarCierreCob(); cargarComision();
 // Ping de ubicación para el rastreo del admin/supervisor (mientras la app está abierta)
 function _pingUbic(){ if(!navigator.geolocation) return; navigator.geolocation.getCurrentPosition(function(p){ try{ api('POST','/api/ubicacion/ping',{lat:p.coords.latitude,lng:p.coords.longitude}); }catch(e){} }, function(){}, {enableHighAccuracy:false,timeout:8000,maximumAge:120000}); }
 _pingUbic(); setInterval(_pingUbic, 180000);
