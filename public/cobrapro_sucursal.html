@@ -542,9 +542,10 @@ function enviarWA(){
   const r=window._lastRecibo; if(!r) return;
   if(!r.tel){ toast('El cliente no tiene teléfono'); return; }
   const num=String(r.tel).replace(/\D/g,''); const full=num.startsWith('52')?num:'52'+num;
+  let _ag='Su financiera'; try{ const b=JSON.parse(localStorage.getItem('cobrapro_brand')||'null'); if(b&&b.nombre) _ag=b.nombre; }catch(e){}
   const msg = r.esRefin
-    ? `*REFIN aplicado — LeGaXi*\n\nCliente: ${r.cliente}\nCrédito anterior: ${r.oldFolio} (liquidado)\nNuevo crédito: ${r.folio}\nMonto del nuevo crédito: ${fmt(r.nuevoMonto)}\nSaldo nuevo: ${r.saldo}\nNeto recibido: ${fmt(r.neto)}\nFecha: ${r.fecha} ${r.hora}\n\nGracias por su confianza.`
-    : `*Comprobante de pago — LeGaXi*\n\nCliente: ${r.cliente}\nFolio: ${r.folio}\nMonto recibido: ${r.monto}\nForma: ${r.forma}\nSaldo restante: ${r.saldo}\nFecha: ${r.fecha} ${r.hora}\n\nGracias por su pago.`;
+    ? `*REFIN aplicado — ${_ag}*\n\nCliente: ${r.cliente}\nCrédito anterior: ${r.oldFolio} (liquidado)\nNuevo crédito: ${r.folio}\nMonto del nuevo crédito: ${fmt(r.nuevoMonto)}\nSaldo nuevo: ${r.saldo}\nNeto recibido: ${fmt(r.neto)}\nFecha: ${r.fecha} ${r.hora}\n\nGracias por su confianza.`
+    : `*Comprobante de pago — ${_ag}*\n\nCliente: ${r.cliente}\nFolio: ${r.folio}\nMonto recibido: ${r.monto}\nForma: ${r.forma}\nSaldo restante: ${r.saldo}\nFecha: ${r.fecha} ${r.hora}\n\nGracias por su pago.`;
   window.open(`https://wa.me/${full}?text=${encodeURIComponent(msg)}`,'_blank');
 }
 function cerrar(){document.getElementById('overlay').classList.remove('on');_buscar();}
