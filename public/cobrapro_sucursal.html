@@ -165,6 +165,7 @@
     <button class="snb" data-vw="cartera" onclick="setVw('cartera')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">📁 Cartera de crédito</button>
     <button class="snb" data-vw="contactos" onclick="setVw('contactos')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">📇 Contactos</button>
     <button class="snb" data-vw="oport" onclick="setVw('oport')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">🎯 Oportunidades</button>
+    <button class="snb" data-vw="mora" onclick="setVw('mora')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">📉 Mora</button>
   </div>
   <div id="view-op">
   <div class="grid">
@@ -298,6 +299,22 @@
       <h3 style="margin:0 0 6px;color:var(--grn)">➕ PARALELO · <span id="op-nparal">0</span></h3>
       <div style="color:var(--faint);font-size:.8rem;margin:0 0 10px">Buen pagador (≥50% pagado). Puede llevar un segundo crédito sin liquidar el actual.</div>
       <div style="overflow-x:auto"><table><thead><tr><th>Cliente</th><th>Cobrador</th><th>Modalidad</th><th class="n">% pagado</th><th class="n">Saldo</th><th class="n">Oferta</th></tr></thead><tbody id="op-paral-rows"></tbody></table></div>
+    </div>
+  </div>
+
+  <div id="view-mora" style="display:none">
+    <div class="panel">
+      <h2 style="margin:0 0 4px">📉 Aging de mora · mi sucursal</h2>
+      <div style="color:var(--dim);font-size:.85rem;margin:0 0 12px">Tu cartera clasificada por días de atraso. Mientras más a la derecha, más riesgo de no recuperar.</div>
+      <div class="frow">
+        <div class="field"><label>Cartera vigente</label><div id="ag-cartera" style="font-family:'Sora';font-weight:800;font-size:1.3rem">$0</div></div>
+        <div class="field"><label>Cartera vencida</label><div id="ag-vencida" style="font-family:'Sora';font-weight:800;font-size:1.3rem;color:var(--red)">$0</div></div>
+        <div class="field"><label>Índice de mora</label><div id="ag-indice" style="font-family:'Sora';font-weight:800;font-size:1.3rem">0%</div></div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:14px">
+      <h3 style="margin:0 0 10px">Cubetas de morosidad (por días de atraso)</h3>
+      <div style="overflow-x:auto"><table><thead><tr><th>Antigüedad</th><th class="n">Créditos</th><th class="n">Saldo</th><th>Distribución</th><th class="n">%</th></tr></thead><tbody id="ag-rows"></tbody></table></div>
     </div>
   </div>
 
@@ -929,10 +946,12 @@ function setVw(vw){
   document.getElementById('view-cartera').style.display=vw==='cartera'?'':'none';
   document.getElementById('view-contactos').style.display=vw==='contactos'?'':'none';
   document.getElementById('view-oport').style.display=vw==='oport'?'':'none';
+  document.getElementById('view-mora').style.display=vw==='mora'?'':'none';
   if(vw==='resumen') cargarResumen();
   if(vw==='cartera') cargarCartSuc();
   if(vw==='contactos') cargarContactos();
   if(vw==='oport') cargarOportSuc();
+  if(vw==='mora') cargarMoraSuc();
 }
 let _periodoSuc='semana', _dashSuc=null, _cobObj={};
 function setPeriodoSuc(p){
@@ -1119,6 +1138,17 @@ function pintaCartSuc(){
   });
   document.getElementById('cs-count').textContent=rows.length+' crédito(s) · saldo total '+fmt(rows.reduce((a,s)=>a+Math.max(0,s.saldo||0),0));
   document.getElementById('cs-rows').innerHTML=rows.slice(0,500).map(s=>`<tr><td>${s.cliente||'—'}<div style="font-size:.74rem;color:var(--faint)">${s.folio||''}</div></td><td>${s.prom||'—'}</td><td>${TIPO_LBL[s.tipo]||s.tipo}</td><td class="n">${fmt(s.cuota||0)}</td><td class="n" style="color:${s.saldo>0?'var(--txt)':'var(--grn)'}">${s.saldo>0?fmt(s.saldo):'Liquidado'}</td></tr>`).join('')||'<tr><td colspan="5" style="text-align:center;color:var(--faint);padding:16px">Sin resultados.</td></tr>';
+}
+/* ===== Aging de mora (mi sucursal) ===== */
+async function cargarMoraSuc(){
+  try{
+    const d=await api('GET','/api/reports/aging');
+    document.getElementById('ag-cartera').textContent=fmt(d.saldoTotal);
+    document.getElementById('ag-vencida').textContent=fmt(d.carteraVencida);
+    document.getElementById('ag-indice').textContent=d.indiceMora+'%';
+    const col={corriente:'var(--grn)',b1:'#9bbf2e',b2:'var(--acc)',b3:'#e08a1e',b4:'#dc6a1e',b5:'var(--red)'};
+    document.getElementById('ag-rows').innerHTML=d.buckets.map(b=>`<tr><td>${b.lbl}</td><td class="n">${b.creditos}</td><td class="n">${fmt(b.saldo)}</td><td style="min-width:110px"><div style="background:var(--surf-2);border-radius:6px;height:15px;overflow:hidden"><i style="display:block;height:100%;width:${b.pct}%;background:${col[b.k]||'var(--acc)'}"></i></div></td><td class="n">${b.pct}%</td></tr>`).join('');
+  }catch(e){ document.getElementById('ag-rows').innerHTML='<tr><td colspan="5" style="color:var(--red);padding:10px">'+e.message+'</td></tr>'; }
 }
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));t.classList.add('on');document.getElementById(t.dataset.v).classList.add('on');});
 
