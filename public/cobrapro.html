@@ -1018,6 +1018,16 @@ function pintaComisiones(d){
     <td class="n" style="color:var(--red);padding-top:13px">−${fmt(sm)}</td><td class="n cm" style="font-size:1.05rem;padding-top:13px">${fmt(sn)}</td></tr>`;
 }
 
+async function recibirEfectivoCob(prom, monto){
+  const op=prompt(`Recibir ${fmt(monto)} de ${prom}.\n\n¿A dónde lo recibes?\n  1 = Admin / Tesorería (tú)\n  2 = Caja de su sucursal\n\nEscribe 1 o 2:`,'1');
+  if(op===null) return;
+  const destino = op.trim()==='2' ? 'sucursal' : 'admin';
+  try{
+    const d=await apiU('POST','/api/cobrador/recibir-efectivo',{prom,destino});
+    alert(`✓ Recibido ${fmt(d.recibido)} de ${prom} → ${d.destinoNombre}.`+(d.restante>0?`\nLe quedan ${fmt(d.restante)} por entregar.`:''));
+    await cargarDashboard();
+  }catch(e){ alert(e.message); }
+}
 function pintaConciliacion(d){
   const esp=d.totales.recuperado_periodo;
   const ent=d.totales.en_caja_efectivo+d.totales.en_caja_banco; // dinero ya recibido en caja
@@ -1027,7 +1037,10 @@ function pintaConciliacion(d){
     const color=_sucColor[i%_sucColor.length]; const ini=(p.nombre||'').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
     const cls=p.por_entregar<1?'doc':'dbad'; const lbl=p.por_entregar<1?'Sin pendientes':'Por entregar';
     return `<div class="recon"><div class="lf"><div class="ava" style="background:${color}">${ini}</div><div><div class="nm">${p.nombre}</div><div class="sn">Cobrado ${fmt(p.comisionable!=null?p.comisionable:p.pagos_recibidos)} · Por entregar ${fmt(p.por_entregar)}</div></div></div>
-      <div class="mono ${cls}" style="font-weight:600;text-align:right">${p.por_entregar>=1?'+':''}${fmt(Math.abs(p.por_entregar))}<div style="font-size:.68rem;font-weight:400">${lbl}</div></div></div>`;
+      <div style="text-align:right">
+        <div class="mono ${cls}" style="font-weight:600">${p.por_entregar>=1?'+':''}${fmt(Math.abs(p.por_entregar))}<div style="font-size:.68rem;font-weight:400">${lbl}</div></div>
+        ${p.por_entregar>=1?`<button class="btn gold" style="padding:3px 9px;font-size:.72rem;margin-top:5px" onclick="recibirEfectivoCob('${(p.nombre||'').replace(/'/g,"\\'")}',${Math.round(p.por_entregar)})">✓ Recibir</button>`:''}
+      </div></div>`;
   }).join('') : '<div style="color:var(--faint);padding:8px">Sin cobradores.</div>';
   $('rc-suc').innerHTML=d.por_sucursal.map((s,i)=>{
     const color=_sucColor[i%_sucColor.length];
