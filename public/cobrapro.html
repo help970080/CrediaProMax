@@ -721,6 +721,7 @@
           <button class="btn mapa-chip" data-f="vencido" onclick="mapaFiltro('vencido')">🔴 Vencidos</button>
         </div>
         <span id="mapa-stat" style="font-size:.8rem;color:var(--dim);margin-left:auto"></span>
+        <button class="btn" id="mapa-yo-btn" onclick="mapaMiUbicacion()" style="background:#2563eb;color:#fff">📍 Mi ubicación</button>
         <button class="btn gold" id="mapa-geo-btn" onclick="mapaGeocodificar()">📍 Ubicar clientes por dirección</button>
       </div>
       <div id="leaflet-map" style="height:62vh;min-height:420px;width:100%;border-radius:10px;border:1px solid var(--line);background:var(--surf-2)"></div>
@@ -2228,12 +2229,44 @@ function pintarMapa(){
       <span style="color:#666;font-size:11px">📍 ${c.dir||'—'}</span><br>
       <div style="margin:5px 0;padding:4px 6px;background:#f4f4f4;border-radius:4px"><b>Saldo: $${(c.saldo||0).toLocaleString('es-MX')}</b></div>
       👤 ${c.cobrador} · 🏪 ${c.sucursal}<br>
-      <span style="display:inline-block;margin-top:4px;padding:2px 8px;border-radius:10px;font-size:11px;color:#fff;background:${ESTADO_COLOR[c.estado]}">${ESTADO_NOM[c.estado]}</span></div>`);
+      <span style="display:inline-block;margin-top:4px;padding:2px 8px;border-radius:10px;font-size:11px;color:#fff;background:${ESTADO_COLOR[c.estado]}">${ESTADO_NOM[c.estado]}</span>
+      <button onclick="mapaNavegar(${c.lat},${c.lng})" style="margin-top:8px;width:100%;padding:7px;border:0;border-radius:7px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer;font-size:13px">🧭 Cómo llegar</button></div>`);
     return m;
   });
   if(_cluster.addLayers) _cluster.addLayers(markers); else markers.forEach(m=>_cluster.addLayer(m));
 }
 function mapaFiltro(f){ _mapaFiltro=f; document.querySelectorAll('#mapa-chips .mapa-chip').forEach(b=>b.classList.toggle('on',b.dataset.f===f)); pintarMapa(); }
+/* ===== Mi ubicación + navegación a un cliente ===== */
+let _miUbic=null, _miMarker=null, _navLine=null;
+function mapaMiUbicacion(){
+  const btn=document.getElementById('mapa-yo-btn');
+  if(!navigator.geolocation){ alert('Este dispositivo no permite ubicación (GPS).'); return; }
+  if(btn){ btn.textContent='📍 Ubicando…'; btn.disabled=true; }
+  navigator.geolocation.getCurrentPosition(p=>{
+    _miUbic={lat:p.coords.latitude,lng:p.coords.longitude};
+    if(_map){
+      if(_miMarker) _map.removeLayer(_miMarker);
+      _miMarker=L.circleMarker([_miUbic.lat,_miUbic.lng],{radius:9,fillColor:'#2563eb',color:'#fff',weight:3,fillOpacity:1}).addTo(_map).bindPopup('📍 Tú estás aquí').openPopup();
+      _map.setView([_miUbic.lat,_miUbic.lng],14);
+    }
+    if(btn){ btn.textContent='📍 Mi ubicación ✓'; btn.disabled=false; }
+  },err=>{
+    if(btn){ btn.textContent='📍 Mi ubicación'; btn.disabled=false; }
+    alert('No se pudo obtener tu ubicación. Activa el GPS y permite el acceso a "ubicación" en el navegador.');
+  },{enableHighAccuracy:true,timeout:10000,maximumAge:30000});
+}
+function mapaNavegar(lat,lng){
+  const dest=lat+','+lng;
+  let url;
+  if(_miUbic){
+    url=`https://www.google.com/maps/dir/?api=1&origin=${_miUbic.lat},${_miUbic.lng}&destination=${dest}&travelmode=driving`;
+    if(_map){ if(_navLine) _map.removeLayer(_navLine); _navLine=L.polyline([[_miUbic.lat,_miUbic.lng],[lat,lng]],{color:'#2563eb',weight:3,dashArray:'6,8',opacity:.7}).addTo(_map); }
+  } else {
+    // Sin "Mi ubicación" capturada: Google Maps usa la ubicación del dispositivo como origen.
+    url=`https://www.google.com/maps/dir/?api=1&destination=${dest}&travelmode=driving`;
+  }
+  window.open(url,'_blank');
+}
 // ===== Rastreo de equipo =====
 let _rmap=null,_rlayer=null,_rTimer=null;
 const ROL_COLOR={cobrador:'#2563eb',jc:'#7c5ce0',sucursal:'#178a55',supervisor:'#e0a012'};
