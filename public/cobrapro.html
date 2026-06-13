@@ -216,7 +216,7 @@
     <button class="navitem" data-v="usuarios"><span class="ic">👤</span> Usuarios</button>
     <button class="navitem" data-v="mapa"><span class="ic">🗺️</span> Mapa de clientes</button>
     <button class="navitem" data-v="simulador"><span class="ic">🖩</span> Simulador de crédito</button>
-    <button class="navitem" data-v="extras" id="nav-extras"><span class="ic">🕵️</span> Extras · Prestanombres</button>
+    <button class="navitem" data-v="extras" id="nav-extras"><span class="ic">🧮</span> Extras · P&L</button>
   </nav>
   <div class="side-foot">
     <div class="live"><span class="dot"></span> Sincronizado en vivo</div>
@@ -765,6 +765,29 @@
       .ex-mem{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-top:1px dotted var(--line);font-size:.8rem}
       .ex-mem .mc{color:var(--faint);font-size:.72rem}
     </style>
+    <div class="panel">
+      <div class="ph"><h3>💰 P&L mensual · mes en curso</h3><span class="hint" id="pl-tasas">—</span></div>
+      <div id="pl-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;padding:8px"></div>
+      <div style="overflow-x:auto;padding:8px"><table><thead><tr><th>Sucursal</th><th class="n">Cobranza</th><th class="n">Interés</th><th class="n">Comisiones</th><th class="n">Gastos fijos</th><th class="n">Castigo</th><th class="n">Utilidad</th></tr></thead><tbody id="pl-rows"></tbody></table></div>
+    </div>
+    <details class="panel" style="padding:0">
+      <summary style="cursor:pointer;padding:14px 16px;font-family:'Sora';font-weight:700;list-style:none">⚙️ Captura de gastos fijos y % de interés (admin) — abrir / cerrar</summary>
+      <div style="padding:0 16px 16px">
+        <div style="background:var(--surf-1);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:14px;font-size:.82rem;line-height:1.6;color:var(--dim)">
+          <b style="color:var(--txt)">Cómo llenarlo:</b><br>
+          • <b>% interés de la cartera:</b> de cada peso que cobras, cuánto es ganancia (interés) y no recuperación de capital. Para créditos con factor ~1.3 ronda <b>23–30%</b>. Ajústalo a tu realidad.<br>
+          • <b>Gastos fijos por sucursal</b> (mensuales): captúralos <b>una sola vez</b>; se aplican cada mes. Solo regresas a editar cuando algo cambie (sube la renta, entra un sueldo).<br>
+          • <b>Varios / hormiga:</b> un estimado mensual del goteo de gastos chicos (papelería, transporte, etc.) sin itemizar.<br>
+          • <b>Castigo (incobrables):</b> estimación de lo que no recuperarás. Usa el reporte <b>Aging de mora → 60+ días</b> como referencia.<br>
+          El sistema calcula solo el <b>interés</b> (cobranza × %) y las <b>comisiones</b> (tasa del cobrador × cobranza). Tú solo capturas los gastos.
+        </div>
+        <label style="font-size:.85rem;color:var(--dim)">% de interés de la cartera
+          <input type="number" id="pl-tasaint" min="0" max="100" step="1" style="width:80px;background:var(--surf);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:5px 8px;margin-left:6px">
+        </label>
+        <div style="overflow-x:auto;margin-top:12px"><table><thead><tr><th>Sucursal</th><th class="n">Renta</th><th class="n">Sueldos</th><th class="n">Servicios</th><th class="n">Tecnología</th><th class="n">Fondeo</th><th class="n">Varios</th><th class="n">Castigo</th></tr></thead><tbody id="pl-gastos-rows"></tbody></table></div>
+        <button class="btn gold" style="margin-top:12px" onclick="guardarPL()">💾 Guardar gastos y recalcular</button>
+      </div>
+    </details>
     <div class="panel">
       <div class="ph"><h3>🕵️ Detector de prestanombres</h3><span class="hint">Agrupa clientes que comparten teléfono, domicilio o apellidos. Sirve para detectar identidades recicladas, créditos cruzados o cartera inflada por un cobrador.</span></div>
       <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;padding:8px 2px 14px;font-size:.85rem">
@@ -1466,18 +1489,19 @@ async function rpVerAging(){
     const d=await apiU('GET','/api/reports/aging');
     _rpActual='aging'; _rpData=d;
     const col={corriente:'var(--grn)',b1:'#9bbf2e',b2:'var(--acc)',b3:'#e08a1e',b4:'#dc6a1e',b5:'var(--red)'};
-    const bk=d.buckets.map(b=>`<tr><td>${b.lbl}</td><td class="n">${b.creditos}</td><td class="n">${fmt(b.saldo)}</td><td style="min-width:120px"><div style="background:var(--surf-2);border-radius:6px;height:15px;overflow:hidden"><i style="display:block;height:100%;width:${b.pct}%;background:${col[b.k]||'var(--acc)'}"></i></div></td><td class="n">${b.pct}%</td></tr>`).join('');
-    const sucs=d.porSucursal.map(s=>`<tr><td>${s.nombre}</td><td class="n">${fmt(s.saldo)}</td><td class="n" style="color:${s.mora>0?'var(--red)':'var(--faint)'}">${fmt(s.mora)}</td><td class="n">${s.creditosMora}</td><td class="n" style="color:${s.pctMora>15?'var(--red)':'var(--txt)'}">${s.pctMora}%</td></tr>`).join('')||'<tr><td colspan="5" style="color:var(--faint);padding:10px">—</td></tr>';
+    const bk=d.buckets.map(b=>`<tr><td>${b.lbl}</td><td class="n">${b.creditos}</td><td class="n">${fmt(b.mora)}</td><td style="min-width:120px"><div style="background:var(--surf-2);border-radius:6px;height:15px;overflow:hidden"><i style="display:block;height:100%;width:${b.pct}%;background:${col[b.k]||'var(--acc)'}"></i></div></td><td class="n">${b.pct}%</td></tr>`).join('');
+    const sucs=d.porSucursal.map(s=>`<tr><td>${s.nombre}</td><td class="n">${fmt(s.saldo)}</td><td class="n" style="color:${s.mora>0?'var(--red)':'var(--faint)'};font-weight:700">${fmt(s.mora)}</td><td class="n">${s.creditosMora}</td><td class="n">${s.pctMora}%</td></tr>`).join('')||'<tr><td colspan="5" style="color:var(--faint);padding:10px">—</td></tr>';
     rpAbrir('📉 Aging de mora',`
+      <div style="background:var(--surf-1);border:1px solid var(--line);border-radius:8px;padding:8px 11px;margin-bottom:12px;font-size:.78rem;color:var(--dim)">La <b style="color:var(--txt)">mora</b> es el <b style="color:var(--txt)">débito vencido</b> (cuotas no pagadas × cuota), <b>no</b> el saldo total del crédito. Si un cliente debe 1 pago, su mora es 1 cuota.</div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px">
-        <div class="kpi" style="padding:10px"><div class="l">Cartera vigente</div><div class="v" style="font-size:1.3rem">${fmt(d.saldoTotal)}</div></div>
-        <div class="kpi" style="padding:10px;border-color:var(--red)"><div class="l">Cartera vencida</div><div class="v" style="font-size:1.3rem;color:var(--red)">${fmt(d.carteraVencida)}</div></div>
+        <div class="kpi" style="padding:10px"><div class="l">Cartera total</div><div class="v" style="font-size:1.3rem">${fmt(d.saldoTotal)}</div></div>
+        <div class="kpi" style="padding:10px;border-color:var(--red)"><div class="l">En mora (débito vencido)</div><div class="v" style="font-size:1.3rem;color:var(--red)">${fmt(d.moraMonto)}</div></div>
         <div class="kpi" style="padding:10px"><div class="l">Índice de mora</div><div class="v" style="font-size:1.3rem">${d.indiceMora}%</div></div>
       </div>
-      <h4 style="margin:6px 0;font-size:.85rem">Cubetas de morosidad (por días de atraso)</h4>
-      <table class="rp-table"><thead><tr><th>Antigüedad</th><th class="n">Créditos</th><th class="n">Saldo</th><th>Distribución</th><th class="n">%</th></tr></thead><tbody>${bk}</tbody></table>
+      <h4 style="margin:6px 0;font-size:.85rem">Cubetas de morosidad · débito vencido por días de atraso</h4>
+      <table class="rp-table"><thead><tr><th>Antigüedad</th><th class="n">Créditos</th><th class="n">Débito vencido</th><th>Distribución</th><th class="n">%</th></tr></thead><tbody>${bk}</tbody></table>
       <h4 style="margin:16px 0 6px;font-size:.85rem">Por sucursal (mayor mora primero)</h4>
-      <table class="rp-table"><thead><tr><th>Sucursal</th><th class="n">Cartera</th><th class="n">En mora</th><th class="n">Créd. en mora</th><th class="n">% mora</th></tr></thead><tbody>${sucs}</tbody></table>`);
+      <table class="rp-table"><thead><tr><th>Sucursal</th><th class="n">Cartera</th><th class="n">En mora (débito)</th><th class="n">Créd. en mora</th><th class="n">% mora</th></tr></thead><tbody>${sucs}</tbody></table>`);
   }catch(e){ alert(e.message); }
 }
 async function rpVerAtraso(){
@@ -2205,7 +2229,7 @@ document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
   if(n.dataset.v==='mapa') initMapa();
   if(n.dataset.v==='comisiones' && !_comisCargado) cargarComisiones();
   if(n.dataset.v==='asignar') initAsignar();
-  if(n.dataset.v==='extras') initExtras();
+  if(n.dataset.v==='extras'){ initExtras(); cargarPL(); }
 });
 document.querySelectorAll('#period button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#period button').forEach(x=>x.classList.remove('on'));b.classList.add('on');period=b.dataset.p;render();});
 ['c-cob','c-meta','c-bono','c-mora','c-coloc'].forEach(id=>document.getElementById(id).oninput=render);
@@ -2704,6 +2728,41 @@ function exEsPlaceholder(nombre){ const s=exNorm(nombre); return s.length<4 || /
 function exColorCob(name){ let h=0; const s=String(name||'-'); for(let i=0;i<s.length;i++){h=(h*31+s.charCodeAt(i))|0;} return 'hsl('+(((h%360)+360)%360)+' 60% 55%)'; }
 const EX_RKCOLOR={alta:'#d6432d',media:'#e0a012',baja:'#97a2b2'};
 
+let _plData=null;
+async function cargarPL(){
+  try{ _plData=await apiU('GET','/api/pl'); renderPL(); }
+  catch(e){ const r=document.getElementById('pl-rows'); if(r) r.innerHTML='<tr><td colspan="7" style="color:var(--red);padding:10px">'+e.message+'</td></tr>'; }
+}
+function renderPL(){
+  if(!_plData) return;
+  const p=_plData.pl, c=p.consolidado, uC=c.utilidad>=0?'var(--grn)':'var(--red)';
+  const tt=document.getElementById('pl-tasas'); if(tt) tt.textContent='Interés '+p.tasaInteres+'% · Comisión '+p.tasaCobrador+'% · solo mes en curso';
+  document.getElementById('pl-kpis').innerHTML=
+    `<div class="kpi" style="padding:10px"><div class="l">Ingreso por intereses</div><div class="v" style="font-size:1.3rem">${fmt(c.interes)}</div></div>`+
+    `<div class="kpi" style="padding:10px"><div class="l">Comisiones</div><div class="v" style="font-size:1.3rem">${fmt(c.comisiones)}</div></div>`+
+    `<div class="kpi" style="padding:10px"><div class="l">Gastos fijos</div><div class="v" style="font-size:1.3rem">${fmt(c.gastosFijos)}</div></div>`+
+    `<div class="kpi" style="padding:10px"><div class="l">Castigo</div><div class="v" style="font-size:1.3rem">${fmt(c.castigo)}</div></div>`+
+    `<div class="kpi" style="padding:10px;border-color:${uC}"><div class="l">Utilidad neta</div><div class="v" style="font-size:1.3rem;color:${uC}">${fmt(c.utilidad)}</div></div>`+
+    `<div class="kpi" style="padding:10px"><div class="l">Margen</div><div class="v" style="font-size:1.3rem">${c.margen}%</div></div>`;
+  document.getElementById('pl-rows').innerHTML=p.porSucursal.map(s=>`<tr><td>${s.nombre}</td><td class="n">${fmt(s.cobranza)}</td><td class="n">${fmt(s.interes)}</td><td class="n">${fmt(s.comisiones)}</td><td class="n">${fmt(s.gastos)}</td><td class="n">${fmt(s.castigo)}</td><td class="n" style="color:${s.utilidad>=0?'var(--grn)':'var(--red)'};font-weight:700">${fmt(s.utilidad)}</td></tr>`).join('')||'<tr><td colspan="7" style="color:var(--faint);padding:10px">Sin movimientos este mes</td></tr>';
+  const ti=document.getElementById('pl-tasaint'); if(ti) ti.value=_plData.tasaInteres;
+  const g=_plData.gastos||{};
+  document.getElementById('pl-gastos-rows').innerHTML=_plData.sucursales.map(su=>{
+    const x=g[su.id]||{};
+    const inp=k=>`<input type="number" data-suc="${su.id}" data-k="${k}" value="${+x[k]||0}" style="width:88px;background:var(--surf);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:4px 6px;text-align:right">`;
+    return `<tr><td>${su.nombre}</td><td class="n">${inp('renta')}</td><td class="n">${inp('sueldos')}</td><td class="n">${inp('servicios')}</td><td class="n">${inp('tecnologia')}</td><td class="n">${inp('fondeo')}</td><td class="n">${inp('varios')}</td><td class="n">${inp('incobrables')}</td></tr>`;
+  }).join('');
+}
+async function guardarPL(){
+  const tasaInteres=+document.getElementById('pl-tasaint').value||0;
+  const gastos={};
+  document.querySelectorAll('#pl-gastos-rows input[data-suc]').forEach(i=>{ const sid=i.dataset.suc; gastos[sid]=gastos[sid]||{}; gastos[sid][i.dataset.k]=+i.value||0; });
+  try{
+    const d=await apiU('POST','/api/pl/config',{tasaInteres,gastos});
+    _plData.tasaInteres=d.tasaInteres; _plData.gastos=d.gastos; _plData.pl=d.pl;
+    renderPL(); alert('✓ Guardado y recalculado.');
+  }catch(e){ alert(e.message); }
+}
 async function initExtras(){
   const k=document.getElementById('ex-kpis');
   if(!_exData){
