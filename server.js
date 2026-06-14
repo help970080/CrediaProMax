@@ -1921,6 +1921,7 @@ app.patch('/api/config', auth, rol('admin','supervisor'), (req, res) => {
   if (req.body.corteAutoHora) db.config.corteAutoHora = req.body.corteAutoHora;
   if (Array.isArray(req.body.corteAutoDias)) db.config.corteAutoDias = req.body.corteAutoDias;
   if (req.body.semanaInicio != null) db.config.semanaInicio = Math.min(6, Math.max(0, +req.body.semanaInicio));
+  if (typeof req.body.mostrarMembrete === 'boolean') { db.config.brand = db.config.brand || {}; db.config.brand.mostrarMembrete = req.body.mostrarMembrete; }
   if (req.body.brandNombre && req.user.rol === 'admin') {
     db.config.brand = db.config.brand || {};
     db.config.brand.nombre = String(req.body.brandNombre).trim();
@@ -2716,7 +2717,57 @@ app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, 
   res.json({ generadoEn: new Date().toISOString(), reportes });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v10', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, ts: Date.now() }));
+/* ---------- Ayuda con IA (asistente embebido) ----------
+   Proxy seguro a la API de Anthropic. La API key vive SOLO en el servidor (env var
+   ANTHROPIC_API_KEY en Render), nunca en el navegador. Protegido por auth (solo personal). */
+const _ayudaUltimo = {};
+const AYUDA_SYS = `Eres el asistente de ayuda integrado de CobraPro (también llamado CrediaProMax), un sistema de cobranza y crédito para agencias en México. Tu única función es explicar, en español de México, cómo se usa el sistema y resolver dudas de la operación de cobranza. Responde BREVE, claro y práctico (2-6 frases). No inventes funciones que no existan. Si te preguntan algo ajeno al sistema o a la cobranza, redirige con amabilidad.
+
+Roles: admin (todo), supervisor (ve todo y reportes), sucursal/encargada (su caja, cartera, contactos, cierre de su sucursal), JC (custodio de efectivo de campo), cobrador (ruta de cobro en campo con su app).
+
+Módulos y qué hacen:
+- Resumen / Números Diarios: cobranza por gerencia y sucursal, del día y acumulado de la semana; "no pago" = clientes con cobro esperado que no abonaron.
+- Cartera de crédito: saldos y semáforo por cliente.
+- Estado de cuenta: libro de cargos y abonos, moratorios.
+- Bandeja de entregas: créditos por entregar; el cobrador los toma y entrega con evidencia.
+- Conciliación: corte esperado vs entregado del efectivo.
+- Flujo / Tesorería: efectivo del admin; dotación a la operación, nómina, capital.
+- Asignar efectivo: mover efectivo entre puestos; el que recibe confirma.
+- Reportes: comisiones (tasa × cobranza), aging de mora, entregas, sin ventas.
+- Aging de mora: cartera por días de atraso. La MORA es el débito vencido (cuotas no pagadas × cuota), NO el saldo total del crédito.
+- P&L mensual: estado de resultados; ingreso = intereses (cobranza × % configurable), menos comisiones, gastos fijos y castigo.
+- Contactos: clientes que no pagaron la semana; se registra la gestión (resultado de visita, evidencia) y se pueden imprimir cartas (invitación cordial o requerimiento extrajudicial).
+- Oportunidades: REFIN (refinanciar saldo) y PARALELO (crédito adicional a buen cliente).
+- Mapa / Rastreo: ubicación de clientes y del equipo en campo.
+- App del cobrador: Mi ruta (cobrar, recordatorio WhatsApp), Mi efectivo (efectivo en mano, comisión de la semana, entregar efectivo).
+
+Conceptos: la semana es un ciclo configurable (semanaInicio); "efectivo en mano / por entregar" es el efectivo que el cobrador aún no entrega; comisión sobre cobranza; convenio = acuerdo de pago. El que recibe efectivo siempre confirma.`;
+app.post('/api/ayuda', auth, async (req, res) => {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) return res.json({ respuesta: 'La ayuda con IA aún no está activada. El administrador debe agregar la variable ANTHROPIC_API_KEY en Render (Environment) con una API key de Anthropic.' });
+  const pregunta = String(req.body.pregunta || '').slice(0, 1000).trim();
+  if (!pregunta) return res.status(400).json({ error: 'Falta la pregunta' });
+  const modulo = String(req.body.modulo || '').slice(0, 80);
+  const uk = (req.user && req.user.id) || req.ip;
+  if (_ayudaUltimo[uk] && Date.now() - _ayudaUltimo[uk] < 1200) return res.status(429).json({ error: 'Espera un momento entre preguntas.' });
+  _ayudaUltimo[uk] = Date.now();
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001', max_tokens: 600,
+        system: AYUDA_SYS + `\n\nEl usuario tiene rol "${req.user.rol}" y está en el módulo "${modulo || 'general'}". Ajusta la respuesta a lo que ese rol puede hacer.`,
+        messages: [{ role: 'user', content: pregunta }]
+      })
+    });
+    const d = await r.json();
+    if (d.error) return res.status(502).json({ error: 'IA: ' + (d.error.message || 'error') });
+    const txt = (d.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+    res.json({ respuesta: txt || 'No pude generar una respuesta. Reformula tu pregunta.' });
+  } catch (e) { res.status(502).json({ error: 'No se pudo consultar la ayuda: ' + e.message }); }
+});
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v11', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaIA: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
