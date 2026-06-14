@@ -1044,6 +1044,62 @@ async function cargarContactos(){
     pintaContactos();
   }catch(e){ document.getElementById('ct-list').innerHTML='<div style="color:var(--red);padding:12px">'+e.message+'</div>'; }
 }
+function ctCarta(cid, tipo){
+  const r=((_ctData&&_ctData.rows)||[]).find(x=>x.clientId===cid);
+  if(!r){ toast('No se encontró el cliente'); return; }
+  const ag=(typeof BRAND!=='undefined'&&BRAND&&BRAND.nombre)?BRAND.nombre:'Su financiera';
+  let suc=''; try{ suc=((document.querySelector('h1')||{}).textContent||'').trim(); }catch(e){}
+  const hoy=new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
+  const nombre=r.nombre||'—', folio=r.folio||'—', dir=r.direccion||'(domicilio registrado en su contrato)';
+  const venc=fmt(r.monto_atraso||0), saldo=fmt(r.saldo||0), ult=r.ultima_fecha_pago||'sin registro';
+  const head=`
+    <div style="border-bottom:3px solid #111;padding-bottom:10px;margin-bottom:20px">
+      <div style="font-size:22px;font-weight:800;letter-spacing:.5px">${ag}</div>
+      <div style="font-size:12px;color:#555">${suc}</div></div>
+    <div style="text-align:right;font-size:12px;color:#555;margin-bottom:16px">${hoy}</div>
+    <div style="font-size:13px"><b>${nombre}</b></div>
+    <div style="font-size:12px;color:#444;margin-bottom:18px">${dir}</div>`;
+  const datos=`
+    <table style="font-size:12px;border-collapse:collapse;margin:14px 0;width:100%">
+      <tr><td style="padding:3px 8px;color:#555">Crédito / folio:</td><td style="padding:3px 8px;font-weight:700">${folio}</td>
+          <td style="padding:3px 8px;color:#555">Último pago:</td><td style="padding:3px 8px;font-weight:700">${ult}</td></tr>
+      <tr><td style="padding:3px 8px;color:#555">Adeudo vencido:</td><td style="padding:3px 8px;font-weight:700;color:#b00">${venc}</td>
+          <td style="padding:3px 8px;color:#555">Saldo total:</td><td style="padding:3px 8px;font-weight:700">${saldo}</td></tr></table>`;
+  let titulo, cuerpo, cierre;
+  if(tipo==='invitacion'){
+    titulo='Invitación a regularizar su crédito';
+    cuerpo=`
+      <p>Estimado(a) <b>${nombre}</b>, reciba un cordial saludo de parte de <b>${ag}</b>.</p>
+      <p>Le escribimos de manera atenta para recordarle que su crédito presenta un pago pendiente. Entendemos que cualquier persona puede atravesar una situación complicada, por lo que nuestra intención es <b>apoyarle a ponerse al corriente</b> de la manera más conveniente para usted.</p>
+      ${datos}
+      <p>Le <b>invitamos</b> a acercarse a nuestra sucursal o a comunicarse con nosotros a la brevedad para cubrir su adeudo o, si lo prefiere, <b>acordar un convenio de pago</b> a su medida. Mantener su crédito al corriente le permite conservar un buen historial y seguir contando con nuestro respaldo.</p>
+      <p>Agradecemos su atención y quedamos a sus órdenes para cualquier aclaración.</p>`;
+    cierre=`<p style="margin-top:24px">Atentamente,</p>
+      <p style="margin-top:32px;border-top:1px solid #111;display:inline-block;padding-top:4px;font-size:12px">${ag} · ${suc}</p>`;
+  } else {
+    titulo='Requerimiento extrajudicial de pago';
+    cuerpo=`
+      <p>Por medio del presente, <b>${ag}</b> le <b>REQUIERE formalmente el pago</b> del adeudo vencido derivado del crédito que usted celebró, documentado mediante el <b>pagaré y contrato de crédito</b> que usted suscribió.</p>
+      ${datos}
+      <p>Se le concede un plazo de <b>5 (cinco) días hábiles</b>, contados a partir de la recepción del presente, para cubrir el adeudo vencido o bien <b>celebrar un convenio de pago</b> ante nuestra sucursal.</p>
+      <p>De no atender este requerimiento dentro del plazo señalado, <b>${ag}</b> se reserva el derecho de ejercer las acciones de cobranza que en derecho correspondan, incluyendo la <b>vía judicial mercantil</b> con base en el título de crédito (pagaré), el cual constituye <b>título ejecutivo</b> en términos de la Ley General de Títulos y Operaciones de Crédito, así como el reporte de su comportamiento de pago ante las <b>sociedades de información crediticia</b>.</p>
+      <p>Lo anterior se hace de su conocimiento en estricto apego a derecho y con pleno respeto a sus derechos como consumidor. Le exhortamos a regularizar su situación a la brevedad.</p>`;
+    cierre=`<p style="margin-top:24px">Sin otro particular, y en espera de su pronta atención,</p>
+      <p style="margin-top:32px;border-top:1px solid #111;display:inline-block;padding-top:4px;font-size:12px">${ag} · ${suc}<br><span style="color:#666">Departamento de Cobranza</span></p>
+      <p style="font-size:10px;color:#888;margin-top:22px;border-top:1px solid #ddd;padding-top:8px">El presente es un acto de <b>cobranza extrajudicial</b>. Usted tiene derecho a solicitar aclaraciones y a celebrar convenios de pago. Esta comunicación no constituye una demanda judicial ni un mandamiento de autoridad.</p>`;
+  }
+  const html='<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>'+titulo+' · '+nombre+'</title>'
+    +'<style>@page{size:A4;margin:22mm}body{font-family:Georgia,"Times New Roman",serif;color:#1a1a1a;line-height:1.6;font-size:13px;max-width:720px;margin:0 auto;padding:12px}'
+    +'h2{font-size:15px;text-transform:uppercase;letter-spacing:.5px;margin:0 0 16px;text-align:center}p{margin:0 0 11px;text-align:justify}'
+    +'@media print{.noprint{display:none}}.noprint{position:fixed;top:10px;right:10px}'
+    +'.noprint button{font-family:Arial;font-size:13px;padding:9px 16px;border:0;border-radius:8px;background:#111;color:#fff;cursor:pointer}</style></head><body>'
+    +'<div class="noprint"><button onclick="window.print()">🖨 Imprimir / Guardar PDF</button></div>'
+    +head+'<h2>'+titulo+'</h2>'+cuerpo+cierre+'</body></html>';
+  const w=window.open('','_blank','width=820,height=920');
+  if(!w){ toast('Permite las ventanas emergentes para generar la carta'); return; }
+  w.document.write(html); w.document.close(); w.focus();
+  setTimeout(()=>{ try{ w.print(); }catch(e){} }, 450);
+}
 function pintaContactos(){
   if(!_ctData) return;
   const q=(document.getElementById('ct-q').value||'').toLowerCase();
@@ -1081,6 +1137,10 @@ function pintaContactos(){
         <label class="bd-b" style="flex:1;min-width:130px;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer">📷 <span class="ct-foto-t">${g.tieneEvidencia?'Cambiar evidencia':'Subir evidencia'}</span><input type="file" accept="image/*" capture="environment" style="display:none" onchange="ctLeerFoto(this,${r.clientId})"></label>
         ${g.tieneEvidencia?`<button class="bd-b" style="flex:0 0 auto" onclick="ctVerFoto(${g.id})">👁 Ver</button>`:''}
         <button class="bd-b gold" style="flex:1;min-width:120px" onclick="ctGuardar(${r.clientId},this)">💾 Guardar</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
+        <button class="bd-b" style="flex:1;min-width:130px" onclick="ctCarta(${r.clientId},'invitacion')">📄 Carta invitación</button>
+        <button class="bd-b" style="flex:1;min-width:130px" onclick="ctCarta(${r.clientId},'firme')">⚖️ Requerimiento</button>
       </div>
       <div class="ct-foto-badge" style="margin-top:4px">${evBadge}</div>
     </div>`;
