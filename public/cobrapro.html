@@ -1887,6 +1887,15 @@ async function cargarCortes(){
         ${c.estado!=='recibido' && c.totalEfectivo>0?`<button class="btn gold" style="padding:4px 9px;font-size:.72rem;margin-top:4px" onclick="recibirCorte(${c.id})">✓ Recibir</button> `:''}<button class="btn" style="padding:4px 9px;font-size:.72rem;margin-top:4px" onclick="borrarCorte(${c.id})">Borrar</button></div></div>`).join('') : '<div style="color:var(--faint);padding:12px;font-size:.85rem">Sin cortes registrados hoy.</div>';
   }catch(e){ $('cortes-list').innerHTML='<div style="color:var(--red);padding:12px">'+e.message+'</div>'; }
 }
+async function guardarMembrete(){
+  const mostrarMembrete=$('cfg-membrete').checked;
+  try{
+    await apiU('PATCH','/api/config',{mostrarMembrete});
+    alert(mostrarMembrete
+      ? '✓ Membrete ACTIVADO. Los recibos y cartas mostrarán el nombre de la agencia.'
+      : '✓ Membrete DESACTIVADO. Los documentos NO mostrarán la marca de la agencia. Los usuarios lo verán al volver a iniciar sesión.');
+  }catch(e){ alert(e.message); $('cfg-membrete').checked=!mostrarMembrete; }
+}
 async function guardarConfigCorte(){
   const corteAutoHora=$('cfg-hora').value||'19:00';
   const corteAutoDias=Array.from(document.querySelectorAll('.cfg-d:checked')).map(x=>+x.value).sort();
