@@ -2451,7 +2451,12 @@ async function cargarNumDiarios(){
 }
 async function ndCambiarInicio(v){
   _ndInicio=+v;
-  try{ await apiU('PATCH','/api/config',{ semanaInicio:_ndInicio }); }catch(e){}
+  const _d=['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+  const _fin=_d[(_ndInicio+6)%7];
+  try{
+    await apiU('PATCH','/api/config',{ semanaInicio:_ndInicio });
+    alert('✓ Semana guardada: inicia '+_d[_ndInicio]+' y cierra '+_fin+'.\nAplica a TODOS los reportes: cobranza semanal, comisiones, ranking, atraso, aging y Números Diarios.');
+  }catch(e){ alert('⚠️ NO se pudo guardar el inicio de semana: '+e.message+'\nEl cambio NO quedó aplicado. Intenta de nuevo.'); }
   cargarNumDiarios();
 }
 function _ndFechaCorta(iso){ if(!iso) return ''; const [y,m,d]=iso.split('-').map(Number); const dd=new Date(y,m-1,d); const dias=['domingo','lunes','martes','miércoles','jueves','viernes','sábado']; const mes=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']; return dias[dd.getDay()]+' '+String(d).padStart(2,'0')+'-'+mes[m-1]; }
