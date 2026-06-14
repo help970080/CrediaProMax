@@ -1650,9 +1650,9 @@ function _listaContactos(iso){
   espCli.forEach((s,clientId)=>{
     if(pagoSemana.has(clientId)) return; // sí pagó esa semana → no es contacto
     const c=db.clients.find(x=>x.id===clientId)||{};
-    let atraso=0; db.sales.filter(x=>x.clientId===clientId && saldoDe(x.id)>0).forEach(x=>{ atraso+=_vencidoDe(x); });
+    let atraso=0, saldoTot=0; db.sales.filter(x=>x.clientId===clientId && saldoDe(x.id)>0).forEach(x=>{ atraso+=_vencidoDe(x); saldoTot+=saldoDe(x.id); });
     const rec=db.contactos.find(k=>k.semana===iso && k.clientId===clientId)||null;
-    rows.push({ clientId, saleId:s.id, sucursalId:s.sucursalId, cobrador:s.prom||'—',
+    rows.push({ clientId, saleId:s.id, sucursalId:s.sucursalId, cobrador:s.prom||'—', folio:s.folio||'—', saldo:Math.round(saldoTot),
       nombre:c.nombre||'—', direccion:[c.calle,c.col,c.ciudad].filter(Boolean).join(', '), tel:c.tel||'',
       monto_atraso:Math.round(atraso), ultima_fecha_pago:_ultimaFechaPago(clientId),
       gestion: rec? { id:rec.id, resultado:rec.resultado||'', nota:rec.nota||'', tieneEvidencia:!!rec.evidencia, por:rec.por||null, fecha:rec.fecha||null, validado:!!rec.validado, validadoPor:rec.validadoPor||null, validadoFecha:rec.validadoFecha||null, llamado:!!(rec.llamadas&&rec.llamadas.length), ultimaLlamada:rec.ultimaLlamada||null } : null });
@@ -2716,7 +2716,7 @@ app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, 
   res.json({ generadoEn: new Date().toISOString(), reportes });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v9', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v10', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
