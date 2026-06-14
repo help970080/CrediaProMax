@@ -2717,57 +2717,55 @@ app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, 
   res.json({ generadoEn: new Date().toISOString(), reportes });
 });
 
-/* ---------- Ayuda con IA (asistente embebido) ----------
-   Proxy seguro a la API de Anthropic. La API key vive SOLO en el servidor (env var
-   ANTHROPIC_API_KEY en Render), nunca en el navegador. Protegido por auth (solo personal). */
-const _ayudaUltimo = {};
-const AYUDA_SYS = `Eres el asistente de ayuda integrado de CobraPro (también llamado CrediaProMax), un sistema de cobranza y crédito para agencias en México. Tu única función es explicar, en español de México, cómo se usa el sistema y resolver dudas de la operación de cobranza. Responde BREVE, claro y práctico (2-6 frases). No inventes funciones que no existan. Si te preguntan algo ajeno al sistema o a la cobranza, redirige con amabilidad.
+/* ---------- Ayuda integrada (FAQ estática, sin IA) ----------
+   Respuestas ya escritas a las dudas más comunes. Una sola fuente de verdad aquí;
+   el widget de cada app las consume y las filtra por app (admin/sucursal/campo) y por búsqueda.
+   apps: ['admin','sucursal','campo'] · cat = categoría para agrupar. */
+const AYUDA_FAQ = [
+  // ----- General / acceso -----
+  { cat: 'General', apps: ['admin', 'sucursal', 'campo'], q: '¿Qué es CobraPro?', a: 'CobraPro (también CrediaProMax) es el sistema de cobranza y crédito de tu agencia. Concentra clientes, créditos, pagos, cartera, reportes y el efectivo de la operación. Cada rol (admin, sucursal, cobrador) ve solo lo que le toca.' },
+  { cat: 'General', apps: ['admin', 'sucursal', 'campo'], q: 'No puedo entrar / la sesión se cerró', a: 'La sesión dura 12 horas; al vencer hay que volver a iniciar sesión con tu usuario y contraseña. Si no recuerdas tu contraseña, el administrador de tu agencia puede regenerártela desde Usuarios. Verifica que escribes bien el usuario (sin espacios).' },
+  { cat: 'General', apps: ['admin', 'sucursal', 'campo'], q: '¿Por qué un cambio que hizo el admin no me aparece?', a: 'Algunos ajustes (como el membrete, el inicio de semana o tus datos) viajan al iniciar sesión. Si el admin acaba de cambiarlos, cierra sesión y vuelve a entrar para verlos.' },
 
-Roles: admin (todo), supervisor (ve todo y reportes), sucursal/encargada (su caja, cartera, contactos, cierre de su sucursal), JC (custodio de efectivo de campo), cobrador (ruta de cobro en campo con su app).
+  // ----- Admin: alta y catálogos -----
+  { cat: 'Configuración (admin)', apps: ['admin'], q: '¿Cómo doy de alta una sucursal o un cobrador?', a: 'Entra a Usuarios y accesos. Ahí creas sucursales y das de alta usuarios (encargada de sucursal, cobrador, supervisor), cada uno con su usuario y contraseña. El cobrador entra desde la app de campo con esos datos.' },
+  { cat: 'Configuración (admin)', apps: ['admin'], q: '¿Cómo importo muchos créditos de golpe?', a: 'Usa el importador masivo: subes el Excel de la cartera y el sistema crea clientes y créditos en bloque (idempotente, no duplica si lo repites). El saldo inicial entra como un cargo de apertura.' },
+  { cat: 'Configuración (admin)', apps: ['admin'], q: '¿Cómo configuro las comisiones?', a: 'En Reportes → Comisiones defines la tasa (% sobre la cobranza) por sucursal o cobrador. El reporte aplica ese % a lo cobrado en el periodo. Los descuentos/REFIN y el primer pago descontado no cuentan como cobranza para comisión.' },
+  { cat: 'Configuración (admin)', apps: ['admin'], q: '¿Cómo configuro el corte automático del efectivo?', a: 'En Configuración → Corte automático eliges la hora y los días. Si el cobrador no entrega antes de esa hora, el sistema corta solo y deja marcada la diferencia para que la revises. También puedes forzar el corte de un cobrador.' },
+  { cat: 'Configuración (admin)', apps: ['admin'], q: '¿Cómo cambio el día en que inicia la semana?', a: 'En Números Diarios usa el selector "Inicia semana"; al elegir el día se guarda en la configuración y se aplica a todos los reportes semanales (cobranza, no pagos, comisiones). Por ejemplo, si tu agencia corta los miércoles, elige Miércoles.' },
+  { cat: 'Configuración (admin)', apps: ['admin'], q: '¿Cómo quito o pongo el membrete en los documentos?', a: 'En Configuración → "Membrete en documentos" hay un switch "Mostrar membrete". Apágalo y los recibos de WhatsApp y las cartas saldrán sin el nombre/marca de la agencia (útil si imprimen en papel membretado propio). Los usuarios lo ven al volver a entrar.' },
 
-Módulos y qué hacen:
-- Resumen / Números Diarios: cobranza por gerencia y sucursal, del día y acumulado de la semana; "no pago" = clientes con cobro esperado que no abonaron.
-- Cartera de crédito: saldos y semáforo por cliente.
-- Estado de cuenta: libro de cargos y abonos, moratorios.
-- Bandeja de entregas: créditos por entregar; el cobrador los toma y entrega con evidencia.
-- Conciliación: corte esperado vs entregado del efectivo.
-- Flujo / Tesorería: efectivo del admin; dotación a la operación, nómina, capital.
-- Asignar efectivo: mover efectivo entre puestos; el que recibe confirma.
-- Reportes: comisiones (tasa × cobranza), aging de mora, entregas, sin ventas.
-- Aging de mora: cartera por días de atraso. La MORA es el débito vencido (cuotas no pagadas × cuota), NO el saldo total del crédito.
-- P&L mensual: estado de resultados; ingreso = intereses (cobranza × % configurable), menos comisiones, gastos fijos y castigo.
-- Contactos: clientes que no pagaron la semana; se registra la gestión (resultado de visita, evidencia) y se pueden imprimir cartas (invitación cordial o requerimiento extrajudicial).
-- Oportunidades: REFIN (refinanciar saldo) y PARALELO (crédito adicional a buen cliente).
-- Mapa / Rastreo: ubicación de clientes y del equipo en campo.
-- App del cobrador: Mi ruta (cobrar, recordatorio WhatsApp), Mi efectivo (efectivo en mano, comisión de la semana, entregar efectivo).
+  // ----- Admin: reportes y análisis -----
+  { cat: 'Reportes (admin)', apps: ['admin'], q: '¿Qué son los Números Diarios?', a: 'Es el tablero de cobranza por gerencia, sucursal y cobrador: cuánto se cobró hoy y el acumulado de la semana. Incluye los "no pagos" del día, que son los clientes que tenían cobro esperado y no abonaron.' },
+  { cat: 'Reportes (admin)', apps: ['admin', 'sucursal'], q: '¿Qué significa "no pago"?', a: 'Es un crédito que ya existía antes de iniciar la semana y al que le tocaba pagar, pero no registró abono. Sirve para detectar rápido a quién hay que ir a visitar. No es lo mismo que la mora en pesos.' },
+  { cat: 'Reportes (admin)', apps: ['admin', 'sucursal'], q: '¿Qué es el aging de mora y el índice de mora?', a: 'El aging clasifica la cartera por días de atraso (al corriente, 1-7, 8-14, 15-30, 31-60, 60+). La MORA en pesos es el débito vencido (cuotas no pagadas × cuota), NO el saldo total. El índice de mora es esa mora vencida entre el saldo total de la cartera.' },
+  { cat: 'Reportes (admin)', apps: ['admin'], q: '¿Cómo funciona el P&L / estado de resultados?', a: 'El P&L estima la utilidad del mes: ingreso = intereses (cobranza del mes × el % de interés que configures), menos comisiones de cobradores, menos gastos fijos (renta, sueldos, servicios, etc.) que capturas por sucursal, menos el castigo de incobrables. Te queda la utilidad por sucursal y total.' },
+  { cat: 'Reportes (admin)', apps: ['admin'], q: '¿Qué son los objetivos y los semáforos?', a: 'Defines metas (por ejemplo de cobranza o de colocación) y el sistema pinta un semáforo según el avance: verde si vas bien, amarillo en riesgo, rojo abajo de la meta. Te da una lectura rápida del desempeño.' },
+  { cat: 'Reportes (admin)', apps: ['admin'], q: '¿Dónde veo el desglose por sucursal y por promotor?', a: 'En el desglose de 3 niveles: Empresa → Sucursal → Promotor/Cobrador. Vas abriendo cada nivel para ver la cobranza y la cartera de cada quien.' },
 
-Conceptos: la semana es un ciclo configurable (semanaInicio); "efectivo en mano / por entregar" es el efectivo que el cobrador aún no entrega; comisión sobre cobranza; convenio = acuerdo de pago. El que recibe efectivo siempre confirma.`;
-app.post('/api/ayuda', auth, async (req, res) => {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return res.json({ respuesta: 'La ayuda con IA aún no está activada. El administrador debe agregar la variable ANTHROPIC_API_KEY en Render (Environment) con una API key de Anthropic.' });
-  const pregunta = String(req.body.pregunta || '').slice(0, 1000).trim();
-  if (!pregunta) return res.status(400).json({ error: 'Falta la pregunta' });
-  const modulo = String(req.body.modulo || '').slice(0, 80);
-  const uk = (req.user && req.user.id) || req.ip;
-  if (_ayudaUltimo[uk] && Date.now() - _ayudaUltimo[uk] < 1200) return res.status(429).json({ error: 'Espera un momento entre preguntas.' });
-  _ayudaUltimo[uk] = Date.now();
-  try {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001', max_tokens: 600,
-        system: AYUDA_SYS + `\n\nEl usuario tiene rol "${req.user.rol}" y está en el módulo "${modulo || 'general'}". Ajusta la respuesta a lo que ese rol puede hacer.`,
-        messages: [{ role: 'user', content: pregunta }]
-      })
-    });
-    const d = await r.json();
-    if (d.error) return res.status(502).json({ error: 'IA: ' + (d.error.message || 'error') });
-    const txt = (d.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
-    res.json({ respuesta: txt || 'No pude generar una respuesta. Reformula tu pregunta.' });
-  } catch (e) { res.status(502).json({ error: 'No se pudo consultar la ayuda: ' + e.message }); }
-});
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v12', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaIA: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, mostrarMembrete: true, ts: Date.now() }));
+  // ----- Sucursal / caja -----
+  { cat: 'Sucursal', apps: ['sucursal'], q: '¿Cómo registro un pago en ventanilla?', a: 'En la operación de la sucursal buscas al cliente o su folio, capturas el monto y la forma de pago (efectivo, transferencia) y registras. El sistema actualiza el saldo y te genera el recibo, que puedes enviar por WhatsApp.' },
+  { cat: 'Sucursal', apps: ['sucursal'], q: '¿Cómo confirmo la entrega de efectivo de un cobrador?', a: 'En la caja aparece lo "por entregar" de cada cobrador. Cuando te entrega el efectivo, confirmas la entrega y entra a tu caja. El que recibe efectivo siempre confirma; así cuadra el corte.' },
+  { cat: 'Sucursal', apps: ['sucursal'], q: '¿Cómo doy un crédito nuevo?', a: 'En Nuevo crédito eliges al cliente (o lo das de alta), el tipo y plazo, y el sistema calcula la cuota. Al disponer el crédito se genera el cargo de apertura y, si aplica, el primer pago descontado.' },
+  { cat: 'Sucursal', apps: ['sucursal'], q: '¿Qué es un REFIN y cómo lo hago?', a: 'REFIN es refinanciar: liquidas el crédito actual y abres uno nuevo. Desde el modal de REFIN se liquida el saldo viejo, se descuenta el primer pago como movimiento de "descuento" (no cuenta como cobranza) y queda el nuevo crédito con su saldo. El cliente recibe el neto.' },
+  { cat: 'Sucursal', apps: ['sucursal'], q: '¿Cómo genero una carta de cobranza?', a: 'En Contactos, cada cliente con atraso tiene dos botones: "Carta invitación" (cordial, para acercarlo a regularizar) y "Requerimiento" (requerimiento extrajudicial firme, apegado a derecho). Se abre lista para imprimir o guardar como PDF.' },
+  { cat: 'Sucursal', apps: ['sucursal'], q: '¿Qué muestra el panel de la sucursal?', a: 'Tiene tres vistas: Operación (el día a día de cobro y caja), Resumen (cómo va la sucursal) y Cartera (saldos y semáforo de tus clientes).' },
+
+  // ----- Cobrador / campo -----
+  { cat: 'Cobrador', apps: ['campo'], q: '¿Cómo registro un abono en mi ruta?', a: 'En Mi ruta tocas al cliente, capturas el monto cobrado y la forma de pago, y registras. El saldo se actualiza al momento y se genera el recibo para enviarlo por WhatsApp.' },
+  { cat: 'Cobrador', apps: ['campo'], q: '¿Cómo envío el recibo o un recordatorio por WhatsApp?', a: 'Después de registrar el pago, toca "Enviar por WhatsApp" y se abre el chat del cliente con el comprobante listo. Para los que no han pagado, el botón de recordatorio manda un mensaje (cordial si está al corriente, firme si trae atraso).' },
+  { cat: 'Cobrador', apps: ['campo'], q: '¿Cómo ordeno mi ruta por cercanía?', a: 'El sistema puede ordenar a tus clientes por distancia usando el GPS del teléfono, para que cobres optimizando el recorrido. Necesitas dar permiso de ubicación.' },
+  { cat: 'Cobrador', apps: ['campo'], q: '¿Cómo entrego el efectivo que llevo en mano?', a: 'En Mi efectivo ves lo que llevas cobrado y aún no entregas ("efectivo en mano / por entregar"). Al entregarlo en la sucursal, la encargada confirma la entrega y se descuenta de tu mano. Entrega antes de la hora de corte para no quedar marcado.' },
+  { cat: 'Cobrador', apps: ['campo'], q: '¿Dónde veo mi cobranza de la semana y mi comisión?', a: 'En tu app, el encabezado muestra la cobranza de la semana (se va acumulando día con día) y tu meta del día. En Mi efectivo aparece la comisión de la semana según la tasa que tengas configurada.' },
+  { cat: 'Cobrador', apps: ['campo'], q: 'No me aparece un cliente o el saldo se ve mal', a: 'Revisa que el crédito esté asignado a tu ruta y que tengas conexión: la app guarda lo que registras y lo sincroniza. Si el saldo sigue raro, avisa a tu encargada para que lo revise desde la sucursal; no lo corrijas a mano.' },
+
+  // ----- Efectivo / tesorería (admin) -----
+  { cat: 'Efectivo (admin)', apps: ['admin'], q: '¿Qué es la conciliación / el corte?', a: 'Es comparar el efectivo que se esperaba (lo cobrado) contra lo que realmente se entregó. El sistema ya sabe cuánto cobró cada quien, así que sabe cuánto debe entregar; tú solo revisas las diferencias marcadas.' },
+  { cat: 'Efectivo (admin)', apps: ['admin'], q: '¿Cómo muevo efectivo entre puestos?', a: 'Con Asignar efectivo mandas dinero de un puesto a otro (por ejemplo dotación a una sucursal). El que recibe debe confirmar la recepción para que quede cuadrado.' },
+  { cat: 'Efectivo (admin)', apps: ['admin'], q: '¿Qué es Flujo / Tesorería?', a: 'Es el efectivo a nivel agencia que maneja el admin: dotación a la operación, nómina, capital y retiros. Te da la foto del dinero por encima de la caja de cada sucursal.' }
+];
+app.get('/api/ayuda/faq', auth, (req, res) => res.json(AYUDA_FAQ));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v13', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, mostrarMembrete: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
