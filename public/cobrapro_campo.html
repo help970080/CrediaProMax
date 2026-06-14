@@ -660,40 +660,62 @@ setInterval(checkMiCorte, 60_000);
 <script>
 (function(){
   if(window.__ayudaCargada) return; window.__ayudaCargada=true;
+  var APP=/campo/i.test(location.href)?'campo':(/sucursal/i.test(location.href)?'sucursal':'admin');
   var css='#ayuda-fab{position:fixed;right:18px;bottom:18px;z-index:99998;width:52px;height:52px;border-radius:50%;border:0;background:#e0a012;color:#1a1a1a;font-size:23px;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.3)}'
-   +'#ayuda-pnl{position:fixed;right:18px;bottom:80px;z-index:99999;width:340px;max-width:92vw;height:480px;max-height:72vh;background:#fff;color:#1a1a1a;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.35);display:none;flex-direction:column;overflow:hidden;font-family:system-ui,Arial,sans-serif}'
+   +'#ayuda-pnl{position:fixed;right:18px;bottom:80px;z-index:99999;width:360px;max-width:92vw;height:520px;max-height:74vh;background:#fff;color:#1a1a1a;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.35);display:none;flex-direction:column;overflow:hidden;font-family:system-ui,Arial,sans-serif}'
    +'#ayuda-pnl.on{display:flex}'
    +'#ayuda-hd{background:#111;color:#fff;padding:12px 14px;font-weight:700;display:flex;justify-content:space-between;align-items:center;font-size:14px}'
    +'#ayuda-hd b{cursor:pointer;font-size:18px;opacity:.85;font-weight:400}'
-   +'#ayuda-msgs{flex:1;overflow-y:auto;padding:12px;font-size:13px;line-height:1.5;background:#f6f7f9}'
-   +'.ay-u{background:#e0a012;color:#1a1a1a;padding:8px 11px;border-radius:12px 12px 2px 12px;margin:6px 0 6px auto;max-width:85%;width:fit-content}'
-   +'.ay-b{background:#fff;border:1px solid #e3e6ea;padding:8px 11px;border-radius:12px 12px 12px 2px;margin:6px auto 6px 0;max-width:92%;width:fit-content;white-space:pre-wrap}'
-   +'#ayuda-in{display:flex;gap:6px;padding:10px;border-top:1px solid #eee;background:#fff}'
-   +'#ayuda-txt{flex:1;border:1px solid #ccd;border-radius:9px;padding:9px;font-size:13px;font-family:inherit;resize:none;outline:none}'
-   +'#ayuda-snd{border:0;background:#111;color:#fff;border-radius:9px;padding:0 14px;cursor:pointer;font-size:16px}';
+   +'#ayuda-sr{padding:10px;border-bottom:1px solid #eee;background:#fff}'
+   +'#ayuda-q{width:100%;border:1px solid #ccd;border-radius:9px;padding:9px 11px;font-size:13px;font-family:inherit;outline:none}'
+   +'#ayuda-list{flex:1;overflow-y:auto;padding:8px 10px;font-size:13px;line-height:1.5;background:#f6f7f9}'
+   +'.ay-cat{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#8a93a0;margin:12px 4px 4px;font-weight:700}'
+   +'.ay-it{background:#fff;border:1px solid #e3e6ea;border-radius:10px;margin:6px 0;overflow:hidden}'
+   +'.ay-qq{padding:10px 12px;cursor:pointer;font-weight:600;display:flex;justify-content:space-between;gap:8px;align-items:center}'
+   +'.ay-ar{color:#e0a012;flex:0 0 auto;transition:transform .15s}'
+   +'.ay-it.op .ay-ar{transform:rotate(90deg)}'
+   +'.ay-aa{max-height:0;overflow:hidden;color:#333;padding:0 12px}'
+   +'.ay-it.op .ay-aa{max-height:none;padding:0 12px 12px}'
+   +'.ay-none{color:#8a93a0;text-align:center;padding:24px 12px}';
   var st=document.createElement('style'); st.textContent=css; document.head.appendChild(st);
   var fab=document.createElement('button'); fab.id='ayuda-fab'; fab.innerHTML='&#10067;'; fab.title='Ayuda'; document.body.appendChild(fab);
   var pnl=document.createElement('div'); pnl.id='ayuda-pnl';
-  pnl.innerHTML='<div id="ayuda-hd">&#128172; Ayuda CobraPro <b id="ayuda-x">&#10005;</b></div>'
-    +'<div id="ayuda-msgs"><div class="ay-b">Hola \uD83D\uDC4B Preg&uacute;ntame qu&eacute; hace cualquier parte del sistema o c&oacute;mo hacer algo en tu operaci&oacute;n. Ej: &laquo;\u00bfqu&eacute; es la conciliaci&oacute;n?&raquo;, &laquo;\u00bfc&oacute;mo registro un pago en ventanilla?&raquo;</div></div>'
-    +'<div id="ayuda-in"><textarea id="ayuda-txt" rows="1" placeholder="Escribe tu duda\u2026"></textarea><button id="ayuda-snd">&#10148;</button></div>';
+  pnl.innerHTML='<div id="ayuda-hd">&#10067; Ayuda CobraPro <b id="ayuda-x">&#10005;</b></div>'
+    +'<div id="ayuda-sr"><input id="ayuda-q" placeholder="Busca tu duda\u2026 (ej. recibo, mora, corte)"></div>'
+    +'<div id="ayuda-list"></div>';
   document.body.appendChild(pnl);
-  var msgs=pnl.querySelector('#ayuda-msgs'), txt=pnl.querySelector('#ayuda-txt');
-  function modulo(){ var a=document.querySelector('.navitem.on,.snb.on,.tab.on,#title'); return a?(a.textContent||'').trim().slice(0,60):(document.title||''); }
-  function add(cls,t){ var d=document.createElement('div'); d.className=cls; d.textContent=t; msgs.appendChild(d); msgs.scrollTop=msgs.scrollHeight; return d; }
-  fab.onclick=function(){ pnl.classList.toggle('on'); if(pnl.classList.contains('on')) txt.focus(); };
-  pnl.querySelector('#ayuda-x').onclick=function(e){ e.stopPropagation(); pnl.classList.remove('on'); };
+  var list=pnl.querySelector('#ayuda-list'), q=pnl.querySelector('#ayuda-q');
   var apiFn=(typeof apiU!=='undefined'&&apiU)?apiU:((typeof api!=='undefined'&&api)?api:null);
-  function enviar(){
-    var q=(txt.value||'').trim(); if(!q) return; txt.value='';
-    add('ay-u',q); var load=add('ay-b','\u2026');
-    if(!apiFn){ load.textContent='Sesi\u00f3n no disponible. Vuelve a entrar.'; return; }
-    Promise.resolve(apiFn('POST','/api/ayuda',{pregunta:q,modulo:modulo()}))
-      .then(function(d){ load.textContent=(d&&d.respuesta)||'No pude responder.'; msgs.scrollTop=msgs.scrollHeight; })
-      .catch(function(e){ load.textContent='No se pudo consultar la ayuda: '+((e&&e.message)||e); });
+  var DATA=null, cargando=false;
+  function norm(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
+  function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function render(filtro){
+    if(!DATA){ list.innerHTML='<div class="ay-none">Cargando ayuda\u2026</div>'; return; }
+    var f=norm(filtro);
+    var items=DATA.filter(function(e){ return (e.apps||[]).indexOf(APP)>=0; });
+    if(f) items=items.filter(function(e){ return norm(e.q+' '+e.a+' '+(e.cat||'')).indexOf(f)>=0; });
+    if(!items.length){ list.innerHTML='<div class="ay-none">No encontr\u00e9 nada con eso. Prueba otra palabra (ej. \u00abpago\u00bb, \u00abcomisi\u00f3n\u00bb, \u00abcartera\u00bb).</div>'; return; }
+    var html='', cat=null;
+    items.forEach(function(e){
+      if(!f && e.cat!==cat){ cat=e.cat; html+='<div class="ay-cat">'+esc(cat)+'</div>'; }
+      html+='<div class="ay-it"><div class="ay-qq">'+esc(e.q)+'<span class="ay-ar">&#9656;</span></div><div class="ay-aa">'+esc(e.a)+'</div></div>';
+    });
+    list.innerHTML=html;
+    Array.prototype.forEach.call(list.querySelectorAll('.ay-it'),function(it){
+      it.querySelector('.ay-qq').onclick=function(){ it.classList.toggle('op'); };
+    });
+    if(f){ var first=list.querySelector('.ay-it'); if(first) first.classList.add('op'); }
   }
-  pnl.querySelector('#ayuda-snd').onclick=enviar;
-  txt.addEventListener('keydown',function(e){ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); enviar(); } });
+  function cargar(){
+    if(DATA||cargando) return; cargando=true;
+    if(!apiFn){ list.innerHTML='<div class="ay-none">Vuelve a iniciar sesi\u00f3n para ver la ayuda.</div>'; cargando=false; return; }
+    Promise.resolve(apiFn('GET','/api/ayuda/faq'))
+      .then(function(d){ DATA=Array.isArray(d)?d:[]; cargando=false; render(q.value); })
+      .catch(function(){ cargando=false; list.innerHTML='<div class="ay-none">No se pudo cargar la ayuda. Revisa tu conexi\u00f3n.</div>'; });
+  }
+  fab.onclick=function(){ pnl.classList.toggle('on'); if(pnl.classList.contains('on')){ cargar(); q.focus(); } };
+  pnl.querySelector('#ayuda-x').onclick=function(e){ e.stopPropagation(); pnl.classList.remove('on'); };
+  q.addEventListener('input',function(){ render(q.value); });
 })();
 </script>
 
