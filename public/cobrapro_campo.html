@@ -140,7 +140,7 @@
       </div>
     </div>
     <div class="strip">
-      <div class="st"><div class="l">Cobranza acumulada</div><div class="v g" id="s-cob">$0</div></div>
+      <div class="st"><div class="l">Cobranza de la semana</div><div class="v g" id="s-cob">$0</div></div>
       <div class="st"><div class="l">Visitas</div><div class="v" id="s-vis">0/0</div></div>
       <div class="st"><div class="l">Recuperación</div><div class="v" id="s-rec">0%</div></div>
     </div>
@@ -264,7 +264,7 @@ queue=cola.length;
 let forceOffline=false, _flushing=false;
 function saveCola(){ try{localStorage.setItem('cobrapro_cola',JSON.stringify(cola));}catch(e){} queue=cola.length; }
 function efectivamenteOnline(){ return navigator.onLine && !forceOffline; }
-async function cargarRuta(){ try{ clientes=await api('GET','/api/mi-ruta'); reconstruirEstado(); }catch(e){ toast('No se pudo cargar la ruta: '+e.message); } render(); }
+async function cargarRuta(){ try{ clientes=await api('GET','/api/mi-ruta'); reconstruirEstado(); try{ const a=await api('GET','/api/mi-acumulado'); _semanaPrevia=a.semanaPrevia||0; }catch(_){} }catch(e){ toast('No se pudo cargar la ruta: '+e.message); } render(); }
 function reconstruirEstado(){
   // Reconstruye lo cobrado HOY desde el servidor para que el panel no se reinicie al re-entrar.
   (clientes||[]).forEach(c=>{
@@ -308,7 +308,7 @@ async function verEvidencia(saleId){
     document.body.appendChild(ov);
   }catch(e){ toast(e.message); }
 }
-let _jcDadoHoy=0, _efAcum=0;
+let _jcDadoHoy=0, _efAcum=0, _semanaPrevia=0;
 async function cargarJC(){
   await asgCargarCob();
   render();
@@ -421,7 +421,7 @@ function render(){
   const banco=cob.filter(e=>e.forma==='transferencia'||e.forma==='deposito').reduce((a,e)=>a+propioDe(e),0);
   const ajuste=cob.filter(e=>e.forma==='ajuste').reduce((a,e)=>a+e.monto,0);
   const vis=Object.values(estado).filter(e=>e.status).length;
-  document.getElementById('s-cob').textContent=fmt(totCob);
+  document.getElementById('s-cob').textContent=fmt(_semanaPrevia+totCob);
   document.getElementById('s-vis').textContent=vis+'/'+clientes.length;
   const rec= META>0? Math.round(totCob/META*100):0;
   document.getElementById('s-rec').textContent=rec+'%';
