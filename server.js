@@ -1314,6 +1314,16 @@ app.get('/api/mi-comision', auth, rol('cobrador'), (req, res) => {
   const cobranza = efe + tra + dep + ref;
   res.json({ periodo: 'semana', tasa, cobranza, comision: Math.round(cobranza * tasa / 100), npagos: movs.length, desglose: { efectivo: efe, transferencia: tra, deposito: dep, refin: ref } });
 });
+// Cobranza de la semana de DÍAS ANTERIORES a hoy (para que "Cobranza acumulada" no se borre
+// de un día para otro). El front le suma lo de hoy en vivo. Excluye descuento/refin igual que el conteo diario.
+app.get('/api/mi-acumulado', auth, rol('cobrador'), (req, res) => {
+  const desdeMs = _desdePeriodo('semana');
+  const hoy = fechaMxHoyDDMM();
+  const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
+  const ids = new Set(db.sales.filter(s => s.prom === req.user.nombre && activos.has(s.clientId)).map(s => s.id));
+  const movs = db.movimientos.filter(m => ids.has(m.saleId) && m.abono > 0 && m.forma !== 'descuento' && m.forma !== 'refin' && m.fecha !== hoy && _parseFechaMx(m.fecha) >= desdeMs);
+  res.json({ semanaPrevia: Math.round(movs.reduce((a, m) => a + m.abono, 0)) });
+});
 // Evidencias de entrega del cobrador (incluye clientes dados de baja)
 app.get('/api/mi-evidencias', auth, rol('cobrador'), (req, res) => {
   const out = db.sales.filter(s => s.prom === req.user.nombre && s.entrega).map(s => {
@@ -2706,7 +2716,7 @@ app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, 
   res.json({ generadoEn: new Date().toISOString(), reportes });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v8', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v9', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
