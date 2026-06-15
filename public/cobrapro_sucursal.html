@@ -674,8 +674,12 @@ async function asgCargarSuc(){
   }catch(e){}
   try{ const d=await api('GET','/api/asignaciones');
     const box=document.getElementById('asg-inbox-suc'); if(box) box.innerHTML=(d.porConfirmar||[]).map(a=>`<div style="background:var(--surf-2);border:1px solid var(--line);border-radius:9px;padding:10px;margin-bottom:8px"><b>${fmt(a.monto)}</b> de <b>${a.fromNombre}</b>${a.nota?(' · '+a.nota):''}<div style="display:flex;gap:6px;margin-top:8px"><button onclick="asgConfirmarSuc(${a.id})" style="flex:1;background:var(--acc);color:#1b2330;border:none;padding:8px;border-radius:7px;font-family:'Sora';font-weight:700;cursor:pointer">Confirmar</button><button onclick="asgRechazarSuc(${a.id})" style="flex:1;background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:8px;border-radius:7px;font-family:'Sora';cursor:pointer">Rechazar</button></div></div>`).join('')||'<div style="color:var(--faint)">Nada por confirmar.</div>';
-    const sent=document.getElementById('asg-sent-suc'); const pend=(d.enviadas||[]).filter(a=>a.estado==='pendiente');
-    if(sent) sent.innerHTML=pend.map(a=>`<div style="background:var(--surf-2);border:1px solid var(--line);border-radius:9px;padding:10px;margin-bottom:8px"><b>${fmt(a.monto)}</b> a <b>${a.toNombre}</b> · ⏳ esperando que confirme${a.nota?(' · '+a.nota):''}<div style="margin-top:8px"><button onclick="asgRechazarSuc(${a.id})" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:8px 14px;border-radius:7px;font-family:'Sora';cursor:pointer">Cancelar y regresar a mi caja</button></div></div>`).join('')||'<div style="color:var(--faint)">No tienes asignaciones pendientes de que te confirmen.</div>';
+    const sent=document.getElementById('asg-sent-suc'); const env=(d.enviadas||[]);
+    if(sent) sent.innerHTML=env.length?env.map(a=>{
+      const est=a.estado==='pendiente'?'⏳ esperando que confirme':a.estado==='recibido'?'✓ confirmado':'✕ rechazado';
+      const accion=a.estado==='pendiente'?`<div style="margin-top:8px"><button onclick="asgRechazarSuc(${a.id})" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:8px 14px;border-radius:7px;font-family:'Sora';cursor:pointer">Cancelar y regresar a mi caja</button></div>`:'';
+      return `<div style="background:var(--surf-2);border:1px solid var(--line);border-radius:9px;padding:10px;margin-bottom:8px"><b>${fmt(a.monto)}</b> a <b>${a.toNombre}</b> · ${est}${a.nota?(' · '+a.nota):''}${accion}</div>`;
+    }).join(''):'<div style="color:var(--faint)">Aún no has asignado efectivo.</div>';
   }catch(e){}
 }
 async function asgEnviarSuc(btn){
@@ -1266,13 +1270,17 @@ _init();
   if(window.__ayudaCargada) return; window.__ayudaCargada=true;
   var APP=/campo/i.test(location.href)?'campo':(/sucursal/i.test(location.href)?'sucursal':'admin');
   var css='#ayuda-fab{position:fixed;right:18px;bottom:18px;z-index:99998;width:52px;height:52px;border-radius:50%;border:0;background:#e0a012;color:#1a1a1a;font-size:23px;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.3)}'
-   +'#ayuda-pnl{position:fixed;right:18px;bottom:80px;z-index:99999;width:360px;max-width:92vw;height:520px;max-height:74vh;background:#fff;color:#1a1a1a;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.35);display:none;flex-direction:column;overflow:hidden;font-family:system-ui,Arial,sans-serif}'
+   +'#ayuda-pnl{position:fixed;right:18px;bottom:80px;z-index:99999;width:360px;max-width:92vw;height:540px;max-height:76vh;background:#fff;color:#1a1a1a;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.35);display:none;flex-direction:column;overflow:hidden;font-family:system-ui,Arial,sans-serif}'
    +'#ayuda-pnl.on{display:flex}'
    +'#ayuda-hd{background:#111;color:#fff;padding:12px 14px;font-weight:700;display:flex;justify-content:space-between;align-items:center;font-size:14px}'
    +'#ayuda-hd b{cursor:pointer;font-size:18px;opacity:.85;font-weight:400}'
    +'#ayuda-sr{padding:10px;border-bottom:1px solid #eee;background:#fff}'
-   +'#ayuda-q{width:100%;border:1px solid #ccd;border-radius:9px;padding:9px 11px;font-size:13px;font-family:inherit;outline:none}'
+   +'#ayuda-q{width:100%;border:1px solid #ccd;border-radius:9px;padding:9px 11px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box}'
+   +'#ayuda-ia{margin-top:8px;width:100%;border:0;background:linear-gradient(180deg,#f0b429,#d99a0f);color:#1a1408;border-radius:9px;padding:9px;font-size:13px;font-weight:600;cursor:pointer}'
+   +'#ayuda-ia:disabled{opacity:.5;cursor:default}'
    +'#ayuda-list{flex:1;overflow-y:auto;padding:8px 10px;font-size:13px;line-height:1.5;background:#f6f7f9}'
+   +'.ay-iacard{background:#fff;border:1px solid #e0a012;border-left:4px solid #e0a012;border-radius:10px;margin:6px 0 10px;padding:10px 12px;white-space:pre-wrap}'
+   +'.ay-iacard .ay-iah{font-size:11px;font-weight:700;color:#a9730a;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px}'
    +'.ay-cat{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#8a93a0;margin:12px 4px 4px;font-weight:700}'
    +'.ay-it{background:#fff;border:1px solid #e3e6ea;border-radius:10px;margin:6px 0;overflow:hidden}'
    +'.ay-qq{padding:10px 12px;cursor:pointer;font-weight:600;display:flex;justify-content:space-between;gap:8px;align-items:center}'
@@ -1280,46 +1288,68 @@ _init();
    +'.ay-it.op .ay-ar{transform:rotate(90deg)}'
    +'.ay-aa{max-height:0;overflow:hidden;color:#333;padding:0 12px}'
    +'.ay-it.op .ay-aa{max-height:none;padding:0 12px 12px}'
-   +'.ay-none{color:#8a93a0;text-align:center;padding:24px 12px}';
+   +'.ay-none{color:#8a93a0;text-align:center;padding:20px 12px}';
   var st=document.createElement('style'); st.textContent=css; document.head.appendChild(st);
   var fab=document.createElement('button'); fab.id='ayuda-fab'; fab.innerHTML='&#10067;'; fab.title='Ayuda'; document.body.appendChild(fab);
   var pnl=document.createElement('div'); pnl.id='ayuda-pnl';
   pnl.innerHTML='<div id="ayuda-hd">&#10067; Ayuda CobraPro <b id="ayuda-x">&#10005;</b></div>'
-    +'<div id="ayuda-sr"><input id="ayuda-q" placeholder="Busca tu duda\u2026 (ej. recibo, mora, corte)"></div>'
+    +'<div id="ayuda-sr"><input id="ayuda-q" placeholder="Escribe tu duda\u2026 (recibo, mora, corte\u2026)"><button id="ayuda-ia">&#129302; Preguntar a la IA</button></div>'
     +'<div id="ayuda-list"></div>';
   document.body.appendChild(pnl);
-  var list=pnl.querySelector('#ayuda-list'), q=pnl.querySelector('#ayuda-q');
+  var list=pnl.querySelector('#ayuda-list'), q=pnl.querySelector('#ayuda-q'), iaBtn=pnl.querySelector('#ayuda-ia');
   var apiFn=(typeof apiU!=='undefined'&&apiU)?apiU:((typeof api!=='undefined'&&api)?api:null);
-  var DATA=null, cargando=false;
+  var DATA=null, cargando=false, iaCard=null, ocupado=false;
   function norm(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
   function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-  function render(filtro){
-    if(!DATA){ list.innerHTML='<div class="ay-none">Cargando ayuda\u2026</div>'; return; }
+  function renderFAQ(filtro){
+    var prev=iaCard; 
+    if(!DATA){ list.innerHTML=''; if(prev) list.appendChild(prev); list.insertAdjacentHTML('beforeend','<div class="ay-none">Cargando ayuda\u2026</div>'); return; }
     var f=norm(filtro);
     var items=DATA.filter(function(e){ return (e.apps||[]).indexOf(APP)>=0; });
     if(f) items=items.filter(function(e){ return norm(e.q+' '+e.a+' '+(e.cat||'')).indexOf(f)>=0; });
-    if(!items.length){ list.innerHTML='<div class="ay-none">No encontr\u00e9 nada con eso. Prueba otra palabra (ej. \u00abpago\u00bb, \u00abcomisi\u00f3n\u00bb, \u00abcartera\u00bb).</div>'; return; }
     var html='', cat=null;
-    items.forEach(function(e){
+    if(!items.length){ html='<div class="ay-none">Sin coincidencias en las preguntas frecuentes.<br>Prueba el bot\u00f3n &#129302; <b>Preguntar a la IA</b>.</div>'; }
+    else items.forEach(function(e){
       if(!f && e.cat!==cat){ cat=e.cat; html+='<div class="ay-cat">'+esc(cat)+'</div>'; }
       html+='<div class="ay-it"><div class="ay-qq">'+esc(e.q)+'<span class="ay-ar">&#9656;</span></div><div class="ay-aa">'+esc(e.a)+'</div></div>';
     });
     list.innerHTML=html;
+    if(prev) list.insertBefore(prev,list.firstChild);
     Array.prototype.forEach.call(list.querySelectorAll('.ay-it'),function(it){
       it.querySelector('.ay-qq').onclick=function(){ it.classList.toggle('op'); };
     });
     if(f){ var first=list.querySelector('.ay-it'); if(first) first.classList.add('op'); }
   }
-  function cargar(){
+  function cargarFAQ(){
     if(DATA||cargando) return; cargando=true;
     if(!apiFn){ list.innerHTML='<div class="ay-none">Vuelve a iniciar sesi\u00f3n para ver la ayuda.</div>'; cargando=false; return; }
     Promise.resolve(apiFn('GET','/api/ayuda/faq'))
-      .then(function(d){ DATA=Array.isArray(d)?d:[]; cargando=false; render(q.value); })
+      .then(function(d){ DATA=Array.isArray(d)?d:[]; cargando=false; renderFAQ(q.value); })
       .catch(function(){ cargando=false; list.innerHTML='<div class="ay-none">No se pudo cargar la ayuda. Revisa tu conexi\u00f3n.</div>'; });
   }
-  fab.onclick=function(){ pnl.classList.toggle('on'); if(pnl.classList.contains('on')){ cargar(); q.focus(); } };
+  function setIA(titulo,texto){
+    if(!iaCard){ iaCard=document.createElement('div'); iaCard.className='ay-iacard'; }
+    iaCard.innerHTML='<div class="ay-iah">'+titulo+'</div>'+texto;
+    if(list.firstChild!==iaCard) list.insertBefore(iaCard,list.firstChild);
+    list.scrollTop=0;
+  }
+  function askIA(){
+    var pregunta=(q.value||'').trim(); if(!pregunta||ocupado) return;
+    if(!apiFn){ setIA('Asistente','Vuelve a iniciar sesi\u00f3n para usar la ayuda.'); return; }
+    ocupado=true; iaBtn.disabled=true; setIA('Asistente \u00b7 pensando\u2026','&#8230;');
+    Promise.resolve(apiFn('POST','/api/ayuda',{pregunta:pregunta,app:APP}))
+      .then(function(d){
+        if(d&&d.sinIA){ setIA('IA no activada','La respuesta autom\u00e1tica con IA a\u00fan no est\u00e1 activada. Usa el buscador de arriba o consulta a tu administrador.'); }
+        else { setIA('Asistente IA',esc((d&&d.respuesta)||'No pude responder.').replace(/\n/g,'<br>')); }
+      })
+      .catch(function(e){ setIA('Asistente',esc('No se pudo consultar: '+((e&&e.message)||e))); })
+      .then(function(){ ocupado=false; iaBtn.disabled=false; });
+  }
+  fab.onclick=function(){ pnl.classList.toggle('on'); if(pnl.classList.contains('on')){ cargarFAQ(); q.focus(); } };
   pnl.querySelector('#ayuda-x').onclick=function(e){ e.stopPropagation(); pnl.classList.remove('on'); };
-  q.addEventListener('input',function(){ render(q.value); });
+  q.addEventListener('input',function(){ renderFAQ(q.value); });
+  q.addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); askIA(); } });
+  iaBtn.onclick=askIA;
 })();
 </script>
 
