@@ -121,8 +121,8 @@ function pintar(){
     const hist=((_asg.enviadas||[]).concat(_asg.recibidas||[])).slice(0,20);
     m.innerHTML=`<div class="card"><div class="nm">💸 Asignar efectivo a un puesto</div>
       <div class="meta" style="margin:4px 0 8px">Se descuenta de tu caja y el destino confirma. El promotor nunca recibe.</div>
-      <select id="asg-dest-jc" style="width:100%;background:var(--surf-2);border:1px solid var(--bd,#2a3550);color:#fff;padding:10px;border-radius:9px;margin-bottom:8px;font-family:inherit">${dst.map(x=>`<option value="${x.tipo}:${x.id}">${x.nombre}</option>`).join('')||'<option value="">No hay otros puestos</option>'}</select>
-      <input id="asg-monto-jc" type="number" inputmode="numeric" placeholder="Monto $" style="width:100%;background:var(--surf-2);border:1px solid var(--bd,#2a3550);color:#fff;padding:10px;border-radius:9px;margin-bottom:8px">
+      <select id="asg-dest-jc" style="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--ink);padding:10px;border-radius:9px;margin-bottom:8px;font-family:inherit">${dst.map(x=>`<option value="${x.tipo}:${x.id}">${x.nombre}</option>`).join('')||'<option value="">No hay otros puestos</option>'}</select>
+      <input id="asg-monto-jc" type="number" inputmode="numeric" placeholder="Monto $" style="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--ink);padding:10px;border-radius:9px;margin-bottom:8px">
       <button class="btn vio full" onclick="asgEnviarJC(this)">Asignar efectivo</button></div>
       <div class="nm" style="margin:14px 4px 6px">📥 Por confirmar</div>
       ${pc.length?pc.map(a=>`<div class="card"><div class="top"><div><div class="nm">${a.fromNombre}</div><div class="meta">${a.nota||'Asignación de efectivo'} · ${a.fecha}</div></div><div class="monto">${money(a.monto)}</div></div><div style="display:flex;gap:6px"><button class="btn grn full" onclick="asgConfirmarJC(${a.id})">✓ Confirmar</button><button class="btn full" onclick="asgRechazarJC(${a.id})">Rechazar</button></div></div>`).join(''):'<div class="empty">Nada por confirmar.</div>'}
@@ -144,12 +144,20 @@ function pintar(){
       <button class="btn vio full" onclick="abrirEntrega(${s.id},'${(s.cliente||'').replace(/'/g,"\\'")}',${s.monto})">📦 Entregar crédito + evidencia</button></div>`).join('')
       : `<div class="empty">No hay créditos por entregar${DATA.sucursal?` en <b>${DATA.sucursal}</b>`:''}.<br><span style="font-size:.78rem">Los créditos nuevos que capture la sucursal aparecen aquí automáticamente. El admin también puede enviar un crédito existente desde su Estado de cuenta.</span></div>`;
   } else {
+    // Historial = registro completo: movimientos de efectivo (entradas y salidas) + créditos entregados
+    const movs=[];
+    (_asg.enviadas||[]).forEach(a=>movs.push({ts:a.creadoEn||a.fecha, out:true, txt:`Asignado a ${a.toNombre}`, sub:(a.estado==='pendiente'?'pendiente de confirmar':a.estado==='recibido'?'confirmado':'rechazado'), monto:a.monto}));
+    (_asg.recibidas||[]).forEach(a=>movs.push({ts:a.creadoEn||a.fecha, out:false, txt:`Recibido de ${a.fromNombre}`, sub:'asignación', monto:a.monto}));
+    (DATA.recibidas||[]).forEach(e=>movs.push({ts:e.creadoEn, out:false, txt:`Efectivo de ${e.cobradorNombre||'cobrador'}`, sub:'entrega de ruta', monto:e.monto}));
+    movs.sort((a,b)=> new Date(b.ts||0)-new Date(a.ts||0));
+    const fmtF=ts=>{ try{ return new Date(ts).toLocaleString('es-MX',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}); }catch(e){ return ''; } };
+    const movsHtml = movs.length ? movs.map(x=>`<div class="card"><div class="top"><div><div class="nm">${x.out?'Salida':'Entrada'} · ${x.txt}</div><div class="meta">${x.sub} · ${fmtF(x.ts)}</div></div><div class="monto" style="color:${x.out?'var(--red)':'var(--grn)'}">${x.out?'−':'+'}${money(x.monto)}</div></div></div>`).join('') : '<div class="empty">Sin movimientos de efectivo todavía.</div>';
     const es=DATA.entregados||[];
-    m.innerHTML = es.length ? es.map(s=>`<div class="card"><div class="top">
+    const entHtml = es.length ? es.map(s=>`<div class="card"><div class="top">
       <div><div class="nm">${s.cliente}</div><div class="meta">${s.folio} · ${new Date(s.fecha).toLocaleString('es-MX',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}${s.lat?` · <a href="https://maps.google.com/?q=${s.lat},${s.lng}" target="_blank" style="color:var(--blu)">📍 ubicación</a>`:''}</div></div>
       <div class="monto">${money(s.monto)}</div></div>
-      <div class="hist-fotos">${s.fotoCasa?`<img src="${s.fotoCasa}" onclick="verFoto('${s.fotoCasa}')">`:''}${s.fotoCliente?`<img src="${s.fotoCliente}" onclick="verFoto('${s.fotoCliente}')">`:''}</div></div>`).join('')
-      : '<div class="empty">Aún no has entregado créditos.</div>';
+      <div class="hist-fotos">${s.fotoCasa?`<img src="${s.fotoCasa}" onclick="verFoto('${s.fotoCasa}')">`:''}${s.fotoCliente?`<img src="${s.fotoCliente}" onclick="verFoto('${s.fotoCliente}')">`:''}</div></div>`).join('') : '<div class="empty">Aún no has entregado créditos.</div>';
+    m.innerHTML = `<div class="nm" style="margin:4px 4px 6px">💵 Movimientos de efectivo</div>${movsHtml}<div class="nm" style="margin:16px 4px 6px">📦 Créditos entregados</div>${entHtml}`;
   }
 }
 function tab(t){ _tab=t; document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.t===t)); pintar(); }
