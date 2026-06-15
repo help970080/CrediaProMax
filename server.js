@@ -1322,8 +1322,21 @@ app.get('/api/mi-acumulado', auth, rol('cobrador'), (req, res) => {
   const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
   const ids = new Set(db.sales.filter(s => s.prom === req.user.nombre && activos.has(s.clientId)).map(s => s.id));
   const movs = db.movimientos.filter(m => ids.has(m.saleId) && m.abono > 0 && m.forma !== 'descuento' && m.forma !== 'refin' && m.fecha !== hoy && _parseFechaMx(m.fecha) >= desdeMs);
-  const obj = (db.objetivos && db.objetivos.cob && db.objetivos.cob[req.user.nombre]) || {};
-  res.json({ semanaPrevia: Math.round(movs.reduce((a, m) => a + m.abono, 0)), objetivoSemanal: Math.round(+obj.cobranza || 0) });
+  // Objetivo semanal = la cuota semanal propia del cobrador: suma de las cuotas de sus créditos activos con saldo.
+  // Si el admin le fijó un objetivo manual de cobranza, ese manda.
+  const objMan = (db.objetivos && db.objetivos.cob && db.objetivos.cob[req.user.nombre] && +db.objetivos.cob[req.user.nombre].cobranza) || 0;
+  let objetivoSemanal = objMan;
+  if (!objetivoSemanal) {
+    const eqSemanal = s => {
+      const q = +s.cuota || 0; if (!q) return 0;
+      const t = s.tipo;
+      return t === 'diario' ? q * 6 : (t === 'catorcenal' || t === 'quincenal') ? q / 2 : t === 'mensual' ? q / 4 : t === 'unico' ? 0 : q;
+    };
+    objetivoSemanal = db.sales
+      .filter(s => s.prom === req.user.nombre && activos.has(s.clientId) && saldoDe(s.id) > 0)
+      .reduce((a, s) => a + eqSemanal(s), 0);
+  }
+  res.json({ semanaPrevia: Math.round(movs.reduce((a, m) => a + m.abono, 0)), objetivoSemanal: Math.round(objetivoSemanal) });
 });
 // Evidencias de entrega del cobrador (incluye clientes dados de baja)
 app.get('/api/mi-evidencias', auth, rol('cobrador'), (req, res) => {
@@ -2813,7 +2826,7 @@ app.post('/api/ayuda', auth, async (req, res) => {
     res.json({ respuesta: txt || 'No pude responder eso con la información del sistema. Reformula tu pregunta o consulta a tu administrador.' });
   } catch (e) { res.status(502).json({ error: 'No se pudo consultar la ayuda: ' + e.message }); }
 });
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v15', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, mostrarMembrete: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v16', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, objetivoCartera: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, mostrarMembrete: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
