@@ -691,8 +691,9 @@ app.post('/api/asignaciones', auth, (req, res) => {
 
 app.get('/api/asignaciones', auth, (req, res) => {
   const all = db.asignaciones || [];
+  const p = puestoDe(req.user);
   const porConfirmar = all.filter(a => a.estado === 'pendiente' && esMiPuesto(req.user, a.toTipo, a.toId)).reverse();
-  const enviadas = all.filter(a => { const p = puestoDe(req.user); return p && a.fromTipo === p.tipo && String(a.fromId) === String(p.id); }).slice(-40).reverse();
+  const enviadas = all.filter(a => p && a.fromTipo === p.tipo && (p.tipo === 'admin' || String(a.fromId) === String(p.id))).slice(-40).reverse();
   const recibidas = all.filter(a => a.estado === 'recibido' && esMiPuesto(req.user, a.toTipo, a.toId)).slice(-40).reverse();
   res.json({ porConfirmar, enviadas, recibidas, disponible: Math.round(disponibleAsignar(req.user)) });
 });
@@ -2826,7 +2827,7 @@ app.post('/api/ayuda', auth, async (req, res) => {
     res.json({ respuesta: txt || 'No pude responder eso con la información del sistema. Reformula tu pregunta o consulta a tu administrador.' });
   } catch (e) { res.status(502).json({ error: 'No se pudo consultar la ayuda: ' + e.message }); }
 });
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v16', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, objetivoCartera: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, mostrarMembrete: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v17', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, objetivoCartera: true, asignEnviadasFix: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, mostrarMembrete: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
