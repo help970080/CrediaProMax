@@ -417,11 +417,29 @@ function pintar(){
         <span class="tipo ${tipoCls[cr.tipo]||'sem'}">${tipoLbl[cr.tipo]||cr.tipo}</span>
         <div class="cdata"><div class="l1">${cr.folio} · cuota ${fmt(cr.cuota)}</div><div class="l2">saldo ${fmt(cr.saldo)}</div></div>
         <span class="pill ${liq?'ok':'w'}">${liq?'Liquidado':'Activo'}</span>
+        ${cr.entrega?`<span onclick="event.stopPropagation();verEvidenciaSuc(${cr.id})" title="Datos de entrega" style="cursor:pointer;font-size:1.05rem;margin:0 2px">📷</span>`:''}
         ${liq?'':`<button class="pay" onclick="event.stopPropagation();abrirPago(${c.id},${cr.id})">Cobrar</button>`}</div>`;}).join('')}</div>
     </div>`;
   }).join('') || '<div style="color:var(--faint);font-size:.85rem;padding:14px">Sin coincidencias.</div>';
 }
 function selCli(id){sel=sel===id?null:id;pintar();}
+async function verEvidenciaSuc(saleId){
+  try{
+    const d=await api('GET','/api/sales/'+saleId+'/entrega');
+    if(!d.entrega){ toast('Sin evidencia de entrega registrada'); return; }
+    const e=d.entrega;
+    const ov=document.createElement('div'); ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:300;padding:14px'; ov.onclick=ev=>{if(ev.target===ov)ov.remove();};
+    const ubic=(e.lat!=null&&e.lng!=null)?`<a href="https://maps.google.com/?q=${e.lat},${e.lng}" target="_blank" style="color:var(--blu)">📍 Ver ubicación</a>`:'<span style="color:var(--faint)">Sin ubicación</span>';
+    ov.innerHTML=`<div style="background:var(--surf);border-radius:14px;padding:16px;width:100%;max-width:420px;max-height:88vh;overflow:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b>📷 Datos de entrega</b><span onclick="this.closest('div[style*=fixed]').remove()" style="cursor:pointer;color:var(--acc);font-weight:600">Cerrar</span></div>
+      <div style="font-size:.78rem;color:var(--dim);margin-bottom:12px">${d.cliente||''} · ${d.folio||''}${e.fecha?' · '+new Date(e.fecha).toLocaleDateString('es-MX'):''}</div>
+      <div style="font-size:.72rem;color:var(--dim);margin-bottom:4px">🏠 Fachada / casa</div>${e.fotoCasa?`<img src="${e.fotoCasa}" style="width:100%;border-radius:10px;margin-bottom:12px">`:'<div style="color:var(--faint);font-size:.8rem;margin-bottom:12px">Sin foto</div>'}
+      <div style="font-size:.72rem;color:var(--dim);margin-bottom:4px">🧍 Cliente</div>${e.fotoCliente?`<img src="${e.fotoCliente}" style="width:100%;border-radius:10px;margin-bottom:12px">`:'<div style="color:var(--faint);font-size:.8rem;margin-bottom:12px">Sin foto</div>'}
+      ${e.firma?`<div style="font-size:.72rem;color:var(--dim);margin-bottom:4px">✍️ Firma del pagaré</div><img src="${e.firma}" style="width:100%;max-height:150px;object-fit:contain;background:#fff;border-radius:10px;margin-bottom:12px;border:1px solid var(--line)">`:''}
+      <div>${ubic}</div></div>`;
+    document.body.appendChild(ov);
+  }catch(err){ toast(err.message||err); }
+}
 function abrirPago(cid,saleId){
   const c=_clientes.find(x=>x.id===cid); const cr=(c.creditos||[]).find(x=>x.id===saleId);
   payCtx={saleId, cliente:c.nombre, folio:cr.folio, tel:c.tel||'', saldo:cr.saldo, tipoOld:cr.tipo, plazoOld:cr.plazo, promOld:cr.prom}; formaPay='efectivo';
