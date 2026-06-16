@@ -229,6 +229,7 @@
           <button type="button" class="btn" style="margin-top:6px;font-size:.8rem" onclick="addArticulo()">➕ Agregar otro artículo</button>
         </div>
         <div class="calc" id="calc"></div>
+        <div id="buro-sem" class="buro-sem" style="display:none"></div>
         <button class="btn-full" onclick="crearCredito()">Capturar crédito</button>
       </section>
       <section class="view" id="corte">
@@ -741,6 +742,31 @@ function addArticulo(v){
 }
 function leerArticulos(){ return [...document.querySelectorAll('#art-list .art-inp')].map(i=>i.value.trim()).filter(Boolean); }
 function resetArticulos(){ const w=document.getElementById('art-list'); if(w){ w.innerHTML=''; addArticulo(); } }
+let _buroT=null,_buroLast='';
+async function buroLive(){
+  clearTimeout(_buroT);
+  _buroT=setTimeout(async()=>{
+    const g=id=>(document.getElementById(id)?.value||'').trim();
+    const nombre=g('n-cli'),tel=g('n-tel'),calle=g('n-calle'),col=g('n-col'),ciudad=g('n-ciudad'),estado=g('n-estado');
+    const el=document.getElementById('buro-sem'); if(!el) return;
+    if(nombre.length<4 && tel.replace(/\D/g,'').length<10){ el.style.display='none'; _buroLast=''; return; }
+    const key=nombre+'|'+tel+'|'+calle+'|'+col; if(key===_buroLast) return; _buroLast=key;
+    try{
+      const r=await fetch('/api/buro/check',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+TOKEN},body:JSON.stringify({nombre,tel,calle,col,ciudad,estado})});
+      const d=await r.json(); if(!r.ok) return;
+      const M={verde:['#178a55','✓ Sin alertas'],amarillo:['#caa23a','⚠ Precaución'],rojo:['#d6432d','🔴 Alerta — requiere Vo.Bo']};
+      const [c,txt]=M[d.semaforo]||M.verde;
+      el.style.display='flex'; el.style.borderColor=c; el.style.color=c;
+      el.innerHTML=`<span class="dot" style="background:${c}"></span>${txt}`;
+    }catch(e){}
+  },350);
+}
+function _buroBind(){
+  if(!document.getElementById('buro-css')){const st=document.createElement('style');st.id='buro-css';st.textContent='.buro-sem{padding:9px 12px;border:1.5px solid;border-radius:9px;font-weight:600;font-size:.9rem;margin:4px 0 10px;align-items:center;gap:8px;background:rgba(255,255,255,.02)}.buro-sem .dot{width:11px;height:11px;border-radius:50%;display:inline-block}';document.head.appendChild(st);}
+  ['n-cli','n-tel','n-calle','n-col','n-ciudad','n-estado'].forEach(id=>{const e=document.getElementById(id); if(e&&!e._buroB){e._buroB=1; e.addEventListener('input',buroLive);}});
+}
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',_buroBind); else _buroBind();
+
 async function crearCredito(){
   const nombre=document.getElementById('n-cli').value.trim();
   const calle=document.getElementById('n-calle').value.trim();
@@ -761,6 +787,16 @@ async function crearCredito(){
   try{
     const r=await fetch('/api/sales',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+TOKEN},body:JSON.stringify({nombre,tel,calle,col,ciudad,estado,curp,prom,tipo:t,plazo,monto,dias:plazo,articulos:leerArticulos()})});
     const d=await r.json().catch(()=>({}));
+    if(r.status===202 && d.voBo){
+      document.getElementById('overlay').innerHTML=`<div class="modal">
+        <h3 style="color:#d6432d">🔴 Cliente con alerta</h3>
+        <div style="font-size:.85rem;line-height:1.6;color:var(--dim);margin:10px 0 4px">Este cliente tiene una alerta en el sistema. La venta se envió al <b>administrador</b> para su Vo.Bo. No puede capturarse hasta que sea autorizada.</div>
+        <div class="modal-actions" style="margin-top:14px"><button class="ma ok" onclick="cerrar()">Entendido</button></div>
+      </div>`;
+      document.getElementById('overlay').classList.add('on');
+      return;
+    }
+    if(r.status===403 && d.error==='vobo_requerido'){ toast('Esta venta requiere Vo.Bo del administrador.'); return; }
     if(r.status===400 && d.error==='curp_invalida'){ toast(d.detalle); return; }
     if(r.status===409 && d.error==='cliente_duplicado'){
       const ex=d.clienteExistente||{};
@@ -786,6 +822,7 @@ async function crearCredito(){
     const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
     movs.unshift({hora,txt:`Crédito ${d.folio} — ${nombre} (${prom})`,monto:0});
     ['n-cli','n-tel','n-calle','n-col','n-ref','n-curp','n-ciudad','n-estado'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    {const _bs=document.getElementById('buro-sem'); if(_bs)_bs.style.display='none'; _buroLast='';}
     resetArticulos();
     render(); _buscar();
     toast(`✓ ${d.folio} capturado · cuota ${fmt(d.cuota)} · en ruta de ${prom.split(' ')[0]}`);
