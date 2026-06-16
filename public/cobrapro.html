@@ -202,6 +202,7 @@
     <button class="navitem" data-v="cartera"><span class="ic">≣</span> Cartera de crédito</button>
     <button class="navitem" data-v="estado"><span class="ic">🧾</span> Estado de cuenta</button>
     <button class="navitem" data-v="bandeja"><span class="ic">📦</span> Bandeja de entregas</button>
+    <button class="navitem" data-v="vobo"><span class="ic">🛡️</span> Vo.Bo · Buró <span id="vobo-badge" style="display:none;background:#d6432d;color:#fff;border-radius:10px;padding:0 7px;font-size:.7rem;font-weight:700;margin-left:4px"></span></button>
     <button class="navitem" data-v="rastreo"><span class="ic">📡</span> Rastreo de equipo</button>
     <button class="navitem" data-v="promotores"><span class="ic">⛬</span> Cobradores</button>
     <button class="navitem" data-v="ranking"><span class="ic">🏆</span> Ranking</button>
@@ -254,6 +255,19 @@
     </div>
     <div class="panel"><div class="ph"><h3>Desempeño de cobradores</h3><span class="hint">recuperación = cobrado ÷ exigible del periodo</span></div>
       <table><thead><tr><th>Cobrador</th><th>Sucursal</th><th class="n">Clientes</th><th class="n">Cobrado</th><th>Recuperación</th><th class="n">Comisión</th></tr></thead><tbody id="tb-res"></tbody></table>
+    </div>
+  </section>
+
+  <!-- VO.BO / BURÓ -->
+  <section class="view" id="vobo">
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <div><b style="font-size:1.05rem">🛡️ Solicitudes de Vo.Bo del buró</b>
+          <div style="color:var(--faint);font-size:.82rem;margin-top:2px">Ventas que botaron <b style="color:#d6432d">ROJO</b> en sucursal. Autoriza (Vo.Bo) para crear el crédito, o declina.</div></div>
+        <button class="btn" onclick="cargarVoBo()">↻ Actualizar</button>
+      </div>
+      <div id="vobo-pend" style="margin-top:14px"></div>
+      <div style="margin-top:22px"><b style="font-size:.9rem;color:var(--faint)">Resueltas recientes</b><div id="vobo-recientes" style="margin-top:8px"></div></div>
     </div>
   </section>
 
@@ -2230,7 +2244,43 @@ function sim(){const t=$('s-tipo').value,monto=+$('s-monto').value||0,plazo=+$('
 }
 
 /* NAV + EVENTOS */
-const titles={resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],numdiarios:['Números diarios','Cobranza por gerencia · del día y acumulado de la semana'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],bandeja:['Bandeja de entregas','Créditos por entregar · toma y entrega con evidencia'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],ranking:['Ranking de cobradores','Semana · unidades, % cobranza, clientes y cobrados con semáforo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],flujo:['Flujo / Tesorería','Efectivo del admin · dotación a la operación, nómina y capital'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo'],mapa:['Mapa de clientes','Ubicación geográfica de la cartera'],rastreo:['Rastreo de equipo','Dónde está tu gente en campo · seguridad y operación'],pl:['P&L mensual','Estado de resultados del mes · ingreso, costos, gastos y utilidad por sucursal'],extras:['Extras · Detector de prestanombres','Coincidencias por teléfono, domicilio y apellidos'],asignar:['Asignar efectivo','Mueve efectivo entre puestos · el que recibe confirma']};
+const titles={resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],numdiarios:['Números diarios','Cobranza por gerencia · del día y acumulado de la semana'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],bandeja:['Bandeja de entregas','Créditos por entregar · toma y entrega con evidencia'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],ranking:['Ranking de cobradores','Semana · unidades, % cobranza, clientes y cobrados con semáforo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],flujo:['Flujo / Tesorería','Efectivo del admin · dotación a la operación, nómina y capital'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo'],mapa:['Mapa de clientes','Ubicación geográfica de la cartera'],rastreo:['Rastreo de equipo','Dónde está tu gente en campo · seguridad y operación'],pl:['P&L mensual','Estado de resultados del mes · ingreso, costos, gastos y utilidad por sucursal'],extras:['Extras · Detector de prestanombres','Coincidencias por teléfono, domicilio y apellidos'],asignar:['Asignar efectivo','Mueve efectivo entre puestos · el que recibe confirma'],vobo:['Vo.Bo · Buró interno','Autoriza o declina ventas que botaron alerta roja']};
+async function cargarVoBo(){
+  try{
+    const d=await apiU('GET','/api/buro/solicitudes');
+    const pend=d.pendientes||[], rec=d.recientes||[];
+    const bdg=$('vobo-badge'); if(bdg){ if(pend.length){bdg.textContent=pend.length;bdg.style.display='inline-block';}else bdg.style.display='none'; }
+    const cont=$('vobo-pend'); if(cont){
+      cont.innerHTML = !pend.length
+        ? '<div style="color:var(--faint);padding:14px;font-size:.88rem">No hay solicitudes pendientes. 🟢</div>'
+        : pend.map(s=>`<div style="border:1px solid rgba(214,67,45,.4);border-radius:10px;padding:13px 15px;margin-bottom:10px;background:rgba(214,67,45,.05)">
+          <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
+            <div><b style="font-size:1rem">${esc(s.cliente||'(sin nombre)')}</b>
+              <span style="color:#d6432d;font-size:.8rem;font-weight:700;margin-left:8px">🔴 ${esc(s.motivo||'Alerta')}</span></div>
+            <div style="color:var(--faint);font-size:.78rem">${new Date(s.fecha).toLocaleString('es-MX')}</div></div>
+          <div style="font-size:.83rem;color:var(--dim);margin-top:6px;line-height:1.5">Tel: <b>${esc(s.tel||'—')}</b> · ${esc(s.domicilio||'sin domicilio')}<br>Capturó: ${esc(s.usuario||'—')} · monto $${(+(s.payload&&s.payload.monto)||0).toLocaleString()}</div>
+          <div style="display:flex;gap:8px;margin-top:11px;flex-wrap:wrap">
+            <button class="btn" style="background:var(--grn);border-color:var(--grn);color:#fff" onclick="aprobarVoBo(${s.id})">✓ Autorizar (Vo.Bo) y crear crédito</button>
+            <button class="btn" style="border-color:#d6432d;color:#d6432d" onclick="declinarVoBo(${s.id})">✕ Declinar</button></div></div>`).join('');
+    }
+    const rc=$('vobo-recientes'); if(rc) rc.innerHTML = rec.length ? rec.map(s=>`<div style="font-size:.82rem;color:var(--faint);padding:5px 0;border-bottom:1px solid var(--line)">${s.estado==='aprobada'?'✅':'⛔'} ${esc(s.cliente||'')} — <b>${esc(s.estado)}</b> por ${esc(s.resueltoPor||'')} · ${new Date(s.fechaResuelta||s.fecha).toLocaleDateString('es-MX')}</div>`).join('') : '<div style="color:var(--faint);font-size:.82rem">—</div>';
+  }catch(e){ alert(e.message); }
+}
+async function aprobarVoBo(id){
+  if(!confirm('¿Autorizar esta venta pese a la alerta del buró? Se creará el crédito y quedará en bitácora.')) return;
+  try{
+    const r=await apiU('POST','/api/buro/solicitud/'+id+'/aprobar',{});
+    const cr=await apiU('POST','/api/sales',{...(r.payload||{}),voBoId:id,force:true});
+    alert('✓ Crédito '+(cr.folio||'')+' creado con Vo.Bo'); cargarVoBo();
+  }catch(e){ alert('No se pudo crear el crédito: '+e.message); cargarVoBo(); }
+}
+async function declinarVoBo(id){
+  if(!confirm('¿Declinar esta venta? No se creará el crédito.')) return;
+  try{ await apiU('POST','/api/buro/solicitud/'+id+'/declinar',{}); cargarVoBo(); }
+  catch(e){ alert(e.message); }
+}
+setTimeout(()=>{ try{ cargarVoBo(); }catch(e){} }, 1800);
+
 document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
   document.querySelectorAll('.navitem').forEach(x=>x.classList.remove('on'));
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
@@ -2248,6 +2298,7 @@ document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
   if(n.dataset.v==='reportes') renderReportesLive();
   if(n.dataset.v==='flujo') cargarFlujo();
   if(n.dataset.v==='bandeja') cargarBandeja();
+  if(n.dataset.v==='vobo') cargarVoBo();
   if(n.dataset.v==='rastreo') initRastreo();
   if(n.dataset.v==='transferencias'){ _trSel.clear(); trInit(); $('tr-resultados').innerHTML='<div style="color:var(--faint);padding:12px;font-size:.85rem">Elige un cobrador o busca un cliente para empezar.</div>'; $('tr-toolbar').style.display='none'; $('tr-batchbar').style.display='none'; trCargarLog(); }
   if(n.dataset.v==='simulador') initTarifas();
@@ -2957,13 +3008,17 @@ fillPlazos();sim();render();
   if(window.__ayudaCargada) return; window.__ayudaCargada=true;
   var APP=/campo/i.test(location.href)?'campo':(/sucursal/i.test(location.href)?'sucursal':'admin');
   var css='#ayuda-fab{position:fixed;right:18px;bottom:18px;z-index:99998;width:52px;height:52px;border-radius:50%;border:0;background:#e0a012;color:#1a1a1a;font-size:23px;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.3)}'
-   +'#ayuda-pnl{position:fixed;right:18px;bottom:80px;z-index:99999;width:360px;max-width:92vw;height:520px;max-height:74vh;background:#fff;color:#1a1a1a;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.35);display:none;flex-direction:column;overflow:hidden;font-family:system-ui,Arial,sans-serif}'
+   +'#ayuda-pnl{position:fixed;right:18px;bottom:80px;z-index:99999;width:360px;max-width:92vw;height:540px;max-height:76vh;background:#fff;color:#1a1a1a;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.35);display:none;flex-direction:column;overflow:hidden;font-family:system-ui,Arial,sans-serif}'
    +'#ayuda-pnl.on{display:flex}'
    +'#ayuda-hd{background:#111;color:#fff;padding:12px 14px;font-weight:700;display:flex;justify-content:space-between;align-items:center;font-size:14px}'
    +'#ayuda-hd b{cursor:pointer;font-size:18px;opacity:.85;font-weight:400}'
    +'#ayuda-sr{padding:10px;border-bottom:1px solid #eee;background:#fff}'
-   +'#ayuda-q{width:100%;border:1px solid #ccd;border-radius:9px;padding:9px 11px;font-size:13px;font-family:inherit;outline:none}'
+   +'#ayuda-q{width:100%;border:1px solid #ccd;border-radius:9px;padding:9px 11px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box}'
+   +'#ayuda-ia{margin-top:8px;width:100%;border:0;background:linear-gradient(180deg,#f0b429,#d99a0f);color:#1a1408;border-radius:9px;padding:9px;font-size:13px;font-weight:600;cursor:pointer}'
+   +'#ayuda-ia:disabled{opacity:.5;cursor:default}'
    +'#ayuda-list{flex:1;overflow-y:auto;padding:8px 10px;font-size:13px;line-height:1.5;background:#f6f7f9}'
+   +'.ay-iacard{background:#fff;border:1px solid #e0a012;border-left:4px solid #e0a012;border-radius:10px;margin:6px 0 10px;padding:10px 12px;white-space:pre-wrap}'
+   +'.ay-iacard .ay-iah{font-size:11px;font-weight:700;color:#a9730a;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px}'
    +'.ay-cat{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#8a93a0;margin:12px 4px 4px;font-weight:700}'
    +'.ay-it{background:#fff;border:1px solid #e3e6ea;border-radius:10px;margin:6px 0;overflow:hidden}'
    +'.ay-qq{padding:10px 12px;cursor:pointer;font-weight:600;display:flex;justify-content:space-between;gap:8px;align-items:center}'
@@ -2971,46 +3026,68 @@ fillPlazos();sim();render();
    +'.ay-it.op .ay-ar{transform:rotate(90deg)}'
    +'.ay-aa{max-height:0;overflow:hidden;color:#333;padding:0 12px}'
    +'.ay-it.op .ay-aa{max-height:none;padding:0 12px 12px}'
-   +'.ay-none{color:#8a93a0;text-align:center;padding:24px 12px}';
+   +'.ay-none{color:#8a93a0;text-align:center;padding:20px 12px}';
   var st=document.createElement('style'); st.textContent=css; document.head.appendChild(st);
   var fab=document.createElement('button'); fab.id='ayuda-fab'; fab.innerHTML='&#10067;'; fab.title='Ayuda'; document.body.appendChild(fab);
   var pnl=document.createElement('div'); pnl.id='ayuda-pnl';
   pnl.innerHTML='<div id="ayuda-hd">&#10067; Ayuda CobraPro <b id="ayuda-x">&#10005;</b></div>'
-    +'<div id="ayuda-sr"><input id="ayuda-q" placeholder="Busca tu duda\u2026 (ej. recibo, mora, corte)"></div>'
+    +'<div id="ayuda-sr"><input id="ayuda-q" placeholder="Escribe tu duda\u2026 (recibo, mora, corte\u2026)"><button id="ayuda-ia">&#129302; Preguntar a la IA</button></div>'
     +'<div id="ayuda-list"></div>';
   document.body.appendChild(pnl);
-  var list=pnl.querySelector('#ayuda-list'), q=pnl.querySelector('#ayuda-q');
+  var list=pnl.querySelector('#ayuda-list'), q=pnl.querySelector('#ayuda-q'), iaBtn=pnl.querySelector('#ayuda-ia');
   var apiFn=(typeof apiU!=='undefined'&&apiU)?apiU:((typeof api!=='undefined'&&api)?api:null);
-  var DATA=null, cargando=false;
+  var DATA=null, cargando=false, iaCard=null, ocupado=false;
   function norm(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
   function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-  function render(filtro){
-    if(!DATA){ list.innerHTML='<div class="ay-none">Cargando ayuda\u2026</div>'; return; }
+  function renderFAQ(filtro){
+    var prev=iaCard; 
+    if(!DATA){ list.innerHTML=''; if(prev) list.appendChild(prev); list.insertAdjacentHTML('beforeend','<div class="ay-none">Cargando ayuda\u2026</div>'); return; }
     var f=norm(filtro);
     var items=DATA.filter(function(e){ return (e.apps||[]).indexOf(APP)>=0; });
     if(f) items=items.filter(function(e){ return norm(e.q+' '+e.a+' '+(e.cat||'')).indexOf(f)>=0; });
-    if(!items.length){ list.innerHTML='<div class="ay-none">No encontr\u00e9 nada con eso. Prueba otra palabra (ej. \u00abpago\u00bb, \u00abcomisi\u00f3n\u00bb, \u00abcartera\u00bb).</div>'; return; }
     var html='', cat=null;
-    items.forEach(function(e){
+    if(!items.length){ html='<div class="ay-none">Sin coincidencias en las preguntas frecuentes.<br>Prueba el bot\u00f3n &#129302; <b>Preguntar a la IA</b>.</div>'; }
+    else items.forEach(function(e){
       if(!f && e.cat!==cat){ cat=e.cat; html+='<div class="ay-cat">'+esc(cat)+'</div>'; }
       html+='<div class="ay-it"><div class="ay-qq">'+esc(e.q)+'<span class="ay-ar">&#9656;</span></div><div class="ay-aa">'+esc(e.a)+'</div></div>';
     });
     list.innerHTML=html;
+    if(prev) list.insertBefore(prev,list.firstChild);
     Array.prototype.forEach.call(list.querySelectorAll('.ay-it'),function(it){
       it.querySelector('.ay-qq').onclick=function(){ it.classList.toggle('op'); };
     });
     if(f){ var first=list.querySelector('.ay-it'); if(first) first.classList.add('op'); }
   }
-  function cargar(){
+  function cargarFAQ(){
     if(DATA||cargando) return; cargando=true;
     if(!apiFn){ list.innerHTML='<div class="ay-none">Vuelve a iniciar sesi\u00f3n para ver la ayuda.</div>'; cargando=false; return; }
     Promise.resolve(apiFn('GET','/api/ayuda/faq'))
-      .then(function(d){ DATA=Array.isArray(d)?d:[]; cargando=false; render(q.value); })
+      .then(function(d){ DATA=Array.isArray(d)?d:[]; cargando=false; renderFAQ(q.value); })
       .catch(function(){ cargando=false; list.innerHTML='<div class="ay-none">No se pudo cargar la ayuda. Revisa tu conexi\u00f3n.</div>'; });
   }
-  fab.onclick=function(){ pnl.classList.toggle('on'); if(pnl.classList.contains('on')){ cargar(); q.focus(); } };
+  function setIA(titulo,texto){
+    if(!iaCard){ iaCard=document.createElement('div'); iaCard.className='ay-iacard'; }
+    iaCard.innerHTML='<div class="ay-iah">'+titulo+'</div>'+texto;
+    if(list.firstChild!==iaCard) list.insertBefore(iaCard,list.firstChild);
+    list.scrollTop=0;
+  }
+  function askIA(){
+    var pregunta=(q.value||'').trim(); if(!pregunta||ocupado) return;
+    if(!apiFn){ setIA('Asistente','Vuelve a iniciar sesi\u00f3n para usar la ayuda.'); return; }
+    ocupado=true; iaBtn.disabled=true; setIA('Asistente \u00b7 pensando\u2026','&#8230;');
+    Promise.resolve(apiFn('POST','/api/ayuda',{pregunta:pregunta,app:APP}))
+      .then(function(d){
+        if(d&&d.sinIA){ setIA('IA no activada','La respuesta autom\u00e1tica con IA a\u00fan no est\u00e1 activada. Usa el buscador de arriba o consulta a tu administrador.'); }
+        else { setIA('Asistente IA',esc((d&&d.respuesta)||'No pude responder.').replace(/\n/g,'<br>')); }
+      })
+      .catch(function(e){ setIA('Asistente',esc('No se pudo consultar: '+((e&&e.message)||e))); })
+      .then(function(){ ocupado=false; iaBtn.disabled=false; });
+  }
+  fab.onclick=function(){ pnl.classList.toggle('on'); if(pnl.classList.contains('on')){ cargarFAQ(); q.focus(); } };
   pnl.querySelector('#ayuda-x').onclick=function(e){ e.stopPropagation(); pnl.classList.remove('on'); };
-  q.addEventListener('input',function(){ render(q.value); });
+  q.addEventListener('input',function(){ renderFAQ(q.value); });
+  q.addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); askIA(); } });
+  iaBtn.onclick=askIA;
 })();
 </script>
 
