@@ -2245,6 +2245,7 @@ function sim(){const t=$('s-tipo').value,monto=+$('s-monto').value||0,plazo=+$('
 
 /* NAV + EVENTOS */
 const titles={resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],numdiarios:['Números diarios','Cobranza por gerencia · del día y acumulado de la semana'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],bandeja:['Bandeja de entregas','Créditos por entregar · toma y entrega con evidencia'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],ranking:['Ranking de cobradores','Semana · unidades, % cobranza, clientes y cobrados con semáforo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],flujo:['Flujo / Tesorería','Efectivo del admin · dotación a la operación, nómina y capital'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo'],mapa:['Mapa de clientes','Ubicación geográfica de la cartera'],rastreo:['Rastreo de equipo','Dónde está tu gente en campo · seguridad y operación'],pl:['P&L mensual','Estado de resultados del mes · ingreso, costos, gastos y utilidad por sucursal'],extras:['Extras · Detector de prestanombres','Coincidencias por teléfono, domicilio y apellidos'],asignar:['Asignar efectivo','Mueve efectivo entre puestos · el que recibe confirma'],vobo:['Vo.Bo · Buró interno','Autoriza o declina ventas que botaron alerta roja']};
+function _ve(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 async function cargarVoBo(){
   try{
     const d=await apiU('GET','/api/buro/solicitudes');
@@ -2255,15 +2256,15 @@ async function cargarVoBo(){
         ? '<div style="color:var(--faint);padding:14px;font-size:.88rem">No hay solicitudes pendientes. 🟢</div>'
         : pend.map(s=>`<div style="border:1px solid rgba(214,67,45,.4);border-radius:10px;padding:13px 15px;margin-bottom:10px;background:rgba(214,67,45,.05)">
           <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
-            <div><b style="font-size:1rem">${esc(s.cliente||'(sin nombre)')}</b>
-              <span style="color:#d6432d;font-size:.8rem;font-weight:700;margin-left:8px">🔴 ${esc(s.motivo||'Alerta')}</span></div>
+            <div><b style="font-size:1rem">${_ve(s.cliente||'(sin nombre)')}</b>
+              <span style="color:#d6432d;font-size:.8rem;font-weight:700;margin-left:8px">🔴 ${_ve(s.motivo||'Alerta')}</span></div>
             <div style="color:var(--faint);font-size:.78rem">${new Date(s.fecha).toLocaleString('es-MX')}</div></div>
-          <div style="font-size:.83rem;color:var(--dim);margin-top:6px;line-height:1.5">Tel: <b>${esc(s.tel||'—')}</b> · ${esc(s.domicilio||'sin domicilio')}<br>Capturó: ${esc(s.usuario||'—')} · monto $${(+(s.payload&&s.payload.monto)||0).toLocaleString()}</div>
+          <div style="font-size:.83rem;color:var(--dim);margin-top:6px;line-height:1.5">Tel: <b>${_ve(s.tel||'—')}</b> · ${_ve(s.domicilio||'sin domicilio')}<br>Capturó: ${_ve(s.usuario||'—')} · monto $${(+(s.payload&&s.payload.monto)||0).toLocaleString()}</div>
           <div style="display:flex;gap:8px;margin-top:11px;flex-wrap:wrap">
             <button class="btn" style="background:var(--grn);border-color:var(--grn);color:#fff" onclick="aprobarVoBo(${s.id})">✓ Autorizar (Vo.Bo) y crear crédito</button>
             <button class="btn" style="border-color:#d6432d;color:#d6432d" onclick="declinarVoBo(${s.id})">✕ Declinar</button></div></div>`).join('');
     }
-    const rc=$('vobo-recientes'); if(rc) rc.innerHTML = rec.length ? rec.map(s=>`<div style="font-size:.82rem;color:var(--faint);padding:5px 0;border-bottom:1px solid var(--line)">${s.estado==='aprobada'?'✅':'⛔'} ${esc(s.cliente||'')} — <b>${esc(s.estado)}</b> por ${esc(s.resueltoPor||'')} · ${new Date(s.fechaResuelta||s.fecha).toLocaleDateString('es-MX')}</div>`).join('') : '<div style="color:var(--faint);font-size:.82rem">—</div>';
+    const rc=$('vobo-recientes'); if(rc) rc.innerHTML = rec.length ? rec.map(s=>`<div style="font-size:.82rem;color:var(--faint);padding:5px 0;border-bottom:1px solid var(--line)">${s.estado==='aprobada'?'✅':'⛔'} ${_ve(s.cliente||'')} — <b>${_ve(s.estado)}</b> por ${_ve(s.resueltoPor||'')} · ${new Date(s.fechaResuelta||s.fecha).toLocaleDateString('es-MX')}</div>`).join('') : '<div style="color:var(--faint);font-size:.82rem">—</div>';
   }catch(e){ alert(e.message); }
 }
 async function aprobarVoBo(id){
