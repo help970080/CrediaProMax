@@ -1647,6 +1647,47 @@ app.get('/api/reports/numeros-diarios', auth, rol('admin','supervisor'), (req,re
   res.json({ dia:diaISO, semanaInicioDia:inicioDia, semanaDesdeISO:_isoDe(wkStart), semanaHastaISO:_isoDe(wkFin), semanaDesde:new Date(wkStart).toISOString(), semanaContactos:prevIso, rows, total });
 });
 
+// Números diarios POR COBRADOR (solo lectura) — para la pantalla de Sucursal: avance de su equipo
+app.get('/api/reports/numeros-diarios-suc', auth, rol('admin','supervisor','sucursal'), (req,res)=>{
+  const sid = req.user.rol==='sucursal' ? Number(req.user.sucursalId)
+            : (req.query.sucursalId!=null && req.query.sucursalId!=='' ? Number(req.query.sucursalId) : null);
+  if(sid==null || Number.isNaN(sid)) return res.status(400).json({ error:'Falta sucursalId' });
+  const diaISO = req.query.dia || fechaMxHoyISO();
+  const dStart = new Date(diaISO+'T00:00:00').getTime();
+  const dEnd = dStart + 86400000;
+  const inicioDia = (req.query.inicio!=null && req.query.inicio!=='') ? Math.min(6,Math.max(0,+req.query.inicio)) : _diaSemanaInicio();
+  const wkStart = _inicioCiclo(dStart, inicioDia);
+  const wkFinTs = wkStart + 7*86400000;
+  const wkEnd = Math.min(Date.now(), wkFinTs);
+  const wkFin = wkFinTs - 1;
+  const activos = new Set(db.clients.filter(c=>c.activo!==false).map(c=>c.id));
+  const sales = db.sales.filter(s=>activos.has(s.clientId) && s.entregado!==false && Number(s.sucursalId)===sid);
+  const abonos = db.movimientos.filter(m=>m.abono>0 && m.forma!=='descuento');
+  const saleRef = {}; sales.forEach(s=>{ saleRef[s.id]={prom:s.prom||'—', cli:s.clientId}; });
+  const proms = [...new Set(sales.map(s=>s.prom||'—'))];
+  const rows = proms.map(prom=>{
+    const vs = sales.filter(s=>(s.prom||'—')===prom && saldoDe(s.id)>0);
+    const clientes_totales = new Set(vs.map(s=>s.clientId)).size;
+    const debito_total = vs.reduce((a,s)=>a+(s.cuota||0),0);
+    let diaColl=0, acumColl=0; const diaCli=new Set(), acumCli=new Set();
+    for(const m of abonos){ const ref=saleRef[m.saleId]; if(!ref||ref.prom!==prom) continue; const t=_parseFechaMx(m.fecha);
+      if(t>=wkStart && t<wkEnd){ acumColl+=m.abono; acumCli.add(ref.cli); }
+      if(t>=dStart && t<dEnd){ diaColl+=m.abono; diaCli.add(ref.cli); } }
+    const espDia=new Set(), espSem=new Set();
+    vs.forEach(s=>{ const ct=s.createdAt?new Date(s.createdAt).getTime():0;
+      if(_esperaCobroDia(s, dStart, dEnd)) espDia.add(s.clientId);
+      if(s.tipo!=='unico' && !(ct>=wkStart && ct<wkEnd)) espSem.add(s.clientId); });
+    const dia_nopago=[...espDia].filter(id=>!diaCli.has(id)).length;
+    const acum_nopago=[...espSem].filter(id=>!acumCli.has(id)).length;
+    return { id:prom, cobrador:prom, clientes_totales, debito_total,
+      dia_clientes:diaCli.size, dia_coll:diaColl, dia_nopago,
+      acum_clientes:acumCli.size, acum_coll:acumColl, acum_nopago,
+      objetivo: (db.objetivos.cob||{})[prom] || null };
+  }).sort((a,b)=> b.acum_coll - a.acum_coll);
+  const total = rows.reduce((a,r)=>({clientes_totales:a.clientes_totales+r.clientes_totales, debito_total:a.debito_total+r.debito_total, dia_clientes:a.dia_clientes+r.dia_clientes, dia_coll:a.dia_coll+r.dia_coll, dia_nopago:a.dia_nopago+r.dia_nopago, acum_clientes:a.acum_clientes+r.acum_clientes, acum_coll:a.acum_coll+r.acum_coll, acum_nopago:a.acum_nopago+r.acum_nopago}), {clientes_totales:0,debito_total:0,dia_clientes:0,dia_coll:0,dia_nopago:0,acum_clientes:0,acum_coll:0,acum_nopago:0});
+  res.json({ dia:diaISO, semanaInicioDia:inicioDia, semanaDesdeISO:_isoDe(wkStart), semanaHastaISO:_isoDe(wkFin), rows, total });
+});
+
 /* ---------- Objetivos (metas por sucursal y por cobrador) ---------- */
 app.get('/api/objetivos', auth, (req,res)=>{
   res.json({ suc: db.objetivos.suc || {}, cob: db.objetivos.cob || {} });
@@ -1733,19 +1774,22 @@ function _listaContactos(iso){
   const activos=new Set(db.clients.filter(c=>c.activo!==false).map(c=>c.id));
   const sales=db.sales.filter(s=>activos.has(s.clientId) && s.entregado!==false && saldoDe(s.id)>0);
   const saleCli={}; sales.forEach(s=>saleCli[s.id]=s.clientId);
-  const pagoSemana=new Set();
-  for(const m of db.movimientos){ if(m.abono>0 && saleCli[m.saleId]!=null){ const t=_parseFechaMx(m.fecha); if(t>=wb.start && t<wb.end) pagoSemana.add(saleCli[m.saleId]); } }
+  const pagadoSemana=new Map(); // clientId -> total abonado en la semana
+  for(const m of db.movimientos){ if(m.abono>0 && saleCli[m.saleId]!=null){ const t=_parseFechaMx(m.fecha); if(t>=wb.start && t<wb.end){ const cid=saleCli[m.saleId]; pagadoSemana.set(cid,(pagadoSemana.get(cid)||0)+m.abono); } } }
+  const tarifaCli=new Map(); // clientId -> tarifa semanal esperada (suma de cuotas activas)
   const espCli=new Map();
-  sales.forEach(s=>{ if(s.tipo==='unico')return; const ct=s.createdAt?new Date(s.createdAt).getTime():0; if(ct>=wb.end)return; if(!espCli.has(s.clientId)) espCli.set(s.clientId, s); });
+  sales.forEach(s=>{ if(s.tipo==='unico')return; const ct=s.createdAt?new Date(s.createdAt).getTime():0; if(ct>=wb.end)return; tarifaCli.set(s.clientId,(tarifaCli.get(s.clientId)||0)+(s.cuota||0)); if(!espCli.has(s.clientId)) espCli.set(s.clientId, s); });
   const rows=[];
   espCli.forEach((s,clientId)=>{
-    if(pagoSemana.has(clientId)) return; // sí pagó esa semana → no es contacto
+    const pagado=pagadoSemana.get(clientId)||0, tarifa=tarifaCli.get(clientId)||0;
+    // Es contacto si NO cubrió una tarifa completa: incluye a los que no pagaron nada Y a los de pago parcial.
+    if(tarifa>0 ? (pagado>=tarifa) : (pagado>0)) return;
     const c=db.clients.find(x=>x.id===clientId)||{};
     let atraso=0, saldoTot=0; db.sales.filter(x=>x.clientId===clientId && saldoDe(x.id)>0).forEach(x=>{ atraso+=_vencidoDe(x); saldoTot+=saldoDe(x.id); });
     const rec=db.contactos.find(k=>k.semana===iso && k.clientId===clientId)||null;
     rows.push({ clientId, saleId:s.id, sucursalId:s.sucursalId, cobrador:s.prom||'—', folio:s.folio||'—', saldo:Math.round(saldoTot),
       nombre:c.nombre||'—', direccion:[c.calle,c.col,c.ciudad].filter(Boolean).join(', '), tel:c.tel||'',
-      monto_atraso:Math.round(atraso), ultima_fecha_pago:_ultimaFechaPago(clientId),
+      monto_atraso:Math.round(atraso), ultima_fecha_pago:_ultimaFechaPago(clientId), pago_semana:Math.round(pagado), tarifa_semana:Math.round(tarifa), parcial:pagado>0,
       gestion: rec? { id:rec.id, resultado:rec.resultado||'', nota:rec.nota||'', tieneEvidencia:!!rec.evidencia, por:rec.por||null, fecha:rec.fecha||null, validado:!!rec.validado, validadoPor:rec.validadoPor||null, validadoFecha:rec.validadoFecha||null, llamado:!!(rec.llamadas&&rec.llamadas.length), ultimaLlamada:rec.ultimaLlamada||null } : null });
   });
   return rows;
@@ -2903,7 +2947,7 @@ app.post('/api/ayuda', auth, async (req, res) => {
     res.json({ respuesta: txt || 'No pude responder eso con la información del sistema. Reformula tu pregunta o consulta a tu administrador.' });
   } catch (e) { res.status(502).json({ error: 'No se pudo consultar la ayuda: ' + e.message }); }
 });
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v18', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, objetivoCartera: true, asignEnviadasFix: true, buro: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, mostrarMembrete: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v19', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, objetivoCartera: true, asignEnviadasFix: true, buro: true, numDiariosSuc: true, contactosParcial: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, mostrarMembrete: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
