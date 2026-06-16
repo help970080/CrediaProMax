@@ -184,6 +184,22 @@
     <button class="snb" data-vw="contactos" onclick="setVw('contactos')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">📇 Contactos</button>
     <button class="snb" data-vw="oport" onclick="setVw('oport')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">🎯 Oportunidades</button>
     <button class="snb" data-vw="mora" onclick="setVw('mora')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">📉 Mora</button>
+    <button class="snb" data-vw="numdiarios" onclick="setVw('numdiarios')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">📅 Números diarios</button>
+  </div>
+  <div id="view-numdiarios" style="display:none">
+    <div class="panel">
+      <h2 style="margin:0 0 2px">📅 Números diarios de mi equipo</h2>
+      <div class="sub" style="margin-bottom:12px">Avance de cobranza por cobrador, del día y acumulado de la semana. Solo seguimiento — no edita nada.</div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+        <label style="font-size:.82rem;color:var(--dim)">Día consultado
+          <input type="date" id="nd-dia" onchange="cargarNumDiariosSuc()" style="margin-left:6px;padding:7px 9px;border-radius:8px;border:1px solid var(--line);background:var(--surf-2);color:var(--txt);font-family:inherit">
+        </label>
+        <button class="snb" onclick="cargarNumDiariosSuc()" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:8px 13px;border-radius:9px;font-weight:700;cursor:pointer">↻ Actualizar</button>
+      </div>
+      <div id="nd-info" style="color:var(--acc);font-size:.82rem;margin-bottom:8px;font-weight:600"></div>
+      <div style="overflow-x:auto"><table id="nd-tbl" style="width:100%;border-collapse:collapse;font-size:.86rem"></table></div>
+      <div class="sub" style="margin-top:10px;font-size:.74rem;line-height:1.5">La <b>meta es el 100%</b> de la cartera activa. <b>% Coll</b> = cobranza acumulada de la semana ÷ débito. <b style="color:#d6432d">No pago</b> = clientes con cobro esperado que no abonaron (no cuenta primer pago/descuentos).</div>
+    </div>
   </div>
   <div id="view-op">
     <div class="panel">
@@ -1034,17 +1050,47 @@ function setVw(vw){
   document.getElementById('view-contactos').style.display=vw==='contactos'?'':'none';
   document.getElementById('view-oport').style.display=vw==='oport'?'':'none';
   document.getElementById('view-mora').style.display=vw==='mora'?'':'none';
+  document.getElementById('view-numdiarios').style.display=vw==='numdiarios'?'':'none';
   if(vw==='resumen') cargarResumen();
   if(vw==='cartera') cargarCartSuc();
   if(vw==='contactos') cargarContactos();
   if(vw==='oport') cargarOportSuc();
   if(vw==='mora') cargarMoraSuc();
+  if(vw==='numdiarios') cargarNumDiariosSuc();
 }
 let _periodoSuc='semana', _dashSuc=null, _cobObj={};
 function setPeriodoSuc(p){
   _periodoSuc=p;
   document.querySelectorAll('.perb').forEach(b=>{const on=b.dataset.p===p;b.style.background=on?'var(--acc)':'var(--surf-2)';b.style.color=on?'#1b2330':'var(--txt)';});
   cargarResumen();
+}
+async function cargarNumDiariosSuc(){
+  const diaEl=document.getElementById('nd-dia');
+  if(diaEl && !diaEl.value){ diaEl.value=new Date().toISOString().slice(0,10); }
+  const dia=diaEl?diaEl.value:'';
+  const info=document.getElementById('nd-info'); const tbl=document.getElementById('nd-tbl');
+  try{
+    const d=await api('GET','/api/reports/numeros-diarios-suc'+(dia?('?dia='+encodeURIComponent(dia)):''));
+    if(info) info.textContent=`Semana ${d.semanaDesdeISO} al ${d.semanaHastaISO} · día consultado ${d.dia}`;
+    const money=v=>'$'+Math.round(v||0).toLocaleString('es-MX');
+    const pct=(a,b)=>b>0?Math.round(a/b*100)+'%':'—';
+    const head=`<thead><tr style="text-align:right;color:var(--dim);font-size:.68rem;text-transform:uppercase">
+      <th style="text-align:left;padding:6px 8px">Cobrador</th><th style="padding:6px 8px">Cts día</th><th style="padding:6px 8px">Coll día</th>
+      <th style="padding:6px 8px">No pago</th><th style="padding:6px 8px">Cts acum</th><th style="padding:6px 8px">Coll acum</th><th style="padding:6px 8px">% Coll</th></tr></thead>`;
+    const body=(d.rows||[]).map(r=>`<tr style="text-align:right;border-top:1px solid var(--line)">
+      <td style="text-align:left;padding:9px 8px;font-weight:600">${(r.cobrador||'—')}</td>
+      <td style="padding:9px 8px">${r.dia_clientes}</td><td style="padding:9px 8px">${money(r.dia_coll)}</td>
+      <td style="padding:9px 8px;color:${r.dia_nopago>0?'#d6432d':'var(--dim)'};font-weight:${r.dia_nopago>0?'700':'400'}">${r.dia_nopago}</td>
+      <td style="padding:9px 8px">${r.acum_clientes}</td><td style="padding:9px 8px">${money(r.acum_coll)}</td>
+      <td style="padding:9px 8px;font-weight:700;color:var(--acc)">${pct(r.acum_coll,r.debito_total)}</td></tr>`).join('');
+    const t=d.total||{};
+    const foot=`<tr style="text-align:right;border-top:2px solid var(--line);font-weight:800;background:var(--surf-2)">
+      <td style="text-align:left;padding:9px 8px">TOTAL</td><td style="padding:9px 8px">${t.dia_clientes||0}</td><td style="padding:9px 8px">${money(t.dia_coll)}</td>
+      <td style="padding:9px 8px;color:${(t.dia_nopago||0)>0?'#d6432d':'inherit'}">${t.dia_nopago||0}</td>
+      <td style="padding:9px 8px">${t.acum_clientes||0}</td><td style="padding:9px 8px">${money(t.acum_coll)}</td>
+      <td style="padding:9px 8px;color:var(--acc)">${pct(t.acum_coll,t.debito_total)}</td></tr>`;
+    tbl.innerHTML=head+'<tbody>'+(body||'<tr><td style="padding:14px;color:var(--dim)">Sin datos para este día.</td></tr>')+foot+'</tbody>';
+  }catch(e){ if(info) info.textContent='No se pudo cargar: '+(e.message||e); }
 }
 async function cargarResumen(){
   try{
