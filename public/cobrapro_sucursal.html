@@ -231,6 +231,7 @@
         <div class="calc" id="calc"></div>
         <div id="buro-sem" class="buro-sem" style="display:none"></div>
         <button class="btn-full" onclick="crearCredito()">Capturar crédito</button>
+        <button class="btn" style="width:100%;margin-top:8px;background:transparent;border:1px solid var(--line);color:var(--dim)" onclick="limpiarNuevoCredito()">🧹 Limpiar formulario</button>
       </section>
       <section class="view" id="corte">
         <div class="big-cut"><div class="l">Efectivo real en caja</div><div class="v" id="cut-tot">$0</div></div>
@@ -767,6 +768,14 @@ function _buroBind(){
 }
 if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',_buroBind); else _buroBind();
 
+function limpiarNuevoCredito(){
+  ['n-cli','n-tel','n-calle','n-col','n-ref','n-curp','n-ciudad','n-estado'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  const mt=document.getElementById('n-monto'); if(mt) mt.value=5000;
+  try{ resetArticulos(); }catch(e){}
+  const bs=document.getElementById('buro-sem'); if(bs)bs.style.display='none'; _buroLast='';
+  try{ calc(); }catch(e){}
+}
+
 async function crearCredito(){
   const nombre=document.getElementById('n-cli').value.trim();
   const calle=document.getElementById('n-calle').value.trim();
@@ -791,7 +800,7 @@ async function crearCredito(){
       document.getElementById('overlay').innerHTML=`<div class="modal">
         <h3 style="color:#d6432d">🔴 Cliente con alerta</h3>
         <div style="font-size:.85rem;line-height:1.6;color:var(--dim);margin:10px 0 4px">Este cliente tiene una alerta en el sistema. La venta se envió al <b>administrador</b> para su Vo.Bo. No puede capturarse hasta que sea autorizada.</div>
-        <div class="modal-actions" style="margin-top:14px"><button class="ma ok" onclick="cerrar()">Entendido</button></div>
+        <div class="modal-actions" style="margin-top:14px"><button class="ma ok" onclick="cerrar();limpiarNuevoCredito()">Entendido</button></div>
       </div>`;
       document.getElementById('overlay').classList.add('on');
       return;
