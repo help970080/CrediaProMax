@@ -1074,20 +1074,32 @@ async function cargarNumDiariosSuc(){
     if(info) info.textContent=`Semana ${d.semanaDesdeISO} al ${d.semanaHastaISO} · día consultado ${d.dia}`;
     const money=v=>'$'+Math.round(v||0).toLocaleString('es-MX');
     const pct=(a,b)=>b>0?Math.round(a/b*100)+'%':'—';
+    const metaCol=p=> p>=100?'#178a55':(p>=70?'#caa23a':'#d6432d');
+    const objDe=r=> (r.objetivo&&r.objetivo.cobranza>0)?r.objetivo.cobranza:0;
     const head=`<thead><tr style="text-align:right;color:var(--dim);font-size:.68rem;text-transform:uppercase">
       <th style="text-align:left;padding:6px 8px">Cobrador</th><th style="padding:6px 8px">Cts día</th><th style="padding:6px 8px">Coll día</th>
-      <th style="padding:6px 8px">No pago</th><th style="padding:6px 8px">Cts acum</th><th style="padding:6px 8px">Coll acum</th><th style="padding:6px 8px">% Coll</th></tr></thead>`;
-    const body=(d.rows||[]).map(r=>`<tr style="text-align:right;border-top:1px solid var(--line)">
+      <th style="padding:6px 8px">No pago</th><th style="padding:6px 8px">Cts acum</th><th style="padding:6px 8px">Coll acum</th>
+      <th style="padding:6px 8px">Objetivo</th><th style="padding:6px 8px">% Meta</th><th style="padding:6px 8px">% Coll</th></tr></thead>`;
+    const body=(d.rows||[]).map(r=>{
+      const obj=objDe(r); const am=obj>0?Math.round(r.acum_coll/obj*100):null;
+      return `<tr style="text-align:right;border-top:1px solid var(--line)">
       <td style="text-align:left;padding:9px 8px;font-weight:600">${(r.cobrador||'—')}</td>
       <td style="padding:9px 8px">${r.dia_clientes}</td><td style="padding:9px 8px">${money(r.dia_coll)}</td>
       <td style="padding:9px 8px;color:${r.dia_nopago>0?'#d6432d':'var(--dim)'};font-weight:${r.dia_nopago>0?'700':'400'}">${r.dia_nopago}</td>
       <td style="padding:9px 8px">${r.acum_clientes}</td><td style="padding:9px 8px">${money(r.acum_coll)}</td>
-      <td style="padding:9px 8px;font-weight:700;color:var(--acc)">${pct(r.acum_coll,r.debito_total)}</td></tr>`).join('');
+      <td style="padding:9px 8px;color:${obj>0?'var(--txt)':'var(--dim)'}">${obj>0?money(obj):'sin meta'}</td>
+      <td style="padding:9px 8px;font-weight:700;color:${am==null?'var(--dim)':metaCol(am)}">${am==null?'—':am+'%'}</td>
+      <td style="padding:9px 8px;font-weight:700;color:var(--acc)">${pct(r.acum_coll,r.debito_total)}</td></tr>`;
+    }).join('');
     const t=d.total||{};
+    const totObj=(d.rows||[]).reduce((a,r)=>a+objDe(r),0);
+    const totAm=totObj>0?Math.round(t.acum_coll/totObj*100):null;
     const foot=`<tr style="text-align:right;border-top:2px solid var(--line);font-weight:800;background:var(--surf-2)">
       <td style="text-align:left;padding:9px 8px">TOTAL</td><td style="padding:9px 8px">${t.dia_clientes||0}</td><td style="padding:9px 8px">${money(t.dia_coll)}</td>
       <td style="padding:9px 8px;color:${(t.dia_nopago||0)>0?'#d6432d':'inherit'}">${t.dia_nopago||0}</td>
       <td style="padding:9px 8px">${t.acum_clientes||0}</td><td style="padding:9px 8px">${money(t.acum_coll)}</td>
+      <td style="padding:9px 8px">${totObj>0?money(totObj):'—'}</td>
+      <td style="padding:9px 8px;color:${totAm==null?'inherit':metaCol(totAm)}">${totAm==null?'—':totAm+'%'}</td>
       <td style="padding:9px 8px;color:var(--acc)">${pct(t.acum_coll,t.debito_total)}</td></tr>`;
     tbl.innerHTML=head+'<tbody>'+(body||'<tr><td style="padding:14px;color:var(--dim)">Sin datos para este día.</td></tr>')+foot+'</tbody>';
   }catch(e){ if(info) info.textContent='No se pudo cargar: '+(e.message||e); }
