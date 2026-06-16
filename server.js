@@ -968,8 +968,84 @@ app.patch('/api/clients/:id', auth, rol('admin', 'supervisor'), (req, res) => {
   saveDB();
   res.json({ ok: true, cliente: c });
 });
+/* ===== Buró interno (lista negra GLOBAL, compartida entre agencias) ===== */
+const _buroNorm = s => String(s || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+const _buroPhone = s => { const d = String(s || '').replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : ''; };
+const _buroDom = s => _buroNorm(s).replace(/\b(CALLE|COL|COLONIA|NUM|NUMERO|NO|INT|EXT|MZ|LT|MANZANA|LOTE|SN|ESQ|AV|AVENIDA|PRIV|PRIVADA|ANDADOR|CERRADA)\b/g, ' ').replace(/\s+/g, ' ').trim();
+let BURO = { ph: new Map(), nm: new Map(), dom: new Map(), ready: false };
+function buroRebuild() {
+  BURO = { ph: new Map(), nm: new Map(), dom: new Map(), ready: true };
+  for (const it of ((SYS && SYS.buroItems) || [])) {
+    (it.tels || []).forEach(t => { const p = _buroPhone(t); if (p) BURO.ph.set(p, it); });
+    const n = _buroNorm(it.nombre); if (n) BURO.nm.set(n, it);
+    const d = _buroDom(it.domicilio); if (d && d.length > 6) { if (!BURO.dom.has(d)) BURO.dom.set(d, []); BURO.dom.get(d).push(it); }
+  }
+}
+function buroCheck(nombre, tel, domicilio) {
+  if (!BURO.ready) buroRebuild();
+  const p = _buroPhone(tel), n = _buroNorm(nombre), d = _buroDom(domicilio);
+  if (p && BURO.ph.has(p)) return { semaforo: 'rojo', motivo: 'Teléfono coincide con un moroso registrado', match: BURO.ph.get(p) };
+  if (n && BURO.nm.has(n)) return { semaforo: 'rojo', motivo: 'Nombre coincide con un moroso registrado', match: BURO.nm.get(n) };
+  if (d && d.length > 6 && BURO.dom.has(d)) return { semaforo: 'amarillo', motivo: 'El domicilio coincide con un caso en lista negra (revisar)', match: BURO.dom.get(d)[0] };
+  return { semaforo: 'verde', motivo: '' };
+}
+// Cargar la lista negra (solo admin/supervisor). Global: vive en SYS.
+app.post('/api/buro/import', auth, rol('admin', 'supervisor'), (req, res) => {
+  const items = Array.isArray(req.body.items) ? req.body.items : [];
+  SYS.buroItems = SYS.buroItems || [];
+  if (req.body.reset) SYS.buroItems = [];
+  for (const it of items) {
+    if (!it || !(it.nombre || (it.tels && it.tels.length))) continue;
+    SYS.buroItems.push({ nombre: String(it.nombre || ''), tels: (it.tels || []).map(String), domicilio: String(it.domicilio || ''), motivo: String(it.motivo || 'Moroso'), zona: String(it.zona || '') });
+  }
+  saveSystem(); buroRebuild();
+  res.json({ ok: true, total: SYS.buroItems.length });
+});
+// Validación en vivo: sucursal recibe SOLO el color; admin/supervisor recibe el motivo.
+app.post('/api/buro/check', auth, (req, res) => {
+  const dom = [req.body.calle, req.body.col, req.body.ciudad, req.body.estado, req.body.domicilio].filter(Boolean).join(' ');
+  const r = buroCheck(req.body.nombre, req.body.tel || req.body.telefono, dom);
+  const esAdmin = ['admin', 'supervisor'].includes(req.user.rol);
+  res.json({ semaforo: r.semaforo, motivo: esAdmin ? r.motivo : undefined });
+});
+// Bandeja de Vo.Bo para el admin (solicitudes que botaron ROJO en una venta).
+app.get('/api/buro/solicitudes', auth, rol('admin', 'supervisor'), (req, res) => {
+  const all = (db.buroSolicitudes || []).slice().reverse();
+  res.json({ pendientes: all.filter(s => s.estado === 'pendiente'), recientes: all.filter(s => s.estado !== 'pendiente').slice(0, 20) });
+});
+app.post('/api/buro/solicitud/:id/aprobar', auth, rol('admin', 'supervisor'), (req, res) => {
+  const s = (db.buroSolicitudes || []).find(x => x.id === +req.params.id);
+  if (!s) return res.status(404).json({ error: 'Solicitud no encontrada' });
+  s.estado = 'aprobada'; s.resueltoPor = req.user.nombre; s.fechaResuelta = new Date().toISOString(); s.nota = String(req.body.nota || '');
+  saveDB();
+  res.json({ ok: true, solicitud: s, payload: s.payload });
+});
+app.post('/api/buro/solicitud/:id/declinar', auth, rol('admin', 'supervisor'), (req, res) => {
+  const s = (db.buroSolicitudes || []).find(x => x.id === +req.params.id);
+  if (!s) return res.status(404).json({ error: 'Solicitud no encontrada' });
+  s.estado = 'declinada'; s.resueltoPor = req.user.nombre; s.fechaResuelta = new Date().toISOString(); s.nota = String(req.body.nota || '');
+  saveDB();
+  res.json({ ok: true });
+});
+
 app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
   const { nombre, tel, calle, col, ciudad, estado, curp, sucursalId, prom, tipo, plazo, monto, dias, force, clienteExistenteId, articulos } = req.body;
+
+  // === Candado de Buró: solo cliente NUEVO. ROJO bloquea y dispara solicitud de Vo.Bo al admin. ===
+  if (!clienteExistenteId) {
+    const _chk = buroCheck(nombre, tel, [calle, col, ciudad, estado].filter(Boolean).join(' '));
+    if (_chk.semaforo === 'rojo') {
+      if (req.body.voBoId) {
+        const sol = (db.buroSolicitudes || []).find(s => s.id === +req.body.voBoId);
+        if (!sol || sol.estado !== 'aprobada') return res.status(403).json({ error: 'vobo_requerido', detalle: 'Esta venta requiere el Vo.Bo del administrador.' });
+      } else {
+        db.buroSolicitudes = db.buroSolicitudes || [];
+        const sol = { id: nextId('buroSolicitudes'), fecha: new Date().toISOString(), estado: 'pendiente', sucursalId: req.user.sucursalId || null, usuario: req.user.nombre, motivo: _chk.motivo, cliente: nombre || '', tel: tel || '', domicilio: [calle, col, ciudad, estado].filter(Boolean).join(', '), payload: req.body };
+        db.buroSolicitudes.push(sol); saveDB();
+        return res.status(202).json({ voBo: true, semaforo: 'rojo', solicitudId: sol.id });
+      }
+    }
+  }
 
   let client;
   if (clienteExistenteId) {
@@ -2827,7 +2903,7 @@ app.post('/api/ayuda', auth, async (req, res) => {
     res.json({ respuesta: txt || 'No pude responder eso con la información del sistema. Reformula tu pregunta o consulta a tu administrador.' });
   } catch (e) { res.status(502).json({ error: 'No se pudo consultar la ayuda: ' + e.message }); }
 });
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v17', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, objetivoCartera: true, asignEnviadasFix: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, mostrarMembrete: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v18', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, objetivoCartera: true, asignEnviadasFix: true, buro: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, mostrarMembrete: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
