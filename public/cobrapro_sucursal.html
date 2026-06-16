@@ -34,6 +34,23 @@
   .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:20px}
   @media(max-width:680px){.kpis{grid-template-columns:1fr 1fr}}
   @media(max-width:680px){.wrap{padding:16px 12px 50px}table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}}
+  @media(max-width:680px){
+    header{padding:9px 12px;gap:10px;flex-wrap:wrap}
+    .mk{width:30px;height:30px;font-size:15px}
+    header h1{font-size:.92rem;line-height:1.15}
+    header .sub{font-size:.66rem}
+    .hmeta{gap:8px;flex-wrap:wrap}
+    .hmeta .clock{display:none}
+    .hmeta button{padding:6px 10px!important;font-size:.72rem!important}
+    .wrap{padding-top:12px}
+    .kpis{gap:9px;margin-bottom:12px}
+    .kpi{padding:11px 12px}
+    .panel{padding:13px;margin-bottom:12px}
+    .grid{gap:12px}
+    .cli-res{max-height:64vh}
+    .ph-sub,.search-hint{font-size:.72rem}
+    .snb{padding:8px 11px!important;font-size:.8rem!important}
+  }
   .kpi{background:linear-gradient(160deg,var(--surf-2),var(--surf));border:1px solid var(--line);border-radius:var(--r);padding:15px 16px;position:relative;overflow:hidden}
   .kpi::before{content:"";position:absolute;top:0;left:0;width:3px;height:100%;background:var(--acc);opacity:.55}
   .kpi.g::before{background:var(--grn)}.kpi.b::before{background:var(--blu)}.kpi.v::before{background:var(--vio)}.kpi.r::before{background:var(--red)}
@@ -161,6 +178,7 @@
   </div>
   <div class="subnav" style="display:flex;gap:8px;margin:0 0 14px;flex-wrap:wrap">
     <button class="snb" data-vw="op" onclick="setVw('op')" style="background:var(--acc);color:#1b2330;border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">🧾 Operación</button>
+    <button class="snb" data-vw="caja" onclick="setVw('caja')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">💳 Nuevo crédito / Corte</button>
     <button class="snb" data-vw="resumen" onclick="setVw('resumen')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">📊 Resumen</button>
     <button class="snb" data-vw="cartera" onclick="setVw('cartera')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">📁 Cartera de crédito</button>
     <button class="snb" data-vw="contactos" onclick="setVw('contactos')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">📇 Contactos</button>
@@ -168,7 +186,6 @@
     <button class="snb" data-vw="mora" onclick="setVw('mora')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">📉 Mora</button>
   </div>
   <div id="view-op">
-  <div class="grid">
     <div class="panel">
       <h2>Recibir pago</h2>
       <div class="ph-sub">Busca al cliente —de cualquier cobrador— y registra su abono con su forma de pago. El saldo se actualiza al instante.</div>
@@ -176,6 +193,8 @@
       <div class="search-hint">🔎 Busca por todos los campos a la vez</div>
       <div class="cli-res" id="cliRes"></div>
     </div>
+  </div>
+  <div id="view-caja" style="display:none">
     <div class="panel">
       <div class="tabs">
         <button class="tab on" data-v="nuevo">Nuevo crédito</button>
@@ -242,7 +261,6 @@
         <table><thead><tr><th>Hora</th><th>Concepto</th><th class="n">Monto</th></tr></thead><tbody id="movs"></tbody></table>
       </section>
     </div>
-  </div>
   </div>
 
   <div id="view-resumen" style="display:none">
@@ -964,6 +982,7 @@ function toast(t){const el=document.getElementById('toast');el.textContent=t;el.
 function setVw(vw){
   document.querySelectorAll('.snb').forEach(b=>{const on=b.dataset.vw===vw;b.style.background=on?'var(--acc)':'var(--surf-2)';b.style.color=on?'#1b2330':'var(--txt)';});
   document.getElementById('view-op').style.display=vw==='op'?'':'none';
+  document.getElementById('view-caja').style.display=vw==='caja'?'':'none';
   document.getElementById('view-resumen').style.display=vw==='resumen'?'':'none';
   document.getElementById('view-cartera').style.display=vw==='cartera'?'':'none';
   document.getElementById('view-contactos').style.display=vw==='contactos'?'':'none';
