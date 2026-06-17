@@ -2367,7 +2367,7 @@ app.post('/api/admin/reset-datos', auth, rol('admin'), (req, res) => {
     saveDB();
     return res.json({ ok: true, mensaje: 'Tesorería, cajas, asignaciones y efectivo en CERO. Se conservaron los clientes, créditos y saldos importados.' });
   }
-  if (req.body.confirmar !== 'BORRAR') return res.status(400).json({ error: "Para confirmar envía { confirmar: 'BORRAR' } (todo) o { soloEfectivo: true, reindexUsuarios: true } (solo tesorería/caja)" });
+  if (req.body.confirmar !== 'BORRAR') return res.status(400).json({ error: "Para confirmar envía { confirmar: 'BORRAR' } (todo) o { soloEfectivo: true, reindexUsuarios: true, resetPassCobradores: true } (solo tesorería/caja)" });
   // Limpieza A FONDO: borra TODO lo operativo. Conserva SOLO usuarios, sucursales y configuración.
   db.clients = [];
   db.sales = [];
@@ -2407,6 +2407,25 @@ app.post('/api/admin/reindex-usuarios', auth, rol('admin'), (req, res) => {
   });
   saveSystem();
   res.json({ ok: true, tenantId: tid, totalUsuarios: total, reparados: reparados.length, usuariosReparados: reparados });
+});
+
+// ===== FIJAR CONTRASEÑA A TODOS LOS COBRADORES (rescate de login) =====
+// body: { password:'cobra2026' }  -> pone esa clave a TODOS los usuarios rol 'cobrador', los activa y re-indexa.
+app.post('/api/admin/reset-pass-cobradores', auth, rol('admin'), (req, res) => {
+  const nueva = (req.body.password && String(req.body.password).length >= 4) ? String(req.body.password) : 'cobra2026';
+  const tid = als.getStore().tenantId;
+  SYS.userIndex = SYS.userIndex || {};
+  const usuarios = [];
+  db.users.forEach(u => {
+    if (u.rol === 'cobrador') {
+      u.passwordHash = bcrypt.hashSync(nueva, 8);
+      u.activo = true;
+      if (u.usuario) SYS.userIndex[u.usuario] = tid;
+      usuarios.push({ usuario: u.usuario, nombre: u.nombre });
+    }
+  });
+  saveDB(); saveSystem();
+  res.json({ ok: true, password: nueva, cobradores: usuarios.length, usuarios });
 });
 
 // ===== IMPORTACIÓN MASIVA (migración de base existente) =====
@@ -2989,7 +3008,7 @@ app.post('/api/ayuda', auth, async (req, res) => {
     res.json({ respuesta: txt || 'No pude responder eso con la información del sistema. Reformula tu pregunta o consulta a tu administrador.' });
   } catch (e) { res.status(502).json({ error: 'No se pudo consultar la ayuda: ' + e.message }); }
 });
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v22', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, objetivoCartera: true, asignEnviadasFix: true, buro: true, numDiariosSuc: true, contactosParcial: true, resetFondo: true, soloEfectivo: true, reindexUsuarios: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, mostrarMembrete: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v23', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, objetivoCartera: true, asignEnviadasFix: true, buro: true, numDiariosSuc: true, contactosParcial: true, resetFondo: true, soloEfectivo: true, reindexUsuarios: true, resetPassCobradores: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, mostrarMembrete: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
