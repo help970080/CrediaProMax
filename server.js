@@ -230,7 +230,17 @@ app.post('/api/auth/login', async (req, res) => {
     return res.json({ token, super: true, user: { nombre: su.nombre, usuario: su.usuario, rol: 'super' }, brand: { nombre: 'CobraPro · Panel maestro' } });
   }
   // usuario de agencia: el índice global dice a qué agencia pertenece
-  const tid = SYS.userIndex ? SYS.userIndex[usuario] : null;
+  let tid = SYS.userIndex ? SYS.userIndex[usuario] : null;
+  if (tid == null) {
+    // AUTO-REPARACIÓN: si no está en el índice (p.ej. se perdió en un reinicio),
+    // lo busca en las agencias y repara el índice para la próxima vez.
+    for (const t of (SYS.tenants || [])) {
+      try {
+        const b = await getTenant(t.id);
+        if (b && b.users && b.users.some(x => x.usuario === usuario)) { tid = t.id; SYS.userIndex = SYS.userIndex || {}; SYS.userIndex[usuario] = t.id; saveSystem(); break; }
+      } catch (e) {}
+    }
+  }
   if (tid == null) return res.status(401).json({ error: 'Usuario o contraseña inválidos' });
   const tnt = (SYS.tenants || []).find(t => t.id === +tid);
   if (tnt && tnt.activo === false) return res.status(403).json({ error: 'Esta agencia está suspendida. Contacta a soporte.' });
@@ -2367,7 +2377,7 @@ app.post('/api/admin/reset-datos', auth, rol('admin'), (req, res) => {
     saveDB();
     return res.json({ ok: true, mensaje: 'Tesorería, cajas, asignaciones y efectivo en CERO. Se conservaron los clientes, créditos y saldos importados.' });
   }
-  if (req.body.confirmar !== 'BORRAR') return res.status(400).json({ error: "Para confirmar envía { confirmar: 'BORRAR' } (todo) o { soloEfectivo: true, reindexUsuarios: true, resetPassCobradores: true, limpiarCobradores: true } (solo tesorería/caja)" });
+  if (req.body.confirmar !== 'BORRAR') return res.status(400).json({ error: "Para confirmar envía { confirmar: 'BORRAR' } (todo) o { soloEfectivo: true, reindexUsuarios: true, resetPassCobradores: true, limpiarCobradores: true, importLoginFix: true, loginAutoRepair: true } (solo tesorería/caja)" });
   // Limpieza A FONDO: borra TODO lo operativo. Conserva SOLO usuarios, sucursales y configuración.
   db.clients = [];
   db.sales = [];
@@ -2520,6 +2530,9 @@ app.post('/api/admin/import-bulk', auth, rol('admin'), (req, res) => {
     db.movimientos.push({ id: nextId('movimientos'), saleId: sale.id, fecha: hoy, concepto: 'Saldo inicial (migración)', origen: 'Importación', cargo: saldo, abono: 0 });
     creados++;
   });
+  // BLINDAJE: asegura que TODOS los usuarios de la agencia queden en el índice global,
+  // para que los cobradores recién creados puedan iniciar sesión de inmediato (sin reindex manual).
+  db.users.forEach(u => { if (u.usuario) SYS.userIndex[u.usuario] = tid; });
   saveDB(); saveSystem();
   res.json({ ok: true, sucursales: sucNames.length, cobradores: rutas.length, creditos: creados, sumaSaldo, passwordCobradores: pass, logins });
 });
@@ -3034,7 +3047,7 @@ app.post('/api/ayuda', auth, async (req, res) => {
     res.json({ respuesta: txt || 'No pude responder eso con la información del sistema. Reformula tu pregunta o consulta a tu administrador.' });
   } catch (e) { res.status(502).json({ error: 'No se pudo consultar la ayuda: ' + e.message }); }
 });
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v24', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, objetivoCartera: true, asignEnviadasFix: true, buro: true, numDiariosSuc: true, contactosParcial: true, resetFondo: true, soloEfectivo: true, reindexUsuarios: true, resetPassCobradores: true, limpiarCobradores: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, mostrarMembrete: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v26', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, objetivoCartera: true, asignEnviadasFix: true, buro: true, numDiariosSuc: true, contactosParcial: true, resetFondo: true, soloEfectivo: true, reindexUsuarios: true, resetPassCobradores: true, limpiarCobradores: true, importLoginFix: true, loginAutoRepair: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, mostrarMembrete: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
