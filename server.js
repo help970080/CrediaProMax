@@ -2367,7 +2367,7 @@ app.post('/api/admin/reset-datos', auth, rol('admin'), (req, res) => {
     saveDB();
     return res.json({ ok: true, mensaje: 'Tesorería, cajas, asignaciones y efectivo en CERO. Se conservaron los clientes, créditos y saldos importados.' });
   }
-  if (req.body.confirmar !== 'BORRAR') return res.status(400).json({ error: "Para confirmar envía { confirmar: 'BORRAR' } (todo) o { soloEfectivo: true } (solo tesorería/caja)" });
+  if (req.body.confirmar !== 'BORRAR') return res.status(400).json({ error: "Para confirmar envía { confirmar: 'BORRAR' } (todo) o { soloEfectivo: true, reindexUsuarios: true } (solo tesorería/caja)" });
   // Limpieza A FONDO: borra TODO lo operativo. Conserva SOLO usuarios, sucursales y configuración.
   db.clients = [];
   db.sales = [];
@@ -2392,6 +2392,23 @@ app.post('/api/admin/reset-datos', auth, rol('admin'), (req, res) => {
   saveDB();
   res.json({ ok: true, mensaje: 'Limpieza a fondo: se borraron clientes, créditos, movimientos, caja, asignaciones de efectivo, objetivos, contactos, cortes, entregas, recolecciones, transferencias, ubicaciones y cierres. Se conservaron usuarios, sucursales y configuración.' });
 });
+
+// ===== REPARAR LOGIN: re-indexa todos los usuarios de la agencia al tenant correcto =====
+// Arregla cobradores/usuarios que quedaron fuera del índice global (no pueden iniciar sesión).
+app.post('/api/admin/reindex-usuarios', auth, rol('admin'), (req, res) => {
+  const tid = als.getStore().tenantId;
+  SYS.userIndex = SYS.userIndex || {};
+  let total = 0; const reparados = [];
+  db.users.forEach(u => {
+    if (!u.usuario) return;
+    total++;
+    if (SYS.userIndex[u.usuario] !== tid) reparados.push(u.usuario);
+    SYS.userIndex[u.usuario] = tid;
+  });
+  saveSystem();
+  res.json({ ok: true, tenantId: tid, totalUsuarios: total, reparados: reparados.length, usuariosReparados: reparados });
+});
+
 // ===== IMPORTACIÓN MASIVA (migración de base existente) =====
 // body: { commit:bool, confirmar:'IMPORTAR', password:'cobra2026', items:[{suc,sucCode,ruta,nombre,tel,domicilio,monto,total,cuota,saldo}] }
 function _slug(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''); }
@@ -2972,7 +2989,7 @@ app.post('/api/ayuda', auth, async (req, res) => {
     res.json({ respuesta: txt || 'No pude responder eso con la información del sistema. Reformula tu pregunta o consulta a tu administrador.' });
   } catch (e) { res.status(502).json({ error: 'No se pudo consultar la ayuda: ' + e.message }); }
 });
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v21', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, objetivoCartera: true, asignEnviadasFix: true, buro: true, numDiariosSuc: true, contactosParcial: true, resetFondo: true, soloEfectivo: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, mostrarMembrete: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v22', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, objetivoCartera: true, asignEnviadasFix: true, buro: true, numDiariosSuc: true, contactosParcial: true, resetFondo: true, soloEfectivo: true, reindexUsuarios: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, mostrarMembrete: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
