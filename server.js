@@ -2367,7 +2367,7 @@ app.post('/api/admin/reset-datos', auth, rol('admin'), (req, res) => {
     saveDB();
     return res.json({ ok: true, mensaje: 'Tesorería, cajas, asignaciones y efectivo en CERO. Se conservaron los clientes, créditos y saldos importados.' });
   }
-  if (req.body.confirmar !== 'BORRAR') return res.status(400).json({ error: "Para confirmar envía { confirmar: 'BORRAR' } (todo) o { soloEfectivo: true, reindexUsuarios: true, resetPassCobradores: true } (solo tesorería/caja)" });
+  if (req.body.confirmar !== 'BORRAR') return res.status(400).json({ error: "Para confirmar envía { confirmar: 'BORRAR' } (todo) o { soloEfectivo: true, reindexUsuarios: true, resetPassCobradores: true, limpiarCobradores: true } (solo tesorería/caja)" });
   // Limpieza A FONDO: borra TODO lo operativo. Conserva SOLO usuarios, sucursales y configuración.
   db.clients = [];
   db.sales = [];
@@ -2426,6 +2426,32 @@ app.post('/api/admin/reset-pass-cobradores', auth, rol('admin'), (req, res) => {
   });
   saveDB(); saveSystem();
   res.json({ ok: true, password: nueva, cobradores: usuarios.length, usuarios });
+});
+
+// ===== LIMPIAR COBRADORES SIN CARTERA (borra los sobrantes del test) =====
+// Sin confirmar -> solo muestra. Con { confirmar:'BORRAR' } -> elimina los cobradores que no tienen NINGÚN crédito.
+app.post('/api/admin/limpiar-cobradores-vacios', auth, rol('admin'), (req, res) => {
+  const sucMap = {}; (db.sucursales || []).forEach(s => sucMap[s.id] = s.nombre);
+  const cuenta = {};
+  (db.sales || []).forEach(s => { const k = (s.prom || '') + '||' + (s.sucursalId == null ? '' : s.sucursalId); cuenta[k] = (cuenta[k] || 0) + 1; });
+  const vacios = [], conCartera = [];
+  (db.users || []).forEach(u => {
+    if (u.rol !== 'cobrador') return;
+    const k = (u.nombre || '') + '||' + (u.sucursalId == null ? '' : u.sucursalId);
+    const n = cuenta[k] || 0;
+    const info = { usuario: u.usuario, nombre: u.nombre, sucursal: sucMap[u.sucursalId] || '—', creditos: n };
+    (n > 0 ? conCartera : vacios).push(info);
+  });
+  if (req.body.confirmar !== 'BORRAR') {
+    return res.json({ preview: true, totalCobradores: conCartera.length + vacios.length, conCartera: conCartera.length, vacios: vacios.length, listaVacios: vacios, listaConCartera: conCartera });
+  }
+  const delUser = new Set(vacios.map(v => v.usuario));
+  db.users = db.users.filter(u => {
+    if (u.rol === 'cobrador' && delUser.has(u.usuario)) { if (u.usuario && SYS.userIndex) delete SYS.userIndex[u.usuario]; return false; }
+    return true;
+  });
+  saveDB(); saveSystem();
+  res.json({ ok: true, eliminados: vacios.length, conservados: conCartera.length, usuariosEliminados: vacios.map(v => v.usuario) });
 });
 
 // ===== IMPORTACIÓN MASIVA (migración de base existente) =====
@@ -3008,7 +3034,7 @@ app.post('/api/ayuda', auth, async (req, res) => {
     res.json({ respuesta: txt || 'No pude responder eso con la información del sistema. Reformula tu pregunta o consulta a tu administrador.' });
   } catch (e) { res.status(502).json({ error: 'No se pudo consultar la ayuda: ' + e.message }); }
 });
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v23', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, objetivoCartera: true, asignEnviadasFix: true, buro: true, numDiariosSuc: true, contactosParcial: true, resetFondo: true, soloEfectivo: true, reindexUsuarios: true, resetPassCobradores: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, mostrarMembrete: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v24', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, objetivoCartera: true, asignEnviadasFix: true, buro: true, numDiariosSuc: true, contactosParcial: true, resetFondo: true, soloEfectivo: true, reindexUsuarios: true, resetPassCobradores: true, limpiarCobradores: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, mostrarMembrete: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
