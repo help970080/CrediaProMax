@@ -880,6 +880,27 @@ app.post('/api/entregas/:id/soltar', auth, rol('admin', 'supervisor', 'sucursal'
   delete s.tomadoPor; saveDB();
   res.json({ ok: true });
 });
+// Eliminar un crédito POR ENTREGAR (no entregado): lo cancela y deja registro de la eliminación
+app.post('/api/entregas/:id/eliminar', auth, rol('admin', 'supervisor'), (req, res) => {
+  const s = db.sales.find(x => x.id == req.params.id);
+  if (!s) return res.status(404).json({ error: 'Crédito no encontrado' });
+  if (s.entregado === true) return res.status(409).json({ error: 'Ese crédito ya fue entregado; no se puede eliminar desde la bandeja' });
+  const c = db.clients.find(x => x.id === s.clientId) || {};
+  db.entregasEliminadas = db.entregasEliminadas || [];
+  db.entregasEliminadas.push({
+    id: Date.now(), saleId: s.id, folio: s.folio, cliente: c.nombre || '—',
+    monto: s.monto, total: s.total, prom: s.prom, sucursalId: s.sucursalId,
+    motivo: String(req.body.motivo || '').slice(0, 200),
+    por: { rol: req.user.rol, id: req.user.id, nombre: req.user.nombre }, fecha: new Date().toISOString()
+  });
+  // limpia movimientos de ese crédito y la venta; si el cliente no tiene otros créditos, lo da de baja
+  db.movimientos = db.movimientos.filter(m => m.saleId !== s.id);
+  const otras = db.sales.filter(x => x.clientId === s.clientId && x.id !== s.id);
+  db.sales = db.sales.filter(x => x.id !== s.id);
+  if (!otras.length && c && c.id != null) { c.activo = false; c.bajaMotivo = 'Entrega eliminada'; }
+  saveDB();
+  res.json({ ok: true, eliminada: s.folio });
+});
 // JC hace su cierre del día (deja registro; el efectivo puede quedarse o recolectarse aparte)
 app.post('/api/jc/cierre', auth, rol('jc'), (req, res) => {
   const hoy = fechaMxHoyISO();
@@ -1367,6 +1388,7 @@ app.post('/api/caja/entrega', auth, (req, res) => {
 app.get('/api/mi-ruta', auth, (req, res) => {
   const ventas = db.sales.filter(s => s.prom === req.user.nombre && s.entregado !== false);
   const hoy = fechaMxHoyDDMM();
+  const wkStart = _inicioCiclo(Date.now(), _diaSemanaInicio());   // inicio del ciclo actual
   res.json(ventas.map(s => {
     const c = db.clients.find(x => x.id === s.clientId) || {};
     if (c.activo === false) return null;
@@ -1380,8 +1402,10 @@ app.get('/api/mi-ruta', auth, (req, res) => {
     const formaHoy = movsHoy.length ? (movsHoy[movsHoy.length-1].forma || 'efectivo') : null;
     const pagoExterno = movsExt.reduce((a,m)=>a+m.abono,0);                 // suma para avance/comisión, NO para entregar
     const externoForma = movsExt.length ? (movsExt[movsExt.length-1].forma || 'efectivo') : null;
+    // Cobrado en TODO el ciclo (cualquier día de la semana): para sacarlo de "Por cobrar".
+    const cobradoSemana = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0 && m.forma !== 'descuento' && m.forma !== 'refin' && _parseFechaMx(m.fecha) >= wkStart).reduce((a,m)=>a+m.abono,0);
     return { id: s.id, folio: s.folio, nombre: c.nombre || '—', dir: [c.calle, c.col].filter(Boolean).join(', '), tel: c.tel || '', tipo: s.tipo, cuota: s.cuota, saldo: saldoDe(s.id),
-      cobradoHoy, formaHoy, pagoExterno, externoForma,
+      cobradoHoy, formaHoy, pagoExterno, externoForma, cobradoSemana,
       atraso: at.montoAtraso, diasAtraso: at.diasAtraso, cuotasAtraso: at.cuotasAtraso, cuotasDebidas: at.cuotasDebidas, cuotasPagadas: at.cuotasPagadas, tieneEvidencia: !!s.entrega, op: oportunidadDe(s) };
   }).filter(Boolean));
 });
@@ -2378,7 +2402,7 @@ app.post('/api/admin/reset-datos', auth, rol('admin'), (req, res) => {
     saveDB();
     return res.json({ ok: true, mensaje: 'Tesorería, cajas, asignaciones y efectivo en CERO. Se conservaron los clientes, créditos y saldos importados.' });
   }
-  if (req.body.confirmar !== 'BORRAR') return res.status(400).json({ error: "Para confirmar envía { confirmar: 'BORRAR' } (todo) o { soloEfectivo: true, reindexUsuarios: true, resetPassCobradores: true, limpiarCobradores: true, importLoginFix: true, loginAutoRepair: true, actualizarCuotas: true, cuotaPorFolio: true, metaSuc100: true } (solo tesorería/caja)" });
+  if (req.body.confirmar !== 'BORRAR') return res.status(400).json({ error: "Para confirmar envía { confirmar: 'BORRAR' } (todo) o { soloEfectivo: true, reindexUsuarios: true, resetPassCobradores: true, limpiarCobradores: true, importLoginFix: true, loginAutoRepair: true, actualizarCuotas: true, cuotaPorFolio: true, metaSuc100: true, eliminarEntrega: true, cobradoSemana: true } (solo tesorería/caja)" });
   // Limpieza A FONDO: borra TODO lo operativo. Conserva SOLO usuarios, sucursales y configuración.
   db.clients = [];
   db.sales = [];
@@ -3077,7 +3101,7 @@ app.post('/api/ayuda', auth, async (req, res) => {
     res.json({ respuesta: txt || 'No pude responder eso con la información del sistema. Reformula tu pregunta o consulta a tu administrador.' });
   } catch (e) { res.status(502).json({ error: 'No se pudo consultar la ayuda: ' + e.message }); }
 });
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v29', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, objetivoCartera: true, asignEnviadasFix: true, buro: true, numDiariosSuc: true, contactosParcial: true, resetFondo: true, soloEfectivo: true, reindexUsuarios: true, resetPassCobradores: true, limpiarCobradores: true, importLoginFix: true, loginAutoRepair: true, actualizarCuotas: true, cuotaPorFolio: true, metaSuc100: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, mostrarMembrete: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v30', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, objetivoCartera: true, asignEnviadasFix: true, buro: true, numDiariosSuc: true, contactosParcial: true, resetFondo: true, soloEfectivo: true, reindexUsuarios: true, resetPassCobradores: true, limpiarCobradores: true, importLoginFix: true, loginAutoRepair: true, actualizarCuotas: true, cuotaPorFolio: true, metaSuc100: true, eliminarEntrega: true, cobradoSemana: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, mostrarMembrete: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
