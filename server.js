@@ -2377,7 +2377,7 @@ app.post('/api/admin/reset-datos', auth, rol('admin'), (req, res) => {
     saveDB();
     return res.json({ ok: true, mensaje: 'Tesorería, cajas, asignaciones y efectivo en CERO. Se conservaron los clientes, créditos y saldos importados.' });
   }
-  if (req.body.confirmar !== 'BORRAR') return res.status(400).json({ error: "Para confirmar envía { confirmar: 'BORRAR' } (todo) o { soloEfectivo: true, reindexUsuarios: true, resetPassCobradores: true, limpiarCobradores: true, importLoginFix: true, loginAutoRepair: true, actualizarCuotas: true } (solo tesorería/caja)" });
+  if (req.body.confirmar !== 'BORRAR') return res.status(400).json({ error: "Para confirmar envía { confirmar: 'BORRAR' } (todo) o { soloEfectivo: true, reindexUsuarios: true, resetPassCobradores: true, limpiarCobradores: true, importLoginFix: true, loginAutoRepair: true, actualizarCuotas: true, cuotaPorFolio: true } (solo tesorería/caja)" });
   // Limpieza A FONDO: borra TODO lo operativo. Conserva SOLO usuarios, sucursales y configuración.
   db.clients = [];
   db.sales = [];
@@ -2470,25 +2470,27 @@ app.post('/api/admin/actualizar-cuotas', auth, rol('admin'), (req, res) => {
   const lista = Array.isArray(req.body.cuotas) ? req.body.cuotas : [];
   if (!lista.length) return res.status(400).json({ error: 'Envía { cuotas:[{nombre,suc,cuota}] }' });
   const sucId = {}; (db.sucursales || []).forEach(s => sucId[(s.nombre || '').trim().toUpperCase()] = s.id);
-  const idx = {};
+  const byFolio = {}, byName = {};
   lista.forEach(it => {
+    if (it.folio) byFolio[String(it.folio)] = +it.cuota || 0;
     const sid = sucId[(it.suc || '').trim().toUpperCase()];
-    idx[(it.nombre || '').trim().toUpperCase() + '||' + (sid == null ? '' : sid)] = +it.cuota || 0;
+    byName[(it.nombre || '').trim().toUpperCase() + '||' + (sid == null ? '' : sid)] = +it.cuota || 0;
   });
   const cliById = {}; (db.clients || []).forEach(c => cliById[c.id] = c);
-  let actualizados = 0; const noMatch = [];
+  let actualizados = 0, porFolio = 0; const noMatch = [];
   (db.sales || []).forEach(s => {
     if (!s.importado) return;
-    const c = cliById[s.clientId]; if (!c) return;
-    const k = (c.nombre || '').trim().toUpperCase() + '||' + (c.sucursalId == null ? '' : c.sucursalId);
-    if (idx[k] != null) {
-      s.cuota = idx[k];
+    let cu = null;
+    if (s.folio && byFolio[String(s.folio)] != null) { cu = byFolio[String(s.folio)]; porFolio++; }
+    else { const c = cliById[s.clientId]; if (c) { const k = (c.nombre || '').trim().toUpperCase() + '||' + (c.sucursalId == null ? '' : c.sucursalId); if (byName[k] != null) cu = byName[k]; } }
+    if (cu != null) {
+      s.cuota = cu;
       s.plazo = s.cuota > 0 ? Math.max(1, Math.round((s.total || 0) / s.cuota)) : 1;
       actualizados++;
-    } else { noMatch.push(c.nombre); }
+    } else { const c = cliById[s.clientId]; noMatch.push(c ? c.nombre : (s.folio || s.id)); }
   });
   saveDB();
-  res.json({ ok: true, actualizados, sinCoincidencia: noMatch.length, sumaCuotas: (db.sales || []).filter(s => s.importado).reduce((a, s) => a + (+s.cuota || 0), 0), ejemplos: noMatch.slice(0, 10) });
+  res.json({ ok: true, actualizados, porFolio, sinCoincidencia: noMatch.length, sumaCuotas: (db.sales || []).filter(s => s.importado).reduce((a, s) => a + (+s.cuota || 0), 0), ejemplos: noMatch.slice(0, 10) });
 });
 
 // ===== IMPORTACIÓN MASIVA (migración de base existente) =====
@@ -3074,7 +3076,7 @@ app.post('/api/ayuda', auth, async (req, res) => {
     res.json({ respuesta: txt || 'No pude responder eso con la información del sistema. Reformula tu pregunta o consulta a tu administrador.' });
   } catch (e) { res.status(502).json({ error: 'No se pudo consultar la ayuda: ' + e.message }); }
 });
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v27', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, objetivoCartera: true, asignEnviadasFix: true, buro: true, numDiariosSuc: true, contactosParcial: true, resetFondo: true, soloEfectivo: true, reindexUsuarios: true, resetPassCobradores: true, limpiarCobradores: true, importLoginFix: true, loginAutoRepair: true, actualizarCuotas: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, mostrarMembrete: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v28', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, objetivoCartera: true, asignEnviadasFix: true, buro: true, numDiariosSuc: true, contactosParcial: true, resetFondo: true, soloEfectivo: true, reindexUsuarios: true, resetPassCobradores: true, limpiarCobradores: true, importLoginFix: true, loginAutoRepair: true, actualizarCuotas: true, cuotaPorFolio: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, mostrarMembrete: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
