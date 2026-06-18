@@ -134,6 +134,8 @@
   .dg-table th.lbl,.dg-table td.lbl{position:sticky;left:0;z-index:2;text-align:left;background:var(--surf-1);font-weight:600;box-shadow:2px 0 4px rgba(0,0,0,.04);min-width:190px}
   .dg-table thead th.lbl{background:var(--surf-2);z-index:3}
   .dg-table tbody tr:nth-child(even) td:not(.lbl){background:var(--surf-2)}
+  #nd-tbl th:first-child,#nd-tbl td:first-child{position:sticky;left:0;background:var(--surf-1);z-index:2;box-shadow:2px 0 4px rgba(0,0,0,.04)}
+  #nd-tbl thead th:first-child{background:var(--surf-2);z-index:3}
   .bar-chart{display:flex;align-items:flex-end;gap:3px;height:140px;padding:10px 0;border-bottom:1px solid var(--line)}.bar-chart .bar{flex:1;background:var(--acc);border-radius:2px 2px 0 0;min-height:2px;position:relative}.bar-chart .bar:hover{filter:brightness(1.2)}.bar-chart .bar .tip{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);background:#000;color:#fff;padding:3px 6px;border-radius:4px;font-size:.65rem;white-space:nowrap;display:none}.bar-chart .bar:hover .tip{display:block}
   .legend{display:flex;gap:15px;flex-wrap:wrap;margin-top:11px;font-size:.77rem;color:var(--dim)}
   .legend span{display:flex;align-items:center;gap:6px}.legend i{width:10px;height:10px;border-radius:3px}
@@ -310,6 +312,14 @@
         </table>
       </div>
       <div style="font-size:.74rem;color:var(--faint);margin-top:8px;line-height:1.4">La <b style="color:var(--blu)">meta es el 100%</b> de la cartera activa (no se captura, no se modifica). % Clientes = Cts Acum ÷ Clientes 100% · % Coll = Coll Acum ÷ Débito 100%. <b style="color:var(--red)">No pago</b> = clientes con cobro esperado que NO abonaron (día y acumulado de la semana). No cuenta el primer pago/descuentos.</div>
+    </div>
+
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:6px">
+        <div><h3 style="margin:0">📷 Foto de la cartera</h3><div style="color:var(--faint);font-size:.82rem">Consolidado por semana · toda la empresa · la columna Concepto queda fija al desplazar →</div></div>
+        <button class="btn" onclick="ndFotoCartera()" style="font-size:.82rem">↻ Actualizar</button>
+      </div>
+      <div id="nd-foto"><div style="color:var(--faint);padding:10px;font-size:.85rem">Cargando…</div></div>
     </div>
 
     <!-- CIERRE DE SEMANA (admin valida que todos cerraron) -->
@@ -2512,6 +2522,27 @@ async function resetTarifas(){
 
 /* ===== Números diarios ===== */
 let _ndData=null, _ndObj={}, _ndInicio=null;
+async function ndFotoCartera(){
+  const box=document.getElementById('nd-foto'); if(!box) return;
+  const ini=(_ndInicio!=null?_ndInicio:_dgInicio);
+  try{
+    const d=await apiU('GET','/api/reports/desglose?semanas=12&inicio='+ini);
+    const cellTxt=(f,v)=> f.fmt==='money'?fmt(v) : f.fmt==='pct'?((Math.round(v*1000)/10).toFixed(1)+'%') : v.toLocaleString('es-MX');
+    const head=`<tr><th class="lbl">Concepto</th>${d.semanas.map(w=>`<th class="n" title="${w.rango||''}">${w.label}<div style="font-weight:400;font-size:.62rem;color:var(--faint)">${w.rango||w.fecha}</div></th>`).join('')}</tr>`;
+    const body=d.filas.map(f=>{
+      const sep=(f.k==='liquidados'||f.k==='ventas'||f.k==='cobranza')?'sep':'';
+      return `<tr class="${sep}"><td class="lbl">${f.lbl}</td>${f.vals.map(v=>{
+        let color='';
+        if(f.k==='pctCobranzaDebito') color = v>=0.95?'color:var(--grn)':(v>=0.8?'color:var(--acc)':(v>0?'color:var(--red)':''));
+        else if(f.k==='pctSinPago'||f.k==='pctCarteraSinPago'||f.k==='pctDebitoSinPago') color = v>0.10?'color:var(--red)':(v>0.05?'color:var(--acc)':'');
+        else if(f.k==='cobranza'&&v>0) color='color:var(--grn)';
+        return `<td class="n" style="${color}">${cellTxt(f,v)}</td>`;
+      }).join('')}</tr>`;
+    }).join('');
+    box.innerHTML=`<div style="font-size:.74rem;color:var(--faint);margin-bottom:6px">Últimas ${d.semanas.length} semanas · toda la empresa</div>
+      <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:10px"><table class="rp-table dg-table" style="min-width:max-content;border:none"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+  }catch(e){ box.innerHTML='<div style="color:var(--red);padding:10px">'+e.message+'</div>'; }
+}
 async function cargarNumDiarios(){
   const di=document.getElementById('nd-dia'); if(di && !di.value){ di.value=new Date().toISOString().slice(0,10); }
   const dia=di?di.value:'';
@@ -2525,6 +2556,7 @@ async function cargarNumDiarios(){
     pintaNumDiarios(d);
     pintaContactosAdmin(d);
     cargarCierreAdmin();
+    ndFotoCartera();
   }catch(e){ document.getElementById('nd-rows').innerHTML='<tr><td colspan="11" style="color:var(--red);padding:12px">'+e.message+'</td></tr>'; }
 }
 async function ndCambiarInicio(v){
