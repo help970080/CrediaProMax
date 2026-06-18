@@ -169,7 +169,7 @@
       </div>
       <div style="display:flex;gap:6px;margin-bottom:8px">
         <button class="filt-chip on" data-f="porcobrar" onclick="setFiltro('porcobrar')" style="flex:1;background:var(--acc);color:#1b2330;border:none;font-family:'Sora';font-weight:700;font-size:.82rem;padding:9px 8px;border-radius:9px;cursor:pointer">Por cobrar</button>
-        <button class="filt-chip" data-f="cobrados" onclick="setFiltro('cobrados')" style="flex:1;background:var(--surf-2);color:var(--txt);border:1px solid var(--line-2);font-family:'Sora';font-size:.82rem;padding:9px 8px;border-radius:9px;cursor:pointer">Cobrados hoy</button>
+        <button class="filt-chip" data-f="cobrados" onclick="setFiltro('cobrados')" style="flex:1;background:var(--surf-2);color:var(--txt);border:1px solid var(--line-2);font-family:'Sora';font-size:.82rem;padding:9px 8px;border-radius:9px;cursor:pointer">Cobrados</button>
         <button class="filt-chip" data-f="todos" onclick="setFiltro('todos')" style="flex:1;background:var(--surf-2);color:var(--txt);border:1px solid var(--line-2);font-family:'Sora';font-size:.82rem;padding:9px 8px;border-radius:9px;cursor:pointer">Todos</button>
       </div>
       <div class="route-hint" id="route-hint">Tu ruta del día</div>
@@ -374,8 +374,8 @@ function render(){
   const q=(document.getElementById('q-ruta')?.value||'').toLowerCase();
   const ord=(document.getElementById('ord-ruta')?.value)||'orden';
   let visibles=clientes.filter(c=>!q || (c.nombre||'').toLowerCase().includes(q) || (c.dir||'').toLowerCase().includes(q));
-  if(_filtro==='porcobrar') visibles=visibles.filter(c=> c.saldo>=1 && !(estado[c.id]&&estado[c.id].status==='pagado'));
-  else if(_filtro==='cobrados') visibles=visibles.filter(c=> estado[c.id]&&estado[c.id].status==='pagado');
+  if(_filtro==='porcobrar') visibles=visibles.filter(c=> c.saldo>=1 && !(estado[c.id]&&estado[c.id].status==='pagado') && !(c.cobradoSemana>0));
+  else if(_filtro==='cobrados') visibles=visibles.filter(c=> (estado[c.id]&&estado[c.id].status==='pagado') || c.cobradoSemana>0);
   if(ord==='atraso-d') visibles=visibles.slice().sort((a,b)=>(b.atraso||0)-(a.atraso||0));
   else if(ord==='atraso-a') visibles=visibles.slice().sort((a,b)=>(a.atraso||0)-(b.atraso||0));
   else if(ord==='dir') visibles=visibles.slice().sort((a,b)=>(a.dir||'').localeCompare(b.dir||''));
