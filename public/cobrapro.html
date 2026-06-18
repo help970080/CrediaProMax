@@ -2044,11 +2044,17 @@ function _bdCard(c, modo){
     : modo==='mias'
     ? `<button class="btn gold" style="width:100%;margin-top:8px" onclick="abrirEntrega(${c.saleId},'${esc}',${c.entregaMonto})">📦 Entregar + evidencia</button><button class="btn" style="width:100%;margin-top:6px" onclick="soltarCredito(${c.saleId})">↩ Soltar</button>`
     : `<div style="font-size:.74rem;color:var(--acc);margin-top:8px">🔒 Lo está entregando ${c.tomadoPor?c.tomadoPor.nombre:'—'}</div>`;
+  const del = `<button class="btn" style="width:100%;margin-top:6px;border-color:#d6432d;color:#d6432d" onclick="eliminarEntrega(${c.saleId},'${esc}')">🗑 Eliminar venta</button>`;
   return `<div style="background:var(--surf-1);border:1px solid var(--line);border-radius:10px;padding:13px">
     <div style="font-weight:600">${c.cliente}</div>
     <div style="font-size:.72rem;color:var(--faint)">${c.folio} · ${c.sucursal} · ruta ${c.prom||'—'} · ${f}</div>
     <div style="font-size:.74rem;color:var(--dim);margin-top:4px">📍 ${c.dir||'—'}</div>
-    <div style="margin-top:6px;font-size:.82rem">Entrega al cliente: <b style="color:var(--grn)">${fmt(c.entregaMonto)}</b></div>${acc}</div>`;
+    <div style="margin-top:6px;font-size:.82rem">Entrega al cliente: <b style="color:var(--grn)">${fmt(c.entregaMonto)}</b></div>${acc}${del}</div>`;
+}
+async function eliminarEntrega(id, nombre){
+  if(!confirm('¿Eliminar esta venta por entregar de '+nombre+'?\nQuedará registrada como eliminada y NO se entregará al cliente.')) return;
+  const motivo = prompt('Motivo de la eliminación (opcional):','') || '';
+  try{ await apiU('POST','/api/entregas/'+id+'/eliminar',{motivo}); alert('Venta eliminada y registrada.'); await cargarBandeja(); }catch(e){ alert(e.message); }
 }
 async function cargarBandeja(){
   try{
