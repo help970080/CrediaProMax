@@ -1765,12 +1765,17 @@ async function ecInit(){
     else { document.getElementById('ec-empty').style.display='block'; document.getElementById('ec-empty').innerHTML='<div style="color:var(--faint);text-align:center;padding:20px">No hay créditos en la base todavía.</div>'; }
   }catch(e){ document.getElementById('ec-empty').innerHTML='<div style="color:var(--red);padding:18px">'+e.message+'</div>'; }
 }
+let _ecBuscarDeb=null;
 function ecFiltrar(){
   const q=(document.getElementById('ec-buscar').value||'').toLowerCase().trim();
   const list=q? _ecSales.filter(s=>(((s.cliente||'')+' '+(s.folio||'')+' '+(s.cobrador||'')).toLowerCase().includes(q))) : _ecSales;
   document.getElementById('ec-sel').innerHTML = list.map(s=>`<option value="${s.id}">${s.cliente||'—'} · ${s.folio} · ${_tipoLbl[s.tipo]||s.tipo}</option>`).join('') || '<option value="">— sin coincidencias —</option>';
+  // Reconstruir innerHTML NO dispara 'change': si queda 1 sola coincidencia ya está seleccionada y un clic no recarga.
+  // Sincronizamos ecActual con la opción seleccionada y cargamos (debounce para no pegarle al endpoint en cada tecla).
+  clearTimeout(_ecBuscarDeb);
+  if(list.length){ _ecBuscarDeb=setTimeout(ecSelect, 250); }
 }
-function ecSelect(){ ecActual=_ecSales.find(s=>String(s.id)===document.getElementById('ec-sel').value); ecCargar(); }
+function ecSelect(){ const v=document.getElementById('ec-sel').value; if(!v) return; ecActual=_ecSales.find(s=>String(s.id)===v); if(ecActual) ecCargar(); }
 async function ecCargar(){
   if(!ecActual) return;
   try{ const d = await apiU('GET','/api/sales/'+ecActual.id+'/movimientos'); ecPinta(d); }
