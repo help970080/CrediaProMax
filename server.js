@@ -145,6 +145,33 @@ function calcCredito(tipo, plazo, monto, dias) {
   const arr = T[tipo] || T.semanal || DEFAULT_TARIFAS.semanal; const it = arr.find(x => x.p === plazo) || arr[0];
   const total = monto * it.f + it.fijo; return { total, pagos: it.p, cuota: total / it.p };
 }
+// Fracción de interés por peso cobrado (para utilidad).
+// - Si el crédito trae capital (monto>0): exacta = (total - monto)/total.
+// - Cartera importada sin capital (monto<=0): SOLO para CREDI YA deriva el capital con la tarifa s16
+//   "Semanal 16 (primer pago)" (total = monto*factor + fijo) → monto = (total - fijo)/factor. Otras agencias quedan igual.
+function _esCreditYa() {
+  const n = ((db.config && db.config.brand && db.config.brand.nombre) || '').toUpperCase().replace(/\s+/g, '');
+  return n.includes('CREDIYA');
+}
+function _tarifaS16() {
+  return (db.config && db.config.tarifas && db.config.tarifas.s16) || DEFAULT_TARIFAS.s16; // {factor:1.6, fijo:100, ...}
+}
+function _interesFrac(s) {
+  if (!s || !(s.total > 0)) return 0;
+  const cap = +s.monto || 0;
+  if (cap > 0) {                                   // capital conocido (créditos normales): exacto
+    const fr = (s.total - cap) / s.total;
+    return fr < 0 ? 0 : (fr > 1 ? 1 : fr);
+  }
+  if (_esCreditYa()) {                             // CREDI YA sin capital: deriva capital con tarifa s16
+    const c = _tarifaS16();
+    const factor = +c.factor || 1.6, fijo = +c.fijo || 100;
+    const capDer = factor > 0 ? (s.total - fijo) / factor : s.total;
+    const fr = (s.total - capDer) / s.total;
+    return fr < 0 ? 0 : (fr > 1 ? 1 : fr);
+  }
+  return (s.total - cap) / s.total;                // otras agencias: comportamiento previo
+}
 function genPassword() { const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let p = ''; for (let i = 0; i < 8; i++) p += c[Math.floor(Math.random() * c.length)]; return p; }
 function saldoDe(saleId) { return db.movimientos.filter(m => m.saleId === saleId).reduce((s, m) => s + (m.cargo || 0) - (m.abono || 0), 0); }
 // Saldo de apertura del crédito = primer cargo (disposición en créditos nuevos, "saldo inicial" en importados).
@@ -1579,7 +1606,7 @@ app.get('/api/dashboard', auth, (req,res)=>{
     nuevos_creditos_periodo: nuevos.length,
     monto_colocado_periodo: nuevos.reduce((a,s)=>a+s.monto,0),
     cobrado_periodo: abonos.filter(m=>m.forma!=='descuento').reduce((a,m)=>a+m.abono,0),
-    utilidad_periodo: Math.round(abonos.filter(m=>m.forma!=='descuento').reduce((a,m)=>{ const s=sales.find(x=>x.id===m.saleId); return a + (s&&s.total>0 ? m.abono*((s.total-s.monto)/s.total) : 0); },0)),
+    utilidad_periodo: Math.round(abonos.filter(m=>m.forma!=='descuento').reduce((a,m)=>{ const s=sales.find(x=>x.id===m.saleId); return a + (s ? m.abono*_interesFrac(s) : 0); },0)),
     en_caja_efectivo: (miSuc==null?Object.values(db.caja):[db.caja[String(miSuc)]||{}]).reduce((a,c)=>a+((c.inicial||0)+(c.efectivo||0)+(c.entregas||0)-(c.retiros||0)),0),
     en_caja_banco: (miSuc==null?Object.values(db.caja):[db.caja[String(miSuc)]||{}]).reduce((a,c)=>a+(c.banco||0),0),
     por_entregar: db.porEntregar.filter(p=>miSuc==null||p.sucursalId===miSuc).reduce((a,p)=>a+p.monto,0),
@@ -2678,7 +2705,7 @@ function _kpisVentas(sales, desde, hasta) {
   const cliSet = new Set(), ratio = {};
   function atrasoDe(s) { const totAb = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0).reduce((a, m) => a + m.abono, 0); return calcAtraso(s, totAb); }
   sales.forEach(s => {
-    ratio[s.id] = s.total > 0 ? (s.total - s.monto) / s.total : 0;
+    ratio[s.id] = _interesFrac(s);
     const saldo = saldoDe(s.id);
     if (saldo > 0) { cartera += saldo; creditosAct++; cliSet.add(s.clientId); const at = atrasoDe(s); if (at.montoAtraso > 0) { atrasoMonto += at.montoAtraso; atrasoCli++; } }
     if (s.createdAt) { const t = new Date(s.createdAt).getTime(); if (t >= desde && t <= hasta) { colocado += s.monto; ncoloc++; } }
