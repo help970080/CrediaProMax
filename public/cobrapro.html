@@ -2779,7 +2779,22 @@ function xlsxDL(filename, sheets){
   try{
     if(window.XLSX){
       const wb=XLSX.utils.book_new();
-      sheets.forEach((s,i)=>{ const ws=XLSX.utils.aoa_to_sheet(s.aoa); XLSX.utils.book_append_sheet(wb,ws,(s.name||('Hoja'+(i+1))).slice(0,31)); });
+      const _money=/(monto|importe|cobrad|cartera|saldo|comisi|colocad|atras|efectiv|deposit|transfer|\btotal\b|abono|cargo|cuota|prestamo|capital|utilidad|ganancia|caja|entregar|nomina|sueldo|pago)/i;
+      sheets.forEach((s,i)=>{
+        const ws=XLSX.utils.aoa_to_sheet(s.aoa);
+        try{
+          const head=(s.aoa[0]||[]).map(h=>String(h||''));
+          const range=XLSX.utils.decode_range(ws['!ref']);
+          for(let C=range.s.c;C<=range.e.c;C++){
+            const isMoney=_money.test(head[C]||'');
+            for(let R=range.s.r+1;R<=range.e.r;R++){
+              const cell=ws[XLSX.utils.encode_cell({r:R,c:C})];
+              if(cell && cell.t==='n'){ cell.z = isMoney ? '"$"#,##0' : '#,##0'; }
+            }
+          }
+        }catch(_e){}
+        XLSX.utils.book_append_sheet(wb,ws,(s.name||('Hoja'+(i+1))).slice(0,31));
+      });
       XLSX.writeFile(wb, filename.replace(/\.(csv|xlsx)$/,'')+'.xlsx'); return;
     }
   }catch(e){ console.warn('xlsx falló, uso CSV',e); }
@@ -2797,7 +2812,10 @@ function tablaAoa(tableEl){
   [...tableEl.querySelectorAll('tbody tr, tfoot tr')].forEach(tr=>{
     const tds=[...tr.children];
     if(tds.length===1 && tds[0].hasAttribute('colspan')) return;
-    const row=[]; tds.forEach((td,i)=>{ if(skip.has(i)) return; let v=((td.innerText||td.textContent)||'').replace(/\s*\n\s*/g,' · ').replace(/\s+/g,' ').trim(); row.push(v); });
+    const row=[]; tds.forEach((td,i)=>{ if(skip.has(i)) return; let v=((td.innerText||td.textContent)||'').replace(/\s*\n\s*/g,' · ').replace(/\s+/g,' ').trim();
+      // Montos/numéricos (celdas alineadas a la derecha con class "n"): exportar como NÚMERO operable en Excel
+      if(td.classList && td.classList.contains('n') && /\d/.test(v)){ const num=parseFloat(v.replace(/[^0-9.\-]/g,'')); if(isFinite(num)) v=num; }
+      row.push(v); });
     if(row.some(x=>x)) aoa.push(row);
   });
   return aoa;
