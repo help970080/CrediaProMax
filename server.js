@@ -1591,7 +1591,7 @@ app.get('/api/dashboard', auth, (req,res)=>{
       unidades, debito, clientes_vigentes, clientes_cobrados, pct_cob, bajas, crecimiento,
       atraso_monto, atraso_clientes, esperado_acum };
   });
-  const pagos_recientes=abonos.slice(-40).reverse().map(m=>{
+  const pagos_recientes=abonos.slice().reverse().map(m=>{
     const s=sales.find(x=>x.id===m.saleId)||{}; const c=clients.find(x=>x.id===s.clientId)||{};
     const suc=sucursales.find(x=>x.id===s.sucursalId);
     return {fecha:m.fecha, cliente:c.nombre||'—', folio:s.folio, prom:s.prom||'—', forma:m.forma||'efectivo', monto:m.abono, sucursal:suc?suc.nombre:'—'};
