@@ -1967,11 +1967,16 @@ function generarCorte(user, isAuto){
   const fecha = fechaMxHoyISO();
   if (db.cortes.find(c => c.prom === user.nombre && c.fecha === fecha)) return { duplicate: true };
   const hoy = fechaMxHoyDDMM();
-  const pagos = db.movimientos.filter(m => m.abono > 0 && m.origen === user.nombre && m.fecha === hoy);
+  // Corte SEMANAL: abarca toda la semana-ciclo actual (de su día inicial a hoy), no solo lo de hoy.
+  // Usa el mismo cálculo de semana que el dashboard (_inicioCiclo, respeta config.semanaInicio del tenant).
+  const _ini = _inicioCiclo(new Date(fecha+'T00:00:00').getTime());
+  const _fin = new Date(fecha+'T00:00:00').getTime() + 86400000 - 1; // hoy 23:59:59
+  const _enSemana = (f)=>{ const t=_parseFechaMx(f); return t>=_ini && t<=_fin; };
+  const pagos = db.movimientos.filter(m => m.abono > 0 && m.origen === user.nombre && _enSemana(m.fecha));
   const efectivoBruto = pagos.filter(m => (m.forma||'efectivo') === 'efectivo').reduce((a,m)=>a+m.abono,0);
   const banco = pagos.filter(m => m.forma === 'transferencia' || m.forma === 'deposito').reduce((a,m)=>a+m.abono,0);
-  // descontar el efectivo que el promotor ya entregó al JC hoy (no lo debe entregar dos veces)
-  const aJC = db.jcEntregas.filter(e => e.cobradorId === user.id && e.fechaDDMM === hoy).reduce((a,e)=>a+e.monto,0);
+  // descontar el efectivo que el promotor ya entregó al JC durante la semana (no lo debe entregar dos veces)
+  const aJC = db.jcEntregas.filter(e => e.cobradorId === user.id && _enSemana(e.fechaDDMM)).reduce((a,e)=>a+e.monto,0);
   const efectivo = Math.max(0, efectivoBruto - aJC);
   const tieneEfectivo = efectivo > 0;
   const corte = {
