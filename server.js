@@ -173,6 +173,15 @@ function _interesFrac(s) {
   return (s.total - cap) / s.total;                // otras agencias: comportamiento previo
 }
 function genPassword() { const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let p = ''; for (let i = 0; i < 8; i++) p += c[Math.floor(Math.random() * c.length)]; return p; }
+// Normaliza un nombre para comparar sin distinguir mayúsculas, espacios extra ni acentos.
+function _normNombre(x) { return String(x || '').trim().toLowerCase().replace(/\s+/g, ' ').normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
+// Devuelve el nombre CANÓNICO de un cobrador (el de su usuario) si el texto coincide normalizado; si no, devuelve el original.
+function _canonProm(nombre) {
+  const n = _normNombre(nombre);
+  if (!n) return nombre || '';
+  const u = db.users.find(u => u.rol === 'cobrador' && _normNombre(u.nombre) === n);
+  return u ? u.nombre : (nombre || '');
+}
 function saldoDe(saleId) { return db.movimientos.filter(m => m.saleId === saleId).reduce((s, m) => s + (m.cargo || 0) - (m.abono || 0), 0); }
 // Saldo de apertura del crédito = primer cargo (disposición en créditos nuevos, "saldo inicial" en importados).
 // Es el saldo REAL con el que arrancó el reloj de cobranza, no la deuda origen.
@@ -1159,7 +1168,7 @@ app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) 
 
   const r = calcCredito(tipo, +plazo, +monto, +dias);
   const folio = 'F-' + (1100 + nextId('sales'));
-  const promFinal = prom || client.prom || '';
+  const promFinal = _canonProm(prom || client.prom || '');  // usa el nombre exacto del usuario cobrador (evita duplicados por mayúsculas/espacios)
   const sucCred = req.user.rol === 'sucursal' ? (req.user.sucursalId || 1) : (clienteExistenteId ? client.sucursalId : (sucursalId || req.user.sucursalId || 1));
   const sale = { id: nextId('sales'), folio, clientId: client.id, tipo, plazo: +plazo, monto: +monto, cuota: r.cuota, total: r.total, prom: promFinal, sucursalId: sucCred, entregado: false, createdAt: new Date().toISOString() };
   const artLimpios = Array.isArray(articulos) ? articulos.map(x => String(x || '').trim()).filter(Boolean).slice(0, 30) : [];
@@ -2462,6 +2471,27 @@ app.post('/api/admin/reset-datos', auth, rol('admin'), (req, res) => {
 
 // ===== REPARAR LOGIN: re-indexa todos los usuarios de la agencia al tenant correcto =====
 // Arregla cobradores/usuarios que quedaron fuera del índice global (no pueden iniciar sesión).
+// ===== CANONIZAR NOMBRE DE COBRADOR EN VENTAS/CLIENTES (arregla duplicados fantasma) =====
+// Reescribe sale.prom y client.prom al nombre EXACTO del usuario cobrador cuando coinciden normalizados
+// (mayúsculas/espacios/acentos). Resuelve casos como "VERO LUNA" duplicada sin usuario.
+// Sin body -> aplica a todos. Con { nombre:'VERO LUNA' } -> solo ese cobrador.
+app.post('/api/admin/canonizar-prom', auth, rol('admin','supervisor'), (req, res) => {
+  const filtro = req.body && req.body.nombre ? _normNombre(req.body.nombre) : null;
+  const byNorm = {};
+  db.users.filter(u => u.rol === 'cobrador').forEach(u => { byNorm[_normNombre(u.nombre)] = u.nombre; });
+  let ventas = 0, clientes = 0; const detalle = {};
+  db.sales.forEach(s => {
+    if (!s.prom) return; const n = _normNombre(s.prom); if (filtro && n !== filtro) return;
+    const canon = byNorm[n]; if (canon && canon !== s.prom) { detalle[`"${s.prom}" → "${canon}"`] = (detalle[`"${s.prom}" → "${canon}"`] || 0) + 1; s.prom = canon; ventas++; }
+  });
+  db.clients.forEach(c => {
+    if (!c.prom) return; const n = _normNombre(c.prom); if (filtro && n !== filtro) return;
+    const canon = byNorm[n]; if (canon && canon !== c.prom) { c.prom = canon; clientes++; }
+  });
+  saveDB();
+  res.json({ ok: true, ventasCorregidas: ventas, clientesCorregidos: clientes, cambios: detalle });
+});
+
 app.post('/api/admin/reindex-usuarios', auth, rol('admin'), (req, res) => {
   const tid = als.getStore().tenantId;
   SYS.userIndex = SYS.userIndex || {};
