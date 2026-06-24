@@ -242,6 +242,14 @@
 
   <!-- RESUMEN -->
   <section class="view on" id="resumen">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 12px;padding:8px 10px;background:var(--surf-2);border:1px solid var(--line);border-radius:9px">
+      <span style="font-size:.82rem;color:var(--faint)">Periodo de:</span>
+      <button class="btn" style="padding:4px 10px" onclick="dashNav(-1)">◄</button>
+      <input type="date" id="dash-fecha" onchange="dashNav(0)" style="padding:5px 8px;font-size:.85rem;background:var(--surf);border:1px solid var(--line);border-radius:7px;color:var(--txt)">
+      <button class="btn" style="padding:4px 10px" onclick="dashNav(1)">►</button>
+      <button class="btn" style="padding:4px 10px;font-size:.8rem" onclick="dashHoy()">Actual</button>
+      <span id="dash-rango" style="font-size:.82rem;color:var(--gold);font-weight:600;margin-left:4px"></span>
+    </div>
     <div class="kpis">
       <div class="kpi g"><div class="l">Dinero cobrado</div><div class="v" id="k-cob">$0</div><div class="s" id="k-cob-s">en el periodo</div></div>
       <div class="kpi b"><div class="l">Dinero colocado</div><div class="v" id="k-col">$0</div><div class="s" id="k-ncred">0 créditos nuevos</div></div>
@@ -451,6 +459,14 @@
           <div style="color:var(--faint);font-size:.85rem;margin-top:2px">Cada columna se ordena con semáforo de mejor (verde) a peor (rojo). Sin gráficas: comparación directa.</div>
         </div>
         <button onclick="rkExport()" class="btn" style="font-size:.82rem">⬇️ Excel</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0 12px;padding:8px 10px;background:var(--surf-2);border:1px solid var(--line);border-radius:9px">
+        <span style="font-size:.82rem;color:var(--faint)">Semana de:</span>
+        <button class="btn" style="padding:4px 10px" onclick="rkSemana(-7)">◄</button>
+        <input type="date" id="rk-fecha" onchange="rkSemana(0)" style="padding:5px 8px;font-size:.85rem;background:var(--surf);border:1px solid var(--line);border-radius:7px;color:var(--txt)">
+        <button class="btn" style="padding:4px 10px" onclick="rkSemana(7)">►</button>
+        <button class="btn" style="padding:4px 10px;font-size:.8rem" onclick="rkHoy()">Semana actual</button>
+        <span id="rk-rango" style="font-size:.82rem;color:var(--gold);font-weight:600;margin-left:4px"></span>
       </div>
       <div style="overflow-x:auto">
         <table id="rk-tbl">
@@ -977,12 +993,40 @@ const _formaLbl={efectivo:'Efectivo',transferencia:'Transferencia',deposito:'Dep
 const _formaCls={efectivo:'ok',transferencia:'w',deposito:'w',ajuste:'bad'};
 const _sucColor=['#f0b429','#5aa0e8','#3ecf8e','#b07ce0','#f0654d','#d6a35a'];
 
+let _dashRef=null; // fecha de referencia del periodo elegido en Resumen; null = actual
 async function cargarDashboard(){
   try{
-    const d=await apiU('GET','/api/dashboard?periodo='+period);
+    const f=document.getElementById('dash-fecha'); if(f && !f.value) f.value=hoyMX();
+    const per=period==='dia'?'hoy':period;
+    const d=await apiU('GET','/api/dashboard?periodo='+per+(_dashRef?('&ref='+_dashRef):''));
+    _dashPintaRango(d);
     pintaResumen(d); pintaSucursales(d); pintaCobradores(d); pintaComisiones(d); pintaConciliacion(d);
   }catch(e){ console.warn('dashboard:',e.message); }
 }
+function _dashPintaRango(d){
+  const el=document.getElementById('dash-rango'); if(!el) return;
+  try{
+    const base=new Date(((_dashRef||hoyMX()))+'T00:00:00');
+    const fmtD=x=>x.toLocaleDateString('es-MX',{day:'2-digit',month:'short'});
+    let txt;
+    if(period==='dia'){ txt=fmtD(base); }
+    else if(period==='mes'){ const a=new Date(base.getFullYear(),base.getMonth(),1), b=new Date(base.getFullYear(),base.getMonth()+1,0); txt=base.toLocaleDateString('es-MX',{month:'long',year:'numeric'}); }
+    else { const ini=(typeof _ndInicio==='number')?_ndInicio:((d&&d.semanaInicio!=null)?d.semanaInicio:4); const diff=((base.getDay()-ini)+7)%7; const desde=new Date(base.getTime()-diff*86400000), hasta=new Date(desde.getTime()+6*86400000); txt=fmtD(desde)+' – '+fmtD(hasta); }
+    el.textContent=(_dashRef?'':'(actual) ')+txt;
+  }catch(e){ el.textContent=''; }
+}
+function dashNav(dir){
+  const f=document.getElementById('dash-fecha'); if(!f) return;
+  if(dir!==0){
+    const d=new Date((f.value||hoyMX())+'T00:00:00');
+    if(period==='dia') d.setDate(d.getDate()+dir);
+    else if(period==='mes') d.setMonth(d.getMonth()+dir);
+    else d.setDate(d.getDate()+dir*7);
+    f.value=d.toLocaleDateString('en-CA');
+  }
+  _dashRef=f.value; cargarDashboard();
+}
+function dashHoy(){ _dashRef=null; const f=document.getElementById('dash-fecha'); if(f) f.value=hoyMX(); cargarDashboard(); }
 
 function pintaResumen(d){
   const t=d.totales;
@@ -2729,13 +2773,34 @@ async function ctVerEvidencia(id){
 
 /* ===== Ranking de cobradores (semana) ===== */
 let _rkData=null;
+let _rkRef=null; // fecha de referencia (YYYY-MM-DD) de la semana elegida; null = semana actual
 async function cargarRanking(){
   try{
-    const d=await apiU('GET','/api/dashboard?periodo=semana');
+    const f=document.getElementById('rk-fecha'); if(f && !f.value) f.value=hoyMX();
+    const q='/api/dashboard?periodo=semana'+(_rkRef?('&ref='+_rkRef):'');
+    const d=await apiU('GET',q);
     _rkData=(d.por_cobrador||[]).slice();
+    _rkPintaRango(d);
     pintaRanking(_rkData);
   }catch(e){ document.getElementById('rk-rows').innerHTML='<tr><td colspan="7" style="color:var(--red);padding:12px">'+e.message+'</td></tr>'; }
 }
+function _rkPintaRango(d){
+  const el=document.getElementById('rk-rango'); if(!el) return;
+  // calcula el rango visible a partir de la fecha elegida y el inicio de semana del tenant
+  try{
+    const base=new Date(((_rkRef||hoyMX()))+'T00:00:00');
+    const ini=(typeof _ndInicio==='number')?_ndInicio:( (d&&d.semanaInicio!=null)?d.semanaInicio:4 );
+    const diff=((base.getDay()-ini)+7)%7; const desde=new Date(base.getTime()-diff*86400000); const hasta=new Date(desde.getTime()+6*86400000);
+    const fmtD=x=>x.toLocaleDateString('es-MX',{day:'2-digit',month:'short'});
+    el.textContent=(_rkRef?'':'(actual) ')+fmtD(desde)+' – '+fmtD(hasta);
+  }catch(e){ el.textContent=''; }
+}
+function rkSemana(deltaDias){
+  const f=document.getElementById('rk-fecha'); if(!f) return;
+  if(deltaDias!==0){ const d=new Date((f.value||hoyMX())+'T00:00:00'); d.setDate(d.getDate()+deltaDias); f.value=d.toLocaleDateString('en-CA'); }
+  _rkRef=f.value; cargarRanking();
+}
+function rkHoy(){ _rkRef=null; const f=document.getElementById('rk-fecha'); if(f) f.value=hoyMX(); cargarRanking(); }
 function _rkTot(r){ return r.clientes_vigentes!=null?r.clientes_vigentes:(r.clientes||0); }
 function _rkCrec(r){ return r.crecimiento!=null?r.crecimiento:((r.unidades||0)-(r.bajas||0)); }
 // Color por VALOR (no por posición): mejor=verde(120) … peor=rojo(0). asc=true cuando "menos es mejor".
