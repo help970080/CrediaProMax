@@ -863,6 +863,8 @@
 </main>
 
 <script>
+/* ===== Fecha de México (horario Centro) — evita el desfase con UTC que adelantaba el día ===== */
+function hoyMX(){ return new Date().toLocaleDateString('en-CA',{timeZone:'America/Mexico_City'}); }
 /* ===== Sesión: exige token del login ===== */
 const TOKEN = (()=>{ try{ return localStorage.getItem('cobrapro_token'); }catch(e){ return null; } })();
 const ME = (()=>{ try{ return JSON.parse(localStorage.getItem('cobrapro_user')||'null'); }catch(e){ return null; } })();
@@ -1569,7 +1571,7 @@ async function rpVerAtraso(){
 
 function rpExportCSV(){
   if(!_rpActual||!_rpData){ alert('Abre un reporte primero.'); return; }
-  const d=_rpData, fn='reporte_'+_rpActual+'_'+new Date().toISOString().slice(0,10);
+  const d=_rpData, fn='reporte_'+_rpActual+'_'+hoyMX();
   let sheets=null;
   if(_rpActual==='desglose'){
     const head=['Concepto'].concat((d.semanas||[]).map(w=>w.label+(w.rango?(' ('+w.rango+')'):(w.fecha?(' ('+w.fecha+')'):''))));
@@ -1641,7 +1643,7 @@ async function recolectarTodo(){
 async function rpCargarHistRecoleccion(){
   try{
     const log=await apiU('GET','/api/recolecciones');
-    const hoy=new Date().toISOString().slice(0,10);
+    const hoy=hoyMX();
     const hoyLog=log.filter(r=>r.fecha.slice(0,10)===hoy);
     const totalHoy=hoyLog.reduce((a,r)=>a+r.monto,0);
     const el=document.getElementById('rec-hist'); if(!el) return;
@@ -2551,7 +2553,7 @@ async function ndFotoCartera(){
   }catch(e){ box.innerHTML='<div style="color:var(--red);padding:10px">'+e.message+'</div>'; }
 }
 async function cargarNumDiarios(){
-  const di=document.getElementById('nd-dia'); if(di && !di.value){ di.value=new Date().toISOString().slice(0,10); }
+  const di=document.getElementById('nd-dia'); if(di && !di.value){ di.value=hoyMX(); }
   const dia=di?di.value:'';
   // primer carga: lee el día de inicio configurado y posiciona el selector
   if(_ndInicio===null){ try{ const cf=await apiU('GET','/api/config/semana'); _ndInicio=cf.semanaInicio; }catch(e){ _ndInicio=4; }
@@ -2620,7 +2622,7 @@ async function cargarCierreAdmin(){
   try{
     const d=await apiU('GET','/api/cierre-semana'); _csAdm=d;
     const r=d.resumen||{totSuc:0,sucCerradas:0,totCob:0,cobCerrados:0};
-    try{ const s=new Date(d.semana+'T00:00:00'); document.getElementById('cs-adm-sem').textContent='Semana en curso: '+_ndFechaCorta(d.semana)+' al '+_ndFechaCorta(new Date(s.getTime()+6*86400000).toISOString().slice(0,10)); }catch(e){}
+    try{ const s=new Date(d.semana+'T00:00:00'); document.getElementById('cs-adm-sem').textContent='Semana en curso: '+_ndFechaCorta(d.semana)+' al '+_ndFechaCorta(new Date(s.getTime()+6*86400000).toLocaleDateString('en-CA')); }catch(e){}
     const pctS=r.totSuc?Math.round(r.sucCerradas/r.totSuc*100):0, pctC=r.totCob?Math.round(r.cobCerrados/r.totCob*100):0;
     document.getElementById('cs-adm-resumen').innerHTML=_ctChip('Sucursales',r.sucCerradas+'/'+r.totSuc,_ctPctCol(pctS))+_ctChip('Cobradores',r.cobCerrados+'/'+r.totCob,_ctPctCol(pctC));
     const est=document.getElementById('cs-adm-estado'), btn=document.getElementById('cs-adm-btn');
@@ -2828,7 +2830,7 @@ function exportCSV(t){
   const tb=document.getElementById(m[0]); const table=tb?tb.closest('table'):null;
   const aoa=tablaAoa(table);
   if(aoa.length<2){ alert('No hay datos para exportar. Abre esta vista y deja que cargue primero.'); return; }
-  xlsxDL(m[1]+'_'+new Date().toISOString().slice(0,10), [{name:m[1],aoa}]);
+  xlsxDL(m[1]+'_'+hoyMX(), [{name:m[1],aoa}]);
 }
 
 setInterval(()=>document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'}),1000);
