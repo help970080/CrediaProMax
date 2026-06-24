@@ -1545,7 +1545,7 @@ app.get('/api/dashboard', auth, (req,res)=>{
   const sales=db.sales.filter(s=>activeClientIds.has(s.clientId) && s.entregado!==false && (miSuc==null || s.sucursalId===miSuc)), clients=activeClients, sucursales=db.sucursales.filter(s=>s.activo!==false && (miSuc==null || s.id===miSuc));
   const _saleIds=new Set(sales.map(s=>s.id));
   const abonos=db.movimientos.filter(m=>m.abono>0 && _parseFechaMx(m.fecha)>=desde && _parseFechaMx(m.fecha)<=hasta && _saleIds.has(m.saleId));
-  const nuevos=sales.filter(s=>s.createdAt && new Date(s.createdAt).getTime()>=desde && new Date(s.createdAt).getTime()<=hasta);
+  const nuevos=sales.filter(s=>!s.importado && s.createdAt && new Date(s.createdAt).getTime()>=desde && new Date(s.createdAt).getTime()<=hasta);
   // atraso acumulado por sale
   function atrasoDe(s){
     const totAb=db.movimientos.filter(m=>m.saleId===s.id && m.abono>0).reduce((a,m)=>a+m.abono,0);
@@ -1564,7 +1564,7 @@ app.get('/api/dashboard', auth, (req,res)=>{
     // Clientes sin pago en el periodo (riesgo): vigente, no único, no nuevo del periodo, sin abono en el periodo
     const pagaronSuc=new Set(abonos_suc.map(m=>{const s=sales.find(x=>x.id===m.saleId); return s?s.clientId:null;}).filter(v=>v!=null));
     const nopagoSuc=new Set();
-    ventas_suc.forEach(s=>{ if(saldoDe(s.id)<=0||s.tipo==='unico')return; const ct=s.createdAt?new Date(s.createdAt).getTime():0; if(ct>=desde)return; if(!pagaronSuc.has(s.clientId)) nopagoSuc.add(s.clientId); });
+    ventas_suc.forEach(s=>{ if(saldoDe(s.id)<=0||s.tipo==='unico')return; const ct=s.createdAt?new Date(s.createdAt).getTime():0; if(!s.importado && ct>=desde)return; if(!pagaronSuc.has(s.clientId)) nopagoSuc.add(s.clientId); });
     return {id:suc.id, nombre:suc.nombre, encargada:enc?enc.nombre:'—',
       pagos_recibidos:recuperado, comisionable, npagos:abonos_suc.length, nopago:nopagoSuc.size,
       creditos_captados:nuevos_suc.length, colocado:nuevos_suc.reduce((a,s)=>a+s.monto,0),
@@ -1587,7 +1587,7 @@ app.get('/api/dashboard', auth, (req,res)=>{
     // Clientes sin pago en el periodo (riesgo): vigente, no único, no nuevo del periodo, sin abono en el periodo
     const pagaronCob=new Set(sus_abonos.map(m=>{const s=sales.find(x=>x.id===m.saleId); return s?s.clientId:null;}).filter(v=>v!=null));
     const nopagoCob=new Set();
-    sus_sales.forEach(s=>{ if(saldoDe(s.id)<=0||s.tipo==='unico')return; const ct=s.createdAt?new Date(s.createdAt).getTime():0; if(ct>=desde)return; if(!pagaronCob.has(s.clientId)) nopagoCob.add(s.clientId); });
+    sus_sales.forEach(s=>{ if(saldoDe(s.id)<=0||s.tipo==='unico')return; const ct=s.createdAt?new Date(s.createdAt).getTime():0; if(!s.importado && ct>=desde)return; if(!pagaronCob.has(s.clientId)) nopagoCob.add(s.clientId); });
     // Ranking + objetivos al 100%: unidades nuevas del periodo, débito esperado, clientes vigentes y clientes cobrados
     const unidades = nuevos.filter(s=>s.prom===c.nombre).length;
     const vigentes = sus_sales.filter(s=>saldoDe(s.id)>0);
