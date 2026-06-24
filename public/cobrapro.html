@@ -1006,12 +1006,14 @@ async function cargarDashboard(){
 function _dashPintaRango(d){
   const el=document.getElementById('dash-rango'); if(!el) return;
   try{
-    const base=new Date(((_dashRef||hoyMX()))+'T00:00:00');
+    // usa el inicio REAL calculado por el server (respeta el semanaInicio de la agencia); slice(0,10) evita el desfase UTC
+    const desdeISO=(d && d.desde) ? String(d.desde).slice(0,10) : (_dashRef||hoyMX());
+    const desde=new Date(desdeISO+'T00:00:00');
     const fmtD=x=>x.toLocaleDateString('es-MX',{day:'2-digit',month:'short'});
     let txt;
-    if(period==='dia'){ txt=fmtD(base); }
-    else if(period==='mes'){ const a=new Date(base.getFullYear(),base.getMonth(),1), b=new Date(base.getFullYear(),base.getMonth()+1,0); txt=base.toLocaleDateString('es-MX',{month:'long',year:'numeric'}); }
-    else { const ini=(typeof _ndInicio==='number')?_ndInicio:((d&&d.semanaInicio!=null)?d.semanaInicio:4); const diff=((base.getDay()-ini)+7)%7; const desde=new Date(base.getTime()-diff*86400000), hasta=new Date(desde.getTime()+6*86400000); txt=fmtD(desde)+' – '+fmtD(hasta); }
+    if(period==='dia'){ txt=fmtD(desde); }
+    else if(period==='mes'){ txt=desde.toLocaleDateString('es-MX',{month:'long',year:'numeric'}); }
+    else { const hasta=new Date(desde.getTime()+6*86400000); txt=fmtD(desde)+' – '+fmtD(hasta); }
     el.textContent=(_dashRef?'':'(actual) ')+txt;
   }catch(e){ el.textContent=''; }
 }
@@ -2786,11 +2788,10 @@ async function cargarRanking(){
 }
 function _rkPintaRango(d){
   const el=document.getElementById('rk-rango'); if(!el) return;
-  // calcula el rango visible a partir de la fecha elegida y el inicio de semana del tenant
   try{
-    const base=new Date(((_rkRef||hoyMX()))+'T00:00:00');
-    const ini=(typeof _ndInicio==='number')?_ndInicio:( (d&&d.semanaInicio!=null)?d.semanaInicio:4 );
-    const diff=((base.getDay()-ini)+7)%7; const desde=new Date(base.getTime()-diff*86400000); const hasta=new Date(desde.getTime()+6*86400000);
+    // inicio REAL del server (respeta el semanaInicio de la agencia); slice(0,10) evita el desfase UTC
+    const desdeISO=(d && d.desde) ? String(d.desde).slice(0,10) : (_rkRef||hoyMX());
+    const desde=new Date(desdeISO+'T00:00:00'); const hasta=new Date(desde.getTime()+6*86400000);
     const fmtD=x=>x.toLocaleDateString('es-MX',{day:'2-digit',month:'short'});
     el.textContent=(_rkRef?'':'(actual) ')+fmtD(desde)+' – '+fmtD(hasta);
   }catch(e){ el.textContent=''; }
