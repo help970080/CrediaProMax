@@ -735,7 +735,7 @@
     <!-- Quién pagó en vivo -->
     <div class="panel">
       <div class="ph"><h3>Quién pagó — todos los movimientos del periodo</h3><button class="btn" onclick="exportCSV('pagos')">⬇ CSV</button></div>
-      <table><thead><tr><th>Fecha</th><th>Cliente</th><th>Folio</th><th>Cobrado por</th><th>Forma de pago</th><th class="n">Monto</th></tr></thead><tbody id="rp-pagos"></tbody></table>
+      <table><thead><tr><th>Fecha</th><th>Cliente</th><th>Folio</th><th>Cobrado por</th><th>Forma de pago</th><th class="n">Monto</th><th></th></tr></thead><tbody id="rp-pagos"></tbody></table>
     </div>
   </section>
 
@@ -1347,10 +1347,19 @@ async function renderReportesLive(){
       ? cobrEnTransito.map(c=>`<tr><td>${c.nombre}</td><td>${c.sucursal}</td><td class="n">${fmt(c.por_entregar)}</td><td><span class="pill w">En tránsito</span></td></tr>`).join('')
       : '<tr><td colspan="4" style="color:var(--faint);padding:18px;text-align:center">Sin efectivo en tránsito · todos cuadrados</td></tr>';
     // quién pagó
+    const _puedeRevertir = ME && (ME.rol==='admin'||ME.rol==='supervisor');
     $('rp-pagos').innerHTML = pagos.length
-      ? pagos.map(p=>`<tr><td class="mono" style="color:var(--faint);font-size:.78rem">${p.fecha}</td><td class="nm">${p.cliente}</td><td class="mono" style="font-size:.78rem">${p.folio||'—'}</td><td class="sn">${p.prom||'—'}</td><td>${formaLbl[p.forma]||p.forma}</td><td class="n">${fmt(p.monto)}</td></tr>`).join('')
-      : '<tr><td colspan="6" style="color:var(--faint);padding:18px;text-align:center">Sin pagos en el periodo</td></tr>';
+      ? pagos.map(p=>`<tr><td class="mono" style="color:var(--faint);font-size:.78rem">${p.fecha}</td><td class="nm">${p.cliente}</td><td class="mono" style="font-size:.78rem">${p.folio||'—'}</td><td class="sn">${p.prom||'—'}</td><td>${formaLbl[p.forma]||p.forma}</td><td class="n">${fmt(p.monto)}</td><td>${(_puedeRevertir&&p.id)?`<button class="btn" style="padding:3px 9px;font-size:.72rem;color:var(--red);border-color:rgba(229,72,77,.4)" onclick="revertirPago(${p.id},${p.monto})">↩ Revertir</button>`:''}</td></tr>`).join('')
+      : '<tr><td colspan="7" style="color:var(--faint);padding:18px;text-align:center">Sin pagos en el periodo</td></tr>';
   }catch(e){ console.warn('renderReportesLive',e); }
+}
+async function revertirPago(movId, monto){
+  if(!confirm('¿Revertir este cobro de '+fmt(monto)+'?\n\nSe elimina el pago y el saldo del cliente regresa. Esta acción no se puede deshacer.')) return;
+  try{
+    const r=await apiU('POST','/api/movimientos/'+movId+'/revertir');
+    renderReportesLive();
+    alert('Cobro revertido. Nuevo saldo del crédito: '+fmt(r.saldo));
+  }catch(e){ alert('No se pudo revertir: '+e.message); }
 }
 
 /* ===== Centro de reportes: visualizadores ===== */
