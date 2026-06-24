@@ -2959,9 +2959,10 @@ app.get('/api/reports/desglose', auth, rol('admin', 'supervisor', 'sucursal'), (
   semanas.forEach(w => {
     let valorCartera = 0, debito = 0, totalClientes = 0, sinPago = 0, debitoSinPago = 0, carteraSinPago = 0, liquidados = 0, ventas = 0, valorVentas = 0, debitoVentas = 0, cobranza = 0;
     sales.forEach(s => {
+      const esImp = s.importado === true;   // cartera migrada: NO es venta nueva de la semana en que se subió
       const createdTs = new Date(s.createdAt).getTime();
       const existed = createdTs <= w.hasta;
-      const createdEsta = createdTs >= w.desde && createdTs <= w.hasta;
+      const createdEsta = !esImp && createdTs >= w.desde && createdTs <= w.hasta;
       const ms = movsPorVenta.get(s.id) || [];
       let saldoIni = 0, saldoFin = 0, abonoSem = 0;
       ms.forEach(m => {
@@ -2971,9 +2972,10 @@ app.get('/api/reports/desglose', auth, rol('admin', 'supervisor', 'sucursal'), (
       });
       // cobranza: todo abono real de la semana sobre créditos existentes
       if (existed) cobranza += abonoSem;
-      // ventas de la semana
+      // ventas de la semana (los importados NO cuentan como colocación nueva)
       if (createdEsta) { ventas++; valorVentas += s.monto || 0; debitoVentas += s.cuota || 0; }
-      const vigente = existed && (saldoIni > 0.5 || createdEsta) && clienteActivo(s.clientId);
+      // vigente: con saldo previo, o venta nueva real, o cartera importada con saldo en la semana
+      const vigente = existed && (saldoIni > 0.5 || createdEsta || (esImp && saldoFin > 0.5)) && clienteActivo(s.clientId);
       if (vigente) {
         totalClientes++;
         valorCartera += Math.max(0, saldoFin);
