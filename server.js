@@ -2483,24 +2483,30 @@ app.post('/api/admin/reset-datos', auth, rol('admin'), (req, res) => {
 // Reescribe sale.prom y client.prom al nombre EXACTO del usuario cobrador cuando coinciden normalizados
 // (mayúsculas/espacios/acentos). Resuelve casos como "VERO LUNA" duplicada sin usuario.
 // Sin body -> aplica a todos. Con { nombre:'VERO LUNA' } -> solo ese cobrador.
-// ===== RELLENAR MONTO (CAPITAL) DE CRÉDITOS IMPORTADOS SIN VALOR =====
-// Deriva el capital de la tarifa s16: monto = (total - fijo)/factor. Solo toca importados con monto<=0.
-// No cambia la utilidad (es la misma fórmula que ya usa _interesFrac). Sin body = todos los importados de la agencia.
+// ===== CORREGIR MONTO (CAPITAL) Y TOTAL DE CRÉDITOS IMPORTADOS =====
+// El importador guardó total = cuota×16 (le faltó el escalón del 1er pago) y monto en 0.
+// La CUOTA (Tarifa 2 a 16) es el dato confiable y mapea 1:1 al préstamo según la tarifa s16:
+//   cuota regular = monto*(factor - ppFactor)/(pagos-1)  →  monto = cuota*(pagos-1)/(factor-ppFactor)   [defaults: monto = cuota×10]
+//   total = monto*factor + fijo                                                                          [defaults: total = cuota×16+100]
+// NO toca el saldo ni los movimientos (eso es real, viene de la cobranza). Recalcula sobre importados con cuota>0.
 app.post('/api/admin/recalcular-monto-importados', auth, rol('admin'), (req, res) => {
   const c = _tarifaS16();
-  const factor = +c.factor || 1.6, fijo = +c.fijo || 100;
-  if (!(factor > 0)) return res.status(400).json({ error: 'Tarifa s16 inválida' });
+  const factor = +c.factor || 1.6, fijo = +c.fijo || 100, ppFactor = (c.ppFactor != null ? +c.ppFactor : 0.1), pagos = +c.pagos || 16;
+  const k = (pagos - 1) / (factor - ppFactor);   // defaults: 15 / (1.6 - 0.1) = 10
+  if (!(k > 0) || !(factor > 0)) return res.status(400).json({ error: 'Parámetros de tarifa s16 inválidos' });
   let actualizados = 0, sumaMonto = 0; const muestra = [];
   db.sales.forEach(s => {
-    if (!s.importado || (+s.monto || 0) > 0 || !(s.total > 0)) return;
-    const cap = Math.round((s.total - fijo) / factor);
-    if (cap > 0) {
-      if (muestra.length < 5) muestra.push({ folio: s.folio, total: s.total, monto: cap });
-      s.monto = cap; actualizados++; sumaMonto += cap;
+    if (!s.importado || !(s.cuota > 0)) return;
+    const monto = Math.round(s.cuota * k);
+    const total = Math.round(monto * factor + fijo);
+    if (monto > 0) {
+      if (muestra.length < 6) muestra.push({ folio: s.folio, cuota: s.cuota, montoAntes: s.monto, montoNuevo: monto, totalAntes: s.total, totalNuevo: total, saldo: saldoDe(s.id) });
+      s.monto = monto; s.total = total;   // saldo NO se toca
+      actualizados++; sumaMonto += monto;
     }
   });
   saveDB();
-  res.json({ ok: true, actualizados, sumaMonto, factor, fijo, muestra });
+  res.json({ ok: true, actualizados, sumaMonto, formula: { k, factor, fijo }, muestra });
 });
 
 app.post('/api/admin/canonizar-prom', auth, rol('admin','supervisor'), (req, res) => {
