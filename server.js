@@ -1520,9 +1520,9 @@ app.post('/api/sales/:id/gestion', auth, idem, (req, res) => {
 
 /* ---------- Dashboard agregado ---------- */
 function _parseFechaMx(s){ if(!s) return 0; const [d,m,y]=s.split('/'); return new Date(+y,+m-1,+d).getTime(); }
-function _desdePeriodo(periodo){
-  // Ancla en HOY (hora de México) para que coincida con Números diarios, no en UTC del servidor
-  const mx = new Date(fechaMxHoyISO()+'T00:00:00');
+function _desdePeriodo(periodo, refIso){
+  // Ancla en la fecha de referencia (si se da) o en HOY (hora de México); coincide con Números diarios, no UTC
+  const mx = new Date((refIso || fechaMxHoyISO())+'T00:00:00');
   if(periodo==='hoy') return mx.getTime();
   if(periodo==='mes') return new Date(mx.getFullYear(),mx.getMonth(),1).getTime();
   // semana: mismo ciclo configurable que Números diarios
@@ -1530,14 +1530,22 @@ function _desdePeriodo(periodo){
 }
 app.get('/api/dashboard', auth, (req,res)=>{
   const periodo=req.query.periodo||'semana';
-  const desde=_desdePeriodo(periodo);
+  const refIso=(req.query.ref && /^\d{4}-\d{2}-\d{2}$/.test(req.query.ref)) ? req.query.ref : null;
+  const desde=_desdePeriodo(periodo, refIso);
+  // tope superior: con ref se acota al fin de ESE periodo; sin ref, hasta ahora (semana en curso)
+  let hasta = Date.now();
+  if(refIso){
+    if(periodo==='semana') hasta = desde + 7*86400000 - 1;
+    else if(periodo==='mes'){ const d=new Date(desde); hasta = new Date(d.getFullYear(), d.getMonth()+1, 1).getTime() - 1; }
+    else hasta = desde + 86400000 - 1;
+  }
   const miSuc = (req.user.rol==='sucursal') ? Number(req.user.sucursalId||0) : null;
   const activeClients=db.clients.filter(c=>c.activo!==false);
   const activeClientIds=new Set(activeClients.map(c=>c.id));
   const sales=db.sales.filter(s=>activeClientIds.has(s.clientId) && s.entregado!==false && (miSuc==null || s.sucursalId===miSuc)), clients=activeClients, sucursales=db.sucursales.filter(s=>s.activo!==false && (miSuc==null || s.id===miSuc));
   const _saleIds=new Set(sales.map(s=>s.id));
-  const abonos=db.movimientos.filter(m=>m.abono>0 && _parseFechaMx(m.fecha)>=desde && _saleIds.has(m.saleId));
-  const nuevos=sales.filter(s=>s.createdAt && new Date(s.createdAt).getTime()>=desde);
+  const abonos=db.movimientos.filter(m=>m.abono>0 && _parseFechaMx(m.fecha)>=desde && _parseFechaMx(m.fecha)<=hasta && _saleIds.has(m.saleId));
+  const nuevos=sales.filter(s=>s.createdAt && new Date(s.createdAt).getTime()>=desde && new Date(s.createdAt).getTime()<=hasta);
   // atraso acumulado por sale
   function atrasoDe(s){
     const totAb=db.movimientos.filter(m=>m.saleId===s.id && m.abono>0).reduce((a,m)=>a+m.abono,0);
