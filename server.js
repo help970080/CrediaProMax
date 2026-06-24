@@ -1611,7 +1611,7 @@ app.get('/api/dashboard', auth, (req,res)=>{
   const pagos_recientes=abonos.slice().reverse().map(m=>{
     const s=sales.find(x=>x.id===m.saleId)||{}; const c=clients.find(x=>x.id===s.clientId)||{};
     const suc=sucursales.find(x=>x.id===s.sucursalId);
-    return {fecha:m.fecha, cliente:c.nombre||'—', folio:s.folio, prom:s.prom||'—', forma:m.forma||'efectivo', monto:m.abono, sucursal:suc?suc.nombre:'—'};
+    return {id:m.id, saleId:m.saleId, fecha:m.fecha, cliente:c.nombre||'—', folio:s.folio, prom:s.prom||'—', forma:m.forma||'efectivo', monto:m.abono, origen:m.origen||'', sucursalCobro:m.sucursalCobro||s.sucursalId, sucursal:suc?suc.nombre:'—'};
   });
   const totales={
     creditos_activos: sales.filter(s=>saldoDe(s.id)>0).length,
@@ -2489,6 +2489,40 @@ app.post('/api/admin/reset-datos', auth, rol('admin'), (req, res) => {
 //   cuota regular = monto*(factor - ppFactor)/(pagos-1)  →  monto = cuota*(pagos-1)/(factor-ppFactor)   [defaults: monto = cuota×10]
 //   total = monto*factor + fijo                                                                          [defaults: total = cuota×16+100]
 // NO toca el saldo ni los movimientos (eso es real, viene de la cobranza). Recalcula sobre importados con cuota>0.
+// ===== REVERTIR UN COBRO (admin/supervisor) =====
+// Deshace un abono aplicado por error: revierte el saldo (eliminando el movimiento) y el efectivo
+// donde entró (porEntregar del cobrador si fue en ruta, o caja de la sucursal si fue ventanilla). Deja auditoría.
+app.post('/api/movimientos/:id/revertir', auth, rol('admin','supervisor'), (req, res) => {
+  const id = +req.params.id;
+  const i = db.movimientos.findIndex(m => m.id === id);
+  if (i < 0) return res.status(404).json({ error: 'Movimiento no encontrado' });
+  const m = db.movimientos[i];
+  if (!(m.abono > 0)) return res.status(400).json({ error: 'Solo se pueden revertir cobros/abonos (no cargos)' });
+  const monto = +m.abono, f = m.forma || 'efectivo';
+  const sid = String(m.sucursalCobro || m.sucursalCredito || 1);
+  db.caja[sid] = db.caja[sid] || { inicial: 0, efectivo: 0, banco: 0, entregas: 0 };
+  if (f === 'efectivo') {
+    const u = db.users.find(x => _normNombre(x.nombre) === _normNombre(m.origen || ''));
+    if (u && u.rol === 'cobrador') {
+      // fue cobro en ruta: el efectivo estaba "por entregar" a nombre del cobrador
+      const pe = db.porEntregar.find(p => _normNombre(p.prom) === _normNombre(m.origen || '') && String(p.sucursalId) === sid);
+      if (pe) pe.monto = Math.max(0, pe.monto - monto);
+    } else {
+      // fue ventanilla: el efectivo entró a la caja de la sucursal
+      db.caja[sid].efectivo = Math.max(0, (db.caja[sid].efectivo || 0) - monto);
+      db.caja[sid].cobradoVent = Math.max(0, (db.caja[sid].cobradoVent || 0) - monto);
+      if (db.caja[sid].cobradoVentN > 0) db.caja[sid].cobradoVentN -= 1;
+    }
+  } else if (f === 'transferencia' || f === 'deposito') {
+    db.caja[sid].banco = Math.max(0, (db.caja[sid].banco || 0) - monto);
+  }
+  db.auditoria = db.auditoria || [];
+  db.auditoria.push({ tipo: 'reverso-cobro', movId: id, saleId: m.saleId, monto, forma: f, origen: m.origen || '', por: req.user.nombre, fecha: fechaMxHoyDDMM(), ts: Date.now() });
+  db.movimientos.splice(i, 1);   // eliminar el abono → revierte el saldo automáticamente
+  saveDB();
+  res.json({ ok: true, saldo: saldoDe(m.saleId), revertido: monto });
+});
+
 app.post('/api/admin/recalcular-monto-importados', auth, rol('admin'), (req, res) => {
   const c = _tarifaS16();
   const factor = +c.factor || 1.6, fijo = +c.fijo || 100, ppFactor = (c.ppFactor != null ? +c.ppFactor : 0.1), pagos = +c.pagos || 16;
