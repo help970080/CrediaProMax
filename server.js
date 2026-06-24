@@ -2483,6 +2483,26 @@ app.post('/api/admin/reset-datos', auth, rol('admin'), (req, res) => {
 // Reescribe sale.prom y client.prom al nombre EXACTO del usuario cobrador cuando coinciden normalizados
 // (mayúsculas/espacios/acentos). Resuelve casos como "VERO LUNA" duplicada sin usuario.
 // Sin body -> aplica a todos. Con { nombre:'VERO LUNA' } -> solo ese cobrador.
+// ===== RELLENAR MONTO (CAPITAL) DE CRÉDITOS IMPORTADOS SIN VALOR =====
+// Deriva el capital de la tarifa s16: monto = (total - fijo)/factor. Solo toca importados con monto<=0.
+// No cambia la utilidad (es la misma fórmula que ya usa _interesFrac). Sin body = todos los importados de la agencia.
+app.post('/api/admin/recalcular-monto-importados', auth, rol('admin'), (req, res) => {
+  const c = _tarifaS16();
+  const factor = +c.factor || 1.6, fijo = +c.fijo || 100;
+  if (!(factor > 0)) return res.status(400).json({ error: 'Tarifa s16 inválida' });
+  let actualizados = 0, sumaMonto = 0; const muestra = [];
+  db.sales.forEach(s => {
+    if (!s.importado || (+s.monto || 0) > 0 || !(s.total > 0)) return;
+    const cap = Math.round((s.total - fijo) / factor);
+    if (cap > 0) {
+      if (muestra.length < 5) muestra.push({ folio: s.folio, total: s.total, monto: cap });
+      s.monto = cap; actualizados++; sumaMonto += cap;
+    }
+  });
+  saveDB();
+  res.json({ ok: true, actualizados, sumaMonto, factor, fijo, muestra });
+});
+
 app.post('/api/admin/canonizar-prom', auth, rol('admin','supervisor'), (req, res) => {
   const filtro = req.body && req.body.nombre ? _normNombre(req.body.nombre) : null;
   const byNorm = {};
