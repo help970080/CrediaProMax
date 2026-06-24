@@ -1906,12 +1906,14 @@ async function cargarCortes(){
     { const mb=$('cfg-membrete'); if(mb) mb.checked=!(cfg.brand && cfg.brand.mostrarMembrete===false); }
     const dias=cfg.corteAutoDias||[1,2,3,4,5,6];
     $('cfg-dias').innerHTML=[1,2,3,4,5,6,0].map(d=>`<label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" class="cfg-d" value="${d}" ${dias.includes(d)?'checked':''} style="width:auto"> ${_diasLbl[d]}</label>`).join('');
-    const fecha=new Date().toISOString().slice(0,10);
-    const cortes=await apiU('GET','/api/cortes?fecha='+fecha);
+    const fecha=new Date().toLocaleDateString('en-CA',{timeZone:'America/Mexico_City'});  // fecha de México (no UTC), igual que el backend
+    const todos=await apiU('GET','/api/cortes');
+    // mostrar los de hoy (MX) + cualquier corte PENDIENTE de días anteriores, para que ninguno se esconda por zona horaria
+    const cortes=todos.filter(c=>c.fecha===fecha || c.estado!=='recibido');
     $('cortes-list').innerHTML= cortes.length? cortes.map(c=>`<div class="recon">
       <div class="lf"><div class="ava" style="background:var(--surf-3)">${c.tipo==='sucursal'?'🏪':(c.prom||'·').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase()}</div>
         <div><div class="nm">${c.prom} ${c.tipo==='sucursal'?'<span class="pill" style="font-size:.6rem;background:rgba(124,92,224,.15);color:var(--vio)">SUCURSAL</span>':(c.auto?'<span class="pill w" style="font-size:.6rem">AUTO</span>':'<span class="pill ok" style="font-size:.6rem">MANUAL</span>')} ${c.estado==='recibido'?'<span class="pill ok" style="font-size:.6rem">✓ recibido</span>':'<span class="pill w" style="font-size:.6rem">pendiente</span>'}</div>
-          <div class="sn">${c.tipo==='sucursal'?'Cierre de caja':c.npagos+' pagos'} · ${c.horaEntrega} · efectivo ${fmt(c.totalEfectivo)} · banco ${fmt(c.totalBanco)}${c.entregadoAlJC>0?` · <span style="color:var(--vio)">cobró ${fmt(c.efectivoBruto)}, dio ${fmt(c.entregadoAlJC)} al JC</span>`:''}</div></div></div>
+          <div class="sn">${c.tipo==='sucursal'?'Cierre de caja':c.npagos+' pagos'} · ${c.fecha||''} ${c.horaEntrega} · efectivo ${fmt(c.totalEfectivo)} · banco ${fmt(c.totalBanco)}${c.entregadoAlJC>0?` · <span style="color:var(--vio)">cobró ${fmt(c.efectivoBruto)}, dio ${fmt(c.entregadoAlJC)} al JC</span>`:''}</div></div></div>
       <div style="text-align:right"><div class="mono doc" style="font-weight:600">${fmt(c.totalEfectivo+c.totalBanco)}</div>
         ${c.estado!=='recibido' && c.totalEfectivo>0?`<button class="btn gold" style="padding:4px 9px;font-size:.72rem;margin-top:4px" onclick="recibirCorte(${c.id})">✓ Recibir</button> `:''}<button class="btn" style="padding:4px 9px;font-size:.72rem;margin-top:4px" onclick="borrarCorte(${c.id})">Borrar</button></div></div>`).join('') : '<div style="color:var(--faint);padding:12px;font-size:.85rem">Sin cortes registrados hoy.</div>';
   }catch(e){ $('cortes-list').innerHTML='<div style="color:var(--red);padding:12px">'+e.message+'</div>'; }
