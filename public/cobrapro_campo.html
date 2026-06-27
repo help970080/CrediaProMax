@@ -209,6 +209,7 @@
         <select id="asg-dest-cob" style="width:100%;background:var(--surf-2);border:1px solid var(--line-2);color:var(--txt);font-family:'Sora';font-size:.92rem;padding:10px 12px;border-radius:9px;margin-bottom:8px"></select>
         <input id="asg-monto-cob" type="number" inputmode="numeric" placeholder="Monto $" style="width:100%;background:var(--surf-2);border:1px solid var(--line-2);color:var(--txt);font-family:'Sora';font-size:.95rem;padding:10px 12px;border-radius:9px;margin-bottom:8px">
         <button class="corte" style="width:100%;justify-content:center" onclick="asgEnviarCob(this)">Asignar efectivo</button>
+        <div id="asg-hist-cob" style="margin-top:12px"></div>
       </div>
       <div class="res-card"><h3>📷 Evidencias de entrega</h3>
         <div style="font-size:.8rem;color:var(--dim);margin-bottom:8px;line-height:1.4">Fotos y ubicación de los créditos que el JC entregó a tus clientes. Disponibles aunque el cliente se dé de baja.</div>
@@ -320,13 +321,28 @@ async function asgCargarCob(){
     const bb=document.getElementById('bb-ef'); if(bb) bb.textContent=fmt(_efAcum);
     const ce=document.getElementById('cut-ef'); if(ce) ce.textContent=fmt(_efAcum);
   }catch(e){}
+  asgHistorialCob();
+}
+async function asgHistorialCob(){
+  const cont=document.getElementById('asg-hist-cob'); if(!cont) return;
+  try{
+    const d=await api('GET','/api/asignaciones');
+    const list=(d.enviadas||[]);
+    if(!list.length){ cont.innerHTML='<div style="font-size:.78rem;color:var(--dim);padding:6px 0">Aún no has entregado efectivo.</div>'; return; }
+    const ic={pendiente:'⏳',recibido:'✓',rechazado:'✕'};
+    cont.innerHTML='<div style="font-size:.72rem;color:var(--dim);text-transform:uppercase;letter-spacing:.04em;margin:4px 0 2px">Mis entregas de efectivo</div>'
+      + list.map(a=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-top:1px solid var(--line-2)">
+          <div style="font-size:.84rem">${ic[a.estado]||''} ${a.toNombre}<div style="font-size:.7rem;color:var(--dim)">${a.fecha||''}${a.nota?(' · '+a.nota):''}</div></div>
+          <div style="text-align:right;font-weight:700">${fmt(a.monto)}<div style="font-size:.7rem;color:var(--dim)">${a.estado}</div></div>
+        </div>`).join('');
+  }catch(e){ cont.innerHTML=''; }
 }
 async function asgEnviarCob(btn){
   const v=document.getElementById('asg-dest-cob').value; if(!v){ toast('Elige un destino'); return; }
   const i=v.indexOf(':'); const toTipo=v.slice(0,i), toId=+v.slice(i+1);
   const monto=+document.getElementById('asg-monto-cob').value; if(!(monto>0)){ toast('Monto inválido'); return; }
   btn.disabled=true; btn.textContent='Asignando…';
-  try{ await api('POST','/api/asignaciones',{toTipo,toId,monto}); document.getElementById('asg-monto-cob').value=''; toast('✓ Asignado · el puesto lo confirmará'); await cargarJC(); }
+  try{ await api('POST','/api/asignaciones',{toTipo,toId,monto}); document.getElementById('asg-monto-cob').value=''; toast('✓ Asignado · el puesto lo confirmará'); await cargarJC(); asgHistorialCob(); }
   catch(e){ toast(e.message); }
   finally{ btn.disabled=false; btn.textContent='Asignar efectivo'; }
 }
