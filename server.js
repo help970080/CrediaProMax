@@ -744,6 +744,31 @@ app.get('/api/asignaciones', auth, (req, res) => {
   res.json({ porConfirmar, enviadas, recibidas, disponible: Math.round(disponibleAsignar(req.user)) });
 });
 
+// ===== HISTORIAL COMPLETO DE ASIGNACIONES (admin/supervisor) — para rastrear efectivo entre puestos =====
+// Devuelve TODAS las asignaciones (no solo las del usuario), buscables por persona/puesto/nota.
+app.get('/api/asignaciones/historial', auth, rol('admin','supervisor'), (req, res) => {
+  const q = (req.query.q || '').trim().toLowerCase();
+  let all = (db.asignaciones || []).slice().reverse();   // más recientes primero
+  if (q) {
+    all = all.filter(a =>
+      (a.fromNombre || '').toLowerCase().includes(q) ||
+      (a.toNombre || '').toLowerCase().includes(q) ||
+      (a.fromTipo || '').toLowerCase().includes(q) ||
+      (a.toTipo || '').toLowerCase().includes(q) ||
+      (a.nota || '').toLowerCase().includes(q)
+    );
+  }
+  const limit = Math.min(+req.query.limit || 500, 2000);
+  const items = all.slice(0, limit).map(a => ({
+    id: a.id, fromTipo: a.fromTipo, fromNombre: a.fromNombre, toTipo: a.toTipo, toNombre: a.toNombre,
+    monto: a.monto, nota: a.nota || '', estado: a.estado, fecha: a.fecha,
+    recibidoPor: a.recibidoPor || '', recibidoEn: a.recibidoEn || ''
+  }));
+  const totales = { pendiente: 0, recibido: 0, rechazado: 0 };
+  all.forEach(a => { totales[a.estado] = (totales[a.estado] || 0) + (a.monto || 0); });
+  res.json({ items, total: all.length, mostrados: items.length, totales });
+});
+
 app.post('/api/asignaciones/:id/recibir', auth, (req, res) => {
   const a = (db.asignaciones || []).find(x => x.id == req.params.id);
   if (!a) return res.status(404).json({ error: 'Asignación no encontrada' });
