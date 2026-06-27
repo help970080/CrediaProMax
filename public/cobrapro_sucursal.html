@@ -275,6 +275,9 @@
         <div class="sect-lbl">📤 Asignaciones que enviaste (pendientes)</div>
         <div id="asg-sent-suc" style="font-size:.85rem"></div>
 
+        <div class="sect-lbl">📚 Historial recibido (de tus cobradores)</div>
+        <div id="asg-recv-suc" style="font-size:.85rem"></div>
+
         <div class="sect-lbl">Movimientos de hoy</div>
         <table><thead><tr><th>Hora</th><th>Concepto</th><th class="n">Monto</th></tr></thead><tbody id="movs"></tbody></table>
       </section>
@@ -734,6 +737,8 @@ async function asgCargarSuc(){
       const accion=a.estado==='pendiente'?`<div style="margin-top:8px"><button onclick="asgRechazarSuc(${a.id})" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:8px 14px;border-radius:7px;font-family:'Sora';cursor:pointer">Cancelar y regresar a mi caja</button></div>`:'';
       return `<div style="background:var(--surf-2);border:1px solid var(--line);border-radius:9px;padding:10px;margin-bottom:8px"><b>${fmt(a.monto)}</b> a <b>${a.toNombre}</b> · ${est}${a.nota?(' · '+a.nota):''}${accion}</div>`;
     }).join(''):'<div style="color:var(--faint)">Aún no has asignado efectivo.</div>';
+    const recv=document.getElementById('asg-recv-suc'); const rec=(d.recibidas||[]);
+    if(recv) recv.innerHTML=rec.length?rec.map(a=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)"><div style="font-size:.86rem">✓ de <b>${a.fromNombre}</b><div style="font-size:.7rem;color:var(--faint)">${a.fecha||''}${a.nota?(' · '+a.nota):''}</div></div><div style="text-align:right;font-weight:700">${fmt(a.monto)}</div></div>`).join(''):'<div style="color:var(--faint)">Aún no has recibido efectivo de cobradores.</div>';
   }catch(e){}
 }
 async function asgEnviarSuc(btn){
