@@ -2023,7 +2023,10 @@ function generarCorte(user, isAuto){
   const banco = pagos.filter(m => m.forma === 'transferencia' || m.forma === 'deposito').reduce((a,m)=>a+m.abono,0);
   // descontar el efectivo que el promotor ya entregó al JC durante la semana (no lo debe entregar dos veces)
   const aJC = db.jcEntregas.filter(e => e.cobradorId === user.id && _enSemana(e.fechaDDMM)).reduce((a,e)=>a+e.monto,0);
-  const efectivo = Math.max(0, efectivoBruto - aJC);
+  // EFECTIVO REALMENTE PENDIENTE = lo que el cobrador trae en mano (porEntregar). Ese saldo ya descuenta
+  // TODO lo que entregó por cualquier vía (recolección, asignación, entrega al JC), así que no duplica lo ya recibido.
+  // Si ya se le recogió todo, queda en 0 y el corte se auto-cierra (no aparece pendiente fantasma).
+  const efectivo = Math.max(0, Math.round(porEntregarDe(user.nombre)));
   const tieneEfectivo = efectivo > 0;
   const corte = {
     id: nextId('cortes'), prom: user.nombre, sucursalId: user.sucursalId || null,
