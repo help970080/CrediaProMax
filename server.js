@@ -1309,8 +1309,12 @@ app.post('/api/sales/:id/refin', auth, rol('admin','supervisor','sucursal'), ide
   if (!monto || monto <= 0) return res.status(400).json({ error: 'Nuevo monto inválido' });
   if (monto < saldoActual) return res.status(400).json({ error: `El nuevo monto ($${monto}) debe ser ≥ al saldo pendiente ($${Math.round(saldoActual)})` });
 
-  const tipo = nuevoTipo || old.tipo || 'semanal';
-  const plazo = +nuevoPlazo || old.plazo || 12;
+  let tipo = nuevoTipo || old.tipo || 'semanal';
+  let plazo = +nuevoPlazo || old.plazo || 12;
+  // CREDI YA usa tarifa s16 (16 semanas, cuota = préstamo ÷ 10). Los créditos importados quedaron como 'semanal'
+  // genérico, lo que hacía que el REFIN calculara con la tarifa equivocada (12 pagos → cuota inflada).
+  // Salvo que se elija otro tipo explícito en el modal, forzamos s16 para esta agencia.
+  if (_esCreditYa() && tipo === 'semanal') { tipo = 's16'; plazo = 16; }
   const prom = nuevoProm || old.prom;
   const r = calcCredito(tipo, plazo, monto, +nuevoDias || plazo);
 
@@ -2546,6 +2550,39 @@ app.post('/api/movimientos/:id/revertir', auth, rol('admin','supervisor'), (req,
   db.movimientos.splice(i, 1);   // eliminar el abono → revierte el saldo automáticamente
   saveDB();
   res.json({ ok: true, saldo: saldoDe(m.saleId), revertido: monto });
+});
+
+// ===== CORREGIR REFINES VIEJOS DE CREDI YA A TARIFA s16 (admin) =====
+// Los refines hechos antes del fix tomaron la tarifa 'semanal' genérica (cuota inflada).
+// Este endpoint los recalcula a s16 EXACTO (igual que el simulador), dejando el crédito tal cual debió quedar:
+//   - sale: tipo s16, cuota/total/primerPago correctos
+//   - corrige el cargo de apertura (movimiento "Disposición REFIN") al total s16
+//   - agrega el movimiento de "Primer pago descontado" si falta
+//   - NO toca los abonos de cobranza ya aplicados
+app.post('/api/admin/corregir-refines-s16', auth, rol('admin'), (req, res) => {
+  if (!_esCreditYa()) return res.status(400).json({ error: 'Este ajuste es solo para la agencia CREDI YA' });
+  const objetivo = db.sales.filter(s => s.refinDe != null && s.tipo === 'semanal' && (+s.monto || 0) > 0);
+  let corregidos = 0; const muestra = [];
+  objetivo.forEach(s => {
+    const r = calcCredito('s16', 16, +s.monto, 16);
+    const saldoAntes = saldoDe(s.id);
+    const totalAntes = s.total, cuotaAntes = s.cuota;
+    // 1. corregir el sale
+    s.tipo = 's16'; s.plazo = 16; s.cuota = r.cuota; s.total = r.total;
+    s.primerPago = r.primerPago; s.descuentaPP = true;
+    // 2. corregir el cargo de apertura (Disposición REFIN)
+    const disp = db.movimientos.find(m => m.saleId === s.id && /^Disposici[oó]n REFIN/.test(m.concepto || ''));
+    if (disp) disp.cargo = r.total;
+    // 3. agregar el primer pago descontado si no existe
+    const yaPP = db.movimientos.some(m => m.saleId === s.id && m.forma === 'descuento' && /Primer pago/.test(m.concepto || ''));
+    if (!yaPP && r.primerPago > 0) {
+      db.movimientos.push({ id: nextId('movimientos'), saleId: s.id, fecha: (disp ? disp.fecha : fechaMxHoyDDMM()), concepto: 'Primer pago descontado al inicio', origen: 'Corrección REFIN s16', cargo: 0, abono: r.primerPago, forma: 'descuento', sucursalCobro: s.sucursalId, sucursalCredito: s.sucursalId });
+    }
+    if (muestra.length < 8) muestra.push({ folio: s.folio, monto: s.monto, cuotaAntes, cuotaNueva: r.cuota, totalAntes, totalNuevo: r.total, primerPago: r.primerPago, saldoAntes: Math.round(saldoAntes), saldoNuevo: Math.round(saldoDe(s.id)) });
+    corregidos++;
+  });
+  saveDB();
+  res.json({ ok: true, corregidos, muestra });
 });
 
 app.post('/api/admin/recalcular-monto-importados', auth, rol('admin'), (req, res) => {
