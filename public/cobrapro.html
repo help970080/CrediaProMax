@@ -992,7 +992,7 @@ async function guardarComisiones(){
   try{ const c=cfg(); await apiU('PUT','/api/config/comisiones',c); alert('✓ Reglas de comisiones guardadas. El % sobre cobranza aplica al reporte de comisiones.'); }
   catch(e){ alert('No se pudo guardar: '+(e.message||e)); }
 }
-const tipoLbl={diario:'Diario',semanal:'Semanal',unico:'Único'};
+const tipoLbl={diario:'Diario',semanal:'Semanal',s16:'Semanal',s17:'Semanal',s21:'Semanal',s31:'Semanal',unico:'Único'};
 const tipoCls={diario:'dia',semanal:'sem',unico:'uni'};
 const plazoLbl=c=> c.tipo==='unico'? c.plazo+' días' : c.tipo==='diario'? c.plazo+' días' : c.plazo+' sem';
 const proxPago=c=> c.sem==='bad'?'Vencido': c.tipo==='diario'?'Mañana':c.tipo==='unico'?'Al término':'Esta semana';
@@ -1176,8 +1176,8 @@ function pintaConciliacion(d){
 
 /* CARTERA conectada al backend */
 let _cartera=[], _sucMap={};
-const _tipoLbl={diario:'Diario',semanal:'Semanal',unico:'Pago único',p17:'Celulares 17'};
-const _tipoCls={diario:'dia',semanal:'sem',unico:'uni',p17:'uni'};
+const _tipoLbl={diario:'Diario',semanal:'Semanal',s16:'Semanal',s17:'Semanal',s21:'Semanal',s31:'Semanal',unico:'Pago único',p17:'Celulares 17'};
+const _tipoCls={diario:'dia',semanal:'sem',s16:'sem',s17:'sem',s21:'sem',s31:'sem',unico:'uni',p17:'uni'};
 const _plazoTxt=c=>c.tipo==='semanal'? c.plazo+' sem' : c.tipo==='p17'? '17 pagos' : c.plazo+' días';
 async function cargarCartera(){
   const tb=$('tb-cart');
