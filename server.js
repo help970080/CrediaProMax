@@ -749,6 +749,12 @@ app.get('/api/asignaciones', auth, (req, res) => {
 app.get('/api/asignaciones/historial', auth, rol('admin','supervisor'), (req, res) => {
   const q = (req.query.q || '').trim().toLowerCase();
   let all = (db.asignaciones || []).slice().reverse();   // más recientes primero
+  // filtro opcional: solo la semana corriente (respeta el inicio de semana del tenant)
+  if (req.query.semana === '1') {
+    const ini = _inicioCiclo(Date.now());
+    const fin = ini + 7 * 86400000;
+    all = all.filter(a => { const t = _parseFechaMx(a.fecha); return t >= ini && t < fin; });
+  }
   if (q) {
     all = all.filter(a =>
       (a.fromNombre || '').toLowerCase().includes(q) ||
