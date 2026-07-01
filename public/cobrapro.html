@@ -242,14 +242,6 @@
 
   <!-- RESUMEN -->
   <section class="view on" id="resumen">
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 12px;padding:8px 10px;background:var(--surf-2);border:1px solid var(--line);border-radius:9px">
-      <span style="font-size:.82rem;color:var(--faint)">Periodo de:</span>
-      <button class="btn" style="padding:4px 10px" onclick="dashNav(-1)">◄</button>
-      <input type="date" id="dash-fecha" onchange="dashNav(0)" style="padding:5px 8px;font-size:.85rem;background:var(--surf);border:1px solid var(--line);border-radius:7px;color:var(--txt)">
-      <button class="btn" style="padding:4px 10px" onclick="dashNav(1)">►</button>
-      <button class="btn" style="padding:4px 10px;font-size:.8rem" onclick="dashHoy()">Actual</button>
-      <span id="dash-rango" style="font-size:.82rem;color:var(--gold);font-weight:600;margin-left:4px"></span>
-    </div>
     <div class="kpis">
       <div class="kpi g"><div class="l">Dinero cobrado</div><div class="v" id="k-cob">$0</div><div class="s" id="k-cob-s">en el periodo</div></div>
       <div class="kpi b"><div class="l">Dinero colocado</div><div class="v" id="k-col">$0</div><div class="s" id="k-ncred">0 créditos nuevos</div></div>
@@ -428,6 +420,7 @@
           <button class="btn" style="border-color:#5ab0ff;color:#5ab0ff" onclick="ecReestructura()">🗓 Reestructurar</button>
           <button class="btn" style="border-color:#7c5ce0;color:#7c5ce0" onclick="ecEnviarJC()">📦 Enviar a entrega del JC</button>
           <button class="btn gold" onclick="ecImprimir()">🖨 Estado de cuenta</button>
+          <button class="btn" id="ec-btn-retro" style="display:none;border-color:#e0a000;color:#e0a000" onclick="ecPagoRetro()">📅 Registrar pago de semana pasada</button>
         </div>
       </div>
     </div>
@@ -459,14 +452,6 @@
           <div style="color:var(--faint);font-size:.85rem;margin-top:2px">Cada columna se ordena con semáforo de mejor (verde) a peor (rojo). Sin gráficas: comparación directa.</div>
         </div>
         <button onclick="rkExport()" class="btn" style="font-size:.82rem">⬇️ Excel</button>
-      </div>
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0 12px;padding:8px 10px;background:var(--surf-2);border:1px solid var(--line);border-radius:9px">
-        <span style="font-size:.82rem;color:var(--faint)">Semana de:</span>
-        <button class="btn" style="padding:4px 10px" onclick="rkSemana(-7)">◄</button>
-        <input type="date" id="rk-fecha" onchange="rkSemana(0)" style="padding:5px 8px;font-size:.85rem;background:var(--surf);border:1px solid var(--line);border-radius:7px;color:var(--txt)">
-        <button class="btn" style="padding:4px 10px" onclick="rkSemana(7)">►</button>
-        <button class="btn" style="padding:4px 10px;font-size:.8rem" onclick="rkHoy()">Semana actual</button>
-        <span id="rk-rango" style="font-size:.82rem;color:var(--gold);font-weight:600;margin-left:4px"></span>
       </div>
       <div style="overflow-x:auto">
         <table id="rk-tbl">
@@ -734,8 +719,8 @@
 
     <!-- Quién pagó en vivo -->
     <div class="panel">
-      <div class="ph"><h3>Quién pagó — todos los movimientos del periodo</h3><button class="btn" onclick="exportCSV('pagos')">⬇ CSV</button></div>
-      <table><thead><tr><th>Fecha</th><th>Cliente</th><th>Folio</th><th>Cobrado por</th><th>Forma de pago</th><th class="n">Monto</th><th></th></tr></thead><tbody id="rp-pagos"></tbody></table>
+      <div class="ph"><h3>Quién pagó — últimos movimientos</h3><button class="btn" onclick="exportCSV('pagos')">⬇ CSV</button></div>
+      <table><thead><tr><th>Fecha</th><th>Cliente</th><th>Folio</th><th>Cobrado por</th><th>Forma de pago</th><th class="n">Monto</th></tr></thead><tbody id="rp-pagos"></tbody></table>
     </div>
   </section>
 
@@ -875,24 +860,10 @@
     </div>
     <div class="panel"><div class="ph"><h3>Por confirmar (efectivo que te asignaron)</h3></div><div id="asg-inbox"></div></div>
     <div class="panel"><div class="ph"><h3>Movimientos recientes</h3></div><div id="asg-hist"></div></div>
-    <div class="panel" id="asg-hist-full-panel" style="display:none">
-      <div class="ph"><h3>Historial de asignaciones · rastreo</h3><span class="hint">Todo el efectivo movido entre puestos (cobrador, sucursal, JC, supervisor, admin)</span></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:4px 2px 10px">
-        <input id="asg-hf-q" type="text" placeholder="Buscar por persona o puesto… (ej. Daniel)" onkeyup="if(event.key==='Enter')asgHistFull()" style="flex:1;min-width:220px;background:var(--surf-2);border:1px solid var(--line);color:var(--ink);padding:9px;border-radius:7px">
-        <button class="btn" onclick="asgHistFull()">Buscar</button>
-        <button class="btn" onclick="asgHistSemana(true)">📅 Esta semana</button>
-        <button class="btn" onclick="document.getElementById('asg-hf-q').value='';asgHistSemana(false)">Ver todo</button>
-        <button class="btn gold" onclick="asgHistExcel()">⬇️ Excel</button>
-        <span id="asg-hf-tot" style="font-size:.78rem;color:var(--dim)"></span>
-      </div>
-      <div id="asg-hf-rows" style="overflow-x:auto"></div>
-    </div>
   </section>
 </main>
 
 <script>
-/* ===== Fecha de México (horario Centro) — evita el desfase con UTC que adelantaba el día ===== */
-function hoyMX(){ return new Date().toLocaleDateString('en-CA',{timeZone:'America/Mexico_City'}); }
 /* ===== Sesión: exige token del login ===== */
 const TOKEN = (()=>{ try{ return localStorage.getItem('cobrapro_token'); }catch(e){ return null; } })();
 const ME = (()=>{ try{ return JSON.parse(localStorage.getItem('cobrapro_user')||'null'); }catch(e){ return null; } })();
@@ -994,7 +965,7 @@ async function guardarComisiones(){
   try{ const c=cfg(); await apiU('PUT','/api/config/comisiones',c); alert('✓ Reglas de comisiones guardadas. El % sobre cobranza aplica al reporte de comisiones.'); }
   catch(e){ alert('No se pudo guardar: '+(e.message||e)); }
 }
-const tipoLbl={diario:'Diario',semanal:'Semanal',s16:'Semanal',s17:'Semanal',s21:'Semanal',s31:'Semanal',unico:'Único'};
+const tipoLbl={diario:'Diario',semanal:'Semanal',unico:'Único'};
 const tipoCls={diario:'dia',semanal:'sem',unico:'uni'};
 const plazoLbl=c=> c.tipo==='unico'? c.plazo+' días' : c.tipo==='diario'? c.plazo+' días' : c.plazo+' sem';
 const proxPago=c=> c.sem==='bad'?'Vencido': c.tipo==='diario'?'Mañana':c.tipo==='unico'?'Al término':'Esta semana';
@@ -1005,42 +976,12 @@ const _formaLbl={efectivo:'Efectivo',transferencia:'Transferencia',deposito:'Dep
 const _formaCls={efectivo:'ok',transferencia:'w',deposito:'w',ajuste:'bad'};
 const _sucColor=['#f0b429','#5aa0e8','#3ecf8e','#b07ce0','#f0654d','#d6a35a'];
 
-let _dashRef=null; // fecha de referencia del periodo elegido en Resumen; null = actual
 async function cargarDashboard(){
   try{
-    const f=document.getElementById('dash-fecha'); if(f && !f.value) f.value=hoyMX();
-    const per=period==='dia'?'hoy':period;
-    const d=await apiU('GET','/api/dashboard?periodo='+per+(_dashRef?('&ref='+_dashRef):''));
-    _dashPintaRango(d);
+    const d=await apiU('GET','/api/dashboard?periodo='+period);
     pintaResumen(d); pintaSucursales(d); pintaCobradores(d); pintaComisiones(d); pintaConciliacion(d);
   }catch(e){ console.warn('dashboard:',e.message); }
 }
-function _dashPintaRango(d){
-  const el=document.getElementById('dash-rango'); if(!el) return;
-  try{
-    // usa el inicio REAL calculado por el server (respeta el semanaInicio de la agencia); slice(0,10) evita el desfase UTC
-    const desdeISO=(d && d.desde) ? String(d.desde).slice(0,10) : (_dashRef||hoyMX());
-    const desde=new Date(desdeISO+'T00:00:00');
-    const fmtD=x=>x.toLocaleDateString('es-MX',{day:'2-digit',month:'short'});
-    let txt;
-    if(period==='dia'){ txt=fmtD(desde); }
-    else if(period==='mes'){ txt=desde.toLocaleDateString('es-MX',{month:'long',year:'numeric'}); }
-    else { const hasta=new Date(desde.getTime()+6*86400000); txt=fmtD(desde)+' – '+fmtD(hasta); }
-    el.textContent=(_dashRef?'':'(actual) ')+txt;
-  }catch(e){ el.textContent=''; }
-}
-function dashNav(dir){
-  const f=document.getElementById('dash-fecha'); if(!f) return;
-  if(dir!==0){
-    const d=new Date((f.value||hoyMX())+'T00:00:00');
-    if(period==='dia') d.setDate(d.getDate()+dir);
-    else if(period==='mes') d.setMonth(d.getMonth()+dir);
-    else d.setDate(d.getDate()+dir*7);
-    f.value=d.toLocaleDateString('en-CA');
-  }
-  _dashRef=f.value; cargarDashboard();
-}
-function dashHoy(){ _dashRef=null; const f=document.getElementById('dash-fecha'); if(f) f.value=hoyMX(); cargarDashboard(); }
 
 function pintaResumen(d){
   const t=d.totales;
@@ -1178,8 +1119,8 @@ function pintaConciliacion(d){
 
 /* CARTERA conectada al backend */
 let _cartera=[], _sucMap={};
-const _tipoLbl={diario:'Diario',semanal:'Semanal',s16:'Semanal',s17:'Semanal',s21:'Semanal',s31:'Semanal',unico:'Pago único',p17:'Celulares 17'};
-const _tipoCls={diario:'dia',semanal:'sem',s16:'sem',s17:'sem',s21:'sem',s31:'sem',unico:'uni',p17:'uni'};
+const _tipoLbl={diario:'Diario',semanal:'Semanal',unico:'Pago único',p17:'Celulares 17'};
+const _tipoCls={diario:'dia',semanal:'sem',unico:'uni',p17:'uni'};
 const _plazoTxt=c=>c.tipo==='semanal'? c.plazo+' sem' : c.tipo==='p17'? '17 pagos' : c.plazo+' días';
 async function cargarCartera(){
   const tb=$('tb-cart');
@@ -1359,19 +1300,10 @@ async function renderReportesLive(){
       ? cobrEnTransito.map(c=>`<tr><td>${c.nombre}</td><td>${c.sucursal}</td><td class="n">${fmt(c.por_entregar)}</td><td><span class="pill w">En tránsito</span></td></tr>`).join('')
       : '<tr><td colspan="4" style="color:var(--faint);padding:18px;text-align:center">Sin efectivo en tránsito · todos cuadrados</td></tr>';
     // quién pagó
-    const _puedeRevertir = ME && (ME.rol==='admin'||ME.rol==='supervisor');
     $('rp-pagos').innerHTML = pagos.length
-      ? pagos.map(p=>`<tr><td class="mono" style="color:var(--faint);font-size:.78rem">${p.fecha}</td><td class="nm">${p.cliente}</td><td class="mono" style="font-size:.78rem">${p.folio||'—'}</td><td class="sn">${p.prom||'—'}</td><td>${formaLbl[p.forma]||p.forma}</td><td class="n">${fmt(p.monto)}</td><td>${(_puedeRevertir&&p.id)?`<button class="btn" style="padding:3px 9px;font-size:.72rem;color:var(--red);border-color:rgba(229,72,77,.4)" onclick="revertirPago(${p.id},${p.monto})">↩ Revertir</button>`:''}</td></tr>`).join('')
-      : '<tr><td colspan="7" style="color:var(--faint);padding:18px;text-align:center">Sin pagos en el periodo</td></tr>';
+      ? pagos.slice(0,30).map(p=>`<tr><td class="mono" style="color:var(--faint);font-size:.78rem">${p.fecha}</td><td class="nm">${p.cliente}</td><td class="mono" style="font-size:.78rem">${p.folio||'—'}</td><td class="sn">${p.prom||'—'}</td><td>${formaLbl[p.forma]||p.forma}</td><td class="n">${fmt(p.monto)}</td></tr>`).join('')
+      : '<tr><td colspan="6" style="color:var(--faint);padding:18px;text-align:center">Sin pagos en el periodo</td></tr>';
   }catch(e){ console.warn('renderReportesLive',e); }
-}
-async function revertirPago(movId, monto){
-  if(!confirm('¿Revertir este cobro de '+fmt(monto)+'?\n\nSe elimina el pago y el saldo del cliente regresa. Esta acción no se puede deshacer.')) return;
-  try{
-    const r=await apiU('POST','/api/movimientos/'+movId+'/revertir');
-    renderReportesLive();
-    alert('Cobro revertido. Nuevo saldo del crédito: '+fmt(r.saldo));
-  }catch(e){ alert('No se pudo revertir: '+e.message); }
 }
 
 /* ===== Centro de reportes: visualizadores ===== */
@@ -1638,7 +1570,7 @@ async function rpVerAtraso(){
 
 function rpExportCSV(){
   if(!_rpActual||!_rpData){ alert('Abre un reporte primero.'); return; }
-  const d=_rpData, fn='reporte_'+_rpActual+'_'+hoyMX();
+  const d=_rpData, fn='reporte_'+_rpActual+'_'+new Date().toISOString().slice(0,10);
   let sheets=null;
   if(_rpActual==='desglose'){
     const head=['Concepto'].concat((d.semanas||[]).map(w=>w.label+(w.rango?(' ('+w.rango+')'):(w.fecha?(' ('+w.fecha+')'):''))));
@@ -1710,7 +1642,7 @@ async function recolectarTodo(){
 async function rpCargarHistRecoleccion(){
   try{
     const log=await apiU('GET','/api/recolecciones');
-    const hoy=hoyMX();
+    const hoy=new Date().toISOString().slice(0,10);
     const hoyLog=log.filter(r=>r.fecha.slice(0,10)===hoy);
     const totalHoy=hoyLog.reduce((a,r)=>a+r.monto,0);
     const el=document.getElementById('rec-hist'); if(!el) return;
@@ -1834,17 +1766,12 @@ async function ecInit(){
     else { document.getElementById('ec-empty').style.display='block'; document.getElementById('ec-empty').innerHTML='<div style="color:var(--faint);text-align:center;padding:20px">No hay créditos en la base todavía.</div>'; }
   }catch(e){ document.getElementById('ec-empty').innerHTML='<div style="color:var(--red);padding:18px">'+e.message+'</div>'; }
 }
-let _ecBuscarDeb=null;
 function ecFiltrar(){
   const q=(document.getElementById('ec-buscar').value||'').toLowerCase().trim();
   const list=q? _ecSales.filter(s=>(((s.cliente||'')+' '+(s.folio||'')+' '+(s.cobrador||'')).toLowerCase().includes(q))) : _ecSales;
   document.getElementById('ec-sel').innerHTML = list.map(s=>`<option value="${s.id}">${s.cliente||'—'} · ${s.folio} · ${_tipoLbl[s.tipo]||s.tipo}</option>`).join('') || '<option value="">— sin coincidencias —</option>';
-  // Reconstruir innerHTML NO dispara 'change': si queda 1 sola coincidencia ya está seleccionada y un clic no recarga.
-  // Sincronizamos ecActual con la opción seleccionada y cargamos (debounce para no pegarle al endpoint en cada tecla).
-  clearTimeout(_ecBuscarDeb);
-  if(list.length){ _ecBuscarDeb=setTimeout(ecSelect, 250); }
 }
-function ecSelect(){ const v=document.getElementById('ec-sel').value; if(!v) return; ecActual=_ecSales.find(s=>String(s.id)===v); if(ecActual) ecCargar(); }
+function ecSelect(){ ecActual=_ecSales.find(s=>String(s.id)===document.getElementById('ec-sel').value); ecCargar(); }
 async function ecCargar(){
   if(!ecActual) return;
   try{ const d = await apiU('GET','/api/sales/'+ecActual.id+'/movimientos'); ecPinta(d); }
@@ -1852,6 +1779,7 @@ async function ecCargar(){
 }
 function ecPinta(d){
   ['ec-card','ec-saldo-card','ec-ledger-card'].forEach(id=>document.getElementById(id).style.display='block');
+  { const _rb=document.getElementById('ec-btn-retro'); if(_rb) _rb.style.display=(ME&&(ME.rol==='admin'||ME.rol==='supervisor'))?'inline-flex':'none'; }
   document.getElementById('ec-empty').style.display='none';
   const c=ecActual;
   document.getElementById('ec-nom').textContent=c.cliente||'—';
@@ -1879,6 +1807,41 @@ function ecPinta(d){
     <td class="n" style="color:${m.abono?'var(--grn)':'var(--faint)'}">${m.abono?fmt(m.abono):'—'}</td>
     <td class="n" style="font-weight:600">${fmt(m.saldo)}</td></tr>`;}).join('') || '<tr><td colspan="6" style="color:var(--faint);padding:14px">Sin movimientos.</td></tr>';
   _ecLib={rows,saldo:d.saldo,tcar,tabo,tmor};
+}
+// Registrar un pago de una semana anterior (que se perdió): cuenta en la semana correcta,
+// se atribuye al cobrador que lo cobró, y NO mueve efectivo (el dinero ya se entregó físicamente).
+async function ecPagoRetro(){
+  if(!ecActual){ return; }
+  let cobs=[];
+  try{ cobs=await apiU('GET','/api/cobradores'); }catch(e){ alert('No pude cargar los cobradores: '+e.message); return; }
+  if(!cobs.length){ alert('No hay cobradores activos.'); return; }
+  const hoyIso=new Date(Date.now()-6*3600*1000).toISOString().slice(0,10);
+  const opciones=cobs.map(c=>`<option value="${c.nombre.replace(/"/g,'&quot;')}">${c.nombre}${c.sucursal?(' · '+c.sucursal):''}</option>`).join('');
+  const inp='width:100%;padding:10px;margin:4px 0 12px;background:var(--surf-2);border:1px solid var(--line);border-radius:8px;color:var(--ink);font-family:inherit;box-sizing:border-box';
+  const ov=_flModal(`<h3 style="margin:0 0 4px">📅 Registrar pago de semana pasada</h3>
+    <p style="font-size:.8rem;color:var(--dim);margin:0 0 14px">Para pagos que ya se cobraron y entregaron, pero no se alcanzaron a capturar. Cuenta en la semana de la fecha que elijas y se le acredita al cobrador. <b>No mueve efectivo</b> (el dinero ya se entregó).</p>
+    <label style="font-size:.78rem;color:var(--dim)">Cobrador que lo cobró</label>
+    <select id="retro-cob" style="${inp}">${opciones}</select>
+    <label style="font-size:.78rem;color:var(--dim)">Fecha real del cobro (semana pasada)</label>
+    <input id="retro-fecha" type="date" max="${hoyIso}" value="${hoyIso}" style="${inp}">
+    <label style="font-size:.78rem;color:var(--dim)">Monto del pago</label>
+    <input id="retro-monto" type="number" inputmode="numeric" placeholder="$" style="${inp}">
+    <div style="display:flex;gap:10px;margin-top:4px"><button class="btn" style="flex:1" onclick="this.closest('.flmodal').remove()">Cancelar</button><button class="btn gold" style="flex:1" onclick="ecPagoRetroOK(this)">Registrar</button></div>`);
+}
+async function ecPagoRetroOK(b){
+  const cob=document.getElementById('retro-cob').value;
+  const fecha=document.getElementById('retro-fecha').value;
+  const monto=+document.getElementById('retro-monto').value;
+  if(!cob){ alert('Elige el cobrador'); return; }
+  if(!fecha){ alert('Elige la fecha del cobro'); return; }
+  if(!(monto>0)){ alert('Indica un monto válido'); return; }
+  b.disabled=true;
+  try{
+    await apiU('POST','/api/sales/'+ecActual.id+'/pago',{monto,forma:'efectivo',fechaCobro:fecha,origenCobrador:cob,sinEfectivo:true,idempotencyKey:'retro-'+ecActual.id+'-'+Date.now()});
+    b.closest('.flmodal').remove();
+    await ecCargar();
+    alert('✓ Pago registrado en la semana del '+fecha+' a nombre de '+cob+'.');
+  }catch(e){ alert(e.message); b.disabled=false; }
 }
 async function ecMov(tipo){
   if(!ecActual) return;
@@ -1975,14 +1938,12 @@ async function cargarCortes(){
     { const mb=$('cfg-membrete'); if(mb) mb.checked=!(cfg.brand && cfg.brand.mostrarMembrete===false); }
     const dias=cfg.corteAutoDias||[1,2,3,4,5,6];
     $('cfg-dias').innerHTML=[1,2,3,4,5,6,0].map(d=>`<label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" class="cfg-d" value="${d}" ${dias.includes(d)?'checked':''} style="width:auto"> ${_diasLbl[d]}</label>`).join('');
-    const fecha=new Date().toLocaleDateString('en-CA',{timeZone:'America/Mexico_City'});  // fecha de México (no UTC), igual que el backend
-    const todos=await apiU('GET','/api/cortes');
-    // mostrar los de hoy (MX) + cualquier corte PENDIENTE de días anteriores, para que ninguno se esconda por zona horaria
-    const cortes=todos.filter(c=>c.fecha===fecha || c.estado!=='recibido');
+    const fecha=new Date().toISOString().slice(0,10);
+    const cortes=await apiU('GET','/api/cortes?fecha='+fecha);
     $('cortes-list').innerHTML= cortes.length? cortes.map(c=>`<div class="recon">
       <div class="lf"><div class="ava" style="background:var(--surf-3)">${c.tipo==='sucursal'?'🏪':(c.prom||'·').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase()}</div>
         <div><div class="nm">${c.prom} ${c.tipo==='sucursal'?'<span class="pill" style="font-size:.6rem;background:rgba(124,92,224,.15);color:var(--vio)">SUCURSAL</span>':(c.auto?'<span class="pill w" style="font-size:.6rem">AUTO</span>':'<span class="pill ok" style="font-size:.6rem">MANUAL</span>')} ${c.estado==='recibido'?'<span class="pill ok" style="font-size:.6rem">✓ recibido</span>':'<span class="pill w" style="font-size:.6rem">pendiente</span>'}</div>
-          <div class="sn">${c.tipo==='sucursal'?'Cierre de caja':c.npagos+' pagos'} · ${c.fecha||''} ${c.horaEntrega} · efectivo ${fmt(c.totalEfectivo)} · banco ${fmt(c.totalBanco)}${c.entregadoAlJC>0?` · <span style="color:var(--vio)">cobró ${fmt(c.efectivoBruto)}, dio ${fmt(c.entregadoAlJC)} al JC</span>`:''}</div></div></div>
+          <div class="sn">${c.tipo==='sucursal'?'Cierre de caja':c.npagos+' pagos'} · ${c.horaEntrega} · efectivo ${fmt(c.totalEfectivo)} · banco ${fmt(c.totalBanco)}${c.entregadoAlJC>0?` · <span style="color:var(--vio)">cobró ${fmt(c.efectivoBruto)}, dio ${fmt(c.entregadoAlJC)} al JC</span>`:''}</div></div></div>
       <div style="text-align:right"><div class="mono doc" style="font-weight:600">${fmt(c.totalEfectivo+c.totalBanco)}</div>
         ${c.estado!=='recibido' && c.totalEfectivo>0?`<button class="btn gold" style="padding:4px 9px;font-size:.72rem;margin-top:4px" onclick="recibirCorte(${c.id})">✓ Recibir</button> `:''}<button class="btn" style="padding:4px 9px;font-size:.72rem;margin-top:4px" onclick="borrarCorte(${c.id})">Borrar</button></div></div>`).join('') : '<div style="color:var(--faint);padding:12px;font-size:.85rem">Sin cortes registrados hoy.</div>';
   }catch(e){ $('cortes-list').innerHTML='<div style="color:var(--red);padding:12px">'+e.message+'</div>'; }
@@ -2620,7 +2581,7 @@ async function ndFotoCartera(){
   }catch(e){ box.innerHTML='<div style="color:var(--red);padding:10px">'+e.message+'</div>'; }
 }
 async function cargarNumDiarios(){
-  const di=document.getElementById('nd-dia'); if(di && !di.value){ di.value=hoyMX(); }
+  const di=document.getElementById('nd-dia'); if(di && !di.value){ di.value=new Date().toISOString().slice(0,10); }
   const dia=di?di.value:'';
   // primer carga: lee el día de inicio configurado y posiciona el selector
   if(_ndInicio===null){ try{ const cf=await apiU('GET','/api/config/semana'); _ndInicio=cf.semanaInicio; }catch(e){ _ndInicio=4; }
@@ -2689,7 +2650,7 @@ async function cargarCierreAdmin(){
   try{
     const d=await apiU('GET','/api/cierre-semana'); _csAdm=d;
     const r=d.resumen||{totSuc:0,sucCerradas:0,totCob:0,cobCerrados:0};
-    try{ const s=new Date(d.semana+'T00:00:00'); document.getElementById('cs-adm-sem').textContent='Semana en curso: '+_ndFechaCorta(d.semana)+' al '+_ndFechaCorta(new Date(s.getTime()+6*86400000).toLocaleDateString('en-CA')); }catch(e){}
+    try{ const s=new Date(d.semana+'T00:00:00'); document.getElementById('cs-adm-sem').textContent='Semana en curso: '+_ndFechaCorta(d.semana)+' al '+_ndFechaCorta(new Date(s.getTime()+6*86400000).toISOString().slice(0,10)); }catch(e){}
     const pctS=r.totSuc?Math.round(r.sucCerradas/r.totSuc*100):0, pctC=r.totCob?Math.round(r.cobCerrados/r.totCob*100):0;
     document.getElementById('cs-adm-resumen').innerHTML=_ctChip('Sucursales',r.sucCerradas+'/'+r.totSuc,_ctPctCol(pctS))+_ctChip('Cobradores',r.cobCerrados+'/'+r.totCob,_ctPctCol(pctC));
     const est=document.getElementById('cs-adm-estado'), btn=document.getElementById('cs-adm-btn');
@@ -2796,33 +2757,13 @@ async function ctVerEvidencia(id){
 
 /* ===== Ranking de cobradores (semana) ===== */
 let _rkData=null;
-let _rkRef=null; // fecha de referencia (YYYY-MM-DD) de la semana elegida; null = semana actual
 async function cargarRanking(){
   try{
-    const f=document.getElementById('rk-fecha'); if(f && !f.value) f.value=hoyMX();
-    const q='/api/dashboard?periodo=semana'+(_rkRef?('&ref='+_rkRef):'');
-    const d=await apiU('GET',q);
+    const d=await apiU('GET','/api/dashboard?periodo=semana');
     _rkData=(d.por_cobrador||[]).slice();
-    _rkPintaRango(d);
     pintaRanking(_rkData);
   }catch(e){ document.getElementById('rk-rows').innerHTML='<tr><td colspan="7" style="color:var(--red);padding:12px">'+e.message+'</td></tr>'; }
 }
-function _rkPintaRango(d){
-  const el=document.getElementById('rk-rango'); if(!el) return;
-  try{
-    // inicio REAL del server (respeta el semanaInicio de la agencia); slice(0,10) evita el desfase UTC
-    const desdeISO=(d && d.desde) ? String(d.desde).slice(0,10) : (_rkRef||hoyMX());
-    const desde=new Date(desdeISO+'T00:00:00'); const hasta=new Date(desde.getTime()+6*86400000);
-    const fmtD=x=>x.toLocaleDateString('es-MX',{day:'2-digit',month:'short'});
-    el.textContent=(_rkRef?'':'(actual) ')+fmtD(desde)+' – '+fmtD(hasta);
-  }catch(e){ el.textContent=''; }
-}
-function rkSemana(deltaDias){
-  const f=document.getElementById('rk-fecha'); if(!f) return;
-  if(deltaDias!==0){ const d=new Date((f.value||hoyMX())+'T00:00:00'); d.setDate(d.getDate()+deltaDias); f.value=d.toLocaleDateString('en-CA'); }
-  _rkRef=f.value; cargarRanking();
-}
-function rkHoy(){ _rkRef=null; const f=document.getElementById('rk-fecha'); if(f) f.value=hoyMX(); cargarRanking(); }
 function _rkTot(r){ return r.clientes_vigentes!=null?r.clientes_vigentes:(r.clientes||0); }
 function _rkCrec(r){ return r.crecimiento!=null?r.crecimiento:((r.unidades||0)-(r.bajas||0)); }
 // Color por VALOR (no por posición): mejor=verde(120) … peor=rojo(0). asc=true cuando "menos es mejor".
@@ -2870,22 +2811,7 @@ function xlsxDL(filename, sheets){
   try{
     if(window.XLSX){
       const wb=XLSX.utils.book_new();
-      const _money=/(monto|importe|cobrad|cartera|saldo|comisi|colocad|atras|efectiv|deposit|transfer|\btotal\b|abono|cargo|cuota|prestamo|capital|utilidad|ganancia|caja|entregar|nomina|sueldo|pago)/i;
-      sheets.forEach((s,i)=>{
-        const ws=XLSX.utils.aoa_to_sheet(s.aoa);
-        try{
-          const head=(s.aoa[0]||[]).map(h=>String(h||''));
-          const range=XLSX.utils.decode_range(ws['!ref']);
-          for(let C=range.s.c;C<=range.e.c;C++){
-            const isMoney=_money.test(head[C]||'');
-            for(let R=range.s.r+1;R<=range.e.r;R++){
-              const cell=ws[XLSX.utils.encode_cell({r:R,c:C})];
-              if(cell && cell.t==='n'){ cell.z = isMoney ? '"$"#,##0' : '#,##0'; }
-            }
-          }
-        }catch(_e){}
-        XLSX.utils.book_append_sheet(wb,ws,(s.name||('Hoja'+(i+1))).slice(0,31));
-      });
+      sheets.forEach((s,i)=>{ const ws=XLSX.utils.aoa_to_sheet(s.aoa); XLSX.utils.book_append_sheet(wb,ws,(s.name||('Hoja'+(i+1))).slice(0,31)); });
       XLSX.writeFile(wb, filename.replace(/\.(csv|xlsx)$/,'')+'.xlsx'); return;
     }
   }catch(e){ console.warn('xlsx falló, uso CSV',e); }
@@ -2903,10 +2829,7 @@ function tablaAoa(tableEl){
   [...tableEl.querySelectorAll('tbody tr, tfoot tr')].forEach(tr=>{
     const tds=[...tr.children];
     if(tds.length===1 && tds[0].hasAttribute('colspan')) return;
-    const row=[]; tds.forEach((td,i)=>{ if(skip.has(i)) return; let v=((td.innerText||td.textContent)||'').replace(/\s*\n\s*/g,' · ').replace(/\s+/g,' ').trim();
-      // Montos/numéricos (celdas alineadas a la derecha con class "n"): exportar como NÚMERO operable en Excel
-      if(td.classList && td.classList.contains('n') && /\d/.test(v)){ const num=parseFloat(v.replace(/[^0-9.\-]/g,'')); if(isFinite(num)) v=num; }
-      row.push(v); });
+    const row=[]; tds.forEach((td,i)=>{ if(skip.has(i)) return; let v=((td.innerText||td.textContent)||'').replace(/\s*\n\s*/g,' · ').replace(/\s+/g,' ').trim(); row.push(v); });
     if(row.some(x=>x)) aoa.push(row);
   });
   return aoa;
@@ -2917,18 +2840,14 @@ function exportCSV(t){
   const tb=document.getElementById(m[0]); const table=tb?tb.closest('table'):null;
   const aoa=tablaAoa(table);
   if(aoa.length<2){ alert('No hay datos para exportar. Abre esta vista y deja que cargue primero.'); return; }
-  xlsxDL(m[1]+'_'+hoyMX(), [{name:m[1],aoa}]);
+  xlsxDL(m[1]+'_'+new Date().toISOString().slice(0,10), [{name:m[1],aoa}]);
 }
 
 setInterval(()=>document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'}),1000);
 document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'});
 /* ===== USUARIOS (conectado al backend) ===== */
 /* ===== Asignar efectivo entre puestos ===== */
-async function initAsignar(){
-  await asgCargarDestinos(); await asgCargarInbox();
-  const panel=document.getElementById('asg-hist-full-panel');
-  if(panel && ME && (ME.rol==='admin'||ME.rol==='supervisor')){ panel.style.display=''; asgHistFull(); }
-}
+async function initAsignar(){ await asgCargarDestinos(); await asgCargarInbox(); }
 async function asgCargarDestinos(){
   try{ const d=await apiU('GET','/api/asignaciones/destinos');
     document.getElementById('asg-disp').textContent=fmt(d.disponible||0);
@@ -2955,41 +2874,6 @@ async function asgCargarInbox(){
 }
 async function asgConfirmar(id){ try{ await apiU('POST','/api/asignaciones/'+id+'/recibir',{}); await asgCargarDestinos(); await asgCargarInbox(); }catch(e){ alert(e.message||e); } }
 async function asgRechazar(id){ if(!confirm('¿Rechazar esta asignación? El efectivo regresa a quien la envió.'))return; try{ await apiU('POST','/api/asignaciones/'+id+'/rechazar',{}); await asgCargarInbox(); }catch(e){ alert(e.message||e); } }
-const _puestoLbl={cobrador:'Cobrador',sucursal:'Sucursal',jc:'JC',supervisor:'Supervisor',admin:'Admin'};
-const _asgEstadoCol={pendiente:'var(--gold)',recibido:'var(--ok,#3ecf8e)',rechazado:'var(--red)'};
-let _asgHistItems=[], _asgHistSemana=false;
-async function asgHistFull(){
-  const cont=document.getElementById('asg-hf-rows'); if(!cont) return;
-  const q=(document.getElementById('asg-hf-q').value||'').trim();
-  cont.innerHTML='<div style="color:var(--faint);padding:10px">Cargando…</div>';
-  try{
-    const params=[]; if(q) params.push('q='+encodeURIComponent(q)); if(_asgHistSemana) params.push('semana=1');
-    const d=await apiU('GET','/api/asignaciones/historial'+(params.length?('?'+params.join('&')):''));
-    _asgHistItems=d.items||[];
-    const t=document.getElementById('asg-hf-tot');
-    if(t) t.textContent=`${d.mostrados} de ${d.total}${_asgHistSemana?' (esta semana)':''} · recibido ${fmt(d.totales.recibido)} · pendiente ${fmt(d.totales.pendiente)} · rechazado ${fmt(d.totales.rechazado)}`;
-    if(!d.items.length){ cont.innerHTML='<div style="color:var(--faint);padding:10px">Sin asignaciones'+(q?' para "'+q+'"':'')+(_asgHistSemana?' esta semana':'')+'.</div>'; return; }
-    cont.innerHTML='<table style="width:100%;border-collapse:collapse"><thead><tr>'
-      +['Fecha','De','Para','Monto','Estado','Nota'].map(h=>`<th style="text-align:left;font-size:.72rem;color:var(--dim);text-transform:uppercase;padding:6px 8px;border-bottom:1px solid var(--line)">${h}</th>`).join('')
-      +'</tr></thead><tbody>'
-      +d.items.map(a=>`<tr style="border-bottom:1px solid var(--line)">
-        <td style="padding:7px 8px;font-size:.78rem;color:var(--faint);white-space:nowrap">${a.fecha||''}</td>
-        <td style="padding:7px 8px;font-size:.82rem"><b>${a.fromNombre||'—'}</b> <span style="color:var(--dim);font-size:.72rem">${_puestoLbl[a.fromTipo]||a.fromTipo}</span></td>
-        <td style="padding:7px 8px;font-size:.82rem"><b>${a.toNombre||'—'}</b> <span style="color:var(--dim);font-size:.72rem">${_puestoLbl[a.toTipo]||a.toTipo}</span></td>
-        <td style="padding:7px 8px;font-weight:700;white-space:nowrap">${fmt(a.monto)}</td>
-        <td style="padding:7px 8px"><span style="color:${_asgEstadoCol[a.estado]||'var(--ink)'};font-size:.78rem;font-weight:600">${a.estado}${a.recibidoPor?(' · '+a.recibidoPor):''}</span></td>
-        <td style="padding:7px 8px;font-size:.78rem;color:var(--faint)">${a.nota||''}</td>
-      </tr>`).join('')
-      +'</tbody></table>';
-  }catch(e){ cont.innerHTML='<div style="color:#d6432d;padding:10px">'+(e.message||e)+'</div>'; }
-}
-function asgHistSemana(v){ _asgHistSemana=v; asgHistFull(); }
-function asgHistExcel(){
-  if(!_asgHistItems.length){ alert('No hay movimientos para exportar.'); return; }
-  const aoa=[['Fecha','De','Puesto de','Para','Puesto para','Monto','Estado','Recibido por','Nota']];
-  _asgHistItems.forEach(a=>aoa.push([a.fecha||'', a.fromNombre||'', _puestoLbl[a.fromTipo]||a.fromTipo||'', a.toNombre||'', _puestoLbl[a.toTipo]||a.toTipo||'', a.monto||0, a.estado||'', a.recibidoPor||'', a.nota||'']));
-  xlsxDL('asignaciones_'+(_asgHistSemana?'semana_':'')+hoyMX(), [{name:'Asignaciones',aoa}]);
-}
 
 /* ===== Extras · Detector de prestanombres ===== */
 let _exData=null, _exRisk='todos';
