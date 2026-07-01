@@ -35,6 +35,10 @@
   .nm{font-weight:600}
   .muted{color:var(--faint);font-size:.82rem}
   .leyenda{font-size:.75rem;color:var(--faint);margin-top:10px}
+  .banner{border-radius:10px;padding:10px 13px;margin-bottom:12px;font-weight:600;font-size:.85rem}
+  .banner.ok{background:rgba(34,160,107,.12);border:1px solid rgba(34,160,107,.4);color:#7ee0b0}
+  .banner.warn{background:rgba(224,160,0,.12);border:1px solid rgba(224,160,0,.4);color:#f0c860}
+  .banner.bad{background:rgba(229,72,77,.12);border:1px solid rgba(229,72,77,.4);color:#f4989b}
 </style>
 </head>
 <body>
@@ -70,6 +74,13 @@
   <div class="card">
     <h2>🏢 Sucursales</h2>
     <div id="sucursales"><div class="muted">Sin datos aún.</div></div>
+  </div>
+
+  <div class="card">
+    <h2>📍 Zonas / colonias por calidad de pago</h2>
+    <div class="muted" style="margin-bottom:8px">Dónde se está deteriorando la cartera. Las colonias con más mora salen primero — candidatas a frenar colocación.</div>
+    <div id="zonas-conf"></div>
+    <div id="zonas"><div class="muted">Sin datos aún.</div></div>
   </div>
 </div>
 
@@ -150,20 +161,63 @@ async function cargar(){
       return { id:s.id, nombre:s.nombre, sucursal:s.encargada, cartera:s.cartera, debito:a.deb, atraso_monto:s.atraso_monto, clientes:s.creditos, pct, mora, cobN, moraN, gen, venta:s.creditos_captados||0, nopago:s.nopago||0 };
     }).sort((a,b)=> ord[a.gen]-ord[b.gen] || a.pct-b.pct);
     $('sucursales').innerHTML = sucs.length? tabla(sucs,'sucursal') : '<div class="muted">Sin sucursales con cartera.</div>';
+    cargarZonas();
     $('rango').innerHTML += ' · <span class="muted">actualizado '+new Date().toLocaleTimeString('es-MX')+'</span>';
   }catch(e){ $('rango').innerHTML='<span class="r">✗ '+e.message+'</span>'; }
+}
+
+async function cargarZonas(){
+  const cont=$('zonas'), conf=$('zonas-conf');
+  cont.innerHTML='<div class="muted">Analizando colonias…</div>'; conf.innerHTML='';
+  try{
+    const d=await api('/api/admin/analisis-zonas');
+    const r=d.resumen||{};
+    // aviso de confiabilidad: si muchos clientes no tienen colonia, el análisis es parcial
+    let cn='ok', ctxt=`Dato confiable: ${r.confiabilidad||0}% de los clientes tiene colonia capturada.`;
+    if((r.confiabilidad||0)<50){ cn='bad'; ctxt=`⚠ Ojo: solo ${r.confiabilidad||0}% de los clientes tiene colonia capturada — este análisis es PARCIAL. Conviene capturar domicilios.`; }
+    else if((r.confiabilidad||0)<80){ cn='warn'; ctxt=`Confiabilidad media: ${r.confiabilidad||0}% tiene colonia. ${r.clientesSinColonia||0} clientes sin colonia quedan agrupados aparte.`; }
+    conf.innerHTML=`<div class="banner ${cn}">${cn==='ok'?'✓':'⚠'} ${ctxt}</div>`;
+    const items=(d.items||[]);
+    if(!items.length){ cont.innerHTML='<div class="muted">Sin cartera para agrupar.</div>'; return; }
+    cont.innerHTML='<div style="overflow-x:auto"><table><thead><tr>'
+      +'<th></th><th>Colonia</th><th>Municipio</th><th class="n">Clientes</th><th class="n">Créditos</th><th class="n">Mora</th><th class="n">Atraso $</th><th class="n">Cartera</th><th>Lectura</th>'
+      +'</tr></thead><tbody>'
+      + items.map(z=>{
+          const moraN=evalMora(z.pct_mora);
+          const chico = z.creditos<3;   // pocas cuentas = estadística débil
+          let lectura;
+          if(!z.tieneCol) lectura='<span class="muted">Domicilios sin colonia — captúralos para evaluar.</span>';
+          else if(moraN==='bad') lectura='<span class="r">🔴 Cartera deteriorada — frenar colocación aquí.</span>';
+          else if(moraN==='warn') lectura='<span class="a">🟡 Vigilar — mora subiendo.</span>';
+          else lectura='<span class="g">🟢 Zona sana.</span>';
+          if(chico && z.tieneCol) lectura+=' <span class="muted">(pocas cuentas)</span>';
+          return `<tr>
+            <td><span class="sem bg-${z.tieneCol?moraN:'warn'}"></span></td>
+            <td class="nm">${z.colonia}</td>
+            <td class="muted">${z.municipio}</td>
+            <td class="n">${z.clientes}</td>
+            <td class="n">${z.creditos}</td>
+            <td class="n">${chip(moraN, z.pct_mora+'%')}</td>
+            <td class="n">${fmt(z.atraso_monto)}</td>
+            <td class="n">${fmt(z.cartera)}</td>
+            <td class="diag">${lectura}</td>
+          </tr>`;
+        }).join('')
+      +'</tbody></table></div>';
+  }catch(e){ cont.innerHTML='<div class="banner bad">✗ '+e.message+' <span class="muted">(requiere el server nuevo con /api/admin/analisis-zonas)</span></div>'; }
 }
 
 function tabla(filas,tipo){
   const col1 = tipo==='cobrador'?'Cobrador':'Sucursal';
   const col2 = tipo==='cobrador'?'Sucursal':'Encargada';
   return '<div style="overflow-x:auto"><table><thead><tr>'
-    +`<th></th><th>${col1}</th><th>${col2}</th><th class="n">Cobranza</th><th class="n">Mora</th><th class="n">Venta</th><th class="n">Débito</th><th class="n">Cartera</th><th>Diagnóstico</th>`
+    +`<th></th><th>${col1}</th><th>${col2}</th><th class="n">Clientes</th><th class="n">Cobranza</th><th class="n">Mora</th><th class="n">Venta</th><th class="n">Débito</th><th class="n">Cartera</th><th>Diagnóstico</th>`
     +'</tr></thead><tbody>'
     + filas.map(o=>`<tr>
         <td><span class="sem bg-${o.gen}"></span></td>
         <td class="nm">${o.nombre||'—'}</td>
         <td class="muted">${o.sucursal||'—'}</td>
+        <td class="n">${o.clientes||0}${o.nopago>0?` <span class="muted">(${o.nopago} sin pagar)</span>`:''}</td>
         <td class="n">${chip(o.cobN,o.pct+'%')}</td>
         <td class="n">${chip(o.moraN,o.mora+'%')}</td>
         <td class="n">${o.venta}</td>
