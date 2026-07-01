@@ -1414,9 +1414,36 @@ app.post('/api/sales/:id/pago', auth, idem, (req, res) => {
   const sidCredito = String(sale.sucursalId || 1);
   // El dinero FÍSICO entra a la caja de QUIEN RECIBE el pago (no a la del crédito).
   const sidCobro = String(req.user.sucursalId || sidCredito);
-  db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: fechaMxHoyDDMM(), concepto: 'Abono', origen: req.user.nombre, cargo: 0, abono: +monto, forma: f, sucursalCobro: +sidCobro, sucursalCredito: +sidCredito });
+  // Fecha del movimiento: normalmente HOY. Admin/supervisor pueden capturar con fecha retroactiva
+  // (p.ej. pagos que faltaron de la semana pasada) para que cuenten en la semana correcta, no en la nueva.
+  let fechaMov = fechaMxHoyDDMM();
+  if (req.body.fechaCobro && (req.user.rol === 'admin' || req.user.rol === 'supervisor')) {
+    const iso = String(req.body.fechaCobro).slice(0, 10); // YYYY-MM-DD
+    const parts = iso.split('-');
+    if (parts.length !== 3) return res.status(400).json({ error: 'Fecha de cobro inválida' });
+    const t = new Date(iso + 'T00:00:00').getTime();
+    const hoyT = new Date(fechaMxHoyISO() + 'T00:00:00').getTime();
+    if (isNaN(t)) return res.status(400).json({ error: 'Fecha de cobro inválida' });
+    if (t > hoyT) return res.status(400).json({ error: 'La fecha de cobro no puede ser futura' });
+    if (t < hoyT - 31 * 86400000) return res.status(400).json({ error: 'La fecha de cobro es demasiado antigua (máximo 31 días)' });
+    fechaMov = `${parts[2]}/${parts[1]}/${parts[0]}`; // DD/MM/YYYY
+  }
+  // Origen del cobro: normalmente quien captura. Admin/supervisor pueden atribuirlo a un cobrador
+  // específico (recaptura retroactiva: cuenta en la cobranza/comisión de ESE cobrador, no de quien captura).
+  let origenPago = req.user.nombre;
+  if (req.body.origenCobrador && (req.user.rol === 'admin' || req.user.rol === 'supervisor')) {
+    const cob = db.users.find(u => u.rol === 'cobrador' && u.nombre === req.body.origenCobrador);
+    if (!cob) return res.status(404).json({ error: 'Cobrador no encontrado: ' + req.body.origenCobrador });
+    origenPago = cob.nombre;
+  }
+  // ¿el efectivo ya se entregó físicamente? entonces esto es SOLO registro: no se vuelve a mover caja.
+  const sinEfectivo = !!req.body.sinEfectivo && (req.user.rol === 'admin' || req.user.rol === 'supervisor');
+  db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: fechaMov, concepto: 'Abono', origen: origenPago, cargo: 0, abono: +monto, forma: f, sucursalCobro: +sidCobro, sucursalCredito: +sidCredito, soloRegistro: sinEfectivo || undefined });
   db.caja[sidCobro] = db.caja[sidCobro] || { inicial: 0, efectivo: 0, banco: 0, entregas: 0 };
-  if (req.user.rol === 'cobrador') {
+  if (sinEfectivo) {
+    // El dinero físico ya se manejó antes (ya se entregó/recibió). No toca caja ni "por entregar":
+    // solo queda el registro del pago en la cartera, con la fecha y el cobrador correctos.
+  } else if (req.user.rol === 'cobrador') {
     // cobro en ruta: el efectivo NO entra a caja, va a "por entregar" a nombre del cobrador en SU sucursal
     if (f === 'efectivo') {
       let pe = db.porEntregar.find(p => p.prom === req.user.nombre && String(p.sucursalId) === sidCobro);
@@ -1433,7 +1460,7 @@ app.post('/api/sales/:id/pago', auth, idem, (req, res) => {
     }
   }
   markIdem(req); saveDB();
-  logOp('pago', id, { saleId: id, monto: +monto, forma: f, cobradoPor: req.user.nombre, sucursalCobro: sidCobro });
+  logOp('pago', id, { saleId: id, monto: +monto, forma: f, cobradoPor: origenPago, capturadoPor: req.user.nombre, sucursalCobro: sidCobro, fecha: fechaMov, soloRegistro: sinEfectivo || undefined });
   res.status(201).json({ ok: true, saldo: saldoDe(id), cobroCruzado: sidCobro !== sidCredito });
 });
 
