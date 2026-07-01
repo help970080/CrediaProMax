@@ -1959,6 +1959,7 @@ app.get('/api/reports/numeros-diarios', auth, rol('admin','supervisor'), (req,re
   const sales = db.sales.filter(s=>activos.has(s.clientId) && s.entregado!==false);
   const sucursales = db.sucursales.filter(s=>s.activo!==false);
   const abonos = db.movimientos.filter(m=>m.abono>0 && m.forma!=='descuento');
+  const abonosAll = db.movimientos.filter(m=>m.abono>0);  // incluye el primer pago del alta (forma:'descuento')
   const saleSuc = {}; sales.forEach(s=>{ saleSuc[s.id]={suc:s.sucursalId, cli:s.clientId}; });
   // Avance de contactos: semana objetivo (la última cerrada por admin, o la anterior por tiempo)
   const prevIso = _semanaContactos();
@@ -1969,9 +1970,11 @@ app.get('/api/reports/numeros-diarios', auth, rol('admin','supervisor'), (req,re
     const clientes_totales = new Set(activeVs.map(s=>s.clientId)).size;
     const debito_total = activeVs.reduce((a,s)=>a+(s.cuota||0),0);
     let diaColl=0, acumColl=0; const diaCli=new Set(), acumCli=new Set();
-    for(const m of abonos){ const ref=saleSuc[m.saleId]; if(!ref||ref.suc!==suc.id) continue; const t=_parseFechaMx(m.fecha);
-      if(t>=wkStart && t<wkEnd){ acumColl+=m.abono; acumCli.add(ref.cli); }
-      if(t>=dStart && t<dEnd){ diaColl+=m.abono; diaCli.add(ref.cli); } }
+    const diaCob=new Set(), semCob=new Set();  // cubiertos incl. primer pago del alta (solo para no marcarlos "no pago")
+    for(const m of abonosAll){ const ref=saleSuc[m.saleId]; if(!ref||ref.suc!==suc.id) continue; const t=_parseFechaMx(m.fecha);
+      const esDesc = m.forma==='descuento';
+      if(t>=wkStart && t<wkEnd){ if(!esDesc){ acumColl+=m.abono; acumCli.add(ref.cli); } semCob.add(ref.cli); }
+      if(t>=dStart && t<dEnd){ if(!esDesc){ diaColl+=m.abono; diaCli.add(ref.cli); } diaCob.add(ref.cli); } }
     // No pagos (riesgo): clientes con cobro esperado que NO abonaron (día y acumulado de la semana)
     const espDia=new Set(), espSem=new Set();
     activeVs.forEach(s=>{
@@ -1979,8 +1982,9 @@ app.get('/api/reports/numeros-diarios', auth, rol('admin','supervisor'), (req,re
       if(_esperaCobroDia(s, dStart, dEnd)) espDia.add(s.clientId);
       if(s.tipo!=='unico' && !(ct>=wkStart && ct<wkEnd)) espSem.add(s.clientId); // esperado en la semana (= reporte semanal)
     });
-    const dia_nopago=[...espDia].filter(id=>!diaCli.has(id)).length;
-    const acum_nopago=[...espSem].filter(id=>!acumCli.has(id)).length;
+    // un cliente que ya dio su PRIMER PAGO (descuento al alta) no cuenta como "no pago", aunque ese pago no sea cobranza de campo
+    const dia_nopago=[...espDia].filter(id=>!diaCob.has(id)).length;
+    const acum_nopago=[...espSem].filter(id=>!semCob.has(id)).length;
     return { id:suc.id, gerencia:suc.nombre, clientes_totales, debito_total,
       dia_clientes:diaCli.size, dia_coll:diaColl, dia_nopago,
       acum_clientes:acumCli.size, acum_coll:acumColl, acum_nopago,
@@ -2007,6 +2011,7 @@ app.get('/api/reports/numeros-diarios-suc', auth, rol('admin','supervisor','sucu
   const activos = new Set(db.clients.filter(c=>c.activo!==false).map(c=>c.id));
   const sales = db.sales.filter(s=>activos.has(s.clientId) && s.entregado!==false && Number(s.sucursalId)===sid);
   const abonos = db.movimientos.filter(m=>m.abono>0 && m.forma!=='descuento');
+  const abonosAll = db.movimientos.filter(m=>m.abono>0);  // incluye el primer pago del alta (forma:'descuento')
   const saleRef = {}; sales.forEach(s=>{ saleRef[s.id]={prom:s.prom||'—', cli:s.clientId}; });
   const proms = [...new Set(sales.map(s=>s.prom||'—'))];
   const rows = proms.map(prom=>{
@@ -2014,15 +2019,17 @@ app.get('/api/reports/numeros-diarios-suc', auth, rol('admin','supervisor','sucu
     const clientes_totales = new Set(vs.map(s=>s.clientId)).size;
     const debito_total = vs.reduce((a,s)=>a+(s.cuota||0),0);
     let diaColl=0, acumColl=0; const diaCli=new Set(), acumCli=new Set();
-    for(const m of abonos){ const ref=saleRef[m.saleId]; if(!ref||ref.prom!==prom) continue; const t=_parseFechaMx(m.fecha);
-      if(t>=wkStart && t<wkEnd){ acumColl+=m.abono; acumCli.add(ref.cli); }
-      if(t>=dStart && t<dEnd){ diaColl+=m.abono; diaCli.add(ref.cli); } }
+    const diaCob=new Set(), semCob=new Set();  // cubiertos incl. primer pago del alta
+    for(const m of abonosAll){ const ref=saleRef[m.saleId]; if(!ref||ref.prom!==prom) continue; const t=_parseFechaMx(m.fecha);
+      const esDesc = m.forma==='descuento';
+      if(t>=wkStart && t<wkEnd){ if(!esDesc){ acumColl+=m.abono; acumCli.add(ref.cli); } semCob.add(ref.cli); }
+      if(t>=dStart && t<dEnd){ if(!esDesc){ diaColl+=m.abono; diaCli.add(ref.cli); } diaCob.add(ref.cli); } }
     const espDia=new Set(), espSem=new Set();
     vs.forEach(s=>{ const ct=s.createdAt?new Date(s.createdAt).getTime():0;
       if(_esperaCobroDia(s, dStart, dEnd)) espDia.add(s.clientId);
       if(s.tipo!=='unico' && !(ct>=wkStart && ct<wkEnd)) espSem.add(s.clientId); });
-    const dia_nopago=[...espDia].filter(id=>!diaCli.has(id)).length;
-    const acum_nopago=[...espSem].filter(id=>!acumCli.has(id)).length;
+    const dia_nopago=[...espDia].filter(id=>!diaCob.has(id)).length;
+    const acum_nopago=[...espSem].filter(id=>!semCob.has(id)).length;
     return { id:prom, cobrador:prom, clientes_totales, debito_total,
       dia_clientes:diaCli.size, dia_coll:diaColl, dia_nopago,
       acum_clientes:acumCli.size, acum_coll:acumColl, acum_nopago,
@@ -2123,7 +2130,7 @@ function _listaContactos(iso){
   for(const m of db.movimientos){ if(m.abono>0 && saleCli[m.saleId]!=null){ const t=_parseFechaMx(m.fecha); if(t>=wb.start && t<wb.end){ const cid=saleCli[m.saleId]; pagadoSemana.set(cid,(pagadoSemana.get(cid)||0)+m.abono); } } }
   const tarifaCli=new Map(); // clientId -> tarifa semanal esperada (suma de cuotas activas)
   const espCli=new Map();
-  sales.forEach(s=>{ if(s.tipo==='unico')return; const ct=s.createdAt?new Date(s.createdAt).getTime():0; if(ct>=wb.end)return; tarifaCli.set(s.clientId,(tarifaCli.get(s.clientId)||0)+(s.cuota||0)); if(!espCli.has(s.clientId)) espCli.set(s.clientId, s); });
+  sales.forEach(s=>{ if(s.tipo==='unico')return; const ct=s.createdAt?new Date(s.createdAt).getTime():0; if(ct>=wb.start)return; tarifaCli.set(s.clientId,(tarifaCli.get(s.clientId)||0)+(s.cuota||0)); if(!espCli.has(s.clientId)) espCli.set(s.clientId, s); });
   const rows=[];
   espCli.forEach((s,clientId)=>{
     const pagado=pagadoSemana.get(clientId)||0, tarifa=tarifaCli.get(clientId)||0;
