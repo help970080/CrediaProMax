@@ -242,6 +242,14 @@
 
   <!-- RESUMEN -->
   <section class="view on" id="resumen">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 12px;padding:8px 10px;background:var(--surf-2);border:1px solid var(--line);border-radius:9px">
+      <span style="font-size:.82rem;color:var(--faint)">Periodo de:</span>
+      <button class="btn" style="padding:4px 10px" onclick="dashNav(-1)">◄</button>
+      <input type="date" id="dash-fecha" onchange="dashNav(0)" style="padding:5px 8px;font-size:.85rem;background:var(--surf);border:1px solid var(--line);border-radius:7px;color:var(--txt)">
+      <button class="btn" style="padding:4px 10px" onclick="dashNav(1)">►</button>
+      <button class="btn" style="padding:4px 10px;font-size:.8rem" onclick="dashHoy()">Actual</button>
+      <span id="dash-rango" style="font-size:.82rem;color:var(--gold);font-weight:600;margin-left:4px"></span>
+    </div>
     <div class="kpis">
       <div class="kpi g"><div class="l">Dinero cobrado</div><div class="v" id="k-cob">$0</div><div class="s" id="k-cob-s">en el periodo</div></div>
       <div class="kpi b"><div class="l">Dinero colocado</div><div class="v" id="k-col">$0</div><div class="s" id="k-ncred">0 créditos nuevos</div></div>
@@ -452,6 +460,14 @@
           <div style="color:var(--faint);font-size:.85rem;margin-top:2px">Cada columna se ordena con semáforo de mejor (verde) a peor (rojo). Sin gráficas: comparación directa.</div>
         </div>
         <button onclick="rkExport()" class="btn" style="font-size:.82rem">⬇️ Excel</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0 12px;padding:8px 10px;background:var(--surf-2);border:1px solid var(--line);border-radius:9px">
+        <span style="font-size:.82rem;color:var(--faint)">Semana de:</span>
+        <button class="btn" style="padding:4px 10px" onclick="rkSemana(-7)">◄</button>
+        <input type="date" id="rk-fecha" onchange="rkSemana(0)" style="padding:5px 8px;font-size:.85rem;background:var(--surf);border:1px solid var(--line);border-radius:7px;color:var(--txt)">
+        <button class="btn" style="padding:4px 10px" onclick="rkSemana(7)">►</button>
+        <button class="btn" style="padding:4px 10px;font-size:.8rem" onclick="rkHoy()">Semana actual</button>
+        <span id="rk-rango" style="font-size:.82rem;color:var(--gold);font-weight:600;margin-left:4px"></span>
       </div>
       <div style="overflow-x:auto">
         <table id="rk-tbl">
@@ -720,7 +736,7 @@
     <!-- Quién pagó en vivo -->
     <div class="panel">
       <div class="ph"><h3>Quién pagó — últimos movimientos</h3><button class="btn" onclick="exportCSV('pagos')">⬇ CSV</button></div>
-      <table><thead><tr><th>Fecha</th><th>Cliente</th><th>Folio</th><th>Cobrado por</th><th>Forma de pago</th><th class="n">Monto</th></tr></thead><tbody id="rp-pagos"></tbody></table>
+      <table><thead><tr><th>Fecha</th><th>Cliente</th><th>Folio</th><th>Cobrado por</th><th>Forma de pago</th><th class="n">Monto</th><th></th></tr></thead><tbody id="rp-pagos"></tbody></table>
     </div>
   </section>
 
@@ -860,6 +876,16 @@
     </div>
     <div class="panel"><div class="ph"><h3>Por confirmar (efectivo que te asignaron)</h3></div><div id="asg-inbox"></div></div>
     <div class="panel"><div class="ph"><h3>Movimientos recientes</h3></div><div id="asg-hist"></div></div>
+    <div class="panel" id="asg-hist-full-panel" style="display:none">
+      <div class="ph"><h3>Historial de asignaciones · rastreo</h3><span class="hint">Todo el efectivo movido entre puestos (cobrador, sucursal, JC, supervisor, admin)</span></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:4px 2px 10px">
+        <input id="asg-hf-q" type="text" placeholder="Buscar por persona o puesto… (ej. Daniel)" onkeyup="if(event.key==='Enter')asgHistFull()" style="flex:1;min-width:220px;background:var(--surf-2);border:1px solid var(--line);color:var(--ink);padding:9px;border-radius:7px">
+        <button class="btn" onclick="asgHistFull()">Buscar</button>
+        <button class="btn" onclick="document.getElementById('asg-hf-q').value='';asgHistFull()">Ver todo</button>
+        <span id="asg-hf-tot" style="font-size:.78rem;color:var(--dim)"></span>
+      </div>
+      <div id="asg-hf-rows" style="overflow-x:auto"></div>
+    </div>
   </section>
 </main>
 
@@ -976,12 +1002,42 @@ const _formaLbl={efectivo:'Efectivo',transferencia:'Transferencia',deposito:'Dep
 const _formaCls={efectivo:'ok',transferencia:'w',deposito:'w',ajuste:'bad'};
 const _sucColor=['#f0b429','#5aa0e8','#3ecf8e','#b07ce0','#f0654d','#d6a35a'];
 
+function hoyMX(){ return new Date().toLocaleDateString('en-CA',{timeZone:'America/Mexico_City'}); }
+let _dashRef=null; // fecha de referencia del periodo elegido en Resumen; null = actual
 async function cargarDashboard(){
   try{
-    const d=await apiU('GET','/api/dashboard?periodo='+period);
+    const f=document.getElementById('dash-fecha'); if(f && !f.value) f.value=hoyMX();
+    const d=await apiU('GET','/api/dashboard?periodo='+period+(_dashRef?('&ref='+_dashRef):''));
+    _dashPintaRango(d);
     pintaResumen(d); pintaSucursales(d); pintaCobradores(d); pintaComisiones(d); pintaConciliacion(d);
   }catch(e){ console.warn('dashboard:',e.message); }
 }
+function _dashPintaRango(d){
+  const el=document.getElementById('dash-rango'); if(!el) return;
+  try{
+    // usa el inicio REAL que devuelve el server (respeta el día de inicio de la agencia); slice(0,10) evita desfase UTC
+    const desdeISO=(d && d.desde) ? String(d.desde).slice(0,10) : (_dashRef||hoyMX());
+    const desde=new Date(desdeISO+'T00:00:00');
+    const fmtD=x=>x.toLocaleDateString('es-MX',{day:'2-digit',month:'short'});
+    let txt;
+    if(period==='dia'){ txt=fmtD(desde); }
+    else if(period==='mes'){ txt=desde.toLocaleDateString('es-MX',{month:'long',year:'numeric'}); }
+    else { const hasta=new Date(desde.getTime()+6*86400000); txt=fmtD(desde)+' – '+fmtD(hasta); }
+    el.textContent=(_dashRef?'':'(actual) ')+txt;
+  }catch(e){ el.textContent=''; }
+}
+function dashNav(dir){
+  const f=document.getElementById('dash-fecha'); if(!f) return;
+  if(dir!==0){
+    const d=new Date((f.value||hoyMX())+'T00:00:00');
+    if(period==='dia') d.setDate(d.getDate()+dir);
+    else if(period==='mes') d.setMonth(d.getMonth()+dir);
+    else d.setDate(d.getDate()+dir*7);
+    f.value=d.toLocaleDateString('en-CA');
+  }
+  _dashRef=f.value; cargarDashboard();
+}
+function dashHoy(){ _dashRef=null; const f=document.getElementById('dash-fecha'); if(f) f.value=hoyMX(); cargarDashboard(); }
 
 function pintaResumen(d){
   const t=d.totales;
@@ -1300,10 +1356,19 @@ async function renderReportesLive(){
       ? cobrEnTransito.map(c=>`<tr><td>${c.nombre}</td><td>${c.sucursal}</td><td class="n">${fmt(c.por_entregar)}</td><td><span class="pill w">En tránsito</span></td></tr>`).join('')
       : '<tr><td colspan="4" style="color:var(--faint);padding:18px;text-align:center">Sin efectivo en tránsito · todos cuadrados</td></tr>';
     // quién pagó
+    const _puedeRevertir = ME && (ME.rol==='admin'||ME.rol==='supervisor');
     $('rp-pagos').innerHTML = pagos.length
-      ? pagos.slice(0,30).map(p=>`<tr><td class="mono" style="color:var(--faint);font-size:.78rem">${p.fecha}</td><td class="nm">${p.cliente}</td><td class="mono" style="font-size:.78rem">${p.folio||'—'}</td><td class="sn">${p.prom||'—'}</td><td>${formaLbl[p.forma]||p.forma}</td><td class="n">${fmt(p.monto)}</td></tr>`).join('')
-      : '<tr><td colspan="6" style="color:var(--faint);padding:18px;text-align:center">Sin pagos en el periodo</td></tr>';
+      ? pagos.slice(0,30).map(p=>`<tr><td class="mono" style="color:var(--faint);font-size:.78rem">${p.fecha}</td><td class="nm">${p.cliente}</td><td class="mono" style="font-size:.78rem">${p.folio||'—'}</td><td class="sn">${p.prom||'—'}</td><td>${formaLbl[p.forma]||p.forma}</td><td class="n">${fmt(p.monto)}</td><td>${(_puedeRevertir&&p.id)?`<button class="btn" style="padding:3px 9px;font-size:.72rem;color:var(--red);border-color:rgba(229,72,77,.4)" onclick="revertirPago(${p.id},${p.monto})">↩ Revertir</button>`:''}</td></tr>`).join('')
+      : '<tr><td colspan="7" style="color:var(--faint);padding:18px;text-align:center">Sin pagos en el periodo</td></tr>';
   }catch(e){ console.warn('renderReportesLive',e); }
+}
+async function revertirPago(movId, monto){
+  if(!confirm('¿Revertir este cobro de '+fmt(monto)+'?\n\nSe elimina el pago y el saldo del cliente regresa. Esta acción no se puede deshacer.')) return;
+  try{
+    const r=await apiU('POST','/api/movimientos/'+movId+'/revertir');
+    renderReportesLive();
+    alert('Cobro revertido. Nuevo saldo del crédito: '+fmt(r.saldo));
+  }catch(e){ alert('No se pudo revertir: '+e.message); }
 }
 
 /* ===== Centro de reportes: visualizadores ===== */
@@ -2757,13 +2822,32 @@ async function ctVerEvidencia(id){
 
 /* ===== Ranking de cobradores (semana) ===== */
 let _rkData=null;
+let _rkRef=null; // fecha de referencia (YYYY-MM-DD) de la semana elegida en Ranking; null = semana actual
 async function cargarRanking(){
   try{
-    const d=await apiU('GET','/api/dashboard?periodo=semana');
+    const f=document.getElementById('rk-fecha'); if(f && !f.value) f.value=hoyMX();
+    const d=await apiU('GET','/api/dashboard?periodo=semana'+(_rkRef?('&ref='+_rkRef):''));
+    _rkPintaRango(d);
     _rkData=(d.por_cobrador||[]).slice();
     pintaRanking(_rkData);
   }catch(e){ document.getElementById('rk-rows').innerHTML='<tr><td colspan="7" style="color:var(--red);padding:12px">'+e.message+'</td></tr>'; }
 }
+function _rkPintaRango(d){
+  const el=document.getElementById('rk-rango'); if(!el) return;
+  try{
+    const desdeISO=(d && d.desde) ? String(d.desde).slice(0,10) : (_rkRef||hoyMX());
+    const desde=new Date(desdeISO+'T00:00:00');
+    const hasta=new Date(desde.getTime()+6*86400000);
+    const fmtD=x=>x.toLocaleDateString('es-MX',{day:'2-digit',month:'short'});
+    el.textContent=(_rkRef?'':'(actual) ')+fmtD(desde)+' – '+fmtD(hasta);
+  }catch(e){ el.textContent=''; }
+}
+function rkSemana(deltaDias){
+  const f=document.getElementById('rk-fecha'); if(!f) return;
+  if(deltaDias!==0){ const d=new Date((f.value||hoyMX())+'T00:00:00'); d.setDate(d.getDate()+deltaDias); f.value=d.toLocaleDateString('en-CA'); }
+  _rkRef=f.value; cargarRanking();
+}
+function rkHoy(){ _rkRef=null; const f=document.getElementById('rk-fecha'); if(f) f.value=hoyMX(); cargarRanking(); }
 function _rkTot(r){ return r.clientes_vigentes!=null?r.clientes_vigentes:(r.clientes||0); }
 function _rkCrec(r){ return r.crecimiento!=null?r.crecimiento:((r.unidades||0)-(r.bajas||0)); }
 // Color por VALOR (no por posición): mejor=verde(120) … peor=rojo(0). asc=true cuando "menos es mejor".
@@ -2847,7 +2931,36 @@ setInterval(()=>document.getElementById('clock').textContent=new Date().toLocale
 document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'});
 /* ===== USUARIOS (conectado al backend) ===== */
 /* ===== Asignar efectivo entre puestos ===== */
-async function initAsignar(){ await asgCargarDestinos(); await asgCargarInbox(); }
+async function initAsignar(){
+  await asgCargarDestinos(); await asgCargarInbox();
+  const panel=document.getElementById('asg-hist-full-panel');
+  if(panel && ME && (ME.rol==='admin'||ME.rol==='supervisor')){ panel.style.display=''; asgHistFull(); }
+}
+const _puestoLbl={cobrador:'Cobrador',sucursal:'Sucursal',jc:'JC',supervisor:'Supervisor',admin:'Admin'};
+const _asgEstadoCol={pendiente:'var(--gold)',recibido:'var(--ok,#3ecf8e)',rechazado:'var(--red)'};
+async function asgHistFull(){
+  const cont=document.getElementById('asg-hf-rows'); if(!cont) return;
+  const q=(document.getElementById('asg-hf-q').value||'').trim();
+  cont.innerHTML='<div style="color:var(--faint);padding:10px">Cargando…</div>';
+  try{
+    const d=await apiU('GET','/api/asignaciones/historial'+(q?('?q='+encodeURIComponent(q)):''));
+    const t=document.getElementById('asg-hf-tot');
+    if(t) t.textContent=`${d.mostrados} de ${d.total} · recibido ${fmt(d.totales.recibido)} · pendiente ${fmt(d.totales.pendiente)} · rechazado ${fmt(d.totales.rechazado)}`;
+    if(!d.items.length){ cont.innerHTML='<div style="color:var(--faint);padding:10px">Sin asignaciones'+(q?' para "'+q+'"':'')+'.</div>'; return; }
+    cont.innerHTML='<table style="width:100%;border-collapse:collapse"><thead><tr>'
+      +['Fecha','De','Para','Monto','Estado','Nota'].map(h=>`<th style="text-align:left;font-size:.72rem;color:var(--dim);text-transform:uppercase;padding:6px 8px;border-bottom:1px solid var(--line)">${h}</th>`).join('')
+      +'</tr></thead><tbody>'
+      +d.items.map(a=>`<tr style="border-bottom:1px solid var(--line)">
+        <td style="padding:7px 8px;font-size:.78rem;color:var(--faint);white-space:nowrap">${a.fecha||''}</td>
+        <td style="padding:7px 8px;font-size:.82rem"><b>${a.fromNombre||'—'}</b> <span style="color:var(--dim);font-size:.72rem">${_puestoLbl[a.fromTipo]||a.fromTipo}</span></td>
+        <td style="padding:7px 8px;font-size:.82rem"><b>${a.toNombre||'—'}</b> <span style="color:var(--dim);font-size:.72rem">${_puestoLbl[a.toTipo]||a.toTipo}</span></td>
+        <td style="padding:7px 8px;font-weight:700;white-space:nowrap">${fmt(a.monto)}</td>
+        <td style="padding:7px 8px"><span style="color:${_asgEstadoCol[a.estado]||'var(--ink)'};font-size:.78rem;font-weight:600">${a.estado}${a.recibidoPor?(' · '+a.recibidoPor):''}</span></td>
+        <td style="padding:7px 8px;font-size:.78rem;color:var(--faint)">${a.nota||''}</td>
+      </tr>`).join('')
+      +'</tbody></table>';
+  }catch(e){ cont.innerHTML='<div style="color:#d6432d;padding:10px">'+(e.message||e)+'</div>'; }
+}
 async function asgCargarDestinos(){
   try{ const d=await apiU('GET','/api/asignaciones/destinos');
     document.getElementById('asg-disp').textContent=fmt(d.disponible||0);
