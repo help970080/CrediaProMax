@@ -10,6 +10,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const app = express();
 
@@ -107,7 +108,9 @@ async function loadRow(id) {
 // instante, así que la ventana entre guardados está cubierta. Al apagar (deploy/reinicio) se hace un
 // guardado final para no perder nada. Sigue siendo resiliente: si Postgres falla, reintenta sin perder datos.
 const _saveState = new Map();   // id -> { pending, saving, timer }
+const _lastHash = new Map();    // id -> firma del ÚLTIMO contenido guardado con éxito
 const SAVE_DEBOUNCE_MS = 8000;
+function _firma(json) { return crypto.createHash('sha1').update(json).digest('hex'); }
 function saveRow(id, data) {
   if (!USE_PG) {
     let all = {}; try { all = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch {}
@@ -129,8 +132,18 @@ async function _flushRow(id, intento) {
   st.saving = true;
   const data = st.pending;
   st.pending = null;          // lo tomamos; si falla, lo devolvemos
+  // Opción A: si el contenido es IDÉNTICO al último guardado, no se escribe (evita escrituras inútiles,
+  // menos WAL y menos basura). Con pocos usuarios y ratos sin cambios reales, esto ahorra muchísimo.
+  const json = JSON.stringify(data);
+  const h = _firma(json);
+  if (_lastHash.get(id) === h) {
+    st.saving = false;
+    if (st.pending != null && !st.timer) st.timer = setTimeout(() => { st.timer = null; _flushRow(id); }, SAVE_DEBOUNCE_MS);
+    return;
+  }
   try {
     await pool.query('INSERT INTO cobrapro_state (id, data) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET data = $2', [id, data]);
+    _lastHash.set(id, h);      // recordamos lo que quedó guardado
     st.saving = false;
     // si llegaron cambios mientras guardábamos, agenda el siguiente guardado agrupado
     if (st.pending != null && !st.timer) {
@@ -150,7 +163,9 @@ async function _flushAllNow() {
     if (st.timer) { clearTimeout(st.timer); st.timer = null; }
     if (st.pending != null && !st.saving) {
       const data = st.pending; st.pending = null;
-      try { await pool.query('INSERT INTO cobrapro_state (id, data) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET data = $2', [id, data]); }
+      const h = _firma(JSON.stringify(data));
+      if (_lastHash.get(id) === h) continue;   // no cambió: nada que guardar
+      try { await pool.query('INSERT INTO cobrapro_state (id, data) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET data = $2', [id, data]); _lastHash.set(id, h); }
       catch (e) { console.error('⚠ guardado final falló fila ' + id + ':', e.message); }
     }
   }
