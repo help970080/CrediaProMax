@@ -1041,6 +1041,7 @@ app.post('/api/sales/:id/entregar', auth, rol('admin', 'supervisor', 'sucursal',
   }
   if (cli && (typeof cli.lat !== 'number') && typeof lat === 'number') { cli.lat = lat; cli.lng = lng; cli.geoSrc = 'entrega'; }
   saveDB();
+  logOp('entrega', s.id, { saleId: s.id, folio: s.folio, entregaMonto: monto, por: req.user.nombre, rol: req.user.rol });
   res.json({ ok: true, posicion: Math.round(posicionCash(req.user)), caja: req.user.rol === 'jc' ? jcCajaDe(req.user.id) : undefined });
 });
 // ===== BANDEJA DE ENTREGAS (cola común; todos menos el promotor) =====
