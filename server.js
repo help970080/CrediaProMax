@@ -19,6 +19,18 @@ const app = express();
 // estuviera en memoria sin guardar. Ahora se registra y el server sigue vivo. (El OOM/memoria es aparte.)
 process.on('uncaughtException',  (e) => console.error('⚠ uncaughtException:',  e && e.stack ? e.stack : e));
 process.on('unhandledRejection', (e) => console.error('⚠ unhandledRejection:', e && e.stack ? e.stack : e));
+// Al apagar (Render manda SIGTERM antes de un deploy/reinicio): guardar TODO lo pendiente antes de salir,
+// para que un reinicio planeado nunca pierda la última ventana de operaciones.
+let _apagando = false;
+async function _apagarLimpio(sig) {
+  if (_apagando) return; _apagando = true;
+  console.log('⏻ ' + sig + ': guardando pendientes antes de apagar...');
+  try { await _flushAllNow(); } catch (e) { console.error('flush final:', e && e.message); }
+  console.log('⏻ guardado final completo. Saliendo.');
+  process.exit(0);
+}
+process.on('SIGTERM', () => _apagarLimpio('SIGTERM'));
+process.on('SIGINT',  () => _apagarLimpio('SIGINT'));
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'cobrapro_dev_secret_cambiame';
 const DB_FILE = path.join(__dirname, 'db.json');
@@ -89,19 +101,26 @@ async function loadRow(id) {
   }
   try { const all = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); return all[id] != null ? all[id] : null; } catch { return null; }
 }
-// Guardado resiliente: si la conexión a Postgres falla, NO se pierde el dato.
-// Se conserva la última versión pendiente por tenant y se reintenta con espera progresiva hasta lograrlo.
-const _saveState = new Map();   // id -> { pending, saving }
+// ===== GUARDADO AGRUPADO (Fase 2) =====
+// En vez de reescribir el bloque completo en CADA operación (lo que inflaba la tabla y el WAL hasta llenar
+// el disco), se agrupa: a lo más UNA escritura cada ~8s por agencia. El oplog registra cada operación al
+// instante, así que la ventana entre guardados está cubierta. Al apagar (deploy/reinicio) se hace un
+// guardado final para no perder nada. Sigue siendo resiliente: si Postgres falla, reintenta sin perder datos.
+const _saveState = new Map();   // id -> { pending, saving, timer }
+const SAVE_DEBOUNCE_MS = 8000;
 function saveRow(id, data) {
   if (!USE_PG) {
     let all = {}; try { all = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch {}
     all[id] = data; fs.writeFileSync(DB_FILE, JSON.stringify(all, null, 2));
     return;
   }
-  const st = _saveState.get(id) || { pending: null, saving: false };
-  st.pending = data;          // siempre guarda la versión MÁS reciente
+  const st = _saveState.get(id) || { pending: null, saving: false, timer: null };
+  st.pending = data;          // siempre conserva la versión MÁS reciente
   _saveState.set(id, st);
-  _flushRow(id);
+  // agenda un guardado agrupado (si no hay uno ya en camino): junta las operaciones de la ráfaga
+  if (!st.timer && !st.saving) {
+    st.timer = setTimeout(() => { st.timer = null; _flushRow(id); }, SAVE_DEBOUNCE_MS);
+  }
 }
 async function _flushRow(id, intento) {
   intento = intento || 0;
@@ -113,13 +132,29 @@ async function _flushRow(id, intento) {
   try {
     await pool.query('INSERT INTO cobrapro_state (id, data) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET data = $2', [id, data]);
     st.saving = false;
-    if (st.pending != null) _flushRow(id);             // llegó una versión nueva mientras guardábamos
+    // si llegaron cambios mientras guardábamos, agenda el siguiente guardado agrupado
+    if (st.pending != null && !st.timer) {
+      st.timer = setTimeout(() => { st.timer = null; _flushRow(id); }, SAVE_DEBOUNCE_MS);
+    }
   } catch (e) {
     console.error('❌ Error al guardar fila ' + id + ' (intento ' + (intento + 1) + '):', e.message);
     st.saving = false;
     if (st.pending == null) st.pending = data;          // no se perdió: sigue pendiente para reintentar
     if (intento < 8) setTimeout(() => _flushRow(id, intento + 1), Math.min(1000 * (intento + 1), 8000));
   }
+}
+// Guardado final: fuerza a disco todo lo pendiente (bloques + oplog). Se llama al apagar el proceso.
+async function _flushAllNow() {
+  if (!USE_PG) return;
+  for (const [id, st] of _saveState) {
+    if (st.timer) { clearTimeout(st.timer); st.timer = null; }
+    if (st.pending != null && !st.saving) {
+      const data = st.pending; st.pending = null;
+      try { await pool.query('INSERT INTO cobrapro_state (id, data) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET data = $2', [id, data]); }
+      catch (e) { console.error('⚠ guardado final falló fila ' + id + ':', e.message); }
+    }
+  }
+  try { await _flushOplog(); } catch {}
 }
 const loadSystem = () => loadRow(0);
 const saveSystem = () => saveRow(0, SYS);
