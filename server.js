@@ -12,6 +12,13 @@ const fs = require('fs');
 const path = require('path');
 
 const app = express();
+
+// ===== GUARDIANES GLOBALES =====
+// Un error inesperado (p.ej. un fallo de conexión a la base) NO debe tumbar todo el proceso.
+// Antes, cualquier excepción sin capturar mataba la instancia ("estado 1") y se reiniciaba, perdiendo lo que
+// estuviera en memoria sin guardar. Ahora se registra y el server sigue vivo. (El OOM/memoria es aparte.)
+process.on('uncaughtException',  (e) => console.error('⚠ uncaughtException:',  e && e.stack ? e.stack : e));
+process.on('unhandledRejection', (e) => console.error('⚠ unhandledRejection:', e && e.stack ? e.stack : e));
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || 'cobrapro_dev_secret_cambiame';
 const DB_FILE = path.join(__dirname, 'db.json');
@@ -56,6 +63,9 @@ const tenantCache = {};         // {tid: blob} en memoria
 async function loadRow(id) {
   if (USE_PG) {
     await pool.query('CREATE TABLE IF NOT EXISTS cobrapro_state (id INT PRIMARY KEY, data JSONB)');
+    // Registro de operaciones (append-only): red de seguridad independiente del bloque grande.
+    await pool.query('CREATE TABLE IF NOT EXISTS cobrapro_oplog (id BIGSERIAL PRIMARY KEY, tenant INT, ts TIMESTAMPTZ DEFAULT now(), tipo TEXT, ref TEXT, data JSONB)');
+    await pool.query('CREATE INDEX IF NOT EXISTS idx_oplog_tenant_ts ON cobrapro_oplog (tenant, ts)');
     const r = await pool.query('SELECT data FROM cobrapro_state WHERE id = $1', [id]);
     return r.rows[0] ? r.rows[0].data : null;
   }
@@ -95,6 +105,36 @@ async function _flushRow(id, intento) {
 }
 const loadSystem = () => loadRow(0);
 const saveSystem = () => saveRow(0, SYS);
+
+// ===== REGISTRO DE OPERACIONES (OPLOG) — red de seguridad independiente del bloque grande =====
+// Cada operación crítica se guarda como una fila pequeña e independiente. Si el bloque grande no se guarda
+// o el proceso se reinicia, la operación queda registrada aquí igual. Tiene cola y reintento propios.
+const _oplogQ = [];        // eventos pendientes de persistir
+let _oplogBusy = false;
+function logOp(tipo, ref, data) {
+  if (!USE_PG) return;
+  const s = als.getStore();
+  const tenant = (s && s.tenantId != null) ? s.tenantId : null;
+  _oplogQ.push({ tenant, tipo, ref: ref != null ? String(ref) : null, data, ts: new Date().toISOString() });
+  _flushOplog();
+}
+async function _flushOplog() {
+  if (_oplogBusy || !_oplogQ.length) return;
+  _oplogBusy = true;
+  while (_oplogQ.length) {
+    const ev = _oplogQ[0];
+    try {
+      await pool.query('INSERT INTO cobrapro_oplog (tenant, ts, tipo, ref, data) VALUES ($1,$2,$3,$4,$5)',
+        [ev.tenant, ev.ts, ev.tipo, ev.ref, JSON.stringify(ev.data || {})]);
+      _oplogQ.shift();   // persistido: sale de la cola
+    } catch (e) {
+      console.error('⚠ oplog pendiente (se reintenta):', e.message);
+      break;             // deja el evento en la cola y reintenta luego
+    }
+  }
+  _oplogBusy = false;
+  if (_oplogQ.length) setTimeout(_flushOplog, 3000);
+}
 
 // blob en blanco para una agencia nueva (con su admin inicial y branding)
 function blankTenant(brandNombre, adminUser, adminPass, adminNombre) {
@@ -764,6 +804,7 @@ app.post('/api/asignaciones', auth, (req, res) => {
   } // jc/supervisor/admin: el débito se refleja vía asignSalidaViva en su posición
   const a = { id: nextId('asignaciones'), fromTipo: from.tipo, fromId: from.id, fromNombre: req.user.nombre, toTipo, toId: toTipo === 'admin' ? toId : (+toId), toNombre: nombrePuesto(toTipo, toId), monto: Math.round(monto), nota: nota || '', estado: 'pendiente', fecha: fechaMxHoyDDMM(), creadoEn: new Date().toISOString() };
   db.asignaciones.push(a); saveDB();
+  logOp('asignacion.crear', a.id, a);
   res.status(201).json(a);
 });
 
@@ -807,6 +848,63 @@ app.get('/api/asignaciones/historial', auth, rol('admin','supervisor'), (req, re
   res.json({ items, total: all.length, mostrados: items.length, totales });
 });
 
+/* ===== CONSULTA DEL REGISTRO DE OPERACIONES (OPLOG) =====
+   Auditoría independiente del bloque grande. Responde "¿qué operaciones hubo entre X y Y?".
+   Filtros: ?desde=ISO&hasta=ISO&tipo=pago,asignacion.crear&limit=  (fechas en hora de México) */
+app.get('/api/admin/oplog', auth, rol('admin', 'supervisor'), async (req, res) => {
+  if (!USE_PG) return res.status(400).json({ error: 'Registro de operaciones solo disponible con PostgreSQL' });
+  const s = als.getStore();
+  const tenant = s ? s.tenantId : null;
+  const cond = ['tenant = $1']; const args = [tenant];
+  // desde/hasta llegan como fecha/hora de México; se convierten a UTC (+6h) para comparar contra ts (UTC)
+  if (req.query.desde) { args.push(new Date(req.query.desde.replace(' ', 'T') + (req.query.desde.length <= 10 ? 'T00:00:00' : '') + '-06:00').toISOString()); cond.push('ts >= $' + args.length); }
+  if (req.query.hasta) { args.push(new Date(req.query.hasta.replace(' ', 'T') + (req.query.hasta.length <= 10 ? 'T23:59:59' : '') + '-06:00').toISOString()); cond.push('ts <= $' + args.length); }
+  if (req.query.tipo) { const tipos = String(req.query.tipo).split(',').map(t => t.trim()).filter(Boolean); if (tipos.length) { args.push(tipos); cond.push('tipo = ANY($' + args.length + ')'); } }
+  const limit = Math.min(+req.query.limit || 500, 5000);
+  try {
+    const r = await pool.query('SELECT id, ts, tipo, ref, data FROM cobrapro_oplog WHERE ' + cond.join(' AND ') + ' ORDER BY ts DESC, id DESC LIMIT ' + limit, args);
+    // ts a hora de México legible
+    const items = r.rows.map(row => {
+      const mx = new Date(new Date(row.ts).getTime() - 6 * 3600 * 1000);
+      const tsMx = `${mx.getUTCFullYear()}-${String(mx.getUTCMonth() + 1).padStart(2, '0')}-${String(mx.getUTCDate()).padStart(2, '0')} ${String(mx.getUTCHours()).padStart(2, '0')}:${String(mx.getUTCMinutes()).padStart(2, '0')}`;
+      return { id: row.id, ts: tsMx, tipo: row.tipo, ref: row.ref, data: row.data };
+    });
+    res.json({ total: items.length, items });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ===== RECONCILIACIÓN: detecta operaciones registradas en el oplog que NO están en el estado actual =====
+   Esas son las que se perdieron (p.ej. por un reinicio con guardado pendiente). Para el rango dado,
+   compara asignaciones/cortes del oplog contra el bloque en memoria y lista las faltantes. */
+app.get('/api/admin/oplog/reconciliar', auth, rol('admin'), async (req, res) => {
+  if (!USE_PG) return res.status(400).json({ error: 'Solo disponible con PostgreSQL' });
+  const s = als.getStore();
+  const tenant = s ? s.tenantId : null;
+  const cond = ['tenant = $1', "tipo IN ('asignacion.crear','pago','corte','refin')"]; const args = [tenant];
+  if (req.query.desde) { args.push(new Date(req.query.desde.replace(' ', 'T') + (req.query.desde.length <= 10 ? 'T00:00:00' : '') + '-06:00').toISOString()); cond.push('ts >= $' + args.length); }
+  if (req.query.hasta) { args.push(new Date(req.query.hasta.replace(' ', 'T') + (req.query.hasta.length <= 10 ? 'T23:59:59' : '') + '-06:00').toISOString()); cond.push('ts <= $' + args.length); }
+  try {
+    const r = await pool.query('SELECT id, ts, tipo, ref, data FROM cobrapro_oplog WHERE ' + cond.join(' AND ') + ' ORDER BY ts', args);
+    const idsAsig = new Set((db.asignaciones || []).map(a => String(a.id)));
+    const idsCorte = new Set((db.cortes || []).map(c => String(c.id)));
+    const idsSale = new Set((db.sales || []).map(x => String(x.id)));
+    const movKeys = new Set((db.movimientos || []).filter(m => m.abono > 0).map(m => String(m.saleId) + '|' + Math.round(m.abono)));
+    const faltantes = [];
+    for (const row of r.rows) {
+      let existe = true;
+      if (row.tipo === 'asignacion.crear') existe = idsAsig.has(String(row.ref));
+      else if (row.tipo === 'corte') existe = idsCorte.has(String(row.ref));
+      else if (row.tipo === 'refin') existe = idsSale.has(String(row.ref));
+      else if (row.tipo === 'pago') { const d = row.data || {}; existe = movKeys.has(String(d.saleId) + '|' + Math.round(d.monto || 0)); }
+      if (!existe) {
+        const mx = new Date(new Date(row.ts).getTime() - 6 * 3600 * 1000);
+        faltantes.push({ id: row.id, ts: `${mx.getUTCFullYear()}-${String(mx.getUTCMonth() + 1).padStart(2, '0')}-${String(mx.getUTCDate()).padStart(2, '0')} ${String(mx.getUTCHours()).padStart(2, '0')}:${String(mx.getUTCMinutes()).padStart(2, '0')}`, tipo: row.tipo, ref: row.ref, data: row.data });
+      }
+    }
+    res.json({ revisados: r.rows.length, faltantes: faltantes.length, items: faltantes });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/asignaciones/:id/recibir', auth, (req, res) => {
   const a = (db.asignaciones || []).find(x => x.id == req.params.id);
   if (!a) return res.status(404).json({ error: 'Asignación no encontrada' });
@@ -819,6 +917,7 @@ app.post('/api/asignaciones/:id/recibir', auth, (req, res) => {
     db.caja[sid].inicial = (db.caja[sid].inicial || 0) + a.monto;
   } // jc/supervisor/admin: el crédito se refleja vía asignEntrada en su posición
   saveDB();
+  logOp('asignacion.recibir', a.id, { id: a.id, fromNombre: a.fromNombre, toNombre: a.toNombre, monto: a.monto, recibidoPor: a.recibidoPor });
   res.json({ ok: true });
 });
 
@@ -840,6 +939,7 @@ app.post('/api/asignaciones/:id/rechazar', auth, (req, res) => {
     db.caja[sid].retiros = Math.max(0, (db.caja[sid].retiros || 0) - a.monto);
   } // jc/supervisor/admin: al quedar 'rechazado' deja de contar en asignSalidaViva
   saveDB();
+  logOp('asignacion.rechazar', a.id, { id: a.id, fromNombre: a.fromNombre, toNombre: a.toNombre, monto: a.monto });
   res.json({ ok: true });
 });
 /* ---------- Admin/supervisor JALA el efectivo "por entregar" de un cobrador ----------
@@ -874,6 +974,7 @@ app.post('/api/cobrador/recibir-efectivo', auth, rol('admin', 'supervisor'), (re
     destinoNombre = 'Admin / Tesorería';
   }
   saveDB();
+  logOp('recoleccion', prom, { cobrador: prom, monto, destino, destinoNombre, por: req.user.nombre });
   res.json({ ok: true, recibido: monto, destino, destinoNombre, restante: Math.round(porEntregarDe(prom)) });
 });
 // Panel del JC
@@ -1331,6 +1432,7 @@ app.post('/api/sales/:id/pago', auth, idem, (req, res) => {
     }
   }
   markIdem(req); saveDB();
+  logOp('pago', id, { saleId: id, monto: +monto, forma: f, cobradoPor: req.user.nombre, sucursalCobro: sidCobro });
   res.status(201).json({ ok: true, saldo: saldoDe(id), cobroCruzado: sidCobro !== sidCredito });
 });
 
@@ -1393,6 +1495,7 @@ app.post('/api/sales/:id/refin', auth, rol('admin','supervisor','sucursal'), ide
   }
 
   markIdem(req); saveDB();
+  logOp('refin', nuevo.id, { oldFolio: old.folio, saldoLiquidado: saldoActual, nuevoFolio: nuevo.folio, nuevoSaleId: nuevo.id, monto, total: r.total, primerPago, por: req.user.nombre });
   res.status(201).json({
     ok: true,
     oldFolio: old.folio, saldoLiquidado: saldoActual,
@@ -2081,6 +2184,7 @@ function generarCorte(user, isAuto){
     createdAt: new Date().toISOString()
   };
   db.cortes.push(corte); saveDB();
+  logOp('corte', corte.id, { id: corte.id, prom: corte.prom, totalEfectivo: corte.totalEfectivo, totalBanco: corte.totalBanco, estado: corte.estado, auto: corte.auto });
   return { corte };
 }
 function checkAutoCorte(){
@@ -2141,6 +2245,7 @@ app.post('/api/caja/cierre', auth, rol('sucursal'), (req, res) => {
   // dejar la caja en ceros (el efectivo cerrado ya quedó en el corte para el admin)
   db.caja[sid] = { inicial: 0, efectivo: 0, banco: 0, entregas: 0, retiros: 0, cobradoVent: 0, cobradoVentN: 0 };
   saveDB();
+  logOp('cierre-caja', corte.id, { corteId: corte.id, sucursal: req.user.nombre, efectivoCerrado: efectivoReal, banco });
   res.json({ ok: true, corte, efectivoCerrado: efectivoReal, banco });
 });
 // El admin/supervisor recibe (confirma) un corte pendiente — sirve para cobradores y sucursales
@@ -2151,6 +2256,7 @@ app.post('/api/cortes/:id/recibir', auth, rol('admin', 'supervisor'), (req, res)
   c.estado = 'recibido'; c.recibidoAt = new Date().toISOString(); c.recibidoBy = req.user.nombre;
   if (c.tipo === 'sucursal' && c.totalEfectivo > 0) flujoAgregar('entrada', 'cierre', `Cierre de caja · ${c.prom}`, c.totalEfectivo, null, req.user.nombre);
   saveDB();
+  logOp('corte.recibir', c.id, { corteId: c.id, prom: c.prom, totalEfectivo: c.totalEfectivo, recibidoBy: req.user.nombre });
   res.json({ ok: true });
 });
 app.get('/api/cortes', auth, (req, res) => {
@@ -2591,6 +2697,7 @@ app.post('/api/movimientos/:id/revertir', auth, rol('admin','supervisor'), (req,
   db.auditoria.push({ tipo: 'reverso-cobro', movId: id, saleId: m.saleId, monto, forma: f, origen: m.origen || '', por: req.user.nombre, fecha: fechaMxHoyDDMM(), ts: Date.now() });
   db.movimientos.splice(i, 1);   // eliminar el abono → revierte el saldo automáticamente
   saveDB();
+  logOp('reverso', m.saleId, { movId: id, saleId: m.saleId, monto, forma: f, por: req.user.nombre });
   res.json({ ok: true, saldo: saldoDe(m.saleId), revertido: monto });
 });
 
