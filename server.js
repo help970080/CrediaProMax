@@ -3540,7 +3540,34 @@ app.post('/api/ayuda', auth, async (req, res) => {
     res.json({ respuesta: txt || 'No pude responder eso con la información del sistema. Reformula tu pregunta o consulta a tu administrador.' });
   } catch (e) { res.status(502).json({ error: 'No se pudo consultar la ayuda: ' + e.message }); }
 });
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v30', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, objetivoCartera: true, asignEnviadasFix: true, buro: true, numDiariosSuc: true, contactosParcial: true, resetFondo: true, soloEfectivo: true, reindexUsuarios: true, resetPassCobradores: true, limpiarCobradores: true, importLoginFix: true, loginAutoRepair: true, actualizarCuotas: true, cuotaPorFolio: true, metaSuc100: true, eliminarEntrega: true, cobradoSemana: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, mostrarMembrete: true, ts: Date.now() }));
+// Estado de salud para el panel de diagnóstico: base de Render (tamaño, basura, oplog) + proceso.
+app.get('/api/admin/salud', auth, rol('admin'), async (req, res) => {
+  const out = { ts: Date.now(), ok: true };
+  const mem = process.memoryUsage();
+  out.server = {
+    uptimeSeg: Math.round(process.uptime()),
+    memoriaMB: Math.round(mem.rss / 1048576),
+    node: process.version,
+    guardadosPendientes: 0,
+    oplogPendiente: (typeof _oplogQ !== 'undefined' && _oplogQ) ? _oplogQ.length : 0
+  };
+  try { for (const [, st] of _saveState) if (st && st.pending != null) out.server.guardadosPendientes++; } catch {}
+  if (!USE_PG) { out.base = { tipo: 'archivo local', conecta: true }; return res.json(out); }
+  try {
+    const tam = await pool.query("SELECT pg_size_pretty(pg_database_size(current_database())) AS total, pg_database_size(current_database())::bigint AS bytes");
+    out.base = { conecta: true, tamano: tam.rows[0].total, bytes: Number(tam.rows[0].bytes) };
+    const tablas = await pool.query("SELECT relname, pg_total_relation_size(relid)::bigint AS total_b, pg_relation_size(relid)::bigint AS datos_b, n_dead_tup FROM pg_stat_user_tables WHERE relname IN ('cobrapro_state','cobrapro_oplog')");
+    out.base.tablas = tablas.rows.map(r => ({ tabla: r.relname, total: Number(r.total_b), datos: Number(r.datos_b), basura: Number(r.n_dead_tup) }));
+    const opl = await pool.query('SELECT count(*)::int AS n, max(ts) AS ult FROM cobrapro_oplog');
+    out.base.oplog = { eventos: opl.rows[0].n, ultimo: opl.rows[0].ult };
+  } catch (e) {
+    out.ok = false;
+    out.base = { conecta: false, error: e.message };
+  }
+  res.json(out);
+});
+
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v30', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, objetivoCartera: true, asignEnviadasFix: true, buro: true, numDiariosSuc: true, contactosParcial: true, resetFondo: true, soloEfectivo: true, reindexUsuarios: true, resetPassCobradores: true, limpiarCobradores: true, importLoginFix: true, loginAutoRepair: true, actualizarCuotas: true, cuotaPorFolio: true, metaSuc100: true, eliminarEntrega: true, cobradoSemana: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, mostrarMembrete: true, oplog: true, salud: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
