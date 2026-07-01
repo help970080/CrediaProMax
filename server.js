@@ -39,7 +39,16 @@ const { AsyncLocalStorage } = require('async_hooks');
 const als = new AsyncLocalStorage();
 const USE_PG = !!process.env.DATABASE_URL;
 let pool = null;
-if (USE_PG) { const { Pool } = require('pg'); pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { require: true, rejectUnauthorized: false } }); }
+if (USE_PG) {
+  const { Pool } = require('pg');
+  pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { require: true, rejectUnauthorized: false },
+    max: 8, idleTimeoutMillis: 30000, connectionTimeoutMillis: 10000, keepAlive: true
+  });
+  // una conexión idle que muere no debe tumbar el proceso; solo se registra
+  pool.on('error', (e) => console.error('⚠ Pool PG (conexión idle):', e.message));
+}
 
 let SYS = null;                 // registro del sistema (fila id=0)
 const tenantCache = {};         // {tid: blob} en memoria
@@ -52,13 +61,36 @@ async function loadRow(id) {
   }
   try { const all = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); return all[id] != null ? all[id] : null; } catch { return null; }
 }
+// Guardado resiliente: si la conexión a Postgres falla, NO se pierde el dato.
+// Se conserva la última versión pendiente por tenant y se reintenta con espera progresiva hasta lograrlo.
+const _saveState = new Map();   // id -> { pending, saving }
 function saveRow(id, data) {
-  if (USE_PG) {
-    pool.query('INSERT INTO cobrapro_state (id, data) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET data = $2', [id, data])
-      .catch(e => console.error('❌ Error al guardar fila ' + id + ':', e.message));
-  } else {
+  if (!USE_PG) {
     let all = {}; try { all = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); } catch {}
     all[id] = data; fs.writeFileSync(DB_FILE, JSON.stringify(all, null, 2));
+    return;
+  }
+  const st = _saveState.get(id) || { pending: null, saving: false };
+  st.pending = data;          // siempre guarda la versión MÁS reciente
+  _saveState.set(id, st);
+  _flushRow(id);
+}
+async function _flushRow(id, intento) {
+  intento = intento || 0;
+  const st = _saveState.get(id);
+  if (!st || st.saving || st.pending == null) return;
+  st.saving = true;
+  const data = st.pending;
+  st.pending = null;          // lo tomamos; si falla, lo devolvemos
+  try {
+    await pool.query('INSERT INTO cobrapro_state (id, data) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET data = $2', [id, data]);
+    st.saving = false;
+    if (st.pending != null) _flushRow(id);             // llegó una versión nueva mientras guardábamos
+  } catch (e) {
+    console.error('❌ Error al guardar fila ' + id + ' (intento ' + (intento + 1) + '):', e.message);
+    st.saving = false;
+    if (st.pending == null) st.pending = data;          // no se perdió: sigue pendiente para reintentar
+    if (intento < 8) setTimeout(() => _flushRow(id, intento + 1), Math.min(1000 * (intento + 1), 8000));
   }
 }
 const loadSystem = () => loadRow(0);
@@ -2011,6 +2043,8 @@ app.post('/api/cierre-semana/reabrir', auth, rol('admin','supervisor','sucursal'
 function nowMx(){ return new Date(Date.now() - 6*3600*1000); }function fechaMxHoyDDMM(){ const d=nowMx(); return `${String(d.getUTCDate()).padStart(2,'0')}/${String(d.getUTCMonth()+1).padStart(2,'0')}/${d.getUTCFullYear()}`; }
 function fechaMxDeISO(iso){ const d=new Date(new Date(iso).getTime() - 6*3600*1000); return `${String(d.getUTCDate()).padStart(2,'0')}/${String(d.getUTCMonth()+1).padStart(2,'0')}/${d.getUTCFullYear()}`; }
 function fechaMxHoyISO(){ const d=nowMx(); return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`; }
+// fecha (YYYY-MM-DD) de México para CUALQUIER timestamp/fecha, sin depender de la zona del servidor
+function _isoMxDe(ts){ const d=new Date(new Date(ts).getTime() - 6*3600*1000); return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`; }
 function horaMxHHMM(){ const d=nowMx(); let h=d.getUTCHours(); const m=String(d.getUTCMinutes()).padStart(2,'0'); const ap=h<12?'a.m.':'p.m.'; h=h%12||12; return `${String(h).padStart(2,'0')}:${m} ${ap}`; }
 // ¿el cobrador ya entregó su corte de hoy? (para bloquear cobros posteriores)
 function corteHechoHoy(nombre){ return !!db.cortes.find(c => c.prom === nombre && c.fecha === fechaMxHoyISO()); }
@@ -2215,18 +2249,17 @@ function _ultimas16Cuotas(sale, abonos){
 app.get('/api/reports/colocacion', auth, rol('admin','supervisor'), (req, res) => {
   const bucket = (req.query.bucket || 'dia').toLowerCase(); // dia | semana
   const dias = Math.max(1, Math.min(180, +req.query.dias || 30));
-  const ahora = new Date();
-  const desde = new Date(); desde.setDate(desde.getDate() - dias);
+  // anclado a la fecha de México (no UTC del servidor)
+  const hoyIso = fechaMxHoyISO();
+  const ahora = new Date(hoyIso + 'T00:00:00');
+  const desde = new Date(ahora); desde.setDate(desde.getDate() - dias);
+  const desdeIso = `${desde.getFullYear()}-${String(desde.getMonth()+1).padStart(2,'0')}-${String(desde.getDate()).padStart(2,'0')}`;
   const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
-  const ventas = db.sales.filter(s => s.createdAt && activos.has(s.clientId) && new Date(s.createdAt) >= desde);
+  const ventas = db.sales.filter(s => s.createdAt && activos.has(s.clientId) && _isoMxDe(s.createdAt) >= desdeIso);
   const buckets = {};
   ventas.forEach(s => {
-    const d = new Date(s.createdAt);
-    let key;
-    if (bucket === 'semana') {
-      const _ini = _diaSemanaInicio(); const wk = new Date(d); wk.setDate(d.getDate() - ((d.getDay() - _ini + 7) % 7));
-      key = wk.toISOString().slice(0,10);
-    } else { key = d.toISOString().slice(0,10); }
+    // clave por día o por inicio de semana, siempre en hora de México
+    const key = (bucket === 'semana') ? _isoDe(_inicioCiclo(new Date(s.createdAt).getTime() - 6*3600*1000)) : _isoMxDe(s.createdAt);
     buckets[key] = buckets[key] || { fecha: key, creditos: 0, monto: 0 };
     buckets[key].creditos++; buckets[key].monto += s.monto || 0;
   });
@@ -2235,12 +2268,12 @@ app.get('/api/reports/colocacion', auth, rol('admin','supervisor'), (req, res) =
   if (bucket === 'semana') {
     const start = new Date(desde); start.setDate(start.getDate() - ((start.getDay() - _diaSemanaInicio() + 7)%7));
     for (let d = new Date(start); d <= ahora; d.setDate(d.getDate()+7)) {
-      const k = d.toISOString().slice(0,10);
+      const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
       serie.push(buckets[k] || { fecha: k, creditos: 0, monto: 0 });
     }
   } else {
     for (let d = new Date(desde); d <= ahora; d.setDate(d.getDate()+1)) {
-      const k = d.toISOString().slice(0,10);
+      const k = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
       serie.push(buckets[k] || { fecha: k, creditos: 0, monto: 0 });
     }
   }
