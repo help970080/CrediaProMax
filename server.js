@@ -3556,8 +3556,13 @@ app.get('/api/admin/salud', auth, rol('admin'), async (req, res) => {
   try {
     const tam = await pool.query("SELECT pg_size_pretty(pg_database_size(current_database())) AS total, pg_database_size(current_database())::bigint AS bytes");
     out.base = { conecta: true, tamano: tam.rows[0].total, bytes: Number(tam.rows[0].bytes) };
-    const tablas = await pool.query("SELECT relname, pg_total_relation_size(relid)::bigint AS total_b, pg_relation_size(relid)::bigint AS datos_b, n_dead_tup FROM pg_stat_user_tables WHERE relname IN ('cobrapro_state','cobrapro_oplog')");
-    out.base.tablas = tablas.rows.map(r => ({ tabla: r.relname, total: Number(r.total_b), datos: Number(r.datos_b), basura: Number(r.n_dead_tup) }));
+    const tablas = await pool.query("SELECT relname, pg_total_relation_size(relid)::bigint AS total_b, n_dead_tup, n_live_tup FROM pg_stat_user_tables WHERE relname IN ('cobrapro_state','cobrapro_oplog')");
+    // Datos reales del JSONB (pg_column_size SÍ cuenta el TOAST, a diferencia de pg_relation_size).
+    const dr = {};
+    for (const nm of ['cobrapro_state', 'cobrapro_oplog']) {
+      try { const a = await pool.query('SELECT coalesce(sum(pg_column_size(data)),0)::bigint AS b FROM ' + nm); dr[nm] = Number(a.rows[0].b); } catch (e) { dr[nm] = null; }
+    }
+    out.base.tablas = tablas.rows.map(r => ({ tabla: r.relname, total: Number(r.total_b), datos: (dr[r.relname] != null ? dr[r.relname] : null), basura: Number(r.n_dead_tup), filas: Number(r.n_live_tup) }));
     const opl = await pool.query('SELECT count(*)::int AS n, max(ts) AS ult FROM cobrapro_oplog');
     out.base.oplog = { eventos: opl.rows[0].n, ultimo: opl.rows[0].ult };
   } catch (e) {
