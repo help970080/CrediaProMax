@@ -60,13 +60,31 @@ if (USE_PG) {
 let SYS = null;                 // registro del sistema (fila id=0)
 const tenantCache = {};         // {tid: blob} en memoria
 
+// Reintento para queries a Postgres: si la conexión falla (p.ej. la base tarda o tiene un hipo al
+// arrancar), reintenta con espera progresiva en vez de tumbar el proceso.
+async function _pgTry(fn, intentos) {
+  intentos = intentos || 0;
+  try { return await fn(); }
+  catch (e) {
+    if (intentos >= 8) throw e;
+    console.error('⚠ PostgreSQL reintento ' + (intentos + 1) + ' (' + e.message + ')');
+    await new Promise(r => setTimeout(r, Math.min(1000 * (intentos + 1), 6000)));
+    return _pgTry(fn, intentos + 1);
+  }
+}
+let _schemaListo = false;
+async function _initSchema() {
+  if (!USE_PG || _schemaListo) return;
+  await _pgTry(() => pool.query('CREATE TABLE IF NOT EXISTS cobrapro_state (id INT PRIMARY KEY, data JSONB)'));
+  // Registro de operaciones (append-only): red de seguridad independiente del bloque grande.
+  await _pgTry(() => pool.query('CREATE TABLE IF NOT EXISTS cobrapro_oplog (id BIGSERIAL PRIMARY KEY, tenant INT, ts TIMESTAMPTZ DEFAULT now(), tipo TEXT, ref TEXT, data JSONB)'));
+  await _pgTry(() => pool.query('CREATE INDEX IF NOT EXISTS idx_oplog_tenant_ts ON cobrapro_oplog (tenant, ts)'));
+  _schemaListo = true;
+}
 async function loadRow(id) {
   if (USE_PG) {
-    await pool.query('CREATE TABLE IF NOT EXISTS cobrapro_state (id INT PRIMARY KEY, data JSONB)');
-    // Registro de operaciones (append-only): red de seguridad independiente del bloque grande.
-    await pool.query('CREATE TABLE IF NOT EXISTS cobrapro_oplog (id BIGSERIAL PRIMARY KEY, tenant INT, ts TIMESTAMPTZ DEFAULT now(), tipo TEXT, ref TEXT, data JSONB)');
-    await pool.query('CREATE INDEX IF NOT EXISTS idx_oplog_tenant_ts ON cobrapro_oplog (tenant, ts)');
-    const r = await pool.query('SELECT data FROM cobrapro_state WHERE id = $1', [id]);
+    await _initSchema();
+    const r = await _pgTry(() => pool.query('SELECT data FROM cobrapro_state WHERE id = $1', [id]));
     return r.rows[0] ? r.rows[0].data : null;
   }
   try { const all = JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); return all[id] != null ? all[id] : null; } catch { return null; }
