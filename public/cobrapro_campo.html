@@ -457,14 +457,27 @@ function render(){
   document.getElementById('r-prom').textContent=Object.values(estado).filter(e=>e.status==='promesa').length;
   document.getElementById('r-pend').textContent=queue;
   document.getElementById('pend').textContent= queue>0? queue+' sin sincronizar':'';
-  // Actividad reciente = clientes cobrados (desde el estado real, persiste al recargar) + otras acciones de la sesión.
-  const cobrosAct=Object.keys(estado).filter(id=>estado[id].status==='pagado').map(id=>{
-    const e=estado[id], c=clientes.find(x=>x.id===+id)||{};
-    return { hora:e.hora||'hoy', txt:`Cobro ${fmt(e.monto)} · ${formaLbl[e.forma]||e.forma||''}${e.externo?' (en sucursal/JC)':''} — ${c.nombre||('Cliente '+id)}` };
-  });
-  const otros=logs.filter(l=> l && l.txt && l.txt.indexOf('Cobro ')!==0);
-  const act=cobrosAct.concat(otros);
-  document.getElementById('logs').innerHTML= act.length? act.map(l=>`<div class="log-item"><span class="t">${l.hora}</span><span>${l.txt}</span></div>`).join('') : '<div style="color:var(--faint);font-size:.82rem">Sin movimientos aún.</div>';
+  // Actividad reciente = TODOS los clientes cobrados en la SEMANA (no solo hoy), con su monto de la semana.
+  const idsCob = new Set();
+  clientes.forEach(c => { if ((c.cobradoSemana || 0) > 0) idsCob.add(c.id); });
+  Object.keys(estado).forEach(id => { if (estado[id] && estado[id].status === 'pagado') idsCob.add(+id); });
+  let totalSem = 0;
+  const cobrosAct = [...idsCob].map(id => {
+    const c = clientes.find(x => x.id === id) || {};
+    const e = estado[id];
+    const hoy = (c.cobradoHoy || 0) > 0 || (e && e.status === 'pagado');
+    const montoSem = (c.cobradoSemana || 0) || (e && e.monto) || 0;
+    totalSem += montoSem;
+    return {
+      _hoy: hoy, _monto: montoSem,
+      hora: hoy ? ((e && e.hora) ? e.hora : 'hoy') : 'sem.',
+      txt: `Cobro ${fmt(montoSem)}${hoy ? ' · hoy' : ''}${e && e.externo ? ' (suc/JC)' : ''} — ${c.nombre || ('Cliente ' + id)}`
+    };
+  }).sort((a, b) => (b._hoy ? 1 : 0) - (a._hoy ? 1 : 0) || b._monto - a._monto);
+  const otros = logs.filter(l => l && l.txt && l.txt.indexOf('Cobro ') !== 0);
+  const act = cobrosAct.concat(otros);
+  const resumenSem = cobrosAct.length ? `<div style="font-size:.8rem;color:var(--grn);font-weight:600;margin-bottom:6px">Cobranza de la semana: ${fmt(totalSem)} · ${cobrosAct.length} cliente(s)</div>` : '';
+  document.getElementById('logs').innerHTML = act.length ? (resumenSem + act.map(l => `<div class="log-item"><span class="t">${l.hora}</span><span>${l.txt}</span></div>`).join('')) : '<div style="color:var(--faint);font-size:.82rem">Sin movimientos aún.</div>';
 }
 
 let cobroId=null, formaPay='efectivo';
