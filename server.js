@@ -751,7 +751,7 @@ app.get('/api/asignaciones/historial', auth, rol('admin','supervisor'), (req, re
   let all = (db.asignaciones || []).slice().reverse();   // más recientes primero
   // filtro opcional: solo la semana corriente (respeta el inicio de semana del tenant)
   if (req.query.semana === '1') {
-    const ini = _inicioCiclo(Date.now());
+    const ini = _inicioCiclo(new Date(fechaMxHoyISO()+'T00:00:00').getTime());
     const fin = ini + 7 * 86400000;
     all = all.filter(a => { const t = _parseFechaMx(a.fecha); return t >= ini && t < fin; });
   }
@@ -1459,7 +1459,7 @@ app.post('/api/caja/entrega', auth, (req, res) => {
 app.get('/api/mi-ruta', auth, (req, res) => {
   const ventas = db.sales.filter(s => s.prom === req.user.nombre && s.entregado !== false);
   const hoy = fechaMxHoyDDMM();
-  const wkStart = _inicioCiclo(Date.now(), _diaSemanaInicio());   // inicio del ciclo actual
+  const wkStart = _inicioCiclo(new Date(fechaMxHoyISO()+'T00:00:00').getTime(), _diaSemanaInicio());   // inicio del ciclo actual (hora de México, no UTC)
   res.json(ventas.map(s => {
     const c = db.clients.find(x => x.id === s.clientId) || {};
     if (c.activo === false) return null;
