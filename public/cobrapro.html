@@ -1345,6 +1345,7 @@ async function renderReportesLive(){
     const periodo = period==='dia'?'hoy':period;
     const d = await apiU('GET','/api/dashboard?periodo='+periodo);
     const pagos = d.pagos_recientes||[];
+    _rpPagosFull = pagos;   // histórico completo del periodo (la tabla muestra los últimos 30, pero la exportación saca todo)
     const by={efectivo:0,transferencia:0,deposito:0,ajuste:0,refin:0};
     pagos.forEach(p=>{ const k=(p.forma||'efectivo').toLowerCase(); if(by[k]!==undefined) by[k]+=p.monto; });
     $('rp-efe').textContent=fmt(by.efectivo);
@@ -1360,7 +1361,7 @@ async function renderReportesLive(){
     // quién pagó
     const _puedeRevertir = ME && (ME.rol==='admin'||ME.rol==='supervisor');
     $('rp-pagos').innerHTML = pagos.length
-      ? pagos.slice(0,30).map(p=>`<tr><td class="mono" style="color:var(--faint);font-size:.78rem">${p.fecha}</td><td class="nm">${p.cliente}</td><td class="mono" style="font-size:.78rem">${p.folio||'—'}</td><td class="sn">${p.prom||'—'}</td><td>${formaLbl[p.forma]||p.forma}</td><td class="n">${fmt(p.monto)}</td><td>${(_puedeRevertir&&p.id)?`<button class="btn" style="padding:3px 9px;font-size:.72rem;color:var(--red);border-color:rgba(229,72,77,.4)" onclick="revertirPago(${p.id},${p.monto})">↩ Revertir</button>`:''}</td></tr>`).join('')
+      ? pagos.slice(0,100).map(p=>`<tr><td class="mono" style="color:var(--faint);font-size:.78rem">${p.fecha}</td><td class="nm">${p.cliente}</td><td class="mono" style="font-size:.78rem">${p.folio||'—'}</td><td class="sn">${p.prom||'—'}</td><td>${formaLbl[p.forma]||p.forma}</td><td class="n">${fmt(p.monto)}</td><td>${(_puedeRevertir&&p.id)?`<button class="btn" style="padding:3px 9px;font-size:.72rem;color:var(--red);border-color:rgba(229,72,77,.4)" onclick="revertirPago(${p.id},${p.monto})">↩ Revertir</button>`:''}</td></tr>`).join('')
       : '<tr><td colspan="7" style="color:var(--faint);padding:18px;text-align:center">Sin pagos en el periodo</td></tr>';
   }catch(e){ console.warn('renderReportesLive',e); }
 }
@@ -2920,8 +2921,17 @@ function tablaAoa(tableEl){
   });
   return aoa;
 }
+let _rpPagosFull=[];
 function exportCSV(t){
-  const map={cartera:['tb-cart','cartera'],prom:['tb-prom','cobradores'],suc:['tb-suc','sucursales'],com:['tb-com','nomina'],pagos:['rp-pagos','movimientos']};
+  // Pagos: exporta el HISTÓRICO COMPLETO del periodo (no solo los 30 visibles en la tabla)
+  if(t==='pagos'){
+    if(!_rpPagosFull.length){ alert('No hay pagos para exportar. Abre Reportes y deja que cargue primero.'); return; }
+    const aoa=[['Fecha','Cliente','Folio','Cobrado por','Sucursal','Forma de pago','Monto']];
+    _rpPagosFull.forEach(p=>aoa.push([p.fecha||'', p.cliente||'', p.folio||'', p.prom||'', p.sucursalCobro||p.sucursal||'', (formaLbl[p.forma]||p.forma||''), p.monto||0]));
+    xlsxDL('movimientos_'+new Date().toISOString().slice(0,10), [{name:'movimientos',aoa}]);
+    return;
+  }
+  const map={cartera:['tb-cart','cartera'],prom:['tb-prom','cobradores'],suc:['tb-suc','sucursales'],com:['tb-com','nomina']};
   const m=map[t]; if(!m){ alert('Nada que exportar.'); return; }
   const tb=document.getElementById(m[0]); const table=tb?tb.closest('table'):null;
   const aoa=tablaAoa(table);
