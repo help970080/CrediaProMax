@@ -1418,13 +1418,15 @@ let _dgSuc=null, _dgProm='', _dgInicio=(function(){ try{ return localStorage.get
 function dgSetInicio(v){ _dgInicio=v; try{ localStorage.setItem('dg_inicio',v); }catch(e){} rpVerDesglose(_dgSuc===null?null:_dgSuc, _dgProm); }
 async function rpVerEntregas(){
   _rpActual=null;
-  let d; try{ d=await apiU('GET','/api/reports/entregas'); }catch(e){ alert(e.message); return; }
+  const qs = _rpRef ? ('?periodo=semana&ref='+_rpRef) : '?periodo=semana';
+  let d; try{ d=await apiU('GET','/api/reports/entregas'+qs); }catch(e){ alert(e.message); return; }
+  const etq = _rpRef ? (' · semana del '+_rpRef) : ' · semana actual';
   const resumen = d.porPersona.length? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${d.porPersona.map(p=>`<div style="background:var(--surf-1);border:1px solid var(--line);border-radius:9px;padding:9px 12px"><div style="font-weight:600;font-size:.85rem">${p.quien} <span style="color:var(--faint);font-weight:400">· ${p.rol}</span></div><div style="font-size:.78rem;color:var(--dim)">${p.n} entregas · <b style="color:var(--grn)">${fmt(p.monto)}</b></div></div>`).join('')}</div>` : '';
   const filas = d.entregas.map(e=>{
     const f=new Date(e.fecha).toLocaleDateString('es-MX',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
     return `<tr><td style="white-space:nowrap;font-size:.78rem;color:var(--dim)">${f}</td><td>${e.cliente}<div style="font-size:.7rem;color:var(--faint)">${e.folio} · ${e.sucursal} · ${e.ruta}</div></td><td>${e.entregadoPor}<div style="font-size:.7rem;color:var(--faint)">${e.rolEntrega}</div></td><td class="n">${fmt(e.monto)}</td><td class="n">${e.tieneEvidencia?`<button class="btn" style="padding:3px 8px;font-size:.72rem" onclick="verEvidencia(${e.saleId})">📷</button>`:'—'}</td></tr>`;
   }).join('');
-  rpAbrir('📦 Reporte de entregas',`<div style="font-size:.82rem;color:var(--dim);margin-bottom:10px">${d.total} entregas · monto entregado <b style="color:var(--grn)">${fmt(d.montoTotal)}</b></div>${resumen}
+  rpAbrir('📦 Reporte de entregas',`<div style="font-size:.82rem;color:var(--dim);margin-bottom:10px">${d.total} entregas · monto entregado <b style="color:var(--grn)">${fmt(d.montoTotal)}</b><span style="color:var(--gold)">${etq}</span></div>${resumen}
     <table class="rp-table"><thead><tr><th>Fecha</th><th>Cliente</th><th>Entregó</th><th class="n">Monto</th><th class="n">Evid.</th></tr></thead><tbody>${filas||'<tr><td colspan="5" style="color:var(--faint);padding:12px">Aún no hay entregas registradas.</td></tr>'}</tbody></table>`);
 }
 async function rpVerSinVentas(){
@@ -1591,9 +1593,9 @@ async function rpVerColocacion(){
 
 async function rpVerRefin(){
   try{
-    const d = await apiU('GET','/api/reports/refin');
+    const d = await apiU('GET','/api/reports/refin'+(_rpRef?('?periodo=semana&ref='+_rpRef):'?periodo=semana'));
     _rpActual='refin'; _rpData=d;
-    const rows = d.refins.map(r=>`<tr><td class="mono" style="font-size:.74rem">${r.fecha}</td><td class="nm">${r.cliente}</td><td>${r.cobrador}</td><td>${r.sucursal}</td><td class="mono" style="font-size:.74rem">${r.oldFolio}→${r.nuevoFolio||'—'}</td><td class="n">${fmt(r.saldoLiquidado)}</td><td class="n">${fmt(r.nuevoMonto)}</td><td class="n" style="color:var(--grn)">${fmt(r.neto)}</td></tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--faint);padding:18px">Sin REFIN en el periodo (últimos 30 días)</td></tr>';
+    const rows = d.refins.map(r=>`<tr><td class="mono" style="font-size:.74rem">${r.fecha}</td><td class="nm">${r.cliente}</td><td>${r.cobrador}</td><td>${r.sucursal}</td><td class="mono" style="font-size:.74rem">${r.oldFolio}→${r.nuevoFolio||'—'}</td><td class="n">${fmt(r.saldoLiquidado)}</td><td class="n">${fmt(r.nuevoMonto)}</td><td class="n" style="color:var(--grn)">${fmt(r.neto)}</td></tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--faint);padding:18px">Sin REFIN en la semana seleccionada</td></tr>';
     rpAbrir('🔄 REFIN — refinanciamientos del periodo',`
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px">
         <div class="kpi b" style="padding:10px"><div class="l">Operaciones</div><div class="v" style="font-size:1.25rem">${d.totales.n}</div></div>
@@ -1607,8 +1609,7 @@ async function rpVerRefin(){
 
 async function rpVerComisiones(){
   try{
-    const periodo = period==='dia'?'hoy':period;
-    const d = await apiU('GET','/api/reports/comisiones?periodo='+periodo);
+    const d = await apiU('GET','/api/reports/comisiones'+(_rpRef?('?periodo=semana&ref='+_rpRef):'?periodo=semana'));
     _rpActual='comisiones'; _rpData=d;
     const rows = d.cobradores.map(c=>`<tr><td class="nm">${c.nombre}</td><td>${c.sucursal}</td><td class="n">${fmt(c.efectivo)}</td><td class="n">${fmt(c.transferencia+c.deposito)}</td><td class="n" style="color:#b388ff">${fmt(c.refin)}</td><td class="n"><b>${fmt(c.total)}</b></td><td class="n cm">${fmt(c.comision)}</td></tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--faint);padding:18px">Sin actividad en el periodo</td></tr>';
     rpAbrir(`💵 Comisiones · ${periodo} (tasa ${d.tasa}%)`,`
