@@ -2503,11 +2503,11 @@ app.get('/api/reports/colocacion', auth, rol('admin','supervisor'), (req, res) =
 });
 
 app.get('/api/reports/refin', auth, rol('admin','supervisor'), (req, res) => {
-  const desde = req.query.desde ? new Date(req.query.desde) : new Date(Date.now() - 30*86400000);
-  const hasta = req.query.hasta ? new Date(req.query.hasta) : new Date();
+  const rango = _rangoReporte(req.query);
+  const desdeMs = rango.desde, hastaMs = rango.hasta;
   const refins = db.movimientos.filter(m => m.forma === 'refin' && m.abono > 0).map(m => {
     const fechaMs = _parseFechaMx(m.fecha);
-    if (fechaMs < desde.getTime() || fechaMs > hasta.getTime()+86400000) return null;
+    if (fechaMs < desdeMs || fechaMs > hastaMs) return null;
     const oldSale = db.sales.find(s => s.id === m.saleId);
     if (!oldSale) return null;
     const cliente = db.clients.find(c => c.id === oldSale.clientId) || {};
@@ -3077,8 +3077,9 @@ app.get('/api/recolecciones', auth, rol('admin', 'supervisor'), (req, res) => {
 });
 
 app.get('/api/reports/comisiones', auth, rol('admin','supervisor'), (req, res) => {
-  const periodo = req.query.periodo || 'semana';
-  const desdeMs = _desdePeriodo(periodo);
+  const rango = _rangoReporte(req.query);
+  const desdeMs = rango.desde, hastaMs = rango.hasta;
+  const periodo = rango.modo;
   const tasa = (db.config && db.config.tasaCobrador) || 5; // % por defecto
   const cobradores = db.users.filter(u => u.rol === 'cobrador' && u.activo);
   const sucActivos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
@@ -3086,7 +3087,8 @@ app.get('/api/reports/comisiones', auth, rol('admin','supervisor'), (req, res) =
     const sus_sales = db.sales.filter(s => s.prom === c.nombre && sucActivos.has(s.clientId));
     const sus_movs = db.movimientos.filter(m => {
       const s = sus_sales.find(x => x.id === m.saleId);
-      return s && m.abono > 0 && m.forma !== 'descuento' && _parseFechaMx(m.fecha) >= desdeMs;
+      const t = _parseFechaMx(m.fecha);
+      return s && m.abono > 0 && m.forma !== 'descuento' && t >= desdeMs && t <= hastaMs;
     });
     const efe = sus_movs.filter(m => !m.forma || m.forma === 'efectivo').reduce((a,m)=>a+m.abono,0);
     const tra = sus_movs.filter(m => m.forma === 'transferencia').reduce((a,m)=>a+m.abono,0);
@@ -3108,14 +3110,22 @@ app.get('/api/reports/comisiones', auth, rol('admin','supervisor'), (req, res) =
 
 /* ---------- Reporte gerencial (rollup por niveles, con rango y utilidad) ---------- */
 function _rangoReporte(q) {
-  // desde/hasta en YYYY-MM-DD tienen prioridad; si no, usa periodo
+  // desde/hasta en YYYY-MM-DD tienen prioridad; si no, usa periodo (+ ref opcional para anclar a una semana/mes pasado)
   if (q.desde || q.hasta) {
     const d = q.desde ? new Date(q.desde + 'T00:00:00') : new Date(2000, 0, 1);
     const h = q.hasta ? new Date(q.hasta + 'T23:59:59') : new Date();
     return { desde: d.getTime(), hasta: h.getTime(), modo: 'rango', label: `${q.desde || '—'} a ${q.hasta || 'hoy'}` };
   }
   const periodo = q.periodo || 'semana';
-  return { desde: _desdePeriodo(periodo), hasta: Date.now(), modo: periodo, label: periodo };
+  const ref = (q.ref && /^\d{4}-\d{2}-\d{2}$/.test(q.ref)) ? q.ref : null;
+  const desde = _desdePeriodo(periodo, ref);
+  let hasta = Date.now();
+  if (ref) {   // con ref, se acota al fin de ESE periodo (semana/mes pasado)
+    if (periodo === 'semana') hasta = desde + 7 * 86400000 - 1;
+    else if (periodo === 'mes') { const d = new Date(desde); hasta = new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime() - 1; }
+    else if (periodo === 'hoy') hasta = desde + 86400000 - 1;
+  }
+  return { desde, hasta, modo: periodo, label: periodo };
 }
 function _kpisVentas(sales, desde, hasta) {
   let cartera = 0, creditosAct = 0, atrasoMonto = 0, atrasoCli = 0, colocado = 0, ncoloc = 0, cobrado = 0, npagos = 0, utilidad = 0;
