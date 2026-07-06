@@ -1861,10 +1861,18 @@ async function ecInit(){
     else { document.getElementById('ec-empty').style.display='block'; document.getElementById('ec-empty').innerHTML='<div style="color:var(--faint);text-align:center;padding:20px">No hay créditos en la base todavía.</div>'; }
   }catch(e){ document.getElementById('ec-empty').innerHTML='<div style="color:var(--red);padding:18px">'+e.message+'</div>'; }
 }
+let _ecTimer=null;
 function ecFiltrar(){
   const q=(document.getElementById('ec-buscar').value||'').toLowerCase().trim();
   const list=q? _ecSales.filter(s=>(((s.cliente||'')+' '+(s.folio||'')+' '+(s.cobrador||'')).toLowerCase().includes(q))) : _ecSales;
   document.getElementById('ec-sel').innerHTML = list.map(s=>`<option value="${s.id}">${s.cliente||'—'} · ${s.folio} · ${_tipoLbl[s.tipo]||s.tipo}</option>`).join('') || '<option value="">— sin coincidencias —</option>';
+  // Auto-carga el primer resultado del filtro (con pausa para no saturar al teclear).
+  // Antes, el box solo se actualizaba al CAMBIAR el select; si el cliente ya era el primero, "jalarlo" no hacía nada.
+  clearTimeout(_ecTimer);
+  _ecTimer=setTimeout(()=>{
+    const sel=document.getElementById('ec-sel');
+    if(sel && sel.value){ const s=_ecSales.find(x=>String(x.id)===sel.value); if(s){ ecActual=s; ecCargar(); } }
+  }, 300);
 }
 function ecSelect(){ ecActual=_ecSales.find(s=>String(s.id)===document.getElementById('ec-sel').value); ecCargar(); }
 async function ecCargar(){
