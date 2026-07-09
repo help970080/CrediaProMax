@@ -1461,6 +1461,29 @@ function calcAtraso(sale){
   return { cuotasDebidas, cuotasPagadas, cuotasAtraso, montoAtraso, diasAtraso };
 }
 
+// Recompensa "RECOMIENDA UN AMIGO": abona al saldo del cliente SIN entrar dinero físico.
+// forma:'recomendacion' → excluida de cobranza, comisión y no-pago en todo el sistema. Solo baja el saldo.
+app.post('/api/sales/:id/recomendacion', auth, rol('admin', 'supervisor'), idem, (req, res) => {
+  const id = +req.params.id;
+  const monto = +(req.body && req.body.monto);
+  if (!(monto > 0)) return res.status(400).json({ error: 'Monto inválido' });
+  const sale = db.sales.find(s => s.id === id);
+  if (!sale) return res.status(404).json({ error: 'Crédito no encontrado' });
+  const saldoAct = saldoDe(id);
+  if (saldoAct <= 0) return res.status(400).json({ error: 'El crédito ya está liquidado' });
+  const abono = Math.min(monto, saldoAct); // no dejar saldo negativo
+  db.movimientos.push({
+    id: nextId('movimientos'), saleId: id, fecha: fechaMxHoyDDMM(),
+    concepto: 'RECOMIENDA UN AMIGO', origen: 'Recompensa por recomendación',
+    cargo: 0, abono, forma: 'recomendacion',
+    capturadoPor: req.user.nombre || req.user.usuario,
+    sucursalCobro: sale.sucursalId, sucursalCredito: sale.sucursalId
+  });
+  try { logOp('recomendacion', 'F-' + id, { saleId: id, cliente: sale.cliente, monto: abono, capturadoPor: req.user.nombre || req.user.usuario }); } catch (e) {}
+  markIdem(req); saveDB();
+  res.json({ ok: true, abono, saldo: saldoDe(id) });
+});
+
 app.post('/api/sales/:id/pago', auth, idem, (req, res) => {
   const id = +req.params.id; const { monto, forma } = req.body;
   if (!(monto > 0)) return res.status(400).json({ error: 'Monto inválido' });
@@ -1697,7 +1720,7 @@ app.get('/api/mi-ruta', auth, (req, res) => {
     const totalAbonado = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0).reduce((a,m)=>a+m.abono,0);
     const at = calcAtraso(s, totalAbonado);
     // Cobros de HOY a este cliente. Propios (origen=cobrador) vs externos (ventanilla/JC/otros sobre su cliente).
-    const movsHoyAll = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0 && m.forma !== 'descuento' && m.forma !== 'refin' && m.fecha === hoy);
+    const movsHoyAll = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0 && m.forma !== 'descuento' && m.forma !== 'recomendacion' && m.forma !== 'refin' && m.fecha === hoy);
     const movsHoy = movsHoyAll.filter(m => m.origen === req.user.nombre);
     const movsExt = movsHoyAll.filter(m => m.origen !== req.user.nombre);
     const cobradoHoy = movsHoy.reduce((a,m)=>a+m.abono,0);
@@ -1705,7 +1728,7 @@ app.get('/api/mi-ruta', auth, (req, res) => {
     const pagoExterno = movsExt.reduce((a,m)=>a+m.abono,0);                 // suma para avance/comisión, NO para entregar
     const externoForma = movsExt.length ? (movsExt[movsExt.length-1].forma || 'efectivo') : null;
     // Cobrado en TODO el ciclo (cualquier día de la semana): para sacarlo de "Por cobrar".
-    const cobradoSemana = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0 && m.forma !== 'descuento' && m.forma !== 'refin' && _parseFechaMx(m.fecha) >= wkStart).reduce((a,m)=>a+m.abono,0);
+    const cobradoSemana = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0 && m.forma !== 'descuento' && m.forma !== 'recomendacion' && m.forma !== 'refin' && _parseFechaMx(m.fecha) >= wkStart).reduce((a,m)=>a+m.abono,0);
     return { id: s.id, folio: s.folio, nombre: c.nombre || '—', dir: [c.calle, c.col].filter(Boolean).join(', '), tel: c.tel || '', tipo: s.tipo, cuota: s.cuota, saldo: saldoDe(s.id),
       cobradoHoy, formaHoy, pagoExterno, externoForma, cobradoSemana,
       atraso: at.montoAtraso, diasAtraso: at.diasAtraso, cuotasAtraso: at.cuotasAtraso, cuotasDebidas: at.cuotasDebidas, cuotasPagadas: at.cuotasPagadas, tieneEvidencia: !!s.entrega, op: oportunidadDe(s) };
@@ -1719,7 +1742,7 @@ app.get('/api/mi-comision', auth, rol('cobrador'), (req, res) => {
   const tasa = (db.config && db.config.tasaCobrador) || 5;
   const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
   const ids = new Set(db.sales.filter(s => s.prom === req.user.nombre && activos.has(s.clientId)).map(s => s.id));
-  const movs = db.movimientos.filter(m => ids.has(m.saleId) && m.abono > 0 && m.forma !== 'descuento' && _parseFechaMx(m.fecha) >= desdeMs);
+  const movs = db.movimientos.filter(m => ids.has(m.saleId) && m.abono > 0 && m.forma !== 'descuento' && m.forma !== 'recomendacion' && _parseFechaMx(m.fecha) >= desdeMs);
   const efe = movs.filter(m => !m.forma || m.forma === 'efectivo').reduce((a,m)=>a+m.abono,0);
   const tra = movs.filter(m => m.forma === 'transferencia').reduce((a,m)=>a+m.abono,0);
   const dep = movs.filter(m => m.forma === 'deposito').reduce((a,m)=>a+m.abono,0);
@@ -1734,7 +1757,7 @@ app.get('/api/mi-acumulado', auth, rol('cobrador'), (req, res) => {
   const hoy = fechaMxHoyDDMM();
   const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
   const ids = new Set(db.sales.filter(s => s.prom === req.user.nombre && activos.has(s.clientId)).map(s => s.id));
-  const movs = db.movimientos.filter(m => ids.has(m.saleId) && m.abono > 0 && m.forma !== 'descuento' && m.forma !== 'refin' && m.fecha !== hoy && _parseFechaMx(m.fecha) >= desdeMs);
+  const movs = db.movimientos.filter(m => ids.has(m.saleId) && m.abono > 0 && m.forma !== 'descuento' && m.forma !== 'recomendacion' && m.forma !== 'refin' && m.fecha !== hoy && _parseFechaMx(m.fecha) >= desdeMs);
   // Objetivo semanal = la cuota semanal propia del cobrador: suma de las cuotas de sus créditos activos con saldo.
   // Si el admin le fijó un objetivo manual de cobranza, ese manda.
   const objMan = (db.objetivos && db.objetivos.cob && db.objetivos.cob[req.user.nombre] && +db.objetivos.cob[req.user.nombre].cobranza) || 0;
@@ -1821,7 +1844,7 @@ app.get('/api/dashboard', auth, (req,res)=>{
     const ventas_suc=sales.filter(s=>s.sucursalId===suc.id);
     const abonos_suc=abonos.filter(m=>{ const s=sales.find(x=>x.id===m.saleId); return s && s.sucursalId===suc.id; });
     const recuperado=abonos_suc.reduce((a,m)=>a+m.abono,0);
-    const comisionable=abonos_suc.filter(m=>m.forma!=='descuento').reduce((a,m)=>a+m.abono,0);
+    const comisionable=abonos_suc.filter(m=>m.forma!=='descuento' && m.forma!=='recomendacion').reduce((a,m)=>a+m.abono,0);
     const nuevos_suc=nuevos.filter(s=>s.sucursalId===suc.id);
     const caja=db.caja[String(suc.id)]||{inicial:0,efectivo:0,banco:0,entregas:0};
     const enc=db.users.find(u=>u.rol==='sucursal' && u.sucursalId===suc.id);
@@ -1844,7 +1867,7 @@ app.get('/api/dashboard', auth, (req,res)=>{
     const sus_sales=sales.filter(s=>s.prom===c.nombre);
     const sus_abonos=abonos.filter(m=>{ const s=sales.find(x=>x.id===m.saleId); return s && s.prom===c.nombre; });
     const recuperado=sus_abonos.reduce((a,m)=>a+m.abono,0);
-    const comisionable=sus_abonos.filter(m=>m.forma!=='descuento').reduce((a,m)=>a+m.abono,0);
+    const comisionable=sus_abonos.filter(m=>m.forma!=='descuento' && m.forma!=='recomendacion').reduce((a,m)=>a+m.abono,0);
     const cartera=sus_sales.reduce((a,s)=>a+saldoDe(s.id),0);
     const por_entregar=db.porEntregar.filter(p=>p.prom===c.nombre).reduce((a,p)=>a+p.monto,0);
     const suc=sucursales.find(s=>s.id===c.sucursalId);
@@ -1888,8 +1911,8 @@ app.get('/api/dashboard', auth, (req,res)=>{
     npagos_periodo: abonos.length,
     nuevos_creditos_periodo: nuevos.length,
     monto_colocado_periodo: nuevos.reduce((a,s)=>a+s.monto,0),
-    cobrado_periodo: abonos.filter(m=>m.forma!=='descuento').reduce((a,m)=>a+m.abono,0),
-    utilidad_periodo: Math.round(abonos.filter(m=>m.forma!=='descuento').reduce((a,m)=>{ const s=sales.find(x=>x.id===m.saleId); return a + (s ? m.abono*_interesFrac(s) : 0); },0)),
+    cobrado_periodo: abonos.filter(m=>m.forma!=='descuento' && m.forma!=='recomendacion').reduce((a,m)=>a+m.abono,0),
+    utilidad_periodo: Math.round(abonos.filter(m=>m.forma!=='descuento' && m.forma!=='recomendacion').reduce((a,m)=>{ const s=sales.find(x=>x.id===m.saleId); return a + (s ? m.abono*_interesFrac(s) : 0); },0)),
     en_caja_efectivo: (miSuc==null?Object.values(db.caja):[db.caja[String(miSuc)]||{}]).reduce((a,c)=>a+((c.inicial||0)+(c.efectivo||0)+(c.entregas||0)-(c.retiros||0)),0),
     en_caja_banco: (miSuc==null?Object.values(db.caja):[db.caja[String(miSuc)]||{}]).reduce((a,c)=>a+(c.banco||0),0),
     por_entregar: db.porEntregar.filter(p=>miSuc==null||p.sucursalId===miSuc).reduce((a,p)=>a+p.monto,0),
@@ -1958,8 +1981,8 @@ app.get('/api/reports/numeros-diarios', auth, rol('admin','supervisor'), (req,re
   const activos = new Set(db.clients.filter(c=>c.activo!==false).map(c=>c.id));
   const sales = db.sales.filter(s=>activos.has(s.clientId) && s.entregado!==false);
   const sucursales = db.sucursales.filter(s=>s.activo!==false);
-  const abonos = db.movimientos.filter(m=>m.abono>0 && m.forma!=='descuento');
-  const abonosAll = db.movimientos.filter(m=>m.abono>0);  // incluye el primer pago del alta (forma:'descuento')
+  const abonos = db.movimientos.filter(m=>m.abono>0 && m.forma!=='descuento' && m.forma!=='recomendacion');
+  const abonosAll = db.movimientos.filter(m=>m.abono>0 && m.forma!=='recomendacion');  // incluye primer pago (descuento) para cubrir no-pago; excluye recomendación (no es pago del cliente)
   const saleSuc = {}; sales.forEach(s=>{ saleSuc[s.id]={suc:s.sucursalId, cli:s.clientId}; });
   // Avance de contactos: semana objetivo (la última cerrada por admin, o la anterior por tiempo)
   const prevIso = _semanaContactos();
@@ -2010,8 +2033,8 @@ app.get('/api/reports/numeros-diarios-suc', auth, rol('admin','supervisor','sucu
   const wkFin = wkFinTs - 1;
   const activos = new Set(db.clients.filter(c=>c.activo!==false).map(c=>c.id));
   const sales = db.sales.filter(s=>activos.has(s.clientId) && s.entregado!==false && Number(s.sucursalId)===sid);
-  const abonos = db.movimientos.filter(m=>m.abono>0 && m.forma!=='descuento');
-  const abonosAll = db.movimientos.filter(m=>m.abono>0);  // incluye el primer pago del alta (forma:'descuento')
+  const abonos = db.movimientos.filter(m=>m.abono>0 && m.forma!=='descuento' && m.forma!=='recomendacion');
+  const abonosAll = db.movimientos.filter(m=>m.abono>0 && m.forma!=='recomendacion');  // incluye primer pago (descuento) para cubrir no-pago; excluye recomendación (no es pago del cliente)
   const saleRef = {}; sales.forEach(s=>{ saleRef[s.id]={prom:s.prom||'—', cli:s.clientId}; });
   const proms = [...new Set(sales.map(s=>s.prom||'—'))];
   const rows = proms.map(prom=>{
@@ -3088,7 +3111,7 @@ app.get('/api/reports/comisiones', auth, rol('admin','supervisor'), (req, res) =
     const sus_movs = db.movimientos.filter(m => {
       const s = sus_sales.find(x => x.id === m.saleId);
       const t = _parseFechaMx(m.fecha);
-      return s && m.abono > 0 && m.forma !== 'descuento' && t >= desdeMs && t <= hastaMs;
+      return s && m.abono > 0 && m.forma !== 'descuento' && m.forma !== 'recomendacion' && t >= desdeMs && t <= hastaMs;
     });
     const efe = sus_movs.filter(m => !m.forma || m.forma === 'efectivo').reduce((a,m)=>a+m.abono,0);
     const tra = sus_movs.filter(m => m.forma === 'transferencia').reduce((a,m)=>a+m.abono,0);
@@ -3138,7 +3161,7 @@ function _kpisVentas(sales, desde, hasta) {
     if (s.createdAt) { const t = new Date(s.createdAt).getTime(); if (t >= desde && t <= hasta) { colocado += s.monto; ncoloc++; } }
   });
   const ids = new Set(sales.map(s => s.id));
-  db.movimientos.filter(m => m.abono > 0 && m.forma !== 'descuento' && ids.has(m.saleId)).forEach(m => {
+  db.movimientos.filter(m => m.abono > 0 && m.forma !== 'descuento' && m.forma !== 'recomendacion' && ids.has(m.saleId)).forEach(m => {
     const t = _parseFechaMx(m.fecha); if (t >= desde && t <= hasta) { cobrado += m.abono; npagos++; utilidad += m.abono * (ratio[m.saleId] || 0); }
   });
   return { cartera, clientes: cliSet.size, creditosActivos: creditosAct, atrasoMonto, vencido: atrasoMonto, atrasoClientes: atrasoCli,
@@ -3177,7 +3200,7 @@ app.get('/api/reports/gerencial-clientes', auth, rol('admin', 'supervisor', 'suc
     const c = db.clients.find(x => x.id === s.clientId) || {};
     const totAb = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0).reduce((a, m) => a + m.abono, 0);
     const at = calcAtraso(s, totAb);
-    const cobradoPeriodo = db.movimientos.filter(m => m.abono > 0 && m.forma !== 'descuento' && m.saleId === s.id && _parseFechaMx(m.fecha) >= desde && _parseFechaMx(m.fecha) <= hasta).reduce((a, m) => a + m.abono, 0);
+    const cobradoPeriodo = db.movimientos.filter(m => m.abono > 0 && m.forma !== 'descuento' && m.forma !== 'recomendacion' && m.saleId === s.id && _parseFechaMx(m.fecha) >= desde && _parseFechaMx(m.fecha) <= hasta).reduce((a, m) => a + m.abono, 0);
     const saldo = saldoDe(s.id);
     return { saleId: s.id, folio: s.folio, cliente: c.nombre || '—', tel: c.tel || '', prom: s.prom, sucursal: sucMap[s.sucursalId] || '—',
       monto: s.monto, total: s.total, saldo, cobradoPeriodo, vencido: at.montoAtraso, diasAtraso: at.diasAtraso,
@@ -3264,7 +3287,7 @@ function computePL() {
   const saleSuc = {}; db.sales.forEach(s => { saleSuc[s.id] = s.sucursalId; });
   const cobSuc = {};
   db.movimientos.forEach(m => {
-    if (!(m.abono > 0) || m.forma === 'descuento' || m.forma === 'refin') return;
+    if (!(m.abono > 0) || m.forma === 'descuento' || m.forma === 'recomendacion' || m.forma === 'refin') return;
     if (_parseFechaMx(m.fecha) < desde) return;
     const sid = saleSuc[m.saleId]; if (sid == null) return;
     cobSuc[sid] = (cobSuc[sid] || 0) + m.abono;
@@ -3360,7 +3383,7 @@ app.get('/api/reports/desglose', auth, rol('admin', 'supervisor', 'sucursal'), (
       ms.forEach(m => {
         if (m.ts < w.desde) saldoIni += m.cargo - m.abono;
         if (m.ts <= w.hasta) saldoFin += m.cargo - m.abono;
-        if (m.ts >= w.desde && m.ts <= w.hasta && m.forma !== 'descuento') abonoSem += m.abono;
+        if (m.ts >= w.desde && m.ts <= w.hasta && m.forma !== 'descuento' && m.forma !== 'recomendacion') abonoSem += m.abono;
       });
       // cobranza: todo abono real de la semana sobre créditos existentes
       if (existed) cobranza += abonoSem;
