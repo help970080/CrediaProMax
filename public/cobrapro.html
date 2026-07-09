@@ -429,6 +429,7 @@
           <button class="btn" style="border-color:#7c5ce0;color:#7c5ce0" onclick="ecEnviarJC()">📦 Enviar a entrega del JC</button>
           <button class="btn gold" onclick="ecImprimir()">🖨 Estado de cuenta</button>
           <button class="btn" id="ec-btn-retro" style="display:none;border-color:#e0a000;color:#e0a000" onclick="ecPagoRetro()">📅 Registrar pago de semana pasada</button>
+          <button class="btn" id="ec-btn-recom" style="display:none;border-color:#22a06b;color:#22a06b" onclick="ecRecomendacion()">🎁 Recomendación</button>
         </div>
       </div>
     </div>
@@ -1895,6 +1896,7 @@ async function ecCargar(){
 function ecPinta(d){
   ['ec-card','ec-saldo-card','ec-ledger-card'].forEach(id=>document.getElementById(id).style.display='block');
   { const _rb=document.getElementById('ec-btn-retro'); if(_rb) _rb.style.display=(ME&&(ME.rol==='admin'||ME.rol==='supervisor'))?'inline-flex':'none'; }
+  { const _rc=document.getElementById('ec-btn-recom'); if(_rc) _rc.style.display=(ME&&(ME.rol==='admin'||ME.rol==='supervisor'))?'inline-flex':'none'; }
   document.getElementById('ec-empty').style.display='none';
   const c=ecActual;
   document.getElementById('ec-nom').textContent=c.cliente||'—';
@@ -1956,6 +1958,27 @@ async function ecPagoRetroOK(b){
     b.closest('.flmodal').remove();
     await ecCargar();
     alert('✓ Pago registrado en la semana del '+fecha+' a nombre de '+cob+'.');
+  }catch(e){ alert(e.message); b.disabled=false; }
+}
+// Recompensa "RECOMIENDA UN AMIGO": baja el saldo del cliente. NO es cobranza ni comisión (no entra dinero físico).
+function ecRecomendacion(){
+  if(!ecActual){ return; }
+  const inp='width:100%;padding:10px;margin:4px 0 12px;background:var(--surf-2);border:1px solid var(--line);border-radius:8px;color:var(--ink);font-family:inherit;box-sizing:border-box';
+  _flModal(`<h3 style="margin:0 0 4px">🎁 Recomienda un amigo</h3>
+    <p style="font-size:.8rem;color:var(--dim);margin:0 0 14px">Recompensa por recomendar a otro cliente. <b>Solo baja el saldo</b> de ${ecActual.cliente||'este cliente'}. No cuenta como cobranza ni genera comisión (no entra dinero físico).</p>
+    <label style="font-size:.78rem;color:var(--dim)">Monto de la recompensa</label>
+    <input id="recom-monto" type="number" inputmode="numeric" placeholder="$" style="${inp}">
+    <div style="display:flex;gap:10px;margin-top:4px"><button class="btn" style="flex:1" onclick="this.closest('.flmodal').remove()">Cancelar</button><button class="btn" style="flex:1;background:#22a06b;color:#fff;border:none" onclick="ecRecomendacionOK(this)">Aplicar al saldo</button></div>`);
+}
+async function ecRecomendacionOK(b){
+  const monto=+document.getElementById('recom-monto').value;
+  if(!(monto>0)){ alert('Indica un monto válido'); return; }
+  b.disabled=true;
+  try{
+    const r=await apiU('POST','/api/sales/'+ecActual.id+'/recomendacion',{monto,idempotencyKey:'recom-'+ecActual.id+'-'+Date.now()});
+    b.closest('.flmodal').remove();
+    await ecCargar();
+    alert('✓ Recompensa aplicada. Nuevo saldo: '+fmt(r.saldo));
   }catch(e){ alert(e.message); b.disabled=false; }
 }
 async function ecMov(tipo){
