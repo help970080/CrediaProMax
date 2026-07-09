@@ -428,6 +428,7 @@
           <button class="btn" style="border-color:#5ab0ff;color:#5ab0ff" onclick="ecReestructura()">🗓 Reestructurar</button>
           <button class="btn" style="border-color:#7c5ce0;color:#7c5ce0" onclick="ecEnviarJC()">📦 Enviar a entrega del JC</button>
           <button class="btn gold" onclick="ecImprimir()">🖨 Estado de cuenta</button>
+          <button class="btn" style="border-color:#3b82f6;color:#3b82f6" onclick="ecAmortizacion()">📄 Tabla de amortización</button>
           <button class="btn" id="ec-btn-retro" style="display:none;border-color:#e0a000;color:#e0a000" onclick="ecPagoRetro()">📅 Registrar pago de semana pasada</button>
           <button class="btn" id="ec-btn-recom" style="display:none;border-color:#22a06b;color:#22a06b" onclick="ecRecomendacion()">🎁 Recomendación</button>
         </div>
@@ -1214,7 +1215,7 @@ function renderCartera(){
       <td><div style="display:flex;align-items:center;gap:7px"><div class="bar" style="min-width:46px"><i style="width:${(av*100).toFixed(0)}%;background:var(--grn)"></i></div><span class="mono" style="font-size:.72rem">${(av*100).toFixed(0)}%</span></div></td>
       <td class="sn">${liq?'—':'Pendiente'}</td>
       <td><span class="pill ok">${liq?'Liquidado':'Activo'}</span></td>
-      <td style="text-align:right;white-space:nowrap">${c.tieneEvidencia?`<button class="btn" style="padding:4px 8px;font-size:.72rem;color:var(--vio);border-color:var(--vio)" onclick="verEvidencia(${c.id})" title="Ver evidencia de entrega">📷</button> `:''}${puedeBorrar?`<button class="btn" style="padding:4px 8px;font-size:.72rem" onclick='editarCliente(${JSON.stringify({id:c.clientId,nombre:c.cliente,tel:c.tel||"",calle:c.calle||"",col:c.col||"",prom:c.prom||"",sucursalId:c.sucursalId})})'>✏️</button> <button class="btn" style="padding:4px 8px;font-size:.72rem;color:var(--red);border-color:var(--red)" onclick="borrarCliente(${c.clientId},'${(c.cliente||'').replace(/'/g,'')}')">🗑</button>`:''}</td></tr>`;
+      <td style="text-align:right;white-space:nowrap"><button class="btn" style="padding:4px 8px;font-size:.72rem;color:#3b82f6;border-color:#3b82f6" onclick="amortizarCredito(${c.id})" title="Tabla de amortización">📄</button> ${c.tieneEvidencia?`<button class="btn" style="padding:4px 8px;font-size:.72rem;color:var(--vio);border-color:var(--vio)" onclick="verEvidencia(${c.id})" title="Ver evidencia de entrega">📷</button> `:''}${puedeBorrar?`<button class="btn" style="padding:4px 8px;font-size:.72rem" onclick='editarCliente(${JSON.stringify({id:c.clientId,nombre:c.cliente,tel:c.tel||"",calle:c.calle||"",col:c.col||"",prom:c.prom||"",sucursalId:c.sucursalId})})'>✏️</button> <button class="btn" style="padding:4px 8px;font-size:.72rem;color:var(--red);border-color:var(--red)" onclick="borrarCliente(${c.clientId},'${(c.cliente||'').replace(/'/g,'')}')">🗑</button>`:''}</td></tr>`;
   }).join('') || `<tr><td colspan="12" style="text-align:center;color:var(--faint);padding:24px">Sin créditos en la base.</td></tr>`;
 }
 async function verEvidencia(saleId){
@@ -1981,6 +1982,101 @@ async function ecRecomendacionOK(b){
     alert('✓ Recompensa aplicada. Nuevo saldo: '+fmt(r.saldo));
   }catch(e){ alert(e.message); b.disabled=false; }
 }
+// ===== TABLA DE AMORTIZACIÓN (estado de cuenta y cartera) =====
+function _amortFrecDias(tipo){ if(tipo==='diario')return 1; if(tipo==='unico')return 0; return 7; } // semanal/s16/s17/s21/s31/p17 = 7 días
+function _amortParseFecha(f){ // acepta DD/MM/YYYY o DD/MM
+  if(!f) return new Date();
+  const p=String(f).split('/'); if(p.length<2) return new Date();
+  const d=+p[0], m=+p[1]-1, y=p[2]?(+p[2]<100?2000+ +p[2]:+p[2]):new Date().getFullYear();
+  return new Date(y,m,d);
+}
+async function ecAmortizacion(){ if(!ecActual) return; _amortizarSale(ecActual); }
+async function amortizarCredito(saleId){
+  const s=(_cartera||[]).find(x=>x.id===saleId) || (_ecSales||[]).find(x=>x.id===saleId);
+  if(!s){ alert('No encontré el crédito.'); return; }
+  _amortizarSale(s);
+}
+async function _amortizarSale(s){
+  let rows=[], saldo=s.saldo;
+  try{ const d=await apiU('GET','/api/sales/'+s.id+'/movimientos'); rows=d.movimientos||[]; saldo=d.saldo; }catch(e){}
+  const cuota=+s.cuota||0;
+  const total=+s.total|| (cuota*(+s.plazo||0)) || 0;
+  const nCuotas = s.tipo==='unico' ? 1 : (+s.plazo || (cuota>0?Math.round(total/cuota):0));
+  if(!(nCuotas>0)||!(cuota>0)){ alert('Este crédito no tiene cuota o plazo definidos para amortizar.'); return; }
+  // Fecha de inicio: movimiento de disposición o el primer movimiento del historial
+  const disp=rows.find(m=>/disposici/i.test(m.concepto||'')) || rows[0];
+  const ini=_amortParseFecha(disp?disp.fecha:null);
+  const frec=_amortFrecDias(s.tipo);
+  const pagado=Math.max(0, total - saldo);
+  const cuotasPagadas=cuota>0?Math.floor(pagado/cuota + 0.0001):0;
+  // Construir filas
+  const fmtF=x=>x.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'numeric'});
+  let filas=[], saldoRest=total, acum=0;
+  for(let i=1;i<=nCuotas;i++){
+    const monto = (i===nCuotas)? Math.max(0, total-acum) : cuota; // la última ajusta el redondeo
+    acum+=monto; saldoRest=Math.max(0, total-acum);
+    let fecha;
+    if(s.tipo==='unico'){ fecha=new Date(ini.getTime()); fecha.setDate(fecha.getDate()+ (+s.plazo||0)); }
+    else { fecha=new Date(ini.getTime()); fecha.setDate(fecha.getDate()+ i*frec); }
+    const pagada = i<=cuotasPagadas;
+    filas.push({i,fecha,monto,saldoRest,pagada});
+  }
+  const brand=(typeof BRAND!=='undefined'&&BRAND.nombre)?BRAND.nombre:'CobraPro';
+  const tipoLbl=_tipoLbl[s.tipo]||s.tipo;
+  // Modal en pantalla
+  const filasHTML=filas.map(f=>`<tr style="${f.pagada?'background:rgba(34,160,107,.10)':''}">
+    <td class="n">${f.i}</td><td class="mono" style="font-size:.8rem">${fmtF(f.fecha)}</td>
+    <td class="n">${fmt(f.monto)}</td><td class="n">${fmt(f.saldoRest)}</td>
+    <td>${f.pagada?'<span class="pill ok" style="font-size:.62rem">Pagada</span>':'<span class="pill" style="font-size:.62rem">Pendiente</span>'}</td></tr>`).join('');
+  const cont=`<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+      <div><h3 style="margin:0">📄 Tabla de amortización</h3>
+      <div style="font-size:.82rem;color:var(--dim);margin-top:4px">${s.cliente||'—'} · ${s.folio||''} · ${tipoLbl}</div></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn" onclick="_amortImprimir()">🖨 Imprimir</button>
+        ${s.tel?`<button class="btn" style="background:#25D366;color:#fff;border:none" onclick="_amortWhatsApp()">📱 WhatsApp</button>`:''}
+      </div></div>
+    <div style="font-size:.8rem;color:var(--dim);margin-bottom:10px">Cuota ${fmt(cuota)} · ${nCuotas} pago(s) · Total ${fmt(total)} · Pagadas ${cuotasPagadas}/${nCuotas} · Saldo ${fmt(saldo)}</div>
+    <div style="max-height:52vh;overflow:auto;border:1px solid var(--line);border-radius:10px">
+      <table style="width:100%;border-collapse:collapse"><thead><tr style="position:sticky;top:0;background:var(--surf-2)">
+        <th style="padding:8px;text-align:left;font-size:.7rem">#</th><th style="padding:8px;text-align:left;font-size:.7rem">FECHA</th>
+        <th style="padding:8px;text-align:right;font-size:.7rem">CUOTA</th><th style="padding:8px;text-align:right;font-size:.7rem">SALDO</th>
+        <th style="padding:8px;text-align:left;font-size:.7rem">ESTADO</th></tr></thead><tbody>${filasHTML}</tbody></table></div>`;
+  _flModal(cont,'760px');
+  // Guardar datos para imprimir / WhatsApp
+  _amortData={brand,cliente:s.cliente||'—',folio:s.folio||'',tipoLbl,cuota,nCuotas,total,saldo,cuotasPagadas,tel:s.tel||'',prom:s.prom||'',filas,fmtF};
+}
+let _amortData=null;
+function _amortImprimir(){
+  if(!_amortData) return; const a=_amortData;
+  const filas=a.filas.map(f=>`<tr class="${f.pagada?'pg':''}"><td>${f.i}</td><td>${a.fmtF(f.fecha)}</td><td class="r">${fmt(f.monto)}</td><td class="r">${fmt(f.saldoRest)}</td><td>${f.pagada?'Pagada':'Pendiente'}</td></tr>`).join('');
+  const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Amortización ${a.folio}</title><style>
+    body{font-family:Arial,sans-serif;color:#1b2330;padding:22px;max-width:720px;margin:auto}
+    h1{font-size:17px;margin:0}.h{border-bottom:2px solid #3b82f6;padding-bottom:10px;margin-bottom:12px}
+    .muted{color:#5b6675;font-size:12px;margin-top:3px}
+    table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12.5px}
+    th,td{border-bottom:1px solid #dde3ec;padding:6px 8px;text-align:left}
+    th{background:#eef2f8;font-size:10.5px;text-transform:uppercase}.r{text-align:right}
+    tr.pg{background:#e9f7ef}@media print{button{display:none}}
+    .btns{margin:14px 0}</style></head><body>
+    <div class="h"><h1>${a.brand} · Tabla de amortización</h1>
+    <div class="muted">${a.cliente} · Folio ${a.folio} · ${a.tipoLbl}</div>
+    <div class="muted">Cuota ${fmt(a.cuota)} · ${a.nCuotas} pago(s) · Total ${fmt(a.total)} · Pagadas ${a.cuotasPagadas}/${a.nCuotas} · Saldo ${fmt(a.saldo)}</div></div>
+    <div class="btns"><button onclick="window.print()">🖨 Imprimir</button></div>
+    <table><thead><tr><th>#</th><th>Fecha</th><th class="r">Cuota</th><th class="r">Saldo</th><th>Estado</th></tr></thead><tbody>${filas}</tbody></table>
+    <p class="muted" style="margin-top:14px">Documento informativo. Las fechas son estimadas según la frecuencia del crédito; los pagos reales pueden variar.</p>
+    </body></html>`;
+  const w=window.open('','_blank'); if(!w){ alert('Permite las ventanas emergentes para imprimir.'); return; }
+  w.document.write(html); w.document.close();
+}
+function _amortWhatsApp(){
+  if(!_amortData) return; const a=_amortData;
+  let tel=(a.tel||'').replace(/\D/g,''); if(tel.length===10) tel='52'+tel; // México
+  if(!tel){ alert('Este cliente no tiene teléfono registrado.'); return; }
+  let t=`*${a.brand}*\n📄 Tabla de amortización\n\n👤 ${a.cliente}\n📋 Folio: ${a.folio}\n💳 ${a.tipoLbl} · cuota ${fmt(a.cuota)}\n📆 ${a.nCuotas} pago(s) · Total ${fmt(a.total)}\n✅ Pagadas: ${a.cuotasPagadas}/${a.nCuotas} · Saldo: ${fmt(a.saldo)}\n\n`;
+  a.filas.forEach(f=>{ t+=`${f.pagada?'✅':'⬜'} ${f.i}. ${a.fmtF(f.fecha)} — ${fmt(f.monto)} (saldo ${fmt(f.saldoRest)})\n`; });
+  t+=`\n_Fechas estimadas según la frecuencia del crédito._`;
+  window.open('https://wa.me/'+tel+'?text='+encodeURIComponent(t),'_blank');
+}
 async function ecMov(tipo){
   if(!ecActual) return;
   try{
@@ -2168,8 +2264,8 @@ async function cargarFlujo(){
     }).join('') : '<tr><td colspan="4" style="color:var(--faint);padding:12px;font-size:.85rem">Aún no hay movimientos. Inyecta capital o recibe un corte para empezar.</td></tr>';
   }catch(e){ $('fl-movs').innerHTML='<tr><td colspan="4" style="color:var(--red);padding:12px">'+e.message+'</td></tr>'; }
 }
-function _flModal(html){ const ov=document.createElement('div'); ov.className='flmodal'; ov.style.cssText='position:fixed;inset:0;background:rgba(10,15,25,.55);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'; ov.onclick=e=>{if(e.target===ov)ov.remove();};
-  ov.innerHTML=`<div style="background:var(--surf-1);border:1px solid var(--line);border-radius:14px;padding:20px;width:min(440px,96vw)">${html}</div>`; document.body.appendChild(ov); return ov; }
+function _flModal(html, w){ const ov=document.createElement('div'); ov.className='flmodal'; ov.style.cssText='position:fixed;inset:0;background:rgba(10,15,25,.55);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px'; ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.innerHTML=`<div style="background:var(--surf-1);border:1px solid var(--line);border-radius:14px;padding:20px;width:min(${w||'440px'},96vw)">${html}</div>`; document.body.appendChild(ov); return ov; }
 function flInyectar(){
   const ov=_flModal(`<h3 style="margin:0 0 4px">➕ Inyectar capital al flujo</h3>
     <p style="font-size:.82rem;color:var(--dim);margin:0 0 12px">Usa esto cuando las ventas superan el efectivo disponible y necesitas meter dinero para seguir colocando.</p>
