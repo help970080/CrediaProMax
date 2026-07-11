@@ -1190,7 +1190,8 @@ function pintaConciliacion(d){
 let _cartera=[], _sucMap={};
 const _tipoLbl={diario:'Diario',semanal:'Semanal',unico:'Pago único',p17:'Celulares 17'};
 const _tipoCls={diario:'dia',semanal:'sem',unico:'uni',p17:'uni'};
-const _plazoTxt=c=>c.tipo==='semanal'? c.plazo+' sem' : c.tipo==='p17'? '17 pagos' : c.plazo+' días';
+const _esSemanalTipo=t=>t==='semanal'||/^s\d+$/i.test(String(t||''));
+const _plazoTxt=c=> c.tipo==='p17'?'17 pagos' : _esSemanalTipo(c.tipo)? (c.plazo+' sem') : (c.plazo+' días');
 async function cargarCartera(){
   const tb=$('tb-cart');
   try{
