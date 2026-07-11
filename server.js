@@ -1402,7 +1402,12 @@ app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) 
   const r = calcCredito(tipo, +plazo, +monto, +dias);
   const folio = 'F-' + (1100 + nextId('sales'));
   const promFinal = _canonProm(prom || client.prom || '');  // usa el nombre exacto del usuario cobrador (evita duplicados por mayúsculas/espacios)
-  const sucCred = req.user.rol === 'sucursal' ? (req.user.sucursalId || 1) : (clienteExistenteId ? client.sucursalId : (sucursalId || req.user.sucursalId || 1));
+  // La venta hereda la sucursal del COBRADOR (si existe como usuario), para que cobrador y sucursal SIEMPRE cuadren.
+  // Evita que un cliente quede en una sucursal distinta a la de su cobrador por un dato mal capturado.
+  const _cobU = db.users.find(u => u.rol === 'cobrador' && u.nombre === promFinal);
+  const sucCred = (_cobU && _cobU.sucursalId)
+    ? _cobU.sucursalId
+    : (req.user.rol === 'sucursal' ? (req.user.sucursalId || 1) : (clienteExistenteId ? client.sucursalId : (sucursalId || req.user.sucursalId || 1)));
   const sale = { id: nextId('sales'), folio, clientId: client.id, tipo, plazo: +plazo, monto: +monto, cuota: r.cuota, total: r.total, prom: promFinal, sucursalId: sucCred, entregado: false, createdAt: new Date().toISOString() };
   const artLimpios = Array.isArray(articulos) ? articulos.map(x => String(x || '').trim()).filter(Boolean).slice(0, 30) : [];
   if (artLimpios.length) sale.articulos = artLimpios;
@@ -1787,7 +1792,7 @@ app.get('/api/cobradores', auth, (req, res) => {
   // Una encargada de sucursal solo ve a SUS cobradores (los dados de alta en su sucursal).
   const esSucursal = req.user.rol === 'sucursal';
   const users = db.users.filter(u => u.rol === 'cobrador' && u.activo && (!esSucursal || u.sucursalId === req.user.sucursalId));
-  const lista = users.map(u => ({ id: u.id, nombre: u.nombre, sucursal: sucMap[u.sucursalId] || null, esUsuario: true }));
+  const lista = users.map(u => ({ id: u.id, nombre: u.nombre, sucursalId: u.sucursalId, sucursal: sucMap[u.sucursalId] || null, esUsuario: true }));
   if (req.query.conCartera && !esSucursal) {
     const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
     const nombresUsuario = new Set(users.map(u => u.nombre));
