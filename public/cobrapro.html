@@ -1243,8 +1243,22 @@ async function borrarCliente(clientId, nombre){
   try{ await apiU('DELETE','/api/clients/'+clientId); await cargarCartera(); }
   catch(e){ alert(e.message); }
 }
-function editarCliente(c){
+let _edCobs=[];
+function _edAjustaSuc(){
+  const nom=document.getElementById('ed-prom').value;
+  const co=_edCobs.find(x=>x.nombre===nom);
+  if(co && co.sucursalId!=null){ const s=document.getElementById('ed-suc'); if(s) s.value=String(co.sucursalId); }
+}
+async function editarCliente(c){
   const sucOpts = Object.entries(_sucMap).map(([id,nm])=>`<option value="${id}" ${String(id)===String(c.sucursalId)?'selected':''}>${nm}</option>`).join('');
+  // Cobrador: menú de cobradores REALES (no texto libre) para que no se capturen nombres inexistentes
+  let _cobs=[]; try{ _cobs=await apiU('GET','/api/cobradores'); }catch(e){ _cobs=[]; }
+  _edCobs=_cobs;
+  const _actual=c.prom||'';
+  const _existe=_cobs.some(co=>co.nombre===_actual);
+  const promOpts='<option value="">— elige cobrador —</option>'
+    + (_actual&&!_existe?`<option value="${String(_actual).replace(/"/g,'&quot;')}" selected>⚠️ ${String(_actual).replace(/</g,'')} (no es un usuario)</option>`:'')
+    + _cobs.map(co=>`<option value="${String(co.nombre).replace(/"/g,'&quot;')}" ${co.nombre===_actual?'selected':''}>${co.nombre}</option>`).join('');
   const ov=document.createElement('div'); ov.id='editov';
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:9999';
   ov.innerHTML=`<div style="background:var(--surf-1);border:1px solid var(--line);border-radius:14px;padding:22px;width:min(440px,92vw)">
@@ -1259,7 +1273,7 @@ function editarCliente(c){
       <div><label style="font-size:.72rem;color:var(--dim)">Colonia</label><input id="ed-col" value="${(c.col||'').replace(/"/g,'&quot;')}" style="width:100%;margin:4px 0 12px;padding:9px;background:var(--surf-2);border:1px solid var(--line);border-radius:7px;color:var(--ink);font-family:inherit"></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <div><label style="font-size:.72rem;color:var(--dim)">Cobrador</label><input id="ed-prom" value="${(c.prom||'').replace(/"/g,'&quot;')}" style="width:100%;margin:4px 0 12px;padding:9px;background:var(--surf-2);border:1px solid var(--line);border-radius:7px;color:var(--ink);font-family:inherit"></div>
+      <div><label style="font-size:.72rem;color:var(--dim)">Cobrador</label><select id="ed-prom" onchange="_edAjustaSuc()" style="width:100%;margin:4px 0 12px;padding:9px;background:var(--surf-2);border:1px solid var(--line);border-radius:7px;color:var(--ink);font-family:inherit">${promOpts}</select></div>
       <div><label style="font-size:.72rem;color:var(--dim)">Sucursal</label><select id="ed-suc" style="width:100%;margin:4px 0 12px;padding:9px;background:var(--surf-2);border:1px solid var(--line);border-radius:7px;color:var(--ink);font-family:inherit">${sucOpts}</select></div>
     </div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
