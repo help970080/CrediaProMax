@@ -1441,10 +1441,10 @@ function calcAtraso(sale){
   // ancla del calendario: si hubo reestructura, el reloj se reinicia desde esa fecha
   const anchor = sale.reestructuraAt ? new Date(sale.reestructuraAt) : (sale.createdAt ? new Date(sale.createdAt) : new Date());
   const dias = Math.max(0, Math.floor((Date.now() - anchor.getTime())/86400000));
+  const _esSemanal = t => t === 'semanal' || /^s\d+$/i.test(String(t || ''));
   let cuotasDebidas = 0;
   if (sale.tipo === 'diario') cuotasDebidas = Math.min(sale.plazo || 0, dias);
-  else if (sale.tipo === 'semanal') cuotasDebidas = Math.min(sale.plazo || 0, _ciclosEsperados(anchor.getTime()));
-  else if (sale.tipo === 's16' || sale.tipo === 's17' || sale.tipo === 's21' || sale.tipo === 's31') cuotasDebidas = Math.min(sale.plazo || 0, _ciclosEsperados(anchor.getTime()));
+  else if (_esSemanal(sale.tipo)) cuotasDebidas = Math.min(sale.plazo || 0, _ciclosEsperados(anchor.getTime()));
   else if (sale.tipo === 'unico') cuotasDebidas = dias >= (sale.plazo || 0) ? 1 : 0;
   else if (sale.tipo === 'p17') cuotasDebidas = Math.min(17, Math.floor(dias / ((sale.plazo || 270)/17)));
   // saldo base: total original, o el saldo reprogramado si hubo reestructura
@@ -1455,7 +1455,7 @@ function calcAtraso(sale){
   const cuotasAtraso = cuota > 0 ? Math.round(montoAtraso / cuota) : 0;
   const cuotasPagadas = cuota > 0 ? Math.max(0, Math.round((saldoBase - saldoActual)/cuota)) : 0;
   const diasAtraso = sale.tipo === 'diario' ? cuotasAtraso
-                   : (sale.tipo === 'semanal' || sale.tipo === 's16' || sale.tipo === 's17' || sale.tipo === 's21' || sale.tipo === 's31') ? cuotasAtraso*7
+                   : _esSemanal(sale.tipo) ? cuotasAtraso*7
                    : sale.tipo === 'unico' ? Math.max(0, dias - (sale.plazo||0))
                    : cuotasAtraso * Math.round((sale.plazo||270)/17);
   return { cuotasDebidas, cuotasPagadas, cuotasAtraso, montoAtraso, diasAtraso };
@@ -1948,7 +1948,7 @@ app.get('/api/reports/pagos', auth, (req,res)=>{
 // Fechas programadas de cobro para semanal / celulares-17 (los diarios se evalúan por rango).
 function _fechasProgSrv(s){
   const out=[]; const P=s.plazo||0; if(!s.createdAt) return out; const created=new Date(s.createdAt);
-  const semanal = (s.tipo==='semanal'||s.tipo==='s16'||s.tipo==='s17'||s.tipo==='s21'||s.tipo==='s31');
+  const semanal = (s.tipo==='semanal'||/^s\d+$/i.test(String(s.tipo||'')));
   if(semanal){ for(let i=1;i<=P;i++){ const d=new Date(created); d.setDate(d.getDate()+i*7); out.push(d.getTime()); } }
   else if(s.tipo==='p17'){ const iv=Math.max(1,Math.round((P||270)/17)); for(let i=1;i<=17;i++){ const d=new Date(created); d.setDate(d.getDate()+i*iv); out.push(d.getTime()); } }
   return out;
