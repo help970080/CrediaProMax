@@ -941,12 +941,26 @@ function abrirEntrega(saleId,cliente,monto){
     <button id="ent-ok" onclick="confirmarEntregaE(this)" style="width:100%;margin-top:4px;background:var(--acc);color:#1b2330;border:none;padding:12px;border-radius:9px;font-family:Sora;font-weight:700;cursor:pointer">Confirmar entrega</button>
     <button onclick="this.closest('.entov').remove()" style="width:100%;margin-top:8px;background:var(--surf-2);border:1px solid var(--line);color:var(--dim);padding:10px;border-radius:9px;font-family:Sora;cursor:pointer">Cancelar</button>`);
 }
-function leerFotoE(input,cual){ const f=input.files&&input.files[0]; if(!f)return; const rd=new FileReader();
-  rd.onload=()=>{ const img=new Image(); img.onload=()=>{ const max=900; let w=img.width,h=img.height; if(w>max||h>max){ if(w>h){h=Math.round(h*max/w);w=max;}else{w=Math.round(w*max/h);h=max;} }
-    const cv=document.createElement('canvas'); cv.width=w; cv.height=h; cv.getContext('2d').drawImage(img,0,0,w,h); const data=cv.toDataURL('image/jpeg',0.55);
+// Comprime la foto con bajo consumo de memoria (evita el base64 gigante que tumbaba teléfonos de gama baja)
+function _fotoComprimida(f, MAX, Q){
+  return new Promise((resolve,reject)=>{
+    const dims=(w,h)=>{ if(w>MAX||h>MAX){ if(w>h){h=Math.round(h*MAX/w);w=MAX;}else{w=Math.round(w*MAX/h);h=MAX;} } return [w,h]; };
+    const tryImg=()=>{ const url=URL.createObjectURL(f); const img=new Image(); img.onload=()=>{ try{ const [w,h]=dims(img.width,img.height); const cv=document.createElement('canvas'); cv.width=w; cv.height=h; cv.getContext('2d').drawImage(img,0,0,w,h); const d=cv.toDataURL('image/jpeg',Q); URL.revokeObjectURL(url); img.src=''; cv.width=cv.height=0; resolve(d); }catch(e){ URL.revokeObjectURL(url); reject(e); } }; img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error('load')); }; img.src=url; };
+    if(window.createImageBitmap){
+      createImageBitmap(f).then(bmp=>{ const [w,h]=dims(bmp.width,bmp.height); const cv=document.createElement('canvas'); cv.width=w; cv.height=h; cv.getContext('2d').drawImage(bmp,0,0,w,h); if(bmp.close)bmp.close(); const d=cv.toDataURL('image/jpeg',Q); cv.width=cv.height=0; resolve(d); }).catch(()=>tryImg());
+    } else tryImg();
+  });
+}
+async function leerFotoE(input,cual){ const f=input.files&&input.files[0]; if(!f)return;
+  const tEl=document.getElementById(cual==='casa'?'fb-casa-t':'fb-cli-t'); const base=cual==='casa'?'Foto de la casa':'Foto del cliente';
+  if(tEl) tEl.textContent='⏳ Procesando…';
+  try{
+    const data=await _fotoComprimida(f,900,0.55);
     if(cual==='casa'){ _ent.fotoCasa=data; const el=document.getElementById('fb-casa'); el.style.borderColor='var(--grn)'; document.getElementById('fb-casa-t').textContent='✓ Foto de la casa lista'; }
-    else { _ent.fotoCliente=data; const el=document.getElementById('fb-cli'); el.style.borderColor='var(--grn)'; document.getElementById('fb-cli-t').textContent='✓ Foto del cliente lista'; } }; img.src=rd.result; };
-  rd.readAsDataURL(f); }
+    else { _ent.fotoCliente=data; const el=document.getElementById('fb-cli'); el.style.borderColor='var(--grn)'; document.getElementById('fb-cli-t').textContent='✓ Foto del cliente lista'; }
+  }catch(e){ if(tEl) tEl.textContent=base; alert('No se pudo procesar la foto (memoria del teléfono). Cierra apps abiertas e inténtalo de nuevo.'); }
+  try{ input.value=''; }catch(e){}
+}
 function capturarGeoE(){ const t=document.getElementById('geo-txt'); if(!navigator.geolocation){ t.textContent='Sin GPS'; return; } t.textContent='Obteniendo ubicación…';
   navigator.geolocation.getCurrentPosition(p=>{ _ent.lat=p.coords.latitude; _ent.lng=p.coords.longitude; t.textContent='✓ Ubicación capturada'; t.style.color='var(--grn)'; },()=>{ t.textContent='No se pudo obtener la ubicación'; },{enableHighAccuracy:true,timeout:10000}); }
 async function abrirPagareFirmaE(){
@@ -1299,10 +1313,15 @@ function pintaContactos(){
     </div>`;
   }).join('')||'<div style="color:var(--faint);padding:16px;text-align:center">Ningún cliente quedó sin pago la semana anterior. 🎉</div>';
 }
-function ctLeerFoto(input,cid){
-  const f=input.files&&input.files[0]; if(!f)return; const rd=new FileReader();
-  rd.onload=()=>{ const img=new Image(); img.onload=()=>{ let w=img.width,h=img.height; const mx=1000; if(w>mx||h>mx){ const k=mx/Math.max(w,h); w=Math.round(w*k); h=Math.round(h*k); } const cv=document.createElement('canvas'); cv.width=w; cv.height=h; cv.getContext('2d').drawImage(img,0,0,w,h); _ctEvid[cid]=cv.toDataURL('image/jpeg',0.55); const card=document.querySelector('.bd-card[data-cid="'+cid+'"]'); if(card){ card.querySelector('.ct-foto-t').textContent='✓ Foto lista (sin guardar)'; card.querySelector('.ct-foto-badge').innerHTML='<span style="color:var(--acc);font-size:.76rem">● foto pendiente de guardar</span>'; } }; img.src=rd.result; };
-  rd.readAsDataURL(f);
+async function ctLeerFoto(input,cid){
+  const f=input.files&&input.files[0]; if(!f)return;
+  const card=document.querySelector('.bd-card[data-cid="'+cid+'"]');
+  if(card){ const t=card.querySelector('.ct-foto-t'); if(t) t.textContent='⏳ Procesando…'; }
+  try{
+    _ctEvid[cid]=await _fotoComprimida(f,1000,0.55);
+    if(card){ card.querySelector('.ct-foto-t').textContent='✓ Foto lista (sin guardar)'; card.querySelector('.ct-foto-badge').innerHTML='<span style="color:var(--acc);font-size:.76rem">● foto pendiente de guardar</span>'; }
+  }catch(e){ if(card){ const t=card.querySelector('.ct-foto-t'); if(t) t.textContent='Subir evidencia'; } alert('No se pudo procesar la foto (memoria del teléfono). Cierra apps abiertas e inténtalo de nuevo.'); }
+  try{ input.value=''; }catch(e){}
 }
 async function ctGuardar(cid,btn){
   const card=document.querySelector('.bd-card[data-cid="'+cid+'"]'); if(!card)return;
