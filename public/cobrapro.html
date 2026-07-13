@@ -358,13 +358,6 @@
       </div>
       <div id="ct-adm-suc" style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0"></div>
       <div style="margin:4px 0 10px"><select id="ct-adm-fsuc" onchange="ctAdmFiltrar()" style="min-width:220px;background:var(--surf-2);border:1px solid var(--line);color:var(--ink);font-family:'Sora';padding:8px 10px;border-radius:8px"><option value="">Todas las sucursales</option></select></div>
-      <div id="ct-voz-box" style="display:none;align-items:center;gap:12px;flex-wrap:wrap;margin:4px 0 12px;padding:10px 12px;background:var(--surf-2);border:1px solid var(--line);border-radius:10px">
-        <div style="font-size:.82rem"><b>📞 Llamadas automáticas (IVR)</b></div>
-        <div id="ct-voz-cred" style="font-size:.8rem;color:var(--faint)">Créditos: —</div>
-        <label style="font-size:.78rem;display:flex;align-items:center;gap:5px"><input type="checkbox" id="ct-voz-solo" checked> solo no llamados</label>
-        <button class="btn gold" id="ct-voz-btn" style="padding:6px 14px;font-size:.8rem" onclick="ctVozLanzar()">📞 Llamar no-pagos</button>
-        <span id="ct-voz-msg" style="font-size:.78rem;color:var(--faint)"></span>
-      </div>
       <div style="overflow-x:auto">
         <table id="ct-adm-tbl">
           <thead><tr>
@@ -2396,17 +2389,49 @@ function abrirEntrega(saleId,cliente,monto){
     <button class="btn gold" style="width:100%;margin-top:4px" id="ent-ok" onclick="confirmarEntrega(this)">Confirmar entrega</button>
     <button class="btn" style="width:100%;margin-top:8px" onclick="this.closest('.entov').remove()">Cancelar</button>`);
 }
-function leerFoto(input,cual){
+async function leerFoto(input,cual){
   const f=input.files&&input.files[0]; if(!f) return;
-  const rd=new FileReader();
-  rd.onload=()=>{ const img=new Image(); img.onload=()=>{
-    const max=900; let w=img.width,h=img.height; if(w>max||h>max){ if(w>h){h=Math.round(h*max/w);w=max;}else{w=Math.round(w*max/h);h=max;} }
-    const cv=document.createElement('canvas'); cv.width=w; cv.height=h; cv.getContext('2d').drawImage(img,0,0,w,h);
-    const data=cv.toDataURL('image/jpeg',0.55);
+  const MAX=900, Q=0.55;
+  const tEl = cual==='casa'? $('fb-casa-t') : $('fb-cli-t');
+  const labelBase = cual==='casa'? 'Foto de la casa' : 'Foto del cliente';
+  if(tEl) tEl.textContent='⏳ Procesando…';
+  const marcar=(data)=>{
     if(cual==='casa'){ _ent.fotoCasa=data; $('fb-casa').style.borderColor='var(--grn)'; $('fb-casa-t').textContent='✓ Foto de la casa lista'; }
     else { _ent.fotoCliente=data; $('fb-cli').style.borderColor='var(--grn)'; $('fb-cli-t').textContent='✓ Foto del cliente lista'; }
-  }; img.src=rd.result; };
-  rd.readAsDataURL(f);
+    try{ input.value=''; }catch(e){}
+  };
+  const fallar=(msg)=>{ if(tEl) tEl.textContent=labelBase; try{ input.value=''; }catch(e){} alert(msg||'No se pudo procesar la foto. Cierra apps abiertas en el teléfono e inténtalo de nuevo.'); };
+  const dims=(w,h)=>{ if(w>MAX||h>MAX){ if(w>h){h=Math.round(h*MAX/w);w=MAX;}else{w=Math.round(w*MAX/h);h=MAX;} } return [w,h]; };
+  try{
+    // Vía preferida: createImageBitmap (decodificación nativa, sin string base64; se libera de inmediato)
+    if(window.createImageBitmap){
+      let bmp;
+      try{ bmp=await createImageBitmap(f); }
+      catch(e){ return fallar('El teléfono no pudo abrir esta foto (memoria). Cierra apps abiertas e intenta con otra foto.'); }
+      const [w,h]=dims(bmp.width,bmp.height);
+      const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+      cv.getContext('2d').drawImage(bmp,0,0,w,h);
+      if(bmp.close) bmp.close();               // libera el bitmap full-res YA
+      const data=cv.toDataURL('image/jpeg',Q);
+      cv.width=cv.height=0;                     // libera el canvas
+      return marcar(data);
+    }
+    // Fallback: objectURL (NO base64) + Image + canvas
+    const url=URL.createObjectURL(f);
+    const img=new Image();
+    img.onload=()=>{
+      try{
+        const [w,h]=dims(img.width,img.height);
+        const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+        cv.getContext('2d').drawImage(img,0,0,w,h);
+        const data=cv.toDataURL('image/jpeg',Q);
+        URL.revokeObjectURL(url); img.src=''; cv.width=cv.height=0;
+        marcar(data);
+      }catch(e){ URL.revokeObjectURL(url); fallar(); }
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(url); fallar('No se pudo leer la foto. Intenta de nuevo.'); };
+    img.src=url;
+  }catch(e){ fallar(); }
 }
 function capturarGeo(){
   const t=$('geo-txt'); if(!navigator.geolocation){ t.textContent='Este dispositivo no tiene GPS'; return; }
@@ -2949,37 +2974,6 @@ async function pintaContactosAdmin(d){
     const r=await apiU('GET','/api/contactos?semana='+encodeURIComponent(_ctAdmSem));
     _ctAdm=r; pintaContactosAdminTabla(r.rows||[]);
   }catch(e){ document.getElementById('ct-adm-rows').innerHTML='<tr><td colspan="8" style="color:var(--red);padding:12px">'+e.message+'</td></tr>'; }
-  ctVozRefrescar();
-}
-/* ===== Voz (IVR) desde Contactos: lanzar lote de llamadas a los no-pagos ===== */
-async function ctVozRefrescar(){
-  const box=document.getElementById('ct-voz-box'); if(!box) return;
-  if(!(ME && (ME.rol==='admin'||ME.rol==='supervisor'))){ box.style.display='none'; return; }
-  box.style.display='flex';
-  const info=document.getElementById('ct-voz-cred'); const btn=document.getElementById('ct-voz-btn');
-  try{
-    const d=await apiU('GET','/api/voz/candidatos');
-    const cred=d.creditosVoz||0, tot=d.total||0, ya=(d.candidatos||[]).filter(c=>c.yaLlamado).length;
-    if(info) info.innerHTML='Créditos: <b style="color:'+(cred>0?'var(--grn)':'var(--red)')+'">'+cred+'</b> · No-pagos con teléfono: <b>'+tot+'</b>'+(ya?(' · ya llamados: '+ya):'');
-    if(btn){ btn.disabled=(cred<=0||tot<=0); btn.title=cred<=0?'Sin créditos de voz — pide recarga al Super Admin':''; }
-  }catch(e){ if(info) info.textContent='Créditos: (no disponible)'; }
-}
-async function ctVozLanzar(){
-  const btn=document.getElementById('ct-voz-btn'), msg=document.getElementById('ct-voz-msg');
-  const solo=document.getElementById('ct-voz-solo'), fsuc=document.getElementById('ct-adm-fsuc');
-  const body={ soloNoLlamados: !!(solo&&solo.checked) };
-  if(fsuc&&fsuc.value) body.sucursalId=Number(fsuc.value);
-  if(!confirm('Se lanzarán llamadas automáticas (IVR) a los no-pagos'+(body.sucursalId?' de la sucursal filtrada':'')+'. Cada llamada contestada consume 1 crédito de voz. ¿Continuar?')) return;
-  if(btn){ btn.disabled=true; btn.textContent='⏳ Lanzando…'; }
-  if(msg) msg.textContent='';
-  try{
-    const r=await apiU('POST','/api/voz/lanzar',body);
-    if(msg){ msg.style.color='var(--grn)'; msg.textContent='✅ '+(r.enviados||0)+' llamadas en cola · créditos: '+(r.creditosVoz!=null?r.creditosVoz:'—')+'. Los resultados aparecerán en la tabla conforme terminen.'; }
-  }catch(e){
-    if(msg){ msg.style.color='var(--red)'; msg.textContent=/sin_creditos|cr[eé]dito/i.test(e.message||'')?'❌ Sin créditos de voz. Pide recarga al Super Admin.':('❌ '+(e.message||'error')); }
-  }
-  if(btn){ btn.textContent='📞 Llamar no-pagos'; }
-  ctVozRefrescar();
 }
 let _ctAdmAllRows=[];
 function _ctAdmFillFiltro(rows){
