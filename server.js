@@ -1715,10 +1715,19 @@ app.post('/api/caja/entrega', auth, (req, res) => {
 });
 
 /* ---------- Cobrador en ruta ---------- */
+/* Saldo de cada crédito AL INICIAR la semana (mapa saleId → saldo).
+   Es la "base congelada": con ella, el débito/objetivo y el conteo de clientes no se mueven a
+   media semana (una venta nueva no suma y un liquidado no se resta; entran hasta la próxima). */
+function _mapSaldoInicioSemana(wkStart){
+  const m = {};
+  db.movimientos.forEach(x=>{ if(_parseFechaMx(x.fecha) < wkStart) m[x.saleId] = (m[x.saleId]||0) + (x.cargo||0) - (x.abono||0); });
+  return m;
+}
 app.get('/api/mi-ruta', auth, (req, res) => {
   const ventas = db.sales.filter(s => s.prom === req.user.nombre && s.entregado !== false);
   const hoy = fechaMxHoyDDMM();
   const wkStart = _inicioCiclo(new Date(fechaMxHoyISO()+'T00:00:00').getTime(), _diaSemanaInicio());   // inicio del ciclo actual (hora de México, no UTC)
+  const _sIniRuta = _mapSaldoInicioSemana(wkStart);   // base congelada de la semana
   res.json(ventas.map(s => {
     const c = db.clients.find(x => x.id === s.clientId) || {};
     if (c.activo === false) return null;
@@ -1735,6 +1744,8 @@ app.get('/api/mi-ruta', auth, (req, res) => {
     // Cobrado en TODO el ciclo (cualquier día de la semana): para sacarlo de "Por cobrar".
     const cobradoSemana = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0 && m.forma !== 'descuento' && m.forma !== 'recomendacion' && m.forma !== 'refin' && _parseFechaMx(m.fecha) >= wkStart).reduce((a,m)=>a+m.abono,0);
     return { id: s.id, folio: s.folio, nombre: c.nombre || '—', dir: [c.calle, c.col].filter(Boolean).join(', '), tel: c.tel || '', tipo: s.tipo, cuota: s.cuota, saldo: saldoDe(s.id),
+      // enBase: el crédito ya existía con saldo al ARRANCAR la semana. Los vendidos a media semana entran hasta la próxima.
+      enBase: ((_sIniRuta[s.id]||0) > 0.5) || (s.importado===true && saldoDe(s.id) > 0.5),
       cobradoHoy, formaHoy, pagoExterno, externoForma, cobradoSemana,
       atraso: at.montoAtraso, diasAtraso: at.diasAtraso, cuotasAtraso: at.cuotasAtraso, cuotasDebidas: at.cuotasDebidas, cuotasPagadas: at.cuotasPagadas, tieneEvidencia: !!s.entrega, op: oportunidadDe(s) };
   }).filter(Boolean));
@@ -1773,8 +1784,10 @@ app.get('/api/mi-acumulado', auth, rol('cobrador'), (req, res) => {
       const t = s.tipo;
       return t === 'diario' ? q * 6 : (t === 'catorcenal' || t === 'quincenal') ? q / 2 : t === 'mensual' ? q / 4 : t === 'unico' ? 0 : q;
     };
+    // Objetivo = base CONGELADA de la semana (no se mueve por ventas nuevas ni liquidaciones a media semana)
+    const _sIniObj = _mapSaldoInicioSemana(desdeMs);
     objetivoSemanal = db.sales
-      .filter(s => s.prom === req.user.nombre && activos.has(s.clientId) && saldoDe(s.id) > 0)
+      .filter(s => s.prom === req.user.nombre && activos.has(s.clientId) && (((_sIniObj[s.id]||0) > 0.5) || (s.importado===true && saldoDe(s.id) > 0.5)))
       .reduce((a, s) => a + eqSemanal(s), 0);
   }
   res.json({ semanaPrevia: Math.round(movs.reduce((a, m) => a + m.abono, 0)), objetivoSemanal: Math.round(objetivoSemanal) });
