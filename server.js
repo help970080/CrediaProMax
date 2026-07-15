@@ -1840,6 +1840,22 @@ app.get('/api/dashboard', auth, (req,res)=>{
   const _saleIds=new Set(sales.map(s=>s.id));
   const abonos=db.movimientos.filter(m=>m.abono>0 && _parseFechaMx(m.fecha)>=desde && _parseFechaMx(m.fecha)<=hasta && _saleIds.has(m.saleId));
   const nuevos=sales.filter(s=>!s.importado && s.createdAt && new Date(s.createdAt).getTime()>=desde && new Date(s.createdAt).getTime()<=hasta);
+  /* BASE CONGELADA DE LA SEMANA (así opera el negocio):
+     El débito y los clientes se fijan al ARRANCAR la semana y no se mueven hasta la siguiente.
+     - Una venta hecha a media semana NO suma (a ese cliente no se le puede cobrar hasta la próxima).
+     - Un cliente que liquida a media semana NO se resta (sí era parte de la meta y la cumplió).
+     Se reconstruye desde los movimientos: saldo que traía el crédito antes del inicio de semana.
+     Se ancla SIEMPRE al inicio de semana, aunque el filtro esté en Hoy o Mes (la operación es semanal). */
+  const _iniSem=_desdePeriodo('semana', refIso);
+  const _sIni={};    // saldo antes del inicio de SEMANA  → base congelada
+  const _sDesde={};  // saldo antes del inicio del PERIODO → altas/bajas del periodo
+  db.movimientos.forEach(m=>{
+    const t=_parseFechaMx(m.fecha), d=(m.cargo||0)-(m.abono||0);
+    if(t<_iniSem) _sIni[m.saleId]=(_sIni[m.saleId]||0)+d;
+    if(t<desde)  _sDesde[m.saleId]=(_sDesde[m.saleId]||0)+d;
+  });
+  // ¿el crédito formaba parte de la base con la que arrancó la semana?
+  const _enBaseSemana = s => ((_sIni[s.id]||0) > 0.5) || (s.importado===true && saldoDe(s.id) > 0.5);
   // atraso acumulado por sale
   function atrasoDe(s){
     const totAb=db.movimientos.filter(m=>m.saleId===s.id && m.abono>0).reduce((a,m)=>a+m.abono,0);
@@ -1854,9 +1870,9 @@ app.get('/api/dashboard', auth, (req,res)=>{
     const caja=db.caja[String(suc.id)]||{inicial:0,efectivo:0,banco:0,entregas:0};
     const enc=db.users.find(u=>u.rol==='sucursal' && u.sucursalId===suc.id);
     let atraso_monto=0, atraso_clientes=0, esperado_acum=0;
-    // Cartera, créditos y clientes VIGENTES (un liquidado ya no forma parte de la cartera)
+    // Cartera = dinero real (vivo). Créditos y clientes = BASE CONGELADA de la semana.
     let _carteraSuc=0, _creditosVig=0; const _cliVigSuc=new Set();
-    ventas_suc.forEach(s=>{ const sd=saldoDe(s.id); _carteraSuc+=sd; if(sd>0){ _creditosVig++; _cliVigSuc.add(s.clientId); } });
+    ventas_suc.forEach(s=>{ const sd=saldoDe(s.id); _carteraSuc+=sd; if(_enBaseSemana(s)){ _creditosVig++; _cliVigSuc.add(s.clientId); } });
     ventas_suc.forEach(s=>{ if(saldoDe(s.id)<=0)return; const at=atrasoDe(s); esperado_acum+=at.cuotasDebidas*s.cuota; if(at.montoAtraso>0){ atraso_monto+=at.montoAtraso; atraso_clientes++; } });
     // Clientes sin pago en el periodo (riesgo): vigente, no único, no nuevo del periodo, sin abono en el periodo
     const pagaronSuc=new Set(abonos_suc.map(m=>{const s=sales.find(x=>x.id===m.saleId); return s?s.clientId:null;}).filter(v=>v!=null));
@@ -1887,18 +1903,15 @@ app.get('/api/dashboard', auth, (req,res)=>{
     sus_sales.forEach(s=>{ if(saldoDe(s.id)<=0||s.tipo==='unico')return; const ct=s.createdAt?new Date(s.createdAt).getTime():0; if(!s.importado && ct>=desde)return; if(!pagaronCob.has(s.clientId)) nopagoCob.add(s.clientId); });
     // Ranking + objetivos al 100%: unidades nuevas del periodo, débito esperado, clientes vigentes y clientes cobrados
     const unidades = nuevos.filter(s=>s.prom===c.nombre).length;
-    const vigentes = sus_sales.filter(s=>saldoDe(s.id)>0);
-    const debito = vigentes.reduce((a,s)=>a+(s.cuota||0),0);
-    const clientes_vigentes = new Set(vigentes.map(s=>s.clientId)).size;
+    // Débito y clientes = BASE CON LA QUE ARRANCÓ LA SEMANA (no se mueve a media semana)
+    const baseSem = sus_sales.filter(_enBaseSemana);
+    const debito = baseSem.reduce((a,s)=>a+(s.cuota||0),0);
+    const clientes_vigentes = new Set(baseSem.map(s=>s.clientId)).size;
     const clientes_cobrados = pagaronCob.size;
     const pct_cob = debito>0 ? Math.round(comisionable/debito*100) : 0;
     // Crecimiento de clientes en el periodo: altas (créditos nuevos) − bajas (liquidados en el periodo)
     let bajas=0;
-    sus_sales.forEach(s=>{
-      const ms=db.movimientos.filter(m=>m.saleId===s.id);
-      const saldoIni=ms.filter(m=>_parseFechaMx(m.fecha)<desde).reduce((a,m)=>a+(m.cargo||0)-(m.abono||0),0);
-      if(saldoIni>0.5 && saldoDe(s.id)<=0.5) bajas++;
-    });
+    sus_sales.forEach(s=>{ if((_sDesde[s.id]||0)>0.5 && saldoDe(s.id)<=0.5) bajas++; });
     const crecimiento = unidades - bajas;
     return {id:c.id, nombre:c.nombre, sucursal:suc?suc.nombre:'—', sucursalId:c.sucursalId,
       clientes:clientes_vigentes, cartera, pagos_recibidos:recuperado, comisionable, npagos:sus_abonos.length, nopago:nopagoCob.size, por_entregar,
@@ -1992,12 +2005,20 @@ app.get('/api/reports/numeros-diarios', auth, rol('admin','supervisor'), (req,re
   const abonos = db.movimientos.filter(m=>m.abono>0 && m.forma!=='descuento' && m.forma!=='recomendacion');
   const abonosAll = db.movimientos.filter(m=>m.abono>0 && m.forma!=='recomendacion');  // incluye primer pago (descuento) para cubrir no-pago; excluye recomendación (no es pago del cliente)
   const saleSuc = {}; sales.forEach(s=>{ saleSuc[s.id]={suc:s.sucursalId, cli:s.clientId}; });
+  /* BASE CONGELADA DE LA SEMANA: clientes y débito se fijan al arrancar la semana (wkStart).
+     Una venta de media semana no suma y un liquidado de media semana no se resta: entran hasta la próxima. */
+  const _sIniND = {}, _sIniDia = {};
+  db.movimientos.forEach(m=>{ const t=_parseFechaMx(m.fecha), d=(m.cargo||0)-(m.abono||0);
+    if(t < wkStart) _sIniND[m.saleId]=(_sIniND[m.saleId]||0)+d;
+    if(t < dStart)  _sIniDia[m.saleId]=(_sIniDia[m.saleId]||0)+d;   // saldo al iniciar el día consultado
+  });
+  const _enBaseND = s => ((_sIniND[s.id]||0) > 0.5) || (s.importado===true && saldoDe(s.id) > 0.5);
   // Avance de contactos: semana objetivo (la última cerrada por admin, o la anterior por tiempo)
   const prevIso = _semanaContactos();
   const contactosPrev = _listaContactos(prevIso);
   const _avSuc = sid => { const r=contactosPrev.filter(x=>x.sucursalId===sid); return { total:r.length, gestionados:r.filter(x=>x.gestion&&(x.gestion.resultado||x.gestion.tieneEvidencia)).length, validados:r.filter(x=>x.gestion&&x.gestion.validado).length }; };
   const rows = sucursales.map(suc=>{
-    const activeVs = sales.filter(s=>s.sucursalId===suc.id && saldoDe(s.id)>0);
+    const activeVs = sales.filter(s=>s.sucursalId===suc.id && _enBaseND(s));
     const clientes_totales = new Set(activeVs.map(s=>s.clientId)).size;
     const debito_total = activeVs.reduce((a,s)=>a+(s.cuota||0),0);
     let diaColl=0, acumColl=0; const diaCli=new Set(), acumCli=new Set();
@@ -2010,7 +2031,7 @@ app.get('/api/reports/numeros-diarios', auth, rol('admin','supervisor'), (req,re
     const espDia=new Set(), espSem=new Set();
     activeVs.forEach(s=>{
       const ct = s.createdAt ? new Date(s.createdAt).getTime() : 0;
-      if(_esperaCobroDia(s, dStart, dEnd)) espDia.add(s.clientId);
+      if((_sIniDia[s.id]||0)>0.5 && _esperaCobroDia(s, dStart, dEnd)) espDia.add(s.clientId);
       if(s.tipo!=='unico' && !(ct>=wkStart && ct<wkEnd)) espSem.add(s.clientId); // esperado en la semana (= reporte semanal)
     });
     // un cliente que ya dio su PRIMER PAGO (descuento al alta) no cuenta como "no pago", aunque ese pago no sea cobranza de campo
@@ -2044,9 +2065,16 @@ app.get('/api/reports/numeros-diarios-suc', auth, rol('admin','supervisor','sucu
   const abonos = db.movimientos.filter(m=>m.abono>0 && m.forma!=='descuento' && m.forma!=='recomendacion');
   const abonosAll = db.movimientos.filter(m=>m.abono>0 && m.forma!=='recomendacion');  // incluye primer pago (descuento) para cubrir no-pago; excluye recomendación (no es pago del cliente)
   const saleRef = {}; sales.forEach(s=>{ saleRef[s.id]={prom:s.prom||'—', cli:s.clientId}; });
+  /* BASE CONGELADA DE LA SEMANA: clientes y débito se fijan al arrancar la semana (wkStart). */
+  const _sIniND = {}, _sIniDia = {};
+  db.movimientos.forEach(m=>{ const t=_parseFechaMx(m.fecha), d=(m.cargo||0)-(m.abono||0);
+    if(t < wkStart) _sIniND[m.saleId]=(_sIniND[m.saleId]||0)+d;
+    if(t < dStart)  _sIniDia[m.saleId]=(_sIniDia[m.saleId]||0)+d;   // saldo al iniciar el día consultado
+  });
+  const _enBaseND = s => ((_sIniND[s.id]||0) > 0.5) || (s.importado===true && saldoDe(s.id) > 0.5);
   const proms = [...new Set(sales.map(s=>s.prom||'—'))];
   const rows = proms.map(prom=>{
-    const vs = sales.filter(s=>(s.prom||'—')===prom && saldoDe(s.id)>0);
+    const vs = sales.filter(s=>(s.prom||'—')===prom && _enBaseND(s));
     const clientes_totales = new Set(vs.map(s=>s.clientId)).size;
     const debito_total = vs.reduce((a,s)=>a+(s.cuota||0),0);
     let diaColl=0, acumColl=0; const diaCli=new Set(), acumCli=new Set();
@@ -2057,7 +2085,7 @@ app.get('/api/reports/numeros-diarios-suc', auth, rol('admin','supervisor','sucu
       if(t>=dStart && t<dEnd){ if(!esDesc){ diaColl+=m.abono; diaCli.add(ref.cli); } diaCob.add(ref.cli); } }
     const espDia=new Set(), espSem=new Set();
     vs.forEach(s=>{ const ct=s.createdAt?new Date(s.createdAt).getTime():0;
-      if(_esperaCobroDia(s, dStart, dEnd)) espDia.add(s.clientId);
+      if((_sIniDia[s.id]||0)>0.5 && _esperaCobroDia(s, dStart, dEnd)) espDia.add(s.clientId);
       if(s.tipo!=='unico' && !(ct>=wkStart && ct<wkEnd)) espSem.add(s.clientId); });
     const dia_nopago=[...espDia].filter(id=>!diaCob.has(id)).length;
     const acum_nopago=[...espSem].filter(id=>!semCob.has(id)).length;
