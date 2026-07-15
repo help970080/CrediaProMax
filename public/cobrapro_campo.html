@@ -247,6 +247,9 @@ let online=true, syncTimer=null;
 const META=5200;
 // cartera asignada a Ana Reyes (en producción: GET /api/sales?collector=me&route=today)
 let clientes=[];
+// Base CONGELADA de la semana: los créditos que ya existían al arrancar. Los vendidos a media semana
+// entran hasta la próxima (no se les cobra), por eso no cuentan en visitas ni en la meta.
+function _baseSem(){ return clientes.filter(c=>c.enBase!==false); }
 let estado={}; // id -> {cobrado, status, monto}
 let _filtro='porcobrar';
 let logs=[], queue=0;
@@ -390,14 +393,15 @@ function render(){
   const q=(document.getElementById('q-ruta')?.value||'').toLowerCase();
   const ord=(document.getElementById('ord-ruta')?.value)||'orden';
   let visibles=clientes.filter(c=>!q || (c.nombre||'').toLowerCase().includes(q) || (c.dir||'').toLowerCase().includes(q));
-  if(_filtro==='porcobrar') visibles=visibles.filter(c=> c.saldo>=1 && !(estado[c.id]&&estado[c.id].status==='pagado') && !(c.cobradoSemana>0));
+  // Los vendidos a media semana NO son de la ruta de esta semana (entran la próxima): fuera de "Por cobrar".
+  if(_filtro==='porcobrar') visibles=visibles.filter(c=> c.enBase!==false && c.saldo>=1 && !(estado[c.id]&&estado[c.id].status==='pagado') && !(c.cobradoSemana>0));
   else if(_filtro==='cobrados') visibles=visibles.filter(c=> (estado[c.id]&&estado[c.id].status==='pagado') || c.cobradoSemana>0);
   if(ord==='atraso-d') visibles=visibles.slice().sort((a,b)=>(b.atraso||0)-(a.atraso||0));
   else if(ord==='atraso-a') visibles=visibles.slice().sort((a,b)=>(a.atraso||0)-(b.atraso||0));
   else if(ord==='dir') visibles=visibles.slice().sort((a,b)=>(a.dir||'').localeCompare(b.dir||''));
   else if(ord==='nom') visibles=visibles.slice().sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
   const hint=document.getElementById('route-hint'); if(hint){
-    hint.textContent = visibles.length+' de '+clientes.length+' clientes' + (q?` · filtro "${q}"`:'') + (ord!=='orden'?` · ordenado por ${ord==='atraso-d'?'mayor atraso':ord==='atraso-a'?'menor atraso':ord==='dir'?'dirección':'nombre'}`:'');
+    hint.textContent = visibles.length+' de '+_baseSem().length+' clientes' + (q?` · filtro "${q}"`:'') + (ord!=='orden'?` · ordenado por ${ord==='atraso-d'?'mayor atraso':ord==='atraso-a'?'menor atraso':ord==='dir'?'dirección':'nombre'}`:'');
   }
   list.innerHTML=visibles.map((c,i)=>{
     const e=estado[c.id];
@@ -405,7 +409,7 @@ function render(){
     const visited=e&&e.status;
     const liq = c.saldo < 1;
     const sem = liq ? 'ok' : (c.atraso>0 ? (c.diasAtraso>14?'bad':'w') : 'ok');
-    const semL = liq ? 'Liquidado' : (sem==='bad'?'Vencido':sem==='w'?'Atrasado':'Al corriente');
+    const semL = liq ? 'Liquidado' : (c.enBase===false ? 'Entra la próxima semana' : (sem==='bad'?'Vencido':sem==='w'?'Atrasado':'Al corriente'));
     return `<div class="card">
       <div class="ctop">
         <div class="cnum">${i+1}</div>
@@ -441,7 +445,7 @@ function render(){
   const obj=_objetivo>0?_objetivo:META;
   const pct= obj>0? Math.round(semana/obj*100):0;
   document.getElementById('s-cob').textContent=fmt(semana);
-  document.getElementById('s-vis').textContent=vis+'/'+clientes.length;
+  document.getElementById('s-vis').textContent=vis+'/'+_baseSem().length;   // base con la que arrancó la semana
   document.getElementById('s-rec').textContent=pct+'%';
   document.getElementById('meta-txt').textContent=fmt(semana)+' / '+fmt(obj)+' · '+pct+'%';
   document.getElementById('meta-fill').style.width=Math.min(100,obj>0?semana/obj*100:0)+'%';
