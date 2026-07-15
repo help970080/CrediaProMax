@@ -1083,9 +1083,10 @@ function setPeriodoSuc(p){
   document.querySelectorAll('.perb').forEach(b=>{const on=b.dataset.p===p;b.style.background=on?'var(--acc)':'var(--surf-2)';b.style.color=on?'#1b2330':'var(--txt)';});
   cargarResumen();
 }
+function hoyMX(){ return new Date().toLocaleDateString('en-CA',{timeZone:'America/Mexico_City'}); }
 async function cargarNumDiariosSuc(){
   const diaEl=document.getElementById('nd-dia');
-  if(diaEl && !diaEl.value){ diaEl.value=new Date().toISOString().slice(0,10); }
+  if(diaEl && !diaEl.value){ diaEl.value=hoyMX(); }   // hora de México (antes UTC: adelantaba el día tras las 6pm)
   const dia=diaEl?diaEl.value:'';
   const info=document.getElementById('nd-info'); const tbl=document.getElementById('nd-tbl');
   try{
@@ -1180,7 +1181,7 @@ async function cargarCierreSuc(){
   try{
     const d=await api('GET','/api/cierre-semana'); _cierreSuc=d;
     const mi=(d.sucursales||[])[0]||null;
-    try{ const s=new Date(d.semana+'T00:00:00'); document.getElementById('suc-cierre-sem').textContent='Semana del '+_sucFechaCorta(d.semana)+' al '+_sucFechaCorta(new Date(s.getTime()+6*86400000).toISOString().slice(0,10)); }catch(e){}
+    try{ const s=new Date(d.semana+'T00:00:00'); document.getElementById('suc-cierre-sem').textContent='Semana del '+_sucFechaCorta(d.semana)+' al '+_sucFechaCorta(new Date(s.getTime()+6*86400000).toLocaleDateString('en-CA')); }catch(e){}
     const est=document.getElementById('suc-cierre-estado'), btn=document.getElementById('suc-cierre-btn'), cobsEl=document.getElementById('suc-cierre-cobs');
     if(!mi){ est.textContent='Sin cobradores en tu sucursal.'; cobsEl.innerHTML=''; return; }
     const faltan=mi.totalCob-mi.cobCerrados;
