@@ -448,7 +448,7 @@
         <button class="btn gold" onclick="abrirImprimirCartera()">🖨 Imprimir cartera</button>
         <button class="btn" onclick="exportCSV('prom')">⬇ CSV</button>
       </div></div>
-      <div style="overflow-x:auto"><table><thead><tr><th>Cobrador</th><th class="n">Clientes</th><th class="n">Cartera asignada</th><th class="n">Vencida</th><th class="n">Cobrado</th><th class="n">Por entregar</th><th>Recup.</th><th class="n">Comisión</th></tr></thead><tbody id="tb-prom"></tbody></table></div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Cobrador</th><th class="n">Clientes</th><th class="n">Cartera asignada</th><th class="n">Vencida</th><th class="n">Débito</th><th class="n">Cobrado</th><th class="n">Por entregar</th><th>Recup.</th><th class="n">Comisión</th></tr></thead><tbody id="tb-prom"></tbody></table></div>
       <div class="note">Los cobradores solo cobran; no colocan crédito. Su comisión depende de cuánto recuperan y de mantener baja la mora — no de colocar más.</div>
     </div>
   </section>
@@ -1126,9 +1126,10 @@ function pintaCobradores(d){
     return `<tr><td><div class="who"><div class="ava" style="background:${color}">${ini}</div><div><div class="nm">${p.nombre}</div><div class="sn">${p.sucursal}</div></div></div></td>
       <td class="n">${p.clientes}</td><td class="n">${fmt(p.cartera)}</td>
       <td class="n" style="color:${p.atraso_monto>0?'var(--red)':'var(--faint)'}">${p.atraso_monto>0?fmt(p.atraso_monto)+'<div style="font-size:.65rem">'+p.atraso_clientes+' clientes</div>':'—'}</td>
+      <td class="n" style="color:var(--acc)">${fmt(p.debito||0)}</td>
       <td class="n">${fmt(cob)}</td><td class="n">${fmt(p.por_entregar)}</td>
       <td><span class="pill ${meta>=85?'ok':meta>=70?'w':'bad'}">${meta.toFixed(0)}%</span></td><td class="n cm">${fmt(com)}</td></tr>`;
-  }).join('') : '<tr><td colspan="8" style="color:var(--faint);padding:18px;text-align:center">No hay cobradores dados de alta todavía. Crea uno en Usuarios.</td></tr>';
+  }).join('') : '<tr><td colspan="9" style="color:var(--faint);padding:18px;text-align:center">No hay cobradores dados de alta todavía. Crea uno en Usuarios.</td></tr>';
 }
 
 function pintaComisiones(d){
