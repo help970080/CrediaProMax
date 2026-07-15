@@ -1694,7 +1694,7 @@ async function rpVerAtraso(){
 
 function rpExportCSV(){
   if(!_rpActual||!_rpData){ alert('Abre un reporte primero.'); return; }
-  const d=_rpData, fn='reporte_'+_rpActual+'_'+new Date().toISOString().slice(0,10);
+  const d=_rpData, fn='reporte_'+_rpActual+'_'+hoyMX();
   let sheets=null;
   if(_rpActual==='desglose'){
     const head=['Concepto'].concat((d.semanas||[]).map(w=>w.label+(w.rango?(' ('+w.rango+')'):(w.fecha?(' ('+w.fecha+')'):''))));
@@ -1766,7 +1766,7 @@ async function recolectarTodo(){
 async function rpCargarHistRecoleccion(){
   try{
     const log=await apiU('GET','/api/recolecciones');
-    const hoy=new Date().toISOString().slice(0,10);
+    const hoy=hoyMX();   // hora de México (antes UTC: tras las 6pm ocultaba las recolecciones del día)
     const hoyLog=log.filter(r=>r.fecha.slice(0,10)===hoy);
     const totalHoy=hoyLog.reduce((a,r)=>a+r.monto,0);
     const el=document.getElementById('rec-hist'); if(!el) return;
@@ -1948,7 +1948,7 @@ async function ecPagoRetro(){
   let cobs=[];
   try{ cobs=await apiU('GET','/api/cobradores'); }catch(e){ alert('No pude cargar los cobradores: '+e.message); return; }
   if(!cobs.length){ alert('No hay cobradores activos.'); return; }
-  const hoyIso=new Date(Date.now()-6*3600*1000).toISOString().slice(0,10);
+  const hoyIso=hoyMX();
   const opciones=cobs.map(c=>`<option value="${c.nombre.replace(/"/g,'&quot;')}">${c.nombre}${c.sucursal?(' · '+c.sucursal):''}</option>`).join('');
   const inp='width:100%;padding:10px;margin:4px 0 12px;background:var(--surf-2);border:1px solid var(--line);border-radius:8px;color:var(--ink);font-family:inherit;box-sizing:border-box';
   const ov=_flModal(`<h3 style="margin:0 0 4px">📅 Registrar pago de semana pasada</h3>
@@ -2187,7 +2187,7 @@ async function cargarCortes(){
     { const mb=$('cfg-membrete'); if(mb) mb.checked=!(cfg.brand && cfg.brand.mostrarMembrete===false); }
     const dias=cfg.corteAutoDias||[1,2,3,4,5,6];
     $('cfg-dias').innerHTML=[1,2,3,4,5,6,0].map(d=>`<label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" class="cfg-d" value="${d}" ${dias.includes(d)?'checked':''} style="width:auto"> ${_diasLbl[d]}</label>`).join('');
-    const fecha=new Date().toISOString().slice(0,10);
+    const fecha=hoyMX();   // hora de México (antes UTC: tras las 6pm pedía los cortes de mañana)
     const cortes=await apiU('GET','/api/cortes?fecha='+fecha);
     $('cortes-list').innerHTML= cortes.length? cortes.map(c=>`<div class="recon">
       <div class="lf"><div class="ava" style="background:var(--surf-3)">${c.tipo==='sucursal'?'🏪':(c.prom||'·').split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase()}</div>
@@ -2862,7 +2862,7 @@ async function ndFotoCartera(){
   }catch(e){ box.innerHTML='<div style="color:var(--red);padding:10px">'+e.message+'</div>'; }
 }
 async function cargarNumDiarios(){
-  const di=document.getElementById('nd-dia'); if(di && !di.value){ di.value=new Date().toISOString().slice(0,10); }
+  const di=document.getElementById('nd-dia'); if(di && !di.value){ di.value=hoyMX(); }   // hora de México (antes usaba UTC y adelantaba el día tras las 6pm)
   const dia=di?di.value:'';
   // primer carga: lee el día de inicio configurado y posiciona el selector
   if(_ndInicio===null){ try{ const cf=await apiU('GET','/api/config/semana'); _ndInicio=cf.semanaInicio; }catch(e){ _ndInicio=4; }
@@ -2931,7 +2931,7 @@ async function cargarCierreAdmin(){
   try{
     const d=await apiU('GET','/api/cierre-semana'); _csAdm=d;
     const r=d.resumen||{totSuc:0,sucCerradas:0,totCob:0,cobCerrados:0};
-    try{ const s=new Date(d.semana+'T00:00:00'); document.getElementById('cs-adm-sem').textContent='Semana en curso: '+_ndFechaCorta(d.semana)+' al '+_ndFechaCorta(new Date(s.getTime()+6*86400000).toISOString().slice(0,10)); }catch(e){}
+    try{ const s=new Date(d.semana+'T00:00:00'); document.getElementById('cs-adm-sem').textContent='Semana en curso: '+_ndFechaCorta(d.semana)+' al '+_ndFechaCorta(new Date(s.getTime()+6*86400000).toLocaleDateString('en-CA')); }catch(e){}
     const pctS=r.totSuc?Math.round(r.sucCerradas/r.totSuc*100):0, pctC=r.totCob?Math.round(r.cobCerrados/r.totCob*100):0;
     document.getElementById('cs-adm-resumen').innerHTML=_ctChip('Sucursales',r.sucCerradas+'/'+r.totSuc,_ctPctCol(pctS))+_ctChip('Cobradores',r.cobCerrados+'/'+r.totCob,_ctPctCol(pctC));
     const est=document.getElementById('cs-adm-estado'), btn=document.getElementById('cs-adm-btn');
@@ -3141,7 +3141,7 @@ function exportCSV(t){
     if(!_rpPagosFull.length){ alert('No hay pagos para exportar. Abre Reportes y deja que cargue primero.'); return; }
     const aoa=[['Fecha','Cliente','Folio','Cobrado por','Sucursal','Forma de pago','Monto']];
     _rpPagosFull.forEach(p=>aoa.push([p.fecha||'', p.cliente||'', p.folio||'', p.prom||'', p.sucursalCobro||p.sucursal||'', (formaLbl[p.forma]||p.forma||''), p.monto||0]));
-    xlsxDL('movimientos_'+new Date().toISOString().slice(0,10), [{name:'movimientos',aoa}]);
+    xlsxDL('movimientos_'+hoyMX(), [{name:'movimientos',aoa}]);
     return;
   }
   const map={cartera:['tb-cart','cartera'],prom:['tb-prom','cobradores'],suc:['tb-suc','sucursales'],com:['tb-com','nomina']};
@@ -3149,7 +3149,7 @@ function exportCSV(t){
   const tb=document.getElementById(m[0]); const table=tb?tb.closest('table'):null;
   const aoa=tablaAoa(table);
   if(aoa.length<2){ alert('No hay datos para exportar. Abre esta vista y deja que cargue primero.'); return; }
-  xlsxDL(m[1]+'_'+new Date().toISOString().slice(0,10), [{name:m[1],aoa}]);
+  xlsxDL(m[1]+'_'+hoyMX(), [{name:m[1],aoa}]);
 }
 
 setInterval(()=>document.getElementById('clock').textContent=new Date().toLocaleString('es-MX',{weekday:'short',hour:'2-digit',minute:'2-digit'}),1000);
