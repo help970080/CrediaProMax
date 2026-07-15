@@ -1854,6 +1854,9 @@ app.get('/api/dashboard', auth, (req,res)=>{
     const caja=db.caja[String(suc.id)]||{inicial:0,efectivo:0,banco:0,entregas:0};
     const enc=db.users.find(u=>u.rol==='sucursal' && u.sucursalId===suc.id);
     let atraso_monto=0, atraso_clientes=0, esperado_acum=0;
+    // Cartera, créditos y clientes VIGENTES (un liquidado ya no forma parte de la cartera)
+    let _carteraSuc=0, _creditosVig=0; const _cliVigSuc=new Set();
+    ventas_suc.forEach(s=>{ const sd=saldoDe(s.id); _carteraSuc+=sd; if(sd>0){ _creditosVig++; _cliVigSuc.add(s.clientId); } });
     ventas_suc.forEach(s=>{ if(saldoDe(s.id)<=0)return; const at=atrasoDe(s); esperado_acum+=at.cuotasDebidas*s.cuota; if(at.montoAtraso>0){ atraso_monto+=at.montoAtraso; atraso_clientes++; } });
     // Clientes sin pago en el periodo (riesgo): vigente, no único, no nuevo del periodo, sin abono en el periodo
     const pagaronSuc=new Set(abonos_suc.map(m=>{const s=sales.find(x=>x.id===m.saleId); return s?s.clientId:null;}).filter(v=>v!=null));
@@ -1864,7 +1867,7 @@ app.get('/api/dashboard', auth, (req,res)=>{
       creditos_captados:nuevos_suc.length, colocado:nuevos_suc.reduce((a,s)=>a+s.monto,0),
       efectivo_caja:(caja.inicial||0)+(caja.efectivo||0)+(caja.entregas||0)-(caja.retiros||0), banco:caja.banco||0,
       por_entregar:db.porEntregar.filter(p=>p.sucursalId===suc.id).reduce((a,p)=>a+p.monto,0),
-      cartera:ventas_suc.reduce((a,s)=>a+saldoDe(s.id),0), creditos:ventas_suc.length,
+      cartera:_carteraSuc, creditos:_creditosVig, clientes_vigentes:_cliVigSuc.size,
       atraso_monto, atraso_clientes, esperado_acum };
   });
   const cobradores=db.users.filter(u=>u.rol==='cobrador'&&u.activo && (miSuc==null || Number(u.sucursalId)===miSuc));
@@ -1898,7 +1901,7 @@ app.get('/api/dashboard', auth, (req,res)=>{
     });
     const crecimiento = unidades - bajas;
     return {id:c.id, nombre:c.nombre, sucursal:suc?suc.nombre:'—', sucursalId:c.sucursalId,
-      clientes:sus_sales.length, cartera, pagos_recibidos:recuperado, comisionable, npagos:sus_abonos.length, nopago:nopagoCob.size, por_entregar,
+      clientes:clientes_vigentes, cartera, pagos_recibidos:recuperado, comisionable, npagos:sus_abonos.length, nopago:nopagoCob.size, por_entregar,
       unidades, debito, clientes_vigentes, clientes_cobrados, pct_cob, bajas, crecimiento,
       atraso_monto, atraso_clientes, esperado_acum };
   });
