@@ -219,6 +219,11 @@
       <section class="view on" id="nuevo">
         <div class="ph-sub" style="margin-top:-6px">El crédito que el cliente firma en sucursal. Se asigna a un cobrador y entra a su ruta de inmediato.</div>
         <div class="sect-lbl">Datos del cliente</div>
+        <div style="margin:-2px 0 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <button type="button" onclick="document.getElementById('ine-file').click()" style="background:var(--surf-2);border:1px dashed var(--line);color:var(--dim);font-family:inherit;font-size:.78rem;padding:7px 12px;border-radius:8px;cursor:pointer">📷 Leer del INE (opcional)</button>
+          <input type="file" id="ine-file" accept="image/*" capture="environment" style="display:none" onchange="ineLeer(this)">
+          <span id="ine-msg" style="font-size:.76rem;color:var(--dim)"></span>
+        </div>
         <div class="field"><label>Nombre completo <span class="req">*</span></label><input id="n-cli" placeholder="Nombre del acreditado"></div>
         <div class="field"><label>CURP (del INE) <span class="req">*</span></label><input id="n-curp" placeholder="18 caracteres" maxlength="18" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></div>
         <div class="frow">
@@ -430,6 +435,38 @@ const fmt=n=>'$'+Math.round(n).toLocaleString('es-MX');
 const _colors=['#f0b429','#5aa0e8','#3ecf8e','#b07ce0','#f0654d','#d6a35a'];
 let sel=null, formaPay='efectivo', payCtx=null;
 function uuid(){return 'cp-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);}
+// Lee el INE con la cámara para PRELLENAR nombre y CURP. Es una ayuda opcional:
+// la foto no se guarda y el capturista debe revisar los datos antes de dar de alta.
+async function ineLeer(input){
+  const f=input.files&&input.files[0]; if(!f) return;
+  const msg=document.getElementById('ine-msg');
+  const set=(t,c)=>{ if(msg){ msg.textContent=t; msg.style.color=c||'var(--dim)'; } };
+  set('⏳ Leyendo el INE…');
+  try{
+    const img=await _fotoComprimida(f, 1400, 0.82);      // más resolución que una evidencia: hay que leer texto
+    const r=await api('POST','/api/ine/leer',{imagen:img});
+    let puestos=[];
+    if(r.nombre){ document.getElementById('n-cli').value=r.nombre; puestos.push('nombre'); }
+    if(r.curp){ document.getElementById('n-curp').value=r.curp; puestos.push('CURP'); }
+    if(!puestos.length){ set('No se alcanzaron a leer los datos. Captúralos a mano.','var(--red)'); }
+    else{
+      let t='✓ Se llenó el '+puestos.join(' y la ')+'. Revísalo antes de guardar.';
+      let col='var(--grn)';
+      if(r.curpDudosa){ t+=' · La CURP no se leyó bien (pasa seguido en copias): captúrala a mano.'; col='var(--acc)'; }
+      else if(r.curpVerificar){ t+=' · ⚠️ Verifica la CURP contra el INE: podría tener un carácter mal leído.'; col='var(--acc)'; }
+      set(t, col);
+    }
+  }catch(e){
+    const m=String(e.message||'');
+    set(m==='sin_ia' ? 'La lectura de INE no está configurada en el servidor.'
+      : m==='no_legible' ? 'No se pudo leer el INE. Tómala de frente, con buena luz y sin reflejos.'
+      : m==='imagen_grande' ? 'La foto pesa demasiado. Vuelve a tomarla.'
+      : m==='espera' ? 'Espera un momento antes de leer otro INE.'
+      : m==='ia_inaccesible' ? 'No hubo conexión para leer el INE. Captura los datos a mano.'
+      : ('No se pudo leer el INE: '+m), 'var(--red)');
+  }
+  try{ input.value=''; }catch(e){}
+}
 async function api(method,path,body){
   const r=await fetch(path,{method,headers:{'Content-Type':'application/json',Authorization:'Bearer '+TOKEN},body:body?JSON.stringify(body):undefined});
   if(r.status===401){ salir(); throw new Error('Sesión expirada'); }
