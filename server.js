@@ -3603,6 +3603,60 @@ REGLAS ESTRICTAS (obligatorias):
 BASE DE CONOCIMIENTO (todo lo que sabes):
 ${kb}`;
 }
+/* Valida CURP leída del INE. Dos niveles:
+   1) FORMATO ESTRICTO (regex oficial): vocal en 2ª, fecha real, sexo, estado existente, consonantes.
+      Caza los errores típicos de fotocopia (O por 0, I por 1, S por 5). Si falla → no se llena.
+   2) DÍGITO VERIFICADOR (posición 18, calculable con los primeros 17). Solo AVISA: si no cuadra,
+      se llena igual pero se pide verificar, por si la credencial trae una clave atípica. */
+const _CURP_RE = /^[A-Z][AEIOUX][A-Z]{2}\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])[HM](?:AS|B[CS]|C[CLMSH]|D[FG]|G[TR]|HG|JC|M[CNS]|N[ETL]|OC|PL|Q[TR]|S[PLR]|T[CSL]|VZ|YN|ZS)[B-DF-HJ-NP-TV-Z]{3}[A-Z\d]\d$/;
+function _curpDigito(curp17) {
+  const dic = '0123456789ABCDEFGHIJKLMNÑOPQRSTUVWXYZ';
+  let suma = 0;
+  for (let i = 0; i < 17; i++) suma += dic.indexOf(curp17.charAt(i)) * (18 - i);
+  return String((10 - (suma % 10)) % 10);
+}
+/* Lectura del INE con IA: SOLO extrae NOMBRE y CURP para prellenar el alta.
+   La foto se usa en el momento y NO se guarda en la base ni en disco.
+   Es una ayuda de captura: el usuario revisa y corrige antes de guardar. */
+const _ineUltimo = {};
+app.post('/api/ine/leer', auth, rol('admin', 'supervisor', 'sucursal'), async (req, res) => {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) return res.status(503).json({ error: 'sin_ia', detalle: 'Falta configurar ANTHROPIC_API_KEY en el servidor.' });
+  const img = String((req.body && req.body.imagen) || '');
+  const m = img.match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/);
+  if (!m) return res.status(400).json({ error: 'imagen_invalida', detalle: 'Envía la foto del INE en JPEG o PNG.' });
+  const media = m[1], b64 = m[2];
+  if (b64.length > 6000000) return res.status(413).json({ error: 'imagen_grande', detalle: 'La foto pesa demasiado. Vuelve a tomarla.' });
+  const uk = (req.user && req.user.id) || req.ip;
+  if (_ineUltimo[uk] && Date.now() - _ineUltimo[uk] < 2000) return res.status(429).json({ error: 'espera', detalle: 'Espera un momento entre lecturas.' });
+  _ineUltimo[uk] = Date.now();
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001', max_tokens: 300,
+        system: 'Lees credenciales para votar (INE) de México y devuelves únicamente los datos solicitados en JSON válido. Nunca agregues texto, explicaciones ni markdown.',
+        messages: [{ role: 'user', content: [
+          { type: 'image', source: { type: 'base64', media_type: media, data: b64 } },
+          { type: 'text', text: 'Esta imagen es una credencial INE de México. Puede ser el plástico original o una FOTOCOPIA en blanco y negro con poco contraste; en ese caso esfuérzate igual.\n\nExtrae:\n1) El NOMBRE COMPLETO del titular, en orden natural: NOMBRE(S) APELLIDO_PATERNO APELLIDO_MATERNO (ojo: en la credencial los apellidos suelen aparecer arriba de los nombres).\n2) La CURP (18 caracteres).\n\nMuy importante para la CURP: las posiciones 5 a 10 son la fecha de nacimiento y SIEMPRE son dígitos. No confundas 0 con O, 1 con I, 5 con S, 8 con B. Si la credencial también muestra la fecha de nacimiento por separado, úsala para confirmar esos dígitos.\n\nResponde SOLO con este JSON, sin nada más:\n{"nombre":"...","curp":"..."}\nSi un dato no se alcanza a leer con claridad, deja su valor como cadena vacía.' }
+        ] }]
+      })
+    });
+    const d = await r.json();
+    if (d.error) return res.status(502).json({ error: 'ia_error', detalle: d.error.message || 'error de IA' });
+    const txt = (d.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim().replace(/```json|```/g, '').trim();
+    let out; try { out = JSON.parse(txt); } catch (e) { return res.status(422).json({ error: 'no_legible', detalle: 'No se pudo leer el INE. Toma la foto de frente, con buena luz y sin reflejos.' }); }
+    const curp = String(out.curp || '').toUpperCase().replace(/[^A-ZÑ0-9]/g, '');
+    const nombre = String(out.nombre || '').toUpperCase().replace(/\s+/g, ' ').trim();
+    const formatoOk = _CURP_RE.test(curp);
+    const digitoOk = formatoOk && _curpDigito(curp.slice(0, 17)) === curp[17];
+    res.json({ ok: true, nombre,
+      curp: formatoOk ? curp : '',
+      curpDudosa: !!curp && !formatoOk,          // no pasó el formato → se pide captura manual
+      curpVerificar: formatoOk && !digitoOk });  // formato ok pero el dígito no cuadra → revisar
+  } catch (e) { res.status(502).json({ error: 'ia_inaccesible', detalle: e.message }); }
+});
 app.post('/api/ayuda', auth, async (req, res) => {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return res.json({ sinIA: true, respuesta: '' });
