@@ -156,6 +156,36 @@ function _jcResumen(){
     </div>`;
   return cards+qa;
 }
+function comoLlegar(saleId){
+  const s=(DATA.porEntregar||[]).find(x=>x.id===saleId); if(!s) return;
+  const tieneGps = (typeof s.lat==='number' && typeof s.lng==='number');
+  const destino = tieneGps ? (s.lat+','+s.lng) : (s.dir||s.cliente||'');
+  const gmaps = tieneGps
+    ? 'https://www.google.com/maps/dir/?api=1&destination='+s.lat+','+s.lng
+    : 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(destino);
+  const waze = tieneGps
+    ? 'https://waze.com/ul?ll='+s.lat+','+s.lng+'&navigate=yes'
+    : 'https://waze.com/ul?q='+encodeURIComponent(destino)+'&navigate=yes';
+  const aviso = tieneGps
+    ? '<div style="background:rgba(34,160,107,.10);border:1px solid rgba(34,160,107,.3);border-radius:9px;padding:9px 11px;margin:10px 0;font-size:.76rem;color:var(--grn,#22a06b)">✓ Ubicación exacta guardada. La navegación te lleva hasta la puerta.</div>'
+    : '<div style="background:rgba(224,160,0,.10);border:1px solid rgba(224,160,0,.3);border-radius:9px;padding:9px 11px;margin:10px 0;font-size:.76rem;color:var(--amb,#e0a000)">⚠️ Este cliente aún no tiene ubicación exacta. El mapa te acerca a la zona por la dirección. Al entregar y capturar el GPS, quedará ubicado con precisión.</div>';
+  const ov=document.createElement('div');
+  ov.className='flmodal-geo';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(10,15,25,.55);display:flex;align-items:flex-end;justify-content:center;z-index:9999';
+  ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+  ov.innerHTML=`<div style="background:var(--surf,#fff);width:100%;max-width:460px;border-radius:16px 16px 0 0;padding:18px 16px 22px">
+    <div style="text-align:center;margin-bottom:2px"><div style="font-weight:700;font-size:1rem">🧭 Cómo llegar con</div>
+    <div style="font-size:.82rem;color:var(--dim,#888)">${s.cliente||'—'} · ${s.dir||'—'}</div></div>
+    ${aviso}
+    <a href="${gmaps}" target="_blank" onclick="this.closest('.flmodal-geo').remove()" style="display:flex;align-items:center;gap:12px;background:var(--surf-2,#f2f2f2);border:1px solid var(--line,#ddd);border-radius:12px;padding:14px;margin-bottom:10px;text-decoration:none;color:inherit">
+      <div style="width:40px;height:40px;border-radius:10px;background:rgba(34,160,107,.14);display:flex;align-items:center;justify-content:center;font-size:1.2rem">🗺️</div>
+      <div style="flex:1"><div style="font-weight:700">Google Maps</div><div style="font-size:.76rem;color:var(--dim,#888)">Abrir navegación</div></div><div style="color:var(--dim,#bbb)">›</div></a>
+    <a href="${waze}" target="_blank" onclick="this.closest('.flmodal-geo').remove()" style="display:flex;align-items:center;gap:12px;background:var(--surf-2,#f2f2f2);border:1px solid var(--line,#ddd);border-radius:12px;padding:14px;margin-bottom:14px;text-decoration:none;color:inherit">
+      <div style="width:40px;height:40px;border-radius:10px;background:rgba(90,176,255,.14);display:flex;align-items:center;justify-content:center;font-size:1.2rem">📍</div>
+      <div style="flex:1"><div style="font-weight:700">Waze</div><div style="font-size:.76rem;color:var(--dim,#888)">Abrir navegación</div></div><div style="color:var(--dim,#bbb)">›</div></a>
+    <button class="btn full" onclick="this.closest('.flmodal-geo').remove()">Cancelar</button></div>`;
+  document.body.appendChild(ov);
+}
 function pintar(){
   const c=DATA.caja||{};
   document.getElementById('k-rec').textContent=money(c.recibido);
@@ -165,10 +195,11 @@ function pintar(){
   document.getElementById('n-ent').textContent=(DATA.porEntregar||[]).length;
   const _asg=DATA.asg||{porConfirmar:[]}; const _nasg=document.getElementById('n-asg'); if(_nasg) _nasg.textContent=(_asg.porConfirmar||[]).length;
   const m=document.getElementById('main');
+  const _volver = (_tab!=='recibir') ? `<button onclick="tab('recibir')" style="display:flex;align-items:center;gap:6px;background:none;border:none;color:var(--vio,#7c5ce0);font-family:inherit;font-size:.86rem;font-weight:600;padding:2px 4px;margin:0 0 10px;cursor:pointer">← Volver al inicio</button>` : '';
   if(_tab==='asignar'){
     const dst=DATA.asgDest||[]; const pc=_asg.porConfirmar||[];
     const hist=((_asg.enviadas||[]).concat(_asg.recibidas||[])).slice(0,20);
-    m.innerHTML=`<div class="card"><div class="nm">💸 Asignar efectivo a un puesto</div>
+    m.innerHTML=_volver+`<div class="card"><div class="nm">💸 Asignar efectivo a un puesto</div>
       <div class="meta" style="margin:4px 0 8px">Se descuenta de tu caja y el destino confirma. El promotor nunca recibe.</div>
       <select id="asg-dest-jc" style="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--ink);padding:10px;border-radius:9px;margin-bottom:8px;font-family:inherit">${dst.map(x=>`<option value="${x.tipo}:${x.id}">${x.nombre}</option>`).join('')||'<option value="">No hay otros puestos</option>'}</select>
       <input id="asg-monto-jc" type="number" inputmode="numeric" placeholder="Monto $" style="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--ink);padding:10px;border-radius:9px;margin-bottom:8px">
@@ -189,11 +220,12 @@ function pintar(){
     m.innerHTML = resumen + listaPend;
   } else if(_tab==='entregar'){
     const cs=DATA.porEntregar||[];
-    m.innerHTML = cs.length ? cs.map(s=>`<div class="card"><div class="top">
+    m.innerHTML = _volver + (cs.length ? cs.map(s=>`<div class="card"><div class="top">
       <div><div class="nm">${s.cliente}</div><div class="meta">${s.folio} · 📞 ${s.tel||'—'}<br>📍 ${s.dir||'—'}<br>👤 ${s.cobrador} · 🏪 ${s.sucursal}</div></div>
       <div class="monto">${money(s.monto)}</div></div>
+      <button class="btn full" style="margin-bottom:8px;border-color:var(--blu,#5ab0ff);color:var(--blu,#5ab0ff)" onclick="comoLlegar(${s.id})">🧭 Cómo llegar</button>
       <button class="btn vio full" onclick="abrirEntrega(${s.id},'${(s.cliente||'').replace(/'/g,"\\'")}',${s.monto})">📦 Entregar crédito + evidencia</button></div>`).join('')
-      : `<div class="empty">No hay créditos por entregar${DATA.sucursal?` en <b>${DATA.sucursal}</b>`:''}.<br><span style="font-size:.78rem">Los créditos nuevos que capture la sucursal aparecen aquí automáticamente. El admin también puede enviar un crédito existente desde su Estado de cuenta.</span></div>`;
+      : `<div class="empty">No hay créditos por entregar${DATA.sucursal?` en <b>${DATA.sucursal}</b>`:''}.<br><span style="font-size:.78rem">Los créditos nuevos que capture la sucursal aparecen aquí automáticamente. El admin también puede enviar un crédito existente desde su Estado de cuenta.</span></div>`);
   } else {
     // Historial = registro completo: movimientos de efectivo (entradas y salidas) + créditos entregados
     const movs=[];
@@ -208,7 +240,7 @@ function pintar(){
       <div><div class="nm">${s.cliente}</div><div class="meta">${s.folio} · ${new Date(s.fecha).toLocaleString('es-MX',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}${s.lat?` · <a href="https://maps.google.com/?q=${s.lat},${s.lng}" target="_blank" style="color:var(--blu)">📍 ubicación</a>`:''}</div></div>
       <div class="monto">${money(s.monto)}</div></div>
       <div class="hist-fotos">${s.fotoCasa?`<img src="${s.fotoCasa}" onclick="verFoto('${s.fotoCasa}')">`:''}${s.fotoCliente?`<img src="${s.fotoCliente}" onclick="verFoto('${s.fotoCliente}')">`:''}</div></div>`).join('') : '<div class="empty">Aún no has entregado créditos.</div>';
-    m.innerHTML = `<div class="nm" style="margin:4px 4px 6px">💵 Movimientos de efectivo</div>${movsHtml}<div class="nm" style="margin:16px 4px 6px">📦 Créditos entregados</div>${entHtml}`;
+    m.innerHTML = _volver + `<div class="nm" style="margin:4px 4px 6px">💵 Movimientos de efectivo</div>${movsHtml}<div class="nm" style="margin:16px 4px 6px">📦 Créditos entregados</div>${entHtml}`;
   }
 }
 function tab(t){ _tab=t; document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.t===t)); pintar(); }
