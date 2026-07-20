@@ -1055,7 +1055,7 @@ app.get('/api/jc/panel', auth, rol('jc'), (req, res) => {
   // créditos por entregar: de su sucursal, no entregados
   const porEntregar = db.sales.filter(s => s.entregado === false && (!s.tomadoPor || (s.tomadoPor.rol === 'jc' && s.tomadoPor.id === req.user.id))).map(s => {
     const cli = db.clients.find(c => c.id === s.clientId) || {};
-    return { id: s.id, folio: s.folio, cliente: cli.nombre, tel: cli.tel || '', dir: [cli.calle, cli.col].filter(Boolean).join(', '), monto: s.monto, cobrador: s.prom, sucursal: sucMap[s.sucursalId] || '—', createdAt: s.createdAt };
+    return { id: s.id, folio: s.folio, cliente: cli.nombre, tel: cli.tel || '', dir: [cli.calle, cli.col].filter(Boolean).join(', '), lat: (typeof cli.lat === 'number' ? cli.lat : null), lng: (typeof cli.lng === 'number' ? cli.lng : null), monto: s.monto, cobrador: s.prom, sucursal: sucMap[s.sucursalId] || '—', createdAt: s.createdAt };
   }).reverse();
   const entregados = db.sales.filter(s => s.entrega && s.entrega.jcId === req.user.id).map(s => {
     const cli = db.clients.find(c => c.id === s.clientId) || {};
