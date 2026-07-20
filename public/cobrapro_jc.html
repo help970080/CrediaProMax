@@ -58,6 +58,23 @@
   .hist-fotos{display:flex;gap:6px;margin-top:8px}
   .hist-fotos img{width:60px;height:60px;border-radius:8px;object-fit:cover;border:1px solid var(--line)}
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:11px 18px;border-radius:11px;font-size:.85rem;z-index:200;max-width:90%;text-align:center}
+  .rz-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:2px 0 14px}
+  .rz-card{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:13px 14px;position:relative;overflow:hidden}
+  .rz-card .ic{font-size:1.15rem;line-height:1}
+  .rz-card .lbl{font-size:.68rem;color:var(--dim);text-transform:uppercase;letter-spacing:.03em;margin:7px 0 3px}
+  .rz-card .val{font-size:1.32rem;font-weight:800;color:var(--ink);line-height:1.05}
+  .rz-card .sub{font-size:.7rem;color:var(--dim);margin-top:2px}
+  .rz-card.accent{background:linear-gradient(135deg,rgba(124,92,224,.10),rgba(124,92,224,.03));border-color:rgba(124,92,224,.28)}
+  .rz-card.grn{background:linear-gradient(135deg,rgba(34,160,107,.10),rgba(34,160,107,.03));border-color:rgba(34,160,107,.28)}
+  .rz-sec{font-size:.72rem;color:var(--dim);text-transform:uppercase;letter-spacing:.04em;margin:6px 4px 9px;font-weight:700}
+  .qa{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px}
+  .qa-btn{display:flex;flex-direction:column;align-items:flex-start;gap:8px;background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:14px;cursor:pointer;text-align:left;transition:.13s;font-family:inherit}
+  .qa-btn:active{transform:scale(.97)}
+  .qa-btn .qic{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.15rem}
+  .qa-btn .qt{font-size:.9rem;font-weight:700;color:var(--ink)}
+  .qa-btn .qs{font-size:.72rem;color:var(--dim)}
+  .qa-btn .qbadge{position:absolute;top:10px;right:12px;background:var(--vio);color:#fff;font-size:.68rem;font-weight:700;border-radius:10px;padding:1px 7px}
+  .qa-btn{position:relative}
 </style>
 </head>
 <body>
@@ -107,6 +124,38 @@ async function cargar(){
     pintar(); }
   catch(e){ document.getElementById('main').innerHTML='<div class="empty">'+e.message+'</div>'; }
 }
+function _jcResumen(){
+  const c=DATA.caja||{};
+  const porEnt=DATA.porEntregar||[];
+  const entHoy=(DATA.entregados||[]).filter(s=>{ const f=s.entrega&&s.entrega.fecha; if(!f) return false; const d=new Date(f); const h=new Date(); return d.toDateString()===h.toDateString(); });
+  const montoEntHoy=entHoy.reduce((a,s)=>a+(s.monto||0),0);
+  const montoPorEnt=porEnt.reduce((a,s)=>a+(s.monto||0),0);
+  const nRec=(DATA.pendientes||[]).length;
+  const nEnt=porEnt.length;
+  const nAsg=((DATA.asg||{}).porConfirmar||[]).length;
+  const hoyTxt=new Date().toLocaleDateString('es-MX',{weekday:'long',day:'2-digit',month:'long'});
+  const saludo=(()=>{ const h=new Date().getHours(); return h<12?'Buenos días':h<19?'Buenas tardes':'Buenas noches'; })();
+  const nombre=(document.getElementById('jcName')||{}).textContent||'';
+  // Tarjetas del día (solo datos que ya tenemos)
+  const cards=`
+    <div style="margin:2px 4px 12px"><div style="font-size:1.02rem;font-weight:800;color:var(--ink)">${saludo}, ${nombre} 👋</div><div style="font-size:.76rem;color:var(--dim);text-transform:capitalize">${hoyTxt}</div></div>
+    <div class="rz-grid">
+      <div class="rz-card grn"><div class="ic">📦</div><div class="lbl">Entregado hoy</div><div class="val">${money(montoEntHoy)}</div><div class="sub">${entHoy.length} crédito${entHoy.length===1?'':'s'} entregado${entHoy.length===1?'':'s'}</div></div>
+      <div class="rz-card accent"><div class="ic">🎒</div><div class="lbl">Por entregar</div><div class="val">${money(montoPorEnt)}</div><div class="sub">${nEnt} crédito${nEnt===1?'':'s'} en fila</div></div>
+      <div class="rz-card"><div class="ic">💵</div><div class="lbl">En tu caja</div><div class="val">${money(c.saldo)}</div><div class="sub">disponible ahora</div></div>
+      <div class="rz-card"><div class="ic">📥</div><div class="lbl">Por recibir</div><div class="val">${nRec}</div><div class="sub">asignaci${nRec===1?'ón':'ones'} de efectivo</div></div>
+    </div>`;
+  // Accesos rápidos a lo más frecuente
+  const qa=`
+    <div class="rz-sec">Acciones rápidas</div>
+    <div class="qa">
+      <button class="qa-btn" onclick="tab('entregar')">${nEnt?`<span class="qbadge">${nEnt}</span>`:''}<div class="qic" style="background:rgba(124,92,224,.14)">📦</div><div><div class="qt">Entregar crédito</div><div class="qs">${nEnt?nEnt+' esperando':'con evidencia'}</div></div></button>
+      <button class="qa-btn" onclick="tab('asignar')">${nAsg?`<span class="qbadge">${nAsg}</span>`:''}<div class="qic" style="background:rgba(34,160,107,.14)">💸</div><div><div class="qt">Asignar efectivo</div><div class="qs">${nAsg?nAsg+' por confirmar':'a un puesto'}</div></div></button>
+      <button class="qa-btn" onclick="tab('hist')"><div class="qic" style="background:rgba(90,176,255,.14)">🧾</div><div><div class="qt">Ver historial</div><div class="qs">movimientos y entregas</div></div></button>
+      <button class="qa-btn" onclick="tab('recibir')"><div class="qic" style="background:rgba(224,160,0,.14)">📥</div><div><div class="qt">Recibir efectivo</div><div class="qs">${nRec?nRec+' pendiente'+(nRec===1?'':'s'):'de promotores'}</div></div></button>
+    </div>`;
+  return cards+qa;
+}
 function pintar(){
   const c=DATA.caja||{};
   document.getElementById('k-rec').textContent=money(c.recibido);
@@ -131,11 +180,13 @@ function pintar(){
   }
   if(_tab==='recibir'){
     const ps=DATA.pendientes||[];
-    m.innerHTML = ps.length ? ps.map(e=>`<div class="card"><div class="top">
+    const resumen=_jcResumen();
+    const listaPend = ps.length ? `<div class="rz-sec">Efectivo pendiente de recibir</div>`+ps.map(e=>`<div class="card"><div class="top">
       <div><div class="nm">${e.cobradorNombre}</div><div class="meta">${e.nota||'Efectivo para créditos'}<br>${new Date(e.creadoEn).toLocaleString('es-MX',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div></div>
       <div class="monto">${money(e.monto)}</div></div>
       <button class="btn grn full" onclick="recibir(${e.id},this)">✓ Recibir en mi caja</button></div>`).join('')
-      : '<div class="empty">Sin efectivo pendiente de recibir.<br>Cuando un promotor te asigne efectivo, aparecerá aquí.</div>';
+      : `<div class="empty" style="padding:16px 12px">Sin efectivo pendiente de recibir.<br><span style="font-size:.78rem">Cuando un promotor te asigne efectivo, aparecerá aquí.</span></div>`;
+    m.innerHTML = resumen + listaPend;
   } else if(_tab==='entregar'){
     const cs=DATA.porEntregar||[];
     m.innerHTML = cs.length ? cs.map(s=>`<div class="card"><div class="top">
@@ -200,26 +251,17 @@ function abrirEntrega(saleId,cliente,monto){
   ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
   document.body.appendChild(ov);
 }
-// Comprime la foto con bajo consumo de memoria (evita el base64 gigante que tumbaba teléfonos de gama baja)
-function _fotoComprimida(f, MAX, Q){
-  return new Promise((resolve,reject)=>{
-    const dims=(w,h)=>{ if(w>MAX||h>MAX){ if(w>h){h=Math.round(h*MAX/w);w=MAX;}else{w=Math.round(w*MAX/h);h=MAX;} } return [w,h]; };
-    const tryImg=()=>{ const url=URL.createObjectURL(f); const img=new Image(); img.onload=()=>{ try{ const [w,h]=dims(img.width,img.height); const cv=document.createElement('canvas'); cv.width=w; cv.height=h; cv.getContext('2d').drawImage(img,0,0,w,h); const d=cv.toDataURL('image/jpeg',Q); URL.revokeObjectURL(url); img.src=''; cv.width=cv.height=0; resolve(d); }catch(e){ URL.revokeObjectURL(url); reject(e); } }; img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error('load')); }; img.src=url; };
-    if(window.createImageBitmap){
-      createImageBitmap(f).then(bmp=>{ const [w,h]=dims(bmp.width,bmp.height); const cv=document.createElement('canvas'); cv.width=w; cv.height=h; cv.getContext('2d').drawImage(bmp,0,0,w,h); if(bmp.close)bmp.close(); const d=cv.toDataURL('image/jpeg',Q); cv.width=cv.height=0; resolve(d); }).catch(()=>tryImg());
-    } else tryImg();
-  });
-}
-async function leerFoto(input,cual){
+function leerFoto(input,cual){
   const f=input.files&&input.files[0]; if(!f) return;
-  const tEl=document.getElementById(cual==='casa'?'fb-casa-t':'fb-cli-t'); const base=cual==='casa'?'Foto de la casa':'Foto del cliente';
-  if(tEl) tEl.textContent='⏳ Procesando…';
-  try{
-    const data=await _fotoComprimida(f,900,0.55);
+  const rd=new FileReader();
+  rd.onload=()=>{ const img=new Image(); img.onload=()=>{
+    const max=900; let w=img.width,h=img.height; if(w>max||h>max){ if(w>h){h=Math.round(h*max/w);w=max;}else{w=Math.round(w*max/h);h=max;} }
+    const cv=document.createElement('canvas'); cv.width=w; cv.height=h; cv.getContext('2d').drawImage(img,0,0,w,h);
+    const data=cv.toDataURL('image/jpeg',0.55);
     if(cual==='casa'){ _ent.fotoCasa=data; document.getElementById('fb-casa').classList.add('ok'); document.getElementById('fb-casa-t').textContent='✓ Foto de la casa lista'; }
     else { _ent.fotoCliente=data; document.getElementById('fb-cli').classList.add('ok'); document.getElementById('fb-cli-t').textContent='✓ Foto del cliente lista'; }
-  }catch(e){ if(tEl) tEl.textContent=base; alert('No se pudo procesar la foto (memoria del teléfono). Cierra apps abiertas e inténtalo de nuevo.'); }
-  try{ input.value=''; }catch(e){}
+  }; img.src=rd.result; };
+  rd.readAsDataURL(f);
 }
 function capturarGeo(){
   const t=document.getElementById('geo-txt');
