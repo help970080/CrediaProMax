@@ -1055,7 +1055,7 @@ app.get('/api/jc/panel', auth, rol('jc'), (req, res) => {
   // créditos por entregar: de su sucursal, no entregados
   const porEntregar = db.sales.filter(s => s.entregado === false && (!s.tomadoPor || (s.tomadoPor.rol === 'jc' && s.tomadoPor.id === req.user.id))).map(s => {
     const cli = db.clients.find(c => c.id === s.clientId) || {};
-    return { id: s.id, folio: s.folio, cliente: cli.nombre, tel: cli.tel || '', dir: [cli.calle, cli.col].filter(Boolean).join(', '), lat: (typeof cli.lat === 'number' ? cli.lat : null), lng: (typeof cli.lng === 'number' ? cli.lng : null), monto: s.monto, cobrador: s.prom, sucursal: sucMap[s.sucursalId] || '—', createdAt: s.createdAt };
+    return { id: s.id, folio: s.folio, cliente: cli.nombre, tel: cli.tel || '', dir: [cli.calle, cli.col].filter(Boolean).join(', '), monto: s.monto, cobrador: s.prom, sucursal: sucMap[s.sucursalId] || '—', createdAt: s.createdAt };
   }).reverse();
   const entregados = db.sales.filter(s => s.entrega && s.entrega.jcId === req.user.id).map(s => {
     const cli = db.clients.find(c => c.id === s.clientId) || {};
@@ -1734,7 +1734,7 @@ app.get('/api/mi-ruta', auth, (req, res) => {
     const totalAbonado = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0).reduce((a,m)=>a+m.abono,0);
     const at = calcAtraso(s, totalAbonado);
     // Cobros de HOY a este cliente. Propios (origen=cobrador) vs externos (ventanilla/JC/otros sobre su cliente).
-    const movsHoyAll = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0 && m.forma !== 'descuento' && m.forma !== 'recomendacion' && m.forma !== 'refin' && m.fecha === hoy);
+    const movsHoyAll = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0 && m.forma !== 'descuento' && m.forma !== 'recomendacion' && m.fecha === hoy);
     const movsHoy = movsHoyAll.filter(m => m.origen === req.user.nombre);
     const movsExt = movsHoyAll.filter(m => m.origen !== req.user.nombre);
     const cobradoHoy = movsHoy.reduce((a,m)=>a+m.abono,0);
@@ -1742,7 +1742,7 @@ app.get('/api/mi-ruta', auth, (req, res) => {
     const pagoExterno = movsExt.reduce((a,m)=>a+m.abono,0);                 // suma para avance/comisión, NO para entregar
     const externoForma = movsExt.length ? (movsExt[movsExt.length-1].forma || 'efectivo') : null;
     // Cobrado en TODO el ciclo (cualquier día de la semana): para sacarlo de "Por cobrar".
-    const cobradoSemana = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0 && m.forma !== 'descuento' && m.forma !== 'recomendacion' && m.forma !== 'refin' && _parseFechaMx(m.fecha) >= wkStart).reduce((a,m)=>a+m.abono,0);
+    const cobradoSemana = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0 && m.forma !== 'descuento' && m.forma !== 'recomendacion' && _parseFechaMx(m.fecha) >= wkStart).reduce((a,m)=>a+m.abono,0);
     return { id: s.id, folio: s.folio, nombre: c.nombre || '—', dir: [c.calle, c.col].filter(Boolean).join(', '), tel: c.tel || '', tipo: s.tipo, cuota: s.cuota, saldo: saldoDe(s.id),
       // enBase: el crédito ya existía con saldo al ARRANCAR la semana. Los vendidos a media semana entran hasta la próxima.
       enBase: ((_sIniRuta[s.id]||0) > 0.5) || (s.importado===true && saldoDe(s.id) > 0.5),
@@ -1773,7 +1773,7 @@ app.get('/api/mi-acumulado', auth, rol('cobrador'), (req, res) => {
   const hoy = fechaMxHoyDDMM();
   const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
   const ids = new Set(db.sales.filter(s => s.prom === req.user.nombre && activos.has(s.clientId)).map(s => s.id));
-  const movs = db.movimientos.filter(m => ids.has(m.saleId) && m.abono > 0 && m.forma !== 'descuento' && m.forma !== 'recomendacion' && m.forma !== 'refin' && m.fecha !== hoy && _parseFechaMx(m.fecha) >= desdeMs);
+  const movs = db.movimientos.filter(m => ids.has(m.saleId) && m.abono > 0 && m.forma !== 'descuento' && m.forma !== 'recomendacion' && m.fecha !== hoy && _parseFechaMx(m.fecha) >= desdeMs);
   // Objetivo semanal = la cuota semanal propia del cobrador: suma de las cuotas de sus créditos activos con saldo.
   // Si el admin le fijó un objetivo manual de cobranza, ese manda.
   const objMan = (db.objetivos && db.objetivos.cob && db.objetivos.cob[req.user.nombre] && +db.objetivos.cob[req.user.nombre].cobranza) || 0;
