@@ -1055,7 +1055,7 @@ app.get('/api/jc/panel', auth, rol('jc'), (req, res) => {
   // créditos por entregar: de su sucursal, no entregados
   const porEntregar = db.sales.filter(s => s.entregado === false && (!s.tomadoPor || (s.tomadoPor.rol === 'jc' && s.tomadoPor.id === req.user.id))).map(s => {
     const cli = db.clients.find(c => c.id === s.clientId) || {};
-    return { id: s.id, folio: s.folio, cliente: cli.nombre, tel: cli.tel || '', dir: [cli.calle, cli.col].filter(Boolean).join(', '), monto: s.monto, cobrador: s.prom, sucursal: sucMap[s.sucursalId] || '—', createdAt: s.createdAt };
+    return { id: s.id, folio: s.folio, cliente: cli.nombre, tel: cli.tel || '', dir: [cli.calle, cli.col].filter(Boolean).join(', '), lat: (typeof cli.lat === 'number' ? cli.lat : null), lng: (typeof cli.lng === 'number' ? cli.lng : null), monto: s.monto, cobrador: s.prom, sucursal: sucMap[s.sucursalId] || '—', createdAt: s.createdAt };
   }).reverse();
   const entregados = db.sales.filter(s => s.entrega && s.entrega.jcId === req.user.id).map(s => {
     const cli = db.clients.find(c => c.id === s.clientId) || {};
@@ -1852,7 +1852,7 @@ app.get('/api/dashboard', auth, (req,res)=>{
   const sales=db.sales.filter(s=>activeClientIds.has(s.clientId) && s.entregado!==false && (miSuc==null || s.sucursalId===miSuc)), clients=activeClients, sucursales=db.sucursales.filter(s=>s.activo!==false && (miSuc==null || s.id===miSuc));
   const _saleIds=new Set(sales.map(s=>s.id));
   const abonos=db.movimientos.filter(m=>m.abono>0 && _parseFechaMx(m.fecha)>=desde && _parseFechaMx(m.fecha)<=hasta && _saleIds.has(m.saleId));
-  const nuevos=sales.filter(s=>!s.importado && s.createdAt && new Date(s.createdAt).getTime()>=desde && new Date(s.createdAt).getTime()<=hasta);
+  const nuevos=sales.filter(s=>!s.importado && s.createdAt && _diaMxMs(s.createdAt)>=desde && _diaMxMs(s.createdAt)<=hasta);
   /* BASE CONGELADA DE LA SEMANA (así opera el negocio):
      El débito y los clientes se fijan al ARRANCAR la semana y no se mueven hasta la siguiente.
      - Una venta hecha a media semana NO suma (a ese cliente no se le puede cobrar hasta la próxima).
@@ -1890,7 +1890,7 @@ app.get('/api/dashboard', auth, (req,res)=>{
     // Clientes sin pago en el periodo (riesgo): vigente, no único, no nuevo del periodo, sin abono en el periodo
     const pagaronSuc=new Set(abonos_suc.map(m=>{const s=sales.find(x=>x.id===m.saleId); return s?s.clientId:null;}).filter(v=>v!=null));
     const nopagoSuc=new Set();
-    ventas_suc.forEach(s=>{ if(saldoDe(s.id)<=0||s.tipo==='unico')return; const ct=s.createdAt?new Date(s.createdAt).getTime():0; if(!s.importado && ct>=desde)return; if(!pagaronSuc.has(s.clientId)) nopagoSuc.add(s.clientId); });
+    ventas_suc.forEach(s=>{ if(saldoDe(s.id)<=0||s.tipo==='unico')return; const ct=_diaMxMs(s.createdAt); if(!s.importado && ct>=desde)return; if(!pagaronSuc.has(s.clientId)) nopagoSuc.add(s.clientId); });
     return {id:suc.id, nombre:suc.nombre, encargada:enc?enc.nombre:'—',
       pagos_recibidos:recuperado, comisionable, npagos:abonos_suc.length, nopago:nopagoSuc.size,
       creditos_captados:nuevos_suc.length, colocado:nuevos_suc.reduce((a,s)=>a+s.monto,0),
@@ -1913,7 +1913,7 @@ app.get('/api/dashboard', auth, (req,res)=>{
     // Clientes sin pago en el periodo (riesgo): vigente, no único, no nuevo del periodo, sin abono en el periodo
     const pagaronCob=new Set(sus_abonos.map(m=>{const s=sales.find(x=>x.id===m.saleId); return s?s.clientId:null;}).filter(v=>v!=null));
     const nopagoCob=new Set();
-    sus_sales.forEach(s=>{ if(saldoDe(s.id)<=0||s.tipo==='unico')return; const ct=s.createdAt?new Date(s.createdAt).getTime():0; if(!s.importado && ct>=desde)return; if(!pagaronCob.has(s.clientId)) nopagoCob.add(s.clientId); });
+    sus_sales.forEach(s=>{ if(saldoDe(s.id)<=0||s.tipo==='unico')return; const ct=_diaMxMs(s.createdAt); if(!s.importado && ct>=desde)return; if(!pagaronCob.has(s.clientId)) nopagoCob.add(s.clientId); });
     // Ranking + objetivos al 100%: unidades nuevas del periodo, débito esperado, clientes vigentes y clientes cobrados
     const unidades = nuevos.filter(s=>s.prom===c.nombre).length;
     // Débito y clientes = BASE CON LA QUE ARRANCÓ LA SEMANA (no se mueve a media semana)
@@ -1989,7 +1989,7 @@ function _fechasProgSrv(s){
 }
 // ¿Se esperaba un cobro de este crédito en el día [dStart,dEnd)? (no cuenta la venta nueva del día)
 function _esperaCobroDia(s, dStart, dEnd){
-  const c = s.createdAt ? new Date(s.createdAt).getTime() : 0;
+  const c = _diaMxMs(s.createdAt);
   if(!c || c >= dStart) return false;                       // creado hoy o después: es venta nueva, no se le exige cobro hoy
   if(s.tipo==='unico'){ const d=new Date(s.createdAt); d.setDate(d.getDate()+(s.plazo||0)); const t=d.getTime(); return t>=dStart && t<dEnd; }
   if(s.tipo==='diario'){
@@ -2043,7 +2043,7 @@ app.get('/api/reports/numeros-diarios', auth, rol('admin','supervisor'), (req,re
     // No pagos (riesgo): clientes con cobro esperado que NO abonaron (día y acumulado de la semana)
     const espDia=new Set(), espSem=new Set();
     activeVs.forEach(s=>{
-      const ct = s.createdAt ? new Date(s.createdAt).getTime() : 0;
+      const ct = _diaMxMs(s.createdAt);
       if((_sIniDia[s.id]||0)>0.5 && _esperaCobroDia(s, dStart, dEnd)) espDia.add(s.clientId);
       if(s.tipo!=='unico' && !(ct>=wkStart && ct<wkEnd)) espSem.add(s.clientId); // esperado en la semana (= reporte semanal)
     });
@@ -2097,7 +2097,7 @@ app.get('/api/reports/numeros-diarios-suc', auth, rol('admin','supervisor','sucu
       if(t>=wkStart && t<wkEnd){ if(!esDesc){ acumColl+=m.abono; acumCli.add(ref.cli); } semCob.add(ref.cli); }
       if(t>=dStart && t<dEnd){ if(!esDesc){ diaColl+=m.abono; diaCli.add(ref.cli); } diaCob.add(ref.cli); } }
     const espDia=new Set(), espSem=new Set();
-    vs.forEach(s=>{ const ct=s.createdAt?new Date(s.createdAt).getTime():0;
+    vs.forEach(s=>{ const ct=_diaMxMs(s.createdAt);
       if((_sIniDia[s.id]||0)>0.5 && _esperaCobroDia(s, dStart, dEnd)) espDia.add(s.clientId);
       if(s.tipo!=='unico' && !(ct>=wkStart && ct<wkEnd)) espSem.add(s.clientId); });
     const dia_nopago=[...espDia].filter(id=>!diaCob.has(id)).length;
@@ -2202,7 +2202,7 @@ function _listaContactos(iso){
   for(const m of db.movimientos){ if(m.abono>0 && saleCli[m.saleId]!=null){ const t=_parseFechaMx(m.fecha); if(t>=wb.start && t<wb.end){ const cid=saleCli[m.saleId]; pagadoSemana.set(cid,(pagadoSemana.get(cid)||0)+m.abono); } } }
   const tarifaCli=new Map(); // clientId -> tarifa semanal esperada (suma de cuotas activas)
   const espCli=new Map();
-  sales.forEach(s=>{ if(s.tipo==='unico')return; const ct=s.createdAt?new Date(s.createdAt).getTime():0; if(ct>=wb.start)return; tarifaCli.set(s.clientId,(tarifaCli.get(s.clientId)||0)+(s.cuota||0)); if(!espCli.has(s.clientId)) espCli.set(s.clientId, s); });
+  sales.forEach(s=>{ if(s.tipo==='unico')return; const ct=_diaMxMs(s.createdAt); if(ct>=wb.start)return; tarifaCli.set(s.clientId,(tarifaCli.get(s.clientId)||0)+(s.cuota||0)); if(!espCli.has(s.clientId)) espCli.set(s.clientId, s); });
   const rows=[];
   espCli.forEach((s,clientId)=>{
     const pagado=pagadoSemana.get(clientId)||0, tarifa=tarifaCli.get(clientId)||0;
@@ -2323,6 +2323,12 @@ function fechaMxDeISO(iso){ const d=new Date(new Date(iso).getTime() - 6*3600*10
 function fechaMxHoyISO(){ const d=nowMx(); return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`; }
 // fecha (YYYY-MM-DD) de México para CUALQUIER timestamp/fecha, sin depender de la zona del servidor
 function _isoMxDe(ts){ const d=new Date(new Date(ts).getTime() - 6*3600*1000); return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`; }
+/* Día de México de un sello de tiempo, en la MISMA representación que _parseFechaMx y que las
+   fronteras de periodo (_desdePeriodo/_inicioCiclo/wkStart).
+   Necesario porque createdAt y entrega.fecha son instantes REALES (UTC): compararlos directo contra
+   la frontera metía las ventas y entregas hechas después de las 6 p.m. de México en la semana/día
+   siguiente. Con esto, una venta del 21-jul a las 11 p.m. cuenta en el 21-jul, no en el 22. */
+function _diaMxMs(ts){ if(!ts) return 0; const p=_isoMxDe(ts).split('-'); return new Date(+p[0], +p[1]-1, +p[2]).getTime(); }
 function horaMxHHMM(){ const d=nowMx(); let h=d.getUTCHours(); const m=String(d.getUTCMinutes()).padStart(2,'0'); const ap=h<12?'a.m.':'p.m.'; h=h%12||12; return `${String(h).padStart(2,'0')}:${m} ${ap}`; }
 // ¿el cobrador ya entregó su corte de hoy? (para bloquear cobros posteriores)
 function corteHechoHoy(nombre){ return !!db.cortes.find(c => c.prom === nombre && c.fecha === fechaMxHoyISO()); }
@@ -2736,7 +2742,7 @@ app.get('/api/reports/entregas', auth, rol('admin', 'supervisor', 'sucursal'), (
   const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
   const rolLbl = { admin: 'Admin', supervisor: 'Supervisor', sucursal: 'Sucursal', jc: 'JC' };
   let ent = db.sales.filter(s => s.entrega && (scope == null || s.sucursalId === scope));
-  ent = ent.filter(s => { const t = new Date(s.entrega.fecha).getTime(); return (!r.desde || t >= r.desde) && (!r.hasta || t <= r.hasta); });
+  ent = ent.filter(s => { const t = _diaMxMs(s.entrega.fecha); return (!r.desde || t >= r.desde) && (!r.hasta || t <= r.hasta); });
   const lista = ent.map(s => {
     const c = db.clients.find(x => x.id === s.clientId) || {};
     const por = s.entrega.por || { rol: 'jc', nombre: s.entrega.jcNombre || '—' };
@@ -2755,7 +2761,7 @@ app.get('/api/reports/sin-ventas', auth, rol('admin', 'supervisor', 'sucursal'),
   let cobs = db.users.filter(u => u.rol === 'cobrador' && u.activo && (scope == null || u.sucursalId === scope));
   const lista = cobs.map(u => {
     const ventas = db.sales.filter(s => s.prom === u.nombre && s.sucursalId === u.sucursalId);
-    const porSemana = sem.map(w => ventas.filter(s => { const t = new Date(s.createdAt).getTime(); return t >= w.desde && t <= w.hasta; }).length);
+    const porSemana = sem.map(w => ventas.filter(s => { const t = _diaMxMs(s.createdAt); return t >= w.desde && t <= w.hasta; }).length);
     const ultima = ventas.length ? Math.max(...ventas.map(s => new Date(s.createdAt).getTime())) : null;
     // semanas consecutivas sin vender (desde la más reciente hacia atrás)
     let sinVender = 0; for (let i = porSemana.length - 1; i >= 0; i--) { if (porSemana[i] === 0) sinVender++; else break; }
@@ -3207,7 +3213,7 @@ function _kpisVentas(sales, desde, hasta) {
     ratio[s.id] = _interesFrac(s);
     const saldo = saldoDe(s.id);
     if (saldo > 0) { cartera += saldo; creditosAct++; cliSet.add(s.clientId); const at = atrasoDe(s); if (at.montoAtraso > 0) { atrasoMonto += at.montoAtraso; atrasoCli++; } }
-    if (s.createdAt) { const t = new Date(s.createdAt).getTime(); if (t >= desde && t <= hasta) { colocado += s.monto; ncoloc++; } }
+    if (s.createdAt) { const t = _diaMxMs(s.createdAt); if (t >= desde && t <= hasta) { colocado += s.monto; ncoloc++; } }
   });
   const ids = new Set(sales.map(s => s.id));
   db.movimientos.filter(m => m.abono > 0 && m.forma !== 'descuento' && m.forma !== 'recomendacion' && ids.has(m.saleId)).forEach(m => {
@@ -3424,7 +3430,7 @@ app.get('/api/reports/desglose', auth, rol('admin', 'supervisor', 'sucursal'), (
     let valorCartera = 0, debito = 0, totalClientes = 0, sinPago = 0, debitoSinPago = 0, carteraSinPago = 0, liquidados = 0, ventas = 0, valorVentas = 0, debitoVentas = 0, cobranza = 0;
     sales.forEach(s => {
       const esImp = s.importado === true;   // cartera migrada: NO es venta nueva de la semana en que se subió
-      const createdTs = new Date(s.createdAt).getTime();
+      const createdTs = _diaMxMs(s.createdAt);
       const existed = createdTs <= w.hasta;
       const createdEsta = !esImp && createdTs >= w.desde && createdTs <= w.hasta;
       const ms = movsPorVenta.get(s.id) || [];
