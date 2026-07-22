@@ -1466,6 +1466,28 @@ function calcAtraso(sale){
   return { cuotasDebidas, cuotasPagadas, cuotasAtraso, montoAtraso, diasAtraso };
 }
 
+// ===== CORREGIR LA CUOTA DE UN CRÉDITO (tarifa mal calculada en la migración) =====
+// Ajusta SOLO la cuota de este crédito y recalcula su plazo. No toca saldos, movimientos ni caja:
+// el saldo siempre lo determinan los movimientos, no la cuota.
+// Sirve para créditos migrados que quedaron con una cuota distinta a la que el cliente realmente
+// paga: esa diferencia se acumulaba como atraso y los sacaba en Contactos cada semana.
+app.post('/api/sales/:id/cuota', auth, rol('admin', 'supervisor'), idem, (req, res) => {
+  const id = +req.params.id;
+  const cuota = +(req.body && req.body.cuota);
+  const sale = db.sales.find(s => s.id === id);
+  if (!sale) return res.status(404).json({ error: 'Crédito no encontrado' });
+  if (!(cuota > 0)) return res.status(400).json({ error: 'Indica una cuota válida' });
+  const total = +sale.total || 0;
+  if (total > 0 && cuota > total) return res.status(400).json({ error: 'La cuota no puede ser mayor al total del crédito' });
+  const cli = db.clients.find(c => c.id === sale.clientId);
+  const antes = { cuota: +sale.cuota || 0, plazo: +sale.plazo || 0 };
+  sale.cuota = cuota;
+  sale.plazo = total > 0 ? Math.max(1, Math.round(total / cuota)) : (+sale.plazo || 1);
+  try { logOp('cuota', 'F-' + id, { saleId: id, folio: sale.folio, cliente: cli ? cli.nombre : '', antes, ahora: { cuota: sale.cuota, plazo: sale.plazo }, por: req.user.nombre }); } catch (e) {}
+  markIdem(req); saveDB();
+  res.json({ ok: true, cuota: sale.cuota, plazo: sale.plazo, antes });
+});
+
 // Recompensa "RECOMIENDA UN AMIGO": abona al saldo del cliente SIN entrar dinero físico.
 // forma:'recomendacion' → excluida de cobranza, comisión y no-pago en todo el sistema. Solo baja el saldo.
 app.post('/api/sales/:id/recomendacion', auth, rol('admin', 'supervisor'), idem, (req, res) => {
