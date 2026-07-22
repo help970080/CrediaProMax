@@ -431,6 +431,7 @@
           <button class="btn" style="border-color:#3b82f6;color:#3b82f6" onclick="ecAmortizacion()">📄 Tabla de amortización</button>
           <button class="btn" id="ec-btn-retro" style="display:none;border-color:#e0a000;color:#e0a000" onclick="ecPagoRetro()">📅 Registrar pago de semana pasada</button>
           <button class="btn" id="ec-btn-recom" style="display:none;border-color:#22a06b;color:#22a06b" onclick="ecRecomendacion()">🎁 Recomendación</button>
+          <button class="btn" id="ec-btn-cuota" style="display:none;border-color:#8b5cf6;color:#8b5cf6" onclick="ecCorregirCuota()">✏️ Corregir cuota</button>
         </div>
       </div>
     </div>
@@ -1914,6 +1915,7 @@ function ecPinta(d){
   ['ec-card','ec-saldo-card','ec-ledger-card'].forEach(id=>document.getElementById(id).style.display='block');
   { const _rb=document.getElementById('ec-btn-retro'); if(_rb) _rb.style.display=(ME&&(ME.rol==='admin'||ME.rol==='supervisor'))?'inline-flex':'none'; }
   { const _rc=document.getElementById('ec-btn-recom'); if(_rc) _rc.style.display=(ME&&(ME.rol==='admin'||ME.rol==='supervisor'))?'inline-flex':'none'; }
+  { const _rq=document.getElementById('ec-btn-cuota'); if(_rq) _rq.style.display=(ME&&(ME.rol==='admin'||ME.rol==='supervisor'))?'inline-flex':'none'; }
   document.getElementById('ec-empty').style.display='none';
   const c=ecActual;
   document.getElementById('ec-nom').textContent=c.cliente||'—';
@@ -2005,6 +2007,45 @@ function _amortParseFecha(f){ // acepta DD/MM/YYYY o DD/MM
   const p=String(f).split('/'); if(p.length<2) return new Date();
   const d=+p[0], m=+p[1]-1, y=p[2]?(+p[2]<100?2000+ +p[2]:+p[2]):new Date().getFullYear();
   return new Date(y,m,d);
+}
+// Corrige la tarifa de un crédito migrado que quedó con una cuota distinta a la que el cliente paga.
+// Solo cambia la cuota esperada y el plazo; NO toca saldo, pagos ni caja.
+function ecCorregirCuota(){
+  if(!ecActual) return;
+  const cuotaAct=+ecActual.cuota||0, total=+ecActual.total||0, plazoAct=+ecActual.plazo||0;
+  const inp='width:100%;padding:10px;margin:4px 0 6px;background:var(--surf-2);border:1px solid var(--line);border-radius:8px;color:var(--ink);font-family:inherit;box-sizing:border-box';
+  _flModal(`<h3 style="margin:0 0 4px">✏️ Corregir cuota</h3>
+    <p style="font-size:.8rem;color:var(--dim);margin:0 0 12px">Para créditos migrados cuya tarifa quedó mal calculada. <b>No cambia el saldo ni los pagos ya registrados</b>: solo la cuota esperada y el plazo. Con esto el cliente deja de salir como atrasado por la diferencia.</p>
+    <div style="background:var(--surf-2);border:1px solid var(--line);border-radius:9px;padding:10px;font-size:.82rem;margin-bottom:12px">
+      <div style="font-weight:700">${ecActual.cliente||'—'}</div>
+      <div style="color:var(--dim);font-size:.78rem;margin-top:3px">${ecActual.folio||''} · total ${fmt(total)}</div>
+      <div style="margin-top:6px">Cuota actual: <b>${fmt(cuotaAct)}</b> · Plazo actual: <b>${plazoAct||'—'}</b></div>
+    </div>
+    <label style="font-size:.78rem;color:var(--dim)">Cuota real que paga el cliente</label>
+    <input id="cq-monto" type="number" inputmode="numeric" value="${cuotaAct||''}" oninput="_cqPrev(${total})" style="${inp}">
+    <div id="cq-prev" style="font-size:.78rem;color:var(--dim);margin-bottom:12px"></div>
+    <div style="display:flex;gap:10px"><button class="btn" style="flex:1" onclick="this.closest('.flmodal').remove()">Cancelar</button><button class="btn" style="flex:1;background:#8b5cf6;color:#fff;border:none" onclick="ecCorregirCuotaOK(this)">Guardar cuota</button></div>`,'480px');
+  _cqPrev(total);
+}
+function _cqPrev(total){
+  const c=+(document.getElementById('cq-monto')||{}).value||0;
+  const el=document.getElementById('cq-prev'); if(!el) return;
+  if(!(c>0)){ el.textContent=''; return; }
+  const p=total>0?Math.max(1,Math.round(total/c)):0;
+  const exacto = total>0 && Math.abs(total/c - p) < 0.01;
+  el.innerHTML = `Nuevo plazo: <b>${p}</b> pago(s)` + (exacto?' <span style="color:var(--grn)">· cuadra exacto ✓</span>':' <span style="color:var(--acc)">· no divide exacto, revisa</span>');
+}
+async function ecCorregirCuotaOK(b){
+  const cuota=+document.getElementById('cq-monto').value;
+  if(!(cuota>0)){ alert('Indica una cuota válida'); return; }
+  b.disabled=true;
+  try{
+    const r=await apiU('POST','/api/sales/'+ecActual.id+'/cuota',{cuota,idempotencyKey:'cuota-'+ecActual.id+'-'+Date.now()});
+    b.closest('.flmodal').remove();
+    ecActual.cuota=r.cuota; ecActual.plazo=r.plazo;
+    await ecCargar();
+    alert('✓ Cuota actualizada a '+fmt(r.cuota)+' · plazo '+r.plazo+' pagos.\n(antes: '+fmt(r.antes.cuota)+' · '+r.antes.plazo+' pagos)');
+  }catch(e){ alert(e.message); b.disabled=false; }
 }
 async function ecAmortizacion(){ if(!ecActual) return; _amortizarSale(ecActual); }
 async function amortizarCredito(saleId){
