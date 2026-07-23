@@ -58,6 +58,11 @@ app.use(express.static(PUBLIC_DIR, {
 const { AsyncLocalStorage } = require('async_hooks');
 const als = new AsyncLocalStorage();
 const USE_PG = !!process.env.DATABASE_URL;
+// ===== ESPEJO DE MOVIMIENTOS (fase 2) =====
+// Escribe cada alta/baja de movimientos también en una tabla normalizada, en paralelo al
+// bloque JSON. El JSON SIGUE MANDANDO: el espejo es solo copia. Se apaga con la variable
+// de entorno FLAG_ESPEJO (quítala o ponla en 0 en Render y el server vuelve a como estaba).
+const ESPEJO = process.env.FLAG_ESPEJO === '1';
 let pool = null;
 if (USE_PG) {
   const { Pool } = require('pg');
@@ -92,6 +97,21 @@ async function _initSchema() {
   // Registro de operaciones (append-only): red de seguridad independiente del bloque grande.
   await _pgTry(() => pool.query('CREATE TABLE IF NOT EXISTS cobrapro_oplog (id BIGSERIAL PRIMARY KEY, tenant INT, ts TIMESTAMPTZ DEFAULT now(), tipo TEXT, ref TEXT, data JSONB)'));
   await _pgTry(() => pool.query('CREATE INDEX IF NOT EXISTS idx_oplog_tenant_ts ON cobrapro_oplog (tenant, ts)'));
+  if (ESPEJO) {
+    // Copia normalizada de db.movimientos. Mismo esquema que el script fase1_espejo.js v1.1.
+    await _pgTry(() => pool.query(`CREATE TABLE IF NOT EXISTS movimientos_espejo (
+      tenant INT NOT NULL, mov_id INT NOT NULL, sale_id INT,
+      fecha_txt TEXT, fecha DATE, concepto TEXT, origen TEXT,
+      cargo DOUBLE PRECISION NOT NULL DEFAULT 0, abono DOUBLE PRECISION NOT NULL DEFAULT 0,
+      forma TEXT, sucursal_cobro INT, sucursal_credito INT,
+      solo_registro BOOLEAN, capturado_por TEXT, automatico BOOLEAN,
+      cargado_en TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (tenant, mov_id))`));
+    await _pgTry(() => pool.query('CREATE INDEX IF NOT EXISTS idx_esp_tenant_fecha ON movimientos_espejo (tenant, fecha)'));
+    await _pgTry(() => pool.query('CREATE INDEX IF NOT EXISTS idx_esp_tenant_sale ON movimientos_espejo (tenant, sale_id)'));
+    await _pgTry(() => pool.query('CREATE INDEX IF NOT EXISTS idx_esp_tenant_forma ON movimientos_espejo (tenant, forma)'));
+    console.log('✔ Espejo de movimientos ACTIVO (FLAG_ESPEJO=1)');
+  }
   _schemaListo = true;
 }
 async function loadRow(id) {
@@ -170,6 +190,7 @@ async function _flushAllNow() {
     }
   }
   try { await _flushOplog(); } catch {}
+  try { await _flushEspejo(); } catch {}
 }
 const loadSystem = () => loadRow(0);
 const saveSystem = () => saveRow(0, SYS);
@@ -202,6 +223,84 @@ async function _flushOplog() {
   }
   _oplogBusy = false;
   if (_oplogQ.length) setTimeout(_flushOplog, 3000);
+}
+
+// ===== ESPEJO DE MOVIMIENTOS — cola propia, igual que el oplog =====
+// REGLA: el espejo NUNCA puede tumbar una operación. Si Postgres falla, el pago se registra
+// igual en el JSON y el espejo se reintenta aparte. Por eso nada de esto se espera (await)
+// dentro de una petición.
+const _espQ = [];
+let _espBusy = false;
+let _espPerdidos = 0;      // altas/bajas sin agencia en contexto (no deberían ocurrir)
+
+// "DD/MM/YYYY" -> "YYYY-MM-DD" (null si no se puede leer; fecha_txt conserva el original)
+function _espFechaISO(t) {
+  if (!t || typeof t !== 'string') return null;
+  const p = t.split('/'); if (p.length !== 3) return null;
+  const d = +p[0], m = +p[1], y = +p[2];
+  if (!(d >= 1 && d <= 31 && m >= 1 && m <= 12 && y >= 2000 && y <= 2100)) return null;
+  return y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+}
+function _espEncola(op) {
+  if (!USE_PG || !ESPEJO) return;
+  const st = als.getStore();
+  const tenant = (st && st.tenantId != null) ? st.tenantId : null;
+  if (tenant == null) { _espPerdidos++; return; }   // sin agencia: no se puede espejar
+  op.tenant = tenant;
+  _espQ.push(op);
+  _flushEspejo();
+}
+// alta de un movimiento
+function espejoAlta(m) { if (m && m.id != null) _espEncola({ tipo: 'alta', mov: m }); }
+// baja de uno o varios movimientos (por id)
+function espejoBaja(ids) {
+  const l = (Array.isArray(ids) ? ids : [ids]).filter(x => x != null).map(Number);
+  if (l.length) _espEncola({ tipo: 'baja', ids: l });
+}
+// Envoltura de db.movimientos.push: agrega al JSON Y al espejo, en un solo lugar.
+function movAdd(m) { db.movimientos.push(m); espejoAlta(m); return m; }
+
+async function _flushEspejo() {
+  if (_espBusy || !_espQ.length) return;
+  _espBusy = true;
+  while (_espQ.length) {
+    const op = _espQ[0];
+    try {
+      if (op.tipo === 'baja') {
+        await pool.query('DELETE FROM movimientos_espejo WHERE tenant = $1 AND mov_id = ANY($2)', [op.tenant, op.ids]);
+      } else {
+        const m = op.mov;
+        // ON CONFLICT: nextId(max+1) puede reciclar un id tras una reversa; si la baja aún
+        // no se aplicaba, la fila vieja se sobreescribe en vez de reventar por llave duplicada.
+        await pool.query(
+          `INSERT INTO movimientos_espejo
+             (tenant, mov_id, sale_id, fecha_txt, fecha, concepto, origen, cargo, abono,
+              forma, sucursal_cobro, sucursal_credito, solo_registro, capturado_por, automatico)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+           ON CONFLICT (tenant, mov_id) DO UPDATE SET
+             sale_id=$3, fecha_txt=$4, fecha=$5, concepto=$6, origen=$7, cargo=$8, abono=$9,
+             forma=$10, sucursal_cobro=$11, sucursal_credito=$12, solo_registro=$13,
+             capturado_por=$14, automatico=$15, cargado_en=now()`,
+          [op.tenant, +m.id, m.saleId != null ? +m.saleId : null,
+           m.fecha != null ? String(m.fecha) : null, _espFechaISO(m.fecha),
+           m.concepto != null ? String(m.concepto) : null,
+           m.origen != null ? String(m.origen) : null,
+           +m.cargo || 0, +m.abono || 0,
+           m.forma != null ? String(m.forma) : null,
+           m.sucursalCobro != null ? +m.sucursalCobro : null,
+           m.sucursalCredito != null ? +m.sucursalCredito : null,
+           m.soloRegistro === true,
+           m.capturadoPor != null ? String(m.capturadoPor) : null,
+           m.auto === true]);
+      }
+      _espQ.shift();
+    } catch (e) {
+      console.error('⚠ espejo pendiente (se reintenta):', e.message);
+      break;
+    }
+  }
+  _espBusy = false;
+  if (_espQ.length) setTimeout(_flushEspejo, 3000);
 }
 
 // blob en blanco para una agencia nueva (con su admin inicial y branding)
@@ -1163,6 +1262,7 @@ app.post('/api/entregas/:id/eliminar', auth, rol('admin', 'supervisor'), (req, r
     por: { rol: req.user.rol, id: req.user.id, nombre: req.user.nombre }, fecha: new Date().toISOString()
   });
   // limpia movimientos de ese crédito y la venta; si el cliente no tiene otros créditos, lo da de baja
+  espejoBaja(db.movimientos.filter(m => m.saleId === s.id).map(m => m.id));   // espejo: mismas bajas
   db.movimientos = db.movimientos.filter(m => m.saleId !== s.id);
   const otras = db.sales.filter(x => x.clientId === s.clientId && x.id !== s.id);
   db.sales = db.sales.filter(x => x.id !== s.id);
@@ -1413,10 +1513,10 @@ app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) 
   if (artLimpios.length) sale.articulos = artLimpios;
   if (r.descuentaPP) { sale.primerPago = r.primerPago; sale.descuentaPP = true; sale.entregaMonto = r.entregaCliente; }
   db.sales.push(sale);
-  db.movimientos.push({ id: nextId('movimientos'), saleId: sale.id, fecha: fechaMxHoyDDMM(), concepto: 'Disposición de crédito', origen: 'Sucursal', cargo: r.total, abono: 0 });
+  movAdd({ id: nextId('movimientos'), saleId: sale.id, fecha: fechaMxHoyDDMM(), concepto: 'Disposición de crédito', origen: 'Sucursal', cargo: r.total, abono: 0 });
   // Productos que descuentan el primer pago: se registra de inmediato como abono (el cliente recibe monto − primer pago)
   if (r.descuentaPP && r.primerPago > 0) {
-    db.movimientos.push({ id: nextId('movimientos'), saleId: sale.id, fecha: fechaMxHoyDDMM(), concepto: 'Primer pago descontado al inicio', origen: 'Origen del crédito', cargo: 0, abono: r.primerPago, forma: 'descuento', sucursalCobro: sucCred, sucursalCredito: sucCred });
+    movAdd({ id: nextId('movimientos'), saleId: sale.id, fecha: fechaMxHoyDDMM(), concepto: 'Primer pago descontado al inicio', origen: 'Origen del crédito', cargo: 0, abono: r.primerPago, forma: 'descuento', sucursalCobro: sucCred, sucursalCredito: sucCred });
   }
   saveDB();
   const nCreditos = db.sales.filter(s => s.clientId === client.id).length;
@@ -1499,7 +1599,7 @@ app.post('/api/sales/:id/recomendacion', auth, rol('admin', 'supervisor'), idem,
   const saldoAct = saldoDe(id);
   if (saldoAct <= 0) return res.status(400).json({ error: 'El crédito ya está liquidado' });
   const abono = Math.min(monto, saldoAct); // no dejar saldo negativo
-  db.movimientos.push({
+  movAdd({
     id: nextId('movimientos'), saleId: id, fecha: fechaMxHoyDDMM(),
     concepto: 'RECOMIENDA UN AMIGO', origen: 'Recompensa por recomendación',
     cargo: 0, abono, forma: 'recomendacion',
@@ -1556,7 +1656,7 @@ app.post('/api/sales/:id/pago', auth, idem, (req, res) => {
   }
   // ¿el efectivo ya se entregó físicamente? entonces esto es SOLO registro: no se vuelve a mover caja.
   const sinEfectivo = !!req.body.sinEfectivo && (req.user.rol === 'admin' || req.user.rol === 'supervisor');
-  db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: fechaMov, concepto: 'Abono', origen: origenPago, cargo: 0, abono: +monto, forma: f, sucursalCobro: +sidCobro, sucursalCredito: +sidCredito, soloRegistro: sinEfectivo || undefined });
+  movAdd({ id: nextId('movimientos'), saleId: id, fecha: fechaMov, concepto: 'Abono', origen: origenPago, cargo: 0, abono: +monto, forma: f, sucursalCobro: +sidCobro, sucursalCredito: +sidCredito, soloRegistro: sinEfectivo || undefined });
   db.caja[sidCobro] = db.caja[sidCobro] || { inicial: 0, efectivo: 0, banco: 0, entregas: 0 };
   if (sinEfectivo) {
     // El dinero físico ya se manejó antes (ya se entregó/recibió). No toca caja ni "por entregar":
@@ -1610,7 +1710,7 @@ app.post('/api/sales/:id/refin', auth, rol('admin','supervisor','sucursal'), ide
 
   const hoy = fechaMxHoyDDMM();
   // 1. liquida el viejo con un abono forma=refin
-  db.movimientos.push({
+  movAdd({
     id: nextId('movimientos'), saleId: id, fecha: hoy,
     concepto: 'Liquidación por REFIN',
     origen: req.user.nombre + ' (REFIN ventanilla)',
@@ -1629,7 +1729,7 @@ app.post('/api/sales/:id/refin', auth, rol('admin','supervisor','sucursal'), ide
   if (r.descuentaPP) { nuevo.primerPago = r.primerPago; nuevo.descuentaPP = true; }
   db.sales.push(nuevo);
   // 3. disposición del nuevo crédito
-  db.movimientos.push({
+  movAdd({
     id: nextId('movimientos'), saleId: nuevo.id, fecha: hoy,
     concepto: `Disposición REFIN (descuenta $${Math.round(saldoActual)} del crédito ${old.folio})`,
     origen: 'Sucursal: ' + req.user.nombre,
@@ -1637,7 +1737,7 @@ app.post('/api/sales/:id/refin', auth, rol('admin','supervisor','sucursal'), ide
   });
   // 3b. primer pago descontado al inicio (no se considera cobranza; forma=descuento)
   if (r.descuentaPP && r.primerPago > 0) {
-    db.movimientos.push({ id: nextId('movimientos'), saleId: nuevo.id, fecha: hoy, concepto: 'Primer pago descontado al inicio', origen: 'Origen del crédito (REFIN)', cargo: 0, abono: r.primerPago, forma: 'descuento', sucursalCobro: old.sucursalId, sucursalCredito: old.sucursalId });
+    movAdd({ id: nextId('movimientos'), saleId: nuevo.id, fecha: hoy, concepto: 'Primer pago descontado al inicio', origen: 'Origen del crédito (REFIN)', cargo: 0, abono: r.primerPago, forma: 'descuento', sucursalCobro: old.sucursalId, sucursalCredito: old.sucursalId });
   }
 
   markIdem(req); saveDB();
@@ -1668,7 +1768,7 @@ app.post('/api/sales/:id/reestructura', auth, rol('admin', 'supervisor'), (req, 
   const hoy = fechaMxHoyDDMM();
   // 1. cargo real sobre el saldo insoluto (NO es abono, no infla cobranza)
   if (cargo > 0) {
-    db.movimientos.push({
+    movAdd({
       id: nextId('movimientos'), saleId: id, fecha: hoy,
       concepto: 'Cargo por reestructura' + (motivo ? ' — ' + motivo : ''),
       origen: 'Supervisor: ' + req.user.nombre,
@@ -1701,22 +1801,22 @@ app.post('/api/sales/:id/reestructura', auth, rol('admin', 'supervisor'), (req, 
 /* ---------- Supervisor: cargo / abono / condonación ---------- */
 app.post('/api/sales/:id/cargo', auth, rol('admin', 'supervisor'), idem, (req, res) => {
   const id = +req.params.id; const { monto, concepto } = req.body;
-  db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: fechaMxHoyDDMM(), concepto: concepto || 'Cargo manual', origen: 'Supervisor: ' + req.user.nombre, cargo: +monto, abono: 0 });
+  movAdd({ id: nextId('movimientos'), saleId: id, fecha: fechaMxHoyDDMM(), concepto: concepto || 'Cargo manual', origen: 'Supervisor: ' + req.user.nombre, cargo: +monto, abono: 0 });
   markIdem(req); saveDB(); res.json({ ok: true, saldo: saldoDe(id) });
 });
 app.post('/api/sales/:id/abono', auth, rol('admin', 'supervisor'), idem, (req, res) => {
   const id = +req.params.id;
-  db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: fechaMxHoyDDMM(), concepto: 'Abono manual', origen: 'Supervisor: ' + req.user.nombre, cargo: 0, abono: +req.body.monto });
+  movAdd({ id: nextId('movimientos'), saleId: id, fecha: fechaMxHoyDDMM(), concepto: 'Abono manual', origen: 'Supervisor: ' + req.user.nombre, cargo: 0, abono: +req.body.monto });
   markIdem(req); saveDB(); res.json({ ok: true, saldo: saldoDe(id) });
 });
 app.post('/api/sales/:id/condonar', auth, rol('admin', 'supervisor'), idem, (req, res) => {
   const id = +req.params.id;
-  db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: fechaMxHoyDDMM(), concepto: 'Condonación: ' + (req.body.motivo || 'ajuste'), origen: 'Supervisor: ' + req.user.nombre, cargo: 0, abono: +req.body.monto });
+  movAdd({ id: nextId('movimientos'), saleId: id, fecha: fechaMxHoyDDMM(), concepto: 'Condonación: ' + (req.body.motivo || 'ajuste'), origen: 'Supervisor: ' + req.user.nombre, cargo: 0, abono: +req.body.monto });
   markIdem(req); saveDB(); res.json({ ok: true, saldo: saldoDe(id) });
 });
 app.post('/api/sales/:id/aplicar-mora', auth, (req, res) => {
   const id = +req.params.id; const monto = +req.body.monto || 25;
-  db.movimientos.push({ id: nextId('movimientos'), saleId: id, fecha: fechaMxHoyDDMM(), concepto: 'Moratorio automático', origen: 'Sistema', cargo: monto, abono: 0, auto: true });
+  movAdd({ id: nextId('movimientos'), saleId: id, fecha: fechaMxHoyDDMM(), concepto: 'Moratorio automático', origen: 'Sistema', cargo: monto, abono: 0, auto: true });
   saveDB(); res.json({ ok: true, saldo: saldoDe(id) });
 });
 
@@ -2899,6 +2999,7 @@ app.post('/api/movimientos/:id/revertir', auth, rol('admin','supervisor'), (req,
   db.auditoria = db.auditoria || [];
   db.auditoria.push({ tipo: 'reverso-cobro', movId: id, saleId: m.saleId, monto, forma: f, origen: m.origen || '', por: req.user.nombre, fecha: fechaMxHoyDDMM(), ts: Date.now() });
   db.movimientos.splice(i, 1);   // eliminar el abono → revierte el saldo automáticamente
+  espejoBaja(id);                // espejo: misma baja
   saveDB();
   logOp('reverso', m.saleId, { movId: id, saleId: m.saleId, monto, forma: f, por: req.user.nombre });
   res.json({ ok: true, saldo: saldoDe(m.saleId), revertido: monto });
@@ -2928,7 +3029,7 @@ app.post('/api/admin/corregir-refines-s16', auth, rol('admin'), (req, res) => {
     // 3. agregar el primer pago descontado si no existe
     const yaPP = db.movimientos.some(m => m.saleId === s.id && m.forma === 'descuento' && /Primer pago/.test(m.concepto || ''));
     if (!yaPP && r.primerPago > 0) {
-      db.movimientos.push({ id: nextId('movimientos'), saleId: s.id, fecha: (disp ? disp.fecha : fechaMxHoyDDMM()), concepto: 'Primer pago descontado al inicio', origen: 'Corrección REFIN s16', cargo: 0, abono: r.primerPago, forma: 'descuento', sucursalCobro: s.sucursalId, sucursalCredito: s.sucursalId });
+      movAdd({ id: nextId('movimientos'), saleId: s.id, fecha: (disp ? disp.fecha : fechaMxHoyDDMM()), concepto: 'Primer pago descontado al inicio', origen: 'Corrección REFIN s16', cargo: 0, abono: r.primerPago, forma: 'descuento', sucursalCobro: s.sucursalId, sucursalCredito: s.sucursalId });
     }
     if (muestra.length < 8) muestra.push({ folio: s.folio, monto: s.monto, cuotaAntes, cuotaNueva: r.cuota, totalAntes, totalNuevo: r.total, primerPago: r.primerPago, saldoAntes: Math.round(saldoAntes), saldoNuevo: Math.round(saldoDe(s.id)) });
     corregidos++;
@@ -3125,7 +3226,7 @@ app.post('/api/admin/import-bulk', auth, rol('admin'), (req, res) => {
     const sale = { id: nextId('sales'), folio, clientId: client.id, tipo: 'semanal', plazo, monto: +it.monto || 0, cuota, total, prom: it.ruta, sucursalId: sid, entregado: true, importado: true, createdAt: new Date().toISOString() };
     db.sales.push(sale);
     // saldo de apertura = saldo actual (snapshot). saldoDe() = cargo - abono = saldo
-    db.movimientos.push({ id: nextId('movimientos'), saleId: sale.id, fecha: hoy, concepto: 'Saldo inicial (migración)', origen: 'Importación', cargo: saldo, abono: 0 });
+    movAdd({ id: nextId('movimientos'), saleId: sale.id, fecha: hoy, concepto: 'Saldo inicial (migración)', origen: 'Importación', cargo: saldo, abono: 0 });
     creados++;
   });
   // BLINDAJE: asegura que TODOS los usuarios de la agencia queden en el índice global,
