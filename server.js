@@ -63,6 +63,14 @@ const USE_PG = !!process.env.DATABASE_URL;
 // bloque JSON. El JSON SIGUE MANDANDO: el espejo es solo copia. Se apaga con la variable
 // de entorno FLAG_ESPEJO (quítala o ponla en 0 en Render y el server vuelve a como estaba).
 const ESPEJO = process.env.FLAG_ESPEJO === '1';
+// ===== FOTOS FUERA DEL BLOQUE =====
+// Las evidencias (fotoCasa, fotoCliente, firma, evidencia de contacto) se guardaban como
+// base64 DENTRO del bloque JSON: en Libertad Financiera eran 51.5 MB de 53.5 MB (96%).
+// Como el bloque completo se reescribe en cada guardado, un pago de 200 bytes movía 53 MB.
+// Con esto la foto va a su propia tabla y en el bloque queda solo la marca "foto:N".
+// Al servirla se expande de vuelta, así que el frontend recibe lo mismo que antes.
+// Se apaga quitando FLAG_FOTOS en Render.
+const FOTOS = process.env.FLAG_FOTOS === '1';
 let pool = null;
 if (USE_PG) {
   const { Pool } = require('pg');
@@ -97,6 +105,13 @@ async function _initSchema() {
   // Registro de operaciones (append-only): red de seguridad independiente del bloque grande.
   await _pgTry(() => pool.query('CREATE TABLE IF NOT EXISTS cobrapro_oplog (id BIGSERIAL PRIMARY KEY, tenant INT, ts TIMESTAMPTZ DEFAULT now(), tipo TEXT, ref TEXT, data JSONB)'));
   await _pgTry(() => pool.query('CREATE INDEX IF NOT EXISTS idx_oplog_tenant_ts ON cobrapro_oplog (tenant, ts)'));
+  if (FOTOS) {
+    await _pgTry(() => pool.query(`CREATE TABLE IF NOT EXISTS cobrapro_fotos (
+      id BIGSERIAL PRIMARY KEY, tenant INT NOT NULL, ref TEXT,
+      datos TEXT NOT NULL, bytes INT, creado TIMESTAMPTZ NOT NULL DEFAULT now())`));
+    await _pgTry(() => pool.query('CREATE INDEX IF NOT EXISTS idx_fotos_tenant ON cobrapro_fotos (tenant)'));
+    console.log('✔ Fotos fuera del bloque ACTIVO (FLAG_FOTOS=1)');
+  }
   if (ESPEJO) {
     // Copia normalizada de db.movimientos. Mismo esquema que el script fase1_espejo.js v1.1.
     await _pgTry(() => pool.query(`CREATE TABLE IF NOT EXISTS movimientos_espejo (
@@ -223,6 +238,72 @@ async function _flushOplog() {
   }
   _oplogBusy = false;
   if (_oplogQ.length) setTimeout(_flushOplog, 3000);
+}
+
+// ===== FOTOS: guardar aparte, expandir al servir =====
+// En el bloque queda la marca "foto:N". El resto del sistema no se entera.
+const _RE_FOTO = /^foto:(\d+)$/;
+function _esRefFoto(v) { return typeof v === 'string' && _RE_FOTO.test(v); }
+
+// Guarda una imagen y devuelve "foto:N". Si algo falla DEVUELVE LA IMAGEN TAL CUAL:
+// una entrega nunca se pierde por un problema al separar la foto.
+async function fotoGuardar(datos, ref) {
+  if (!FOTOS || !USE_PG) return datos;
+  if (typeof datos !== 'string' || datos.length < 100) return datos;
+  if (_esRefFoto(datos)) return datos;
+  const st = als.getStore();
+  const tenant = (st && st.tenantId != null) ? st.tenantId : null;
+  if (tenant == null) return datos;
+  try {
+    const r = await pool.query(
+      'INSERT INTO cobrapro_fotos (tenant, ref, datos, bytes) VALUES ($1,$2,$3,$4) RETURNING id',
+      [tenant, ref || null, datos, Buffer.byteLength(datos)]);
+    return 'foto:' + r.rows[0].id;
+  } catch (e) {
+    console.error('⚠ foto no se pudo separar (queda en el bloque):', e.message);
+    return datos;
+  }
+}
+
+// Lee varias fotos de una sola consulta. Devuelve mapa "foto:N" -> base64.
+async function _fotosLeer(refs) {
+  const ids = [...new Set(refs.filter(_esRefFoto).map(v => +v.match(_RE_FOTO)[1]))];
+  const mapa = new Map();
+  if (!ids.length || !USE_PG) return mapa;
+  const st = als.getStore();
+  const tenant = (st && st.tenantId != null) ? st.tenantId : null;
+  try {
+    const r = await pool.query('SELECT id, datos FROM cobrapro_fotos WHERE id = ANY($1) AND tenant = $2', [ids, tenant]);
+    for (const x of r.rows) mapa.set('foto:' + x.id, x.datos);
+  } catch (e) { console.error('⚠ no se pudieron leer fotos:', e.message); }
+  return mapa;
+}
+
+// COPIA del objeto con los campos expandidos. No modifica el original: si lo hiciera,
+// las fotos volverían al bloque en el siguiente guardado.
+async function fotoExpandir(obj, campos) {
+  if (!obj) return obj;
+  const refs = campos.map(c => obj[c]).filter(_esRefFoto);
+  if (!refs.length) return obj;
+  const mapa = await _fotosLeer(refs);
+  const copia = Object.assign({}, obj);
+  for (const c of campos) if (_esRefFoto(copia[c])) copia[c] = mapa.get(copia[c]) || null;
+  return copia;
+}
+
+// Igual, para una lista, con UNA sola consulta.
+async function fotoExpandirLista(lista, campos) {
+  if (!Array.isArray(lista) || !lista.length) return lista;
+  const refs = [];
+  for (const o of lista) for (const c of campos) if (_esRefFoto(o && o[c])) refs.push(o[c]);
+  if (!refs.length) return lista;
+  const mapa = await _fotosLeer(refs);
+  return lista.map(o => {
+    if (!o) return o;
+    const copia = Object.assign({}, o);
+    for (const c of campos) if (_esRefFoto(copia[c])) copia[c] = mapa.get(copia[c]) || null;
+    return copia;
+  });
 }
 
 // ===== ESPEJO DE MOVIMIENTOS — cola propia, igual que el oplog =====
@@ -1145,7 +1226,7 @@ app.post('/api/cobrador/recibir-efectivo', auth, rol('admin', 'supervisor'), (re
   res.json({ ok: true, recibido: monto, destino, destinoNombre, restante: Math.round(porEntregarDe(prom)) });
 });
 // Panel del JC
-app.get('/api/jc/panel', auth, rol('jc'), (req, res) => {
+app.get('/api/jc/panel', auth, rol('jc'), async (req, res) => {
   const me = db.users.find(u => u.id === req.user.id);
   const sucId = me ? me.sucursalId : null;
   const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
@@ -1160,7 +1241,9 @@ app.get('/api/jc/panel', auth, rol('jc'), (req, res) => {
     const cli = db.clients.find(c => c.id === s.clientId) || {};
     return { id: s.id, folio: s.folio, cliente: cli.nombre, monto: s.monto, fecha: s.entrega.fecha, lat: s.entrega.lat, lng: s.entrega.lng, fotoCasa: s.entrega.fotoCasa, fotoCliente: s.entrega.fotoCliente };
   }).reverse();
-  res.json({ caja: jcCajaDe(req.user.id), sucursal: (db.sucursales.find(s => s.id === sucId) || {}).nombre || null, pendientes, recibidas: recibidas.slice(0, 30), porEntregar, entregados: entregados.slice(0, 30) });
+  // El panel manda hasta 30 entregas con sus fotos: se expanden en UNA sola consulta.
+  const entregados30 = await fotoExpandirLista(entregados.slice(0, 30), ['fotoCasa', 'fotoCliente']);
+  res.json({ caja: jcCajaDe(req.user.id), sucursal: (db.sucursales.find(s => s.id === sucId) || {}).nombre || null, pendientes, recibidas: recibidas.slice(0, 30), porEntregar, entregados: entregados30 });
 });
 // Reenviar un crédito existente a la cola de entrega del JC (para reconciliar)
 app.post('/api/sales/:id/pendiente-entrega', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
@@ -1172,11 +1255,12 @@ app.post('/api/sales/:id/pendiente-entrega', auth, rol('admin', 'supervisor', 's
   res.json({ ok: true });
 });
 // JC entrega un crédito al cliente con evidencia
-app.post('/api/sales/:id/entregar', auth, rol('admin', 'supervisor', 'sucursal', 'jc'), (req, res) => {
+app.post('/api/sales/:id/entregar', auth, rol('admin', 'supervisor', 'sucursal', 'jc'), async (req, res) => {
   const s = db.sales.find(x => x.id == req.params.id);
   if (!s) return res.status(404).json({ error: 'Crédito no encontrado' });
   if (s.entregado === true || s.entrega) return res.status(409).json({ error: 'Ese crédito ya fue entregado' });
-  const { lat, lng, fotoCasa, fotoCliente, firma } = req.body;
+  const { lat, lng, firma: _firmaIn, fotoCasa: _casaIn, fotoCliente: _cliIn } = req.body;
+  let fotoCasa = _casaIn, fotoCliente = _cliIn, firma = _firmaIn;
   if (!fotoCasa || !fotoCliente) return res.status(400).json({ error: 'Sube la foto de la casa y la foto del cliente' });
   if (!firma) return res.status(400).json({ error: 'Falta la firma del pagaré del cliente' });
   const esJefe = req.user.rol === 'admin' || req.user.rol === 'supervisor';
@@ -1191,6 +1275,13 @@ app.post('/api/sales/:id/entregar', auth, rol('admin', 'supervisor', 'sucursal',
   if (s.tomadoPor && s.tomadoPor.rol === req.user.rol && s.tomadoPor.id === req.user.id) disp += monto;
   if (disp < monto - 0.5) return res.status(409).json({ error: `No tienes suficiente efectivo para entregar este crédito. Disponible $${Math.round(disp).toLocaleString('es-MX')}, este crédito entrega $${Math.round(monto).toLocaleString('es-MX')} al cliente. Pide que te doten o recibe efectivo de un promotor.` });
   const cli = db.clients.find(c => c.id === s.clientId) || {};
+  // Las 3 evidencias salen del bloque y quedan como "foto:N". Si falla, se guardan
+  // en el bloque como antes: la entrega no se pierde por esto.
+  if (FOTOS) {
+    fotoCasa    = await fotoGuardar(fotoCasa,    'sale:' + s.id + ':fotoCasa');
+    fotoCliente = await fotoGuardar(fotoCliente, 'sale:' + s.id + ':fotoCliente');
+    firma       = await fotoGuardar(firma,       'sale:' + s.id + ':firma');
+  }
   s.entregado = true;
   s.entrega = {
     por: { rol: req.user.rol, id: req.user.id, nombre: req.user.nombre },
@@ -1282,14 +1373,16 @@ app.post('/api/jc/cierre', auth, rol('jc'), (req, res) => {
   res.json({ ok: true, cierre });
 });
 // Ver evidencia de entrega de un crédito (admin/supervisor todos; cobrador solo sus clientes)
-app.get('/api/sales/:id/entrega', auth, (req, res) => {
+app.get('/api/sales/:id/entrega', auth, async (req, res) => {
   const s = db.sales.find(x => x.id == req.params.id);
   if (!s) return res.status(404).json({ error: 'Crédito no encontrado' });
   const role = req.user.rol;
   const allowed = ['admin', 'supervisor', 'jc', 'sucursal'].includes(role) || (role === 'cobrador' && s.prom === req.user.nombre);
   if (!allowed) return res.status(403).json({ error: 'Sin permiso' });
   const cli = db.clients.find(c => c.id === s.clientId) || {};
-  res.json({ entrega: s.entrega || null, cliente: cli.nombre, folio: s.folio });
+  // Se expanden las marcas "foto:N" a base64: el frontend recibe lo mismo de siempre.
+  const entrega = await fotoExpandir(s.entrega, ['fotoCasa', 'fotoCliente', 'firma']);
+  res.json({ entrega: entrega || null, cliente: cli.nombre, folio: s.folio });
 });
 // Datos para el pagaré (cliente + importe), usado por sucursal (PDF) y JC (firma)
 app.get('/api/sales/:id/pagare', auth, (req, res) => {
@@ -2359,7 +2452,7 @@ app.get('/api/contactos', auth, rol('admin','supervisor','sucursal','cobrador'),
   res.json({ semana:iso, rows, resumen });
 });
 // Guardar gestión / evidencia de un contacto (queda pendiente de validar)
-app.post('/api/contactos', auth, rol('admin','supervisor','sucursal','cobrador'), (req,res)=>{
+app.post('/api/contactos', auth, rol('admin','supervisor','sucursal','cobrador'), async (req,res)=>{
   const { semana, clientId, resultado, nota, evidencia } = req.body;
   const iso = semana || _semanaContactos();
   const cid = +clientId;
@@ -2372,16 +2465,18 @@ app.post('/api/contactos', auth, rol('admin','supervisor','sucursal','cobrador')
   if(!rec){ rec={ id:nextId('contactos'), semana:iso, clientId:cid }; db.contactos.push(rec); }
   if(resultado!=null) rec.resultado=String(resultado).slice(0,80);
   if(nota!=null) rec.nota=String(nota).slice(0,500);
-  if(evidencia!=null) rec.evidencia=evidencia;     // dataURL base64
+  // La evidencia sale del bloque y queda como "foto:N" (o tal cual si falla).
+  if(evidencia!=null) rec.evidencia = FOTOS ? await fotoGuardar(evidencia, 'contacto:'+rec.id+':evidencia') : evidencia;
   rec.por=req.user.nombre; rec.fecha=new Date().toISOString();
   rec.validado=false; rec.validadoPor=null; rec.validadoFecha=null;   // toda gestión nueva entra sin validar
   saveDB(); res.json({ ok:true, id:rec.id });
 });
 // Ver evidencia/nota de un contacto
-app.get('/api/contactos/:id/evidencia', auth, rol('admin','supervisor','sucursal','cobrador'), (req,res)=>{
+app.get('/api/contactos/:id/evidencia', auth, rol('admin','supervisor','sucursal','cobrador'), async (req,res)=>{
   const rec=db.contactos.find(k=>k.id==req.params.id);
   if(!rec) return res.status(404).json({ error:'Contacto no encontrado' });
-  res.json({ evidencia:rec.evidencia||null, nota:rec.nota||'', resultado:rec.resultado||'', por:rec.por||null, validado:!!rec.validado, validadoPor:rec.validadoPor||null });
+  const r = await fotoExpandir(rec, ['evidencia']);
+  res.json({ evidencia:r.evidencia||null, nota:rec.nota||'', resultado:rec.resultado||'', por:rec.por||null, validado:!!rec.validado, validadoPor:rec.validadoPor||null });
 });
 // Validar (o rechazar) un contacto — solo admin/supervisor
 app.post('/api/contactos/:id/validar', auth, rol('admin','supervisor'), (req,res)=>{
