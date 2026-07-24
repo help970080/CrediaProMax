@@ -200,6 +200,7 @@
   <nav id="nav">
     <div class="nav-lbl">Operación</div>
     <button class="navitem on" data-v="resumen"><span class="ic">▣</span> Resumen</button>
+    <button class="navitem" onclick="window.open('scorecard.html','_blank')"><span class="ic">📊</span> Scorecard <span style="margin-left:auto;font-size:.7rem;opacity:.6">↗</span></button>
     <button class="navitem" data-v="numdiarios"><span class="ic">📅</span> Números diarios</button>
     <button class="navitem" data-v="cartera"><span class="ic">≣</span> Cartera de crédito</button>
     <button class="navitem" data-v="estado"><span class="ic">🧾</span> Estado de cuenta</button>
@@ -2658,7 +2659,7 @@ async function declinarVoBo(id){
 }
 setTimeout(()=>{ try{ cargarVoBo(); }catch(e){} }, 1800);
 
-document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
+document.querySelectorAll('.navitem').forEach(n=>{ if(!n.dataset.v) return; n.onclick=()=>{
   document.querySelectorAll('.navitem').forEach(x=>x.classList.remove('on'));
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
   n.classList.add('on');document.getElementById(n.dataset.v).classList.add('on');
@@ -2684,7 +2685,7 @@ document.querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{
   if(n.dataset.v==='asignar') initAsignar();
   if(n.dataset.v==='extras') initExtras();
   if(n.dataset.v==='pl') cargarPL();
-});
+}; });
 document.querySelectorAll('#period button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#period button').forEach(x=>x.classList.remove('on'));b.classList.add('on');period=b.dataset.p;render();});
 ['c-cob','c-meta','c-bono','c-mora','c-coloc'].forEach(id=>document.getElementById(id).oninput=render);
 ['f-suc','f-tipo','f-sem','f-q'].forEach(id=>document.getElementById(id).oninput=renderCartera);
