@@ -3107,6 +3107,80 @@ app.post('/api/movimientos/:id/revertir', auth, rol('admin','supervisor'), (req,
 //   - corrige el cargo de apertura (movimiento "Disposición REFIN") al total s16
 //   - agrega el movimiento de "Primer pago descontado" si falta
 //   - NO toca los abonos de cobranza ya aplicados
+// ===== MIGRACIÓN DE FOTOS VIEJAS: sacarlas del bloque =====
+// Las evidencias guardadas ANTES de FLAG_FOTOS siguen como base64 dentro del bloque.
+// Esto las mueve a cobrapro_fotos y deja la marca "foto:N".
+//
+// POR QUÉ VA AQUÍ Y NO EN UN SCRIPT EXTERNO: el bloque vive en la MEMORIA de este proceso.
+// Un script que tocara cobrapro_state por fuera sería sobreescrito en el siguiente saveDB(),
+// perdiendo la migración y dejando marcas apuntando a fotos inexistentes.
+const _CAMPOS_FOTO_ENTREGA = ['fotoCasa', 'fotoCliente', 'firma'];
+function _esBase64Foto(v) {
+  return typeof v === 'string' && v.length > 100 && !_esRefFoto(v) &&
+         (/^data:image\//.test(v) || /^\/9j\//.test(v) || /^iVBORw0KGgo/.test(v));
+}
+// Recorre el bloque y arma la lista de fotos que siguen adentro.
+function _fotosPendientes() {
+  const out = [];
+  for (const s of (db.sales || [])) {
+    if (!s || !s.entrega) continue;
+    for (const c of _CAMPOS_FOTO_ENTREGA)
+      if (_esBase64Foto(s.entrega[c]))
+        out.push({ obj: s.entrega, campo: c, bytes: Buffer.byteLength(s.entrega[c]), ref: 'sale:' + s.id + ':' + c });
+  }
+  for (const k of (db.contactos || [])) {
+    if (k && _esBase64Foto(k.evidencia))
+      out.push({ obj: k, campo: 'evidencia', bytes: Buffer.byteLength(k.evidencia), ref: 'contacto:' + k.id + ':evidencia' });
+  }
+  return out;
+}
+
+// Cuántas quedan y cuánto pesan. NO cambia nada.
+app.get('/api/admin/fotos-estado', auth, rol('admin'), (req, res) => {
+  const p = _fotosPendientes();
+  const bytes = p.reduce((a, x) => a + x.bytes, 0);
+  const bloque = Buffer.byteLength(JSON.stringify(db));
+  const porCampo = {};
+  for (const x of p) { const k = x.ref.split(':')[2]; porCampo[k] = (porCampo[k] || 0) + x.bytes; }
+  res.json({
+    activo: FOTOS, pendientes: p.length,
+    mbPendientes: +(bytes / 1048576).toFixed(2),
+    mbBloque: +(bloque / 1048576).toFixed(2),
+    mbBloqueSinFotos: +((bloque - bytes) / 1048576).toFixed(2),
+    porCampo: Object.fromEntries(Object.entries(porCampo).map(([k, v]) => [k, +(v / 1048576).toFixed(2)])),
+    mayores: p.slice().sort((a, b) => b.bytes - a.bytes).slice(0, 5).map(x => ({ ref: x.ref, kb: Math.round(x.bytes / 1024) })),
+  });
+});
+
+// Migra UN LOTE. Llamar repetidamente hasta que pendientes llegue a 0.
+// Por lotes a propósito: cada llamada es corta y si algo falla solo afecta a ese lote.
+app.post('/api/admin/migrar-fotos', auth, rol('admin'), async (req, res) => {
+  if (!FOTOS) return res.status(409).json({ error: 'Falta FLAG_FOTOS=1 en el entorno. Sin eso las fotos no se pueden separar.' });
+  if (!USE_PG) return res.status(409).json({ error: 'Sin base de datos no hay dónde guardarlas.' });
+  const lote = Math.max(1, Math.min(50, +req.body.lote || 20));
+  const pend = _fotosPendientes();
+  const trozo = pend.slice(0, lote);
+  let movidas = 0, bytes = 0, fallidas = 0;
+  for (const f of trozo) {
+    const original = f.obj[f.campo];
+    try {
+      const ref = await fotoGuardar(original, f.ref);
+      // Solo se reemplaza si de verdad quedó guardada. Si fotoGuardar falló, devuelve
+      // la imagen tal cual y aquí NO se toca nada: la foto sigue en el bloque, intacta.
+      if (_esRefFoto(ref)) { f.obj[f.campo] = ref; movidas++; bytes += f.bytes; }
+      else fallidas++;
+    } catch (e) { fallidas++; console.error('⚠ migrar foto', f.ref, e.message); }
+  }
+  if (movidas) { logOp('migrar-fotos', String(movidas), { bytes }); saveDB(); }
+  const quedan = pend.length - movidas;
+  res.json({
+    ok: true, movidas, fallidas, quedan,
+    mbLiberados: +(bytes / 1048576).toFixed(2),
+    mbBloqueAhora: +(Buffer.byteLength(JSON.stringify(db)) / 1048576).toFixed(2),
+    listo: quedan === 0,
+  });
+});
+
 app.post('/api/admin/corregir-refines-s16', auth, rol('admin'), (req, res) => {
   if (!_esCreditYa()) return res.status(400).json({ error: 'Este ajuste es solo para la agencia CREDI YA' });
   const objetivo = db.sales.filter(s => s.refinDe != null && s.tipo === 'semanal' && (+s.monto || 0) > 0);
