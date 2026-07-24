@@ -205,8 +205,53 @@ async function jget(url){
 }
 
 function filas(d,niv){
-  var arr = niv==='cob' ? (d.por_cobrador||d.cobradores||[]) : (d.por_sucursal||d.sucursales||[]);
-  return Array.isArray(arr) ? arr : [];
+  if(niv==='cob'){
+    var c = d.por_cobrador||d.cobradores||[];
+    return Array.isArray(c)?c:[];
+  }
+  // Nivel sucursal: derivar de la suma de cobradores (el esperado_acum del
+  // endpoint por_sucursal viene inflado; el débito bueno vive en por_cobrador).
+  var cobs = d.por_cobrador||d.cobradores||[];
+  var sucs = d.por_sucursal||d.sucursales||[];
+  if(!Array.isArray(cobs)||!cobs.length){ return Array.isArray(sucs)?sucs:[]; }
+
+  var meta = {};
+  (Array.isArray(sucs)?sucs:[]).forEach(function(s){
+    meta[String(s.id)] = s;
+    if(s.nombre) meta['n:'+s.nombre] = s;
+  });
+
+  var g = {};
+  cobs.forEach(function(c){
+    var sid = (c.sucursalId!==undefined&&c.sucursalId!==null)?String(c.sucursalId):null;
+    var key = sid || ('n:'+(c.sucursal||'—'));
+    if(!g[key]){
+      var ref = (sid && meta[sid]) || meta['n:'+(c.sucursal||'')] || {};
+      g[key] = {
+        id: (ref.id!==undefined?ref.id:(sid||key)),
+        nombre: c.sucursal || ref.nombre || '—',
+        encargada: ref.encargada || ref.responsable || '',
+        debito:0, comisionable:0, pagos_recibidos:0, cartera:0,
+        atraso_monto:0, clientes_vigentes:0, npagos:0, nopago:0,
+        creditos_captados:0, crecimiento:0, por_entregar:0, _cob:0
+      };
+    }
+    var o=g[key];
+    o.debito           += (+c.debito||0);
+    o.comisionable     += (+c.comisionable||0);
+    o.pagos_recibidos  += (+c.pagos_recibidos||0);
+    o.cartera          += (+c.cartera||0);
+    o.atraso_monto     += (+c.atraso_monto||+c.vencida||0);
+    o.clientes_vigentes+= (+c.clientes_vigentes||0);
+    o.npagos           += (+c.npagos||0);
+    o.nopago           += (+c.nopago||0);
+    o.creditos_captados+= (+c.unidades||+c.creditos_captados||0);
+    o.crecimiento      += (+c.crecimiento||0);
+    o.por_entregar     += (+c.por_entregar||0);
+    o.clientes_cobrados = (o.clientes_cobrados||0) + (+c.clientes_cobrados||0);
+    o._cob++;
+  });
+  return Object.keys(g).map(function(k){ return g[k]; });
 }
 function llave(o){ return String(o.id!==undefined?o.id:(o.nombre||'')); }
 
@@ -306,8 +351,7 @@ function pinta(d,ref,hayPrev){
 
   h += '<table><thead><tr><th>'+(_niv==='cob'?'Cobrador':'Sucursal')+'</th>';
   for(var i=0;i<CFG.length;i++){
-    var apx = (_niv==='suc' && CFG[i].k==='cobrados') ? '*' : '';
-    h += '<th>'+esc(CFG[i].n)+apx+'<span class="w">'+num(CFG[i].w).toFixed(2)+' · meta '+num(CFG[i].meta)+(CFG[i].u==='%'?'%':'')+'</span></th>';
+    h += '<th>'+esc(CFG[i].n)+'<span class="w">'+num(CFG[i].w).toFixed(2)+' · meta '+num(CFG[i].meta)+(CFG[i].u==='%'?'%':'')+'</span></th>';
   }
   h += '<th>Índice</th><th>Rank</th><th>Var</th></tr></thead><tbody>';
 
@@ -345,7 +389,7 @@ function pinta(d,ref,hayPrev){
 
   h += '<div class="pie">Índice = suma ponderada de cada KPI normalizado contra su meta (tope 120 puntos por KPI). '
      + 'Verde ≥95 · ámbar 80-94 · rojo &lt;80. Var = cambio de posición contra la semana anterior. '
-     + (_niv==='suc' ? 'Clientes cob.* a nivel sucursal es aproximación (número de pagos ÷ clientes vigentes). ' : '')
+     + (_niv==='suc' ? 'Cada sucursal es la suma de sus cobradores. ' : '')
      + 'Generado el '+new Date().toLocaleString('es-MX')+'.</div>';
   h += '</div>';
 
