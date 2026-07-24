@@ -65,7 +65,8 @@ tr.rojo td:first-child{box-shadow:inset 3px 0 0 #c0392b}
   <button onclick="navSem(-1)">◄</button>
   <input type="date" id="fecha">
   <button onclick="navSem(1)">►</button>
-  <button onclick="hoySem()">Hoy</button>
+  <button onclick="hoySem()">Semana cerrada</button>
+  <button onclick="semViva()">En curso</button>
   <span style="flex:1"></span>
   <button onclick="verCfg()">Pesos y metas</button>
   <button class="pr" onclick="window.print()">Imprimir / PDF</button>
@@ -120,19 +121,30 @@ function pick(o){
   return 0;
 }
 
+function tiene(o,k){ return o[k]!==undefined && o[k]!==null; }
+
 function metricas(o){
-  var debito   = pick(o,'debito');
+  // débito/esperado del periodo (sucursal usa esperado_acum, cobrador usa debito)
+  var debito   = pick(o,'debito','esperado_acum','esperado');
   var cobrado  = pick(o,'comisionable','pagos_recibidos','recuperado');
   var cartera  = pick(o,'cartera');
-  var vencida  = pick(o,'vencida','cartera_vencida','atraso','mora_monto');
+  // mora en $ (sucursal: atraso_monto)
+  var vencida  = pick(o,'vencida','cartera_vencida','atraso_monto','mora_monto','atraso');
   var vig      = pick(o,'clientes_vigentes','clientes');
-  var cobrados = pick(o,'clientes_cobrados');
-  var nopago   = pick(o,'nopago');
-  var unid     = pick(o,'unidades','creditos_nuevos');
+  // clientes que pagaron: cobrador trae clientes_cobrados; sucursal no, se aproxima con npagos
+  var cobrados = tiene(o,'clientes_cobrados') ? num(o.clientes_cobrados) : pick(o,'npagos');
+  var tieneCobrados = tiene(o,'clientes_cobrados') || tiene(o,'npagos');
+  // no pago: cobrador ya trae % en pct? no, trae conteo. sucursal trae conteo. Ambos /vigentes.
+  var nopagoN  = pick(o,'nopago');
+  // colocación (unidades nuevas): cobrador unidades, sucursal creditos_captados
+  var unid     = pick(o,'unidades','creditos_nuevos','creditos_captados');
+  var tieneColoca = tiene(o,'unidades') || tiene(o,'creditos_nuevos') || tiene(o,'creditos_captados');
+  // crecimiento neto: solo existe a nivel cobrador
   var crece    = pick(o,'crecimiento');
+  var tieneCrece = tiene(o,'crecimiento');
   var entregar = pick(o,'por_entregar');
 
-  var mCob = (o.pct_cob!==undefined && o.pct_cob!==null) ? num(o.pct_cob) : (debito>0? cobrado/debito*100 : 0);
+  var mCob = tiene(o,'pct_cob') ? num(o.pct_cob) : (debito>0? cobrado/debito*100 : 0);
 
   return {
     cobranza: mCob,
@@ -140,17 +152,17 @@ function metricas(o){
     cobrados: vig>0 ? cobrados/vig*100 : 0,
     coloca:   unid,
     crece:    crece,
-    nopago:   vig>0 ? nopago/vig*100 : 0,
+    nopago:   vig>0 ? nopagoN/vig*100 : 0,
     entrega:  cobrado>0 ? entregar/cobrado*100 : 0,
     _debito:debito,_cobrado:cobrado,_cartera:cartera,_vencida:vencida,
-    _vig:vig,_cobrados:cobrados,_nopago:nopago,_unid:unid,_entregar:entregar,
+    _vig:vig,_cobrados:cobrados,_nopago:nopagoN,_unid:unid,_entregar:entregar,
     _muerto: (debito<=0 && cartera<=0 && cobrado<=0),
     _ok: {
       cobranza: debito>0,
       mora:     cartera>0,
-      cobrados: vig>0,
-      coloca:   true,
-      crece:    true,
+      cobrados: vig>0 && tieneCobrados,
+      coloca:   tieneColoca,
+      crece:    tieneCrece,
       nopago:   vig>0,
       entrega:  cobrado>0
     }
@@ -250,6 +262,7 @@ function pinta(d,ref,hayPrev){
     tot.vencida+=r.m._vencida; tot.vig+=r.m._vig; tot.cobrados+=r.m._cobrados;
     tot.nopago+=r.m._nopago; tot.unid+=r.m._unid; tot.entregar+=r.m._entregar;
   });
+  var okRef = (rows[0]&&rows[0].m._ok) || {};
   var prom = {
     cobranza: tot.debito>0? tot.cobrado/tot.debito*100 : 0,
     mora:     tot.cartera>0? tot.vencida/tot.cartera*100 : 0,
@@ -257,16 +270,28 @@ function pinta(d,ref,hayPrev){
     coloca:   tot.unid,
     crece:    rows.reduce(function(a,r){return a+r.m.crece;},0),
     nopago:   tot.vig>0? tot.nopago/tot.vig*100 : 0,
-    entrega:  tot.cobrado>0? tot.entregar/tot.cobrado*100 : 0
+    entrega:  tot.cobrado>0? tot.entregar/tot.cobrado*100 : 0,
+    _muerto:false,
+    _ok:{
+      cobranza: tot.debito>0,
+      mora:     tot.cartera>0,
+      cobrados: okRef.cobrados!==false && tot.vig>0,
+      coloca:   okRef.coloca!==false,
+      crece:    okRef.crece!==false,
+      nopago:   tot.vig>0,
+      entrega:  tot.cobrado>0
+    }
   };
   var ixGlobal = indice(prom);
 
   var agencia = d.agencia || d.tenant || (d.totales&&d.totales.agencia) || '';
   var titulo  = _niv==='cob' ? 'nivel cobrador' : 'nivel sucursal';
+  var enCurso = (ref >= menos(hoyMX(),6));
+  var estado  = enCurso ? 'semana en curso (parcial)' : 'semana cerrada';
 
   var h = '<div class="hoja">';
   h += '<div class="enc"><div><h1>Scorecard semanal'+(agencia?' — '+esc(agencia):'')+'</h1>'
-     + '<p>Semana al '+esc(ref)+' · '+titulo+' · '+rows.length+' unidades'+(hayPrev?'':' · sin comparativo de semana previa')+'</p></div>'
+     + '<p>Semana al '+esc(ref)+' · '+estado+' · '+titulo+' · '+rows.length+' unidades'+(hayPrev?'':' · sin comparativo de semana previa')+'</p></div>'
      + '<div class="idx"><span>Índice global</span><strong>'+ixGlobal.toFixed(1)+'</strong></div></div>';
 
   h += '<div class="kpis">'
@@ -281,7 +306,8 @@ function pinta(d,ref,hayPrev){
 
   h += '<table><thead><tr><th>'+(_niv==='cob'?'Cobrador':'Sucursal')+'</th>';
   for(var i=0;i<CFG.length;i++){
-    h += '<th>'+esc(CFG[i].n)+'<span class="w">'+num(CFG[i].w).toFixed(2)+' · meta '+num(CFG[i].meta)+(CFG[i].u==='%'?'%':'')+'</span></th>';
+    var apx = (_niv==='suc' && CFG[i].k==='cobrados') ? '*' : '';
+    h += '<th>'+esc(CFG[i].n)+apx+'<span class="w">'+num(CFG[i].w).toFixed(2)+' · meta '+num(CFG[i].meta)+(CFG[i].u==='%'?'%':'')+'</span></th>';
   }
   h += '<th>Índice</th><th>Rank</th><th>Var</th></tr></thead><tbody>';
 
@@ -308,9 +334,10 @@ function pinta(d,ref,hayPrev){
     h += '<td class="pt">'+r.ix.toFixed(1)+'</td><td>'+rank+'</td><td class="'+vcl+'">'+vtx+'</td></tr>';
   });
 
-  h += '<tr class="prom"><td>Promedio '+(_niv==='cob'?'agencia':'agencia')+'</td>';
+  h += '<tr class="prom"><td>Promedio agencia</td>';
   for(var k=0;k<CFG.length;k++){
     var cc=CFG[k], vv=prom[cc.k];
+    if(prom._ok && prom._ok[cc.k]===false){ h += '<td>—</td>'; continue; }
     h += '<td>'+(cc.u==='%'?pc(vv):String(Math.round(vv)))+'</td>';
   }
   h += '<td class="pt">'+ixGlobal.toFixed(1)+'</td><td>—</td><td>—</td></tr>';
@@ -318,6 +345,7 @@ function pinta(d,ref,hayPrev){
 
   h += '<div class="pie">Índice = suma ponderada de cada KPI normalizado contra su meta (tope 120 puntos por KPI). '
      + 'Verde ≥95 · ámbar 80-94 · rojo &lt;80. Var = cambio de posición contra la semana anterior. '
+     + (_niv==='suc' ? 'Clientes cob.* a nivel sucursal es aproximación (número de pagos ÷ clientes vigentes). ' : '')
      + 'Generado el '+new Date().toLocaleString('es-MX')+'.</div>';
   h += '</div>';
 
@@ -380,9 +408,11 @@ function navSem(delta){
   _ref = $('fecha').value;
   cargar();
 }
-function hoySem(){ _ref=null; $('fecha').value=hoyMX(); cargar(); }
+function hoySem(){ _ref=menos(hoyMX(),7); $('fecha').value=_ref; cargar(); }
+function semViva(){ _ref=hoyMX(); $('fecha').value=_ref; cargar(); }
 
-$('fecha').value = hoyMX();
+_ref = menos(hoyMX(),7);
+$('fecha').value = _ref;
 $('fecha').onchange = function(){ _ref=this.value; cargar(); };
 cargar();
 </script>
