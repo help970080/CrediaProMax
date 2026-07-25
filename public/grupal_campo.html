@@ -49,6 +49,8 @@
   .qbtns{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap}
   .qb{flex:1;min-width:70px;border:1px solid var(--line);background:var(--surf-2);border-radius:9px;padding:8px 4px;font-size:.74rem;font-weight:600;color:var(--dim);cursor:pointer;text-align:center}
   .qb.on{background:var(--grn);border-color:var(--grn);color:#fff}
+  .navb{background:var(--surf-2);border:1px solid var(--line);border-radius:9px;padding:9px 4px;font-size:.8rem;font-weight:600;color:var(--dim);cursor:pointer}
+  .navb.on{background:var(--acc);border-color:var(--acc);color:#1a1408}
   .qb.no{background:var(--red);border-color:var(--red);color:#fff}
   .fld{display:flex;align-items:center;gap:8px;margin-top:8px}
   .fld label{font-size:.72rem;color:var(--faint);width:64px}
@@ -79,6 +81,10 @@
       </div>
       <button class="btn o" style="width:auto;padding:8px 12px;margin:0" onclick="salir()">Salir</button>
     </div>
+    <div id="navbar" style="display:flex;gap:6px;margin-top:12px">
+      <button class="qb navb on" data-nav="agenda" onclick="navTo('agenda')" style="flex:1">📅 Juntas de hoy</button>
+      <button class="qb navb" data-nav="grupos" onclick="navTo('grupos')" style="flex:1">👥 Mis grupos</button>
+    </div>
   </header>
 
   <div class="content" id="content">
@@ -91,6 +97,8 @@
 const TOKEN=(()=>{try{return localStorage.getItem('cobrapro_token')}catch(e){return null}})();
 const ME=(()=>{try{return JSON.parse(localStorage.getItem('cobrapro_user')||'null')}catch(e){return null}})();
 if(!TOKEN){ location.replace('index.html'); }
+// Esta app es del PROMOTOR GRUPAL. Admin y supervisor pueden entrar para revisar.
+if(ME && !['promotor_grupal','admin','supervisor'].includes(ME.rol)){ location.replace('cobrapro_campo.html'); }
 function salir(){ try{localStorage.removeItem('cobrapro_token');localStorage.removeItem('cobrapro_user');}catch(e){} location.replace('index.html'); }
 if(ME&&ME.nombre){ document.getElementById('ava').textContent=ME.nombre.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
 try{ var _b=JSON.parse(localStorage.getItem('cobrapro_brand')||'null'); if(_b&&_b.nombre) document.title=_b.nombre+' · Junta'; }catch(e){}
@@ -296,6 +304,166 @@ async function cerrarJunta(){
     _fotoCierre=null;
     setTimeout(cargarAgenda,900);
   }catch(e){ toast(e.message||'Error al cerrar'); }
+}
+
+// ===== NAVEGACIÓN =====
+function navTo(t){
+  document.querySelectorAll('.navb').forEach(b=>b.classList.toggle('on',b.dataset.nav===t));
+  if(t==='agenda') cargarAgenda();
+  if(t==='grupos') cargarGrupos();
+}
+
+// ===== MIS GRUPOS (formar + expediente) =====
+async function cargarGrupos(){
+  document.getElementById('hTitle').textContent='Mis grupos';
+  const c=document.getElementById('content');
+  c.innerHTML='<div class="empty">Cargando…</div>';
+  try{
+    const d=await api('GET','/api/g/grupos');
+    document.getElementById('hSub').textContent=(d.total||0)+' grupo'+(d.total===1?'':'s');
+    let h='<button class="btn" onclick="formGrupo()">+ Formar grupo nuevo</button>';
+    if(!d.grupos||!d.grupos.length){ h+='<div class="empty">Aún no tienes grupos. Forma el primero.</div>'; }
+    else{
+      h+=d.grupos.map(g=>{
+        const pill=g.estado==='formacion'?'pend':g.estado==='autorizado'?'abierta':'cerrada';
+        const ptx=g.estado==='formacion'?'En formación':g.estado==='autorizado'?'Esperando entrega':g.estado==='activo'?'Activo':g.estado;
+        return `<div class="card tap" onclick="verGrupo(${g.grupoId})">
+          <div class="g-h"><div><div class="g-nm">${esc(g.nombre)}</div>
+          <div class="g-meta">${g.integrantes} integrantes · ${g.frecuencia}</div></div>
+          <span class="pill ${pill}">${ptx}</span></div></div>`;
+      }).join('');
+    }
+    c.innerHTML=h;
+  }catch(e){ c.innerHTML='<div class="empty">Error: '+esc(e.message)+'</div>'; }
+}
+
+let _sucursales=[];
+async function formGrupo(){
+  document.getElementById('hTitle').textContent='Formar grupo';
+  const c=document.getElementById('content');
+  if(!_sucursales.length){ try{ _sucursales=await api('GET','/api/sucursales'); }catch(e){ _sucursales=[]; } }
+  const sucOpts=_sucursales.map(s=>`<option value="${s.id}">${esc(s.nombre)}</option>`).join('');
+  c.innerHTML=`<button class="back" onclick="cargarGrupos()">‹ Volver</button>
+    <div class="card">
+      <div class="fld"><label>Nombre</label><input id="f-nombre" placeholder="Las Margaritas"></div>
+      ${_sucursales.length?`<div class="fld"><label>Sucursal</label><select id="f-suc">${sucOpts}</select></div>`:''}
+      <div class="fld"><label>Frecuencia</label><select id="f-frec"><option value="semanal">Semanal</option><option value="catorcenal">Catorcenal</option></select></div>
+      <div class="fld"><label>Monto base</label><input id="f-monto" type="number" value="5000"></div>
+      <div class="fld"><label>Día junta</label><select id="f-dia"><option value="1">Lunes</option><option value="2">Martes</option><option value="3">Miércoles</option><option value="4">Jueves</option><option value="5">Viernes</option><option value="6">Sábado</option><option value="0">Domingo</option></select></div>
+      <div class="fld"><label>Hora</label><input id="f-hora" type="time" value="10:00"></div>
+      <div class="fld"><label>Lugar</label><input id="f-lugar" placeholder="Casa de la presidenta"></div>
+      <button class="btn" style="margin-top:12px" onclick="crearGrupo()">Crear grupo</button>
+    </div>`;
+}
+
+async function crearGrupo(){
+  const nombre=document.getElementById('f-nombre').value.trim();
+  if(!nombre){ toast('Falta el nombre'); return; }
+  const sucEl=document.getElementById('f-suc');
+  try{
+    const r=await api('POST','/api/g/grupos',{
+      nombre, sucursalId:sucEl?+sucEl.value:null, frecuencia:document.getElementById('f-frec').value,
+      montoBase:+document.getElementById('f-monto').value||0,
+      junta:{ dia:+document.getElementById('f-dia').value, hora:document.getElementById('f-hora').value, lugar:document.getElementById('f-lugar').value.trim() }
+    });
+    toast('Grupo creado');
+    verGrupo(r.grupo.id);
+  }catch(e){ toast(e.message||'Error'); }
+}
+
+let _grupoActual=null;
+async function verGrupo(id){
+  _grupoActual=id;
+  document.getElementById('hTitle').textContent='Grupo';
+  const c=document.getElementById('content');
+  c.innerHTML='<div class="empty">Cargando…</div>';
+  try{
+    const d=await api('GET','/api/g/grupos/'+id);
+    const g=d.grupo;
+    document.getElementById('hTitle').textContent=g.nombre;
+    document.getElementById('hSub').textContent=g.estado==='formacion'?'En formación':g.estado;
+    let h='<button class="back" onclick="cargarGrupos()">‹ Mis grupos</button>';
+
+    if(g.estado==='formacion'){
+      h+='<div class="warn">Agrega a las integrantes y sube su INE, comprobante de domicilio y firma. Cuando el expediente esté completo, envíalo a revisión para que el jefe autorice.</div>';
+    }
+
+    // integrantes
+    h+=`<div style="font-weight:700;margin:6px 0 8px">Integrantes (${d.integrantes.length})</div>`;
+    d.integrantes.forEach(i=>{
+      const listo=i.expedienteCompleto;
+      const falt=(i.faltantes||[]).map(_docTxt).join(', ');
+      h+=`<div class="int-row">
+        <div class="int-top"><div><span class="int-nm">${esc(i.nombre)}</span><span class="int-rol">${i.rol}</span></div>
+        <span class="${listo?'':'pill pend'}" style="font-size:.68rem">${listo?'<span style="color:var(--grn-d)">✓ completo</span>':'falta: '+esc(falt)}</span></div>`;
+      if(g.estado==='formacion'){
+        h+=`<div class="qbtns">
+          ${_docBtnC(i,'ineFrente','INE')}
+          ${_docBtnC(i,'comprobanteDom','Domicilio')}
+          ${_docBtnC(i,'firma','Firma')}
+        </div>`;
+      }
+      h+=`</div>`;
+    });
+
+    if(g.estado==='formacion'){
+      h+=`<div class="card" style="margin-top:10px">
+        <div class="fld"><label>Nombre</label><input id="i-nombre" placeholder="Nombre de la integrante"></div>
+        <div class="fld"><label>Teléfono</label><input id="i-tel" placeholder="Opcional"></div>
+        <div class="fld"><label>Domicilio</label><input id="i-dom" placeholder="Calle, colonia"></div>
+        <div class="fld"><label>Monto</label><input id="i-monto" type="number" value="${g.montoBase||5000}"></div>
+        <div class="fld"><label>Cargo</label><select id="i-rol"><option value="socia">Socia</option><option value="presidenta">Presidenta</option><option value="tesorera">Tesorera</option><option value="secretaria">Secretaria</option></select></div>
+        <button class="btn o" style="margin-top:8px" onclick="addInt(${id})">+ Agregar integrante</button>
+      </div>`;
+      // enviar a revisión = solo verificar que esté listo; el admin autoriza
+      h+=`<button class="btn grn" style="margin-top:12px" onclick="revisarGrupo(${id})">Enviar a revisión</button>`;
+    } else {
+      h+=`<div class="card" style="margin-top:10px"><div class="g-meta">Este grupo ya fue autorizado. El cobro se hace en «Juntas de hoy».</div></div>`;
+    }
+    c.innerHTML=h;
+  }catch(e){ c.innerHTML='<div class="empty">Error: '+esc(e.message)+'</div>'; }
+}
+
+const _DOCTX={ineFrente:'INE',ineReverso:'INE rev.',comprobanteDom:'Domicilio',firma:'Firma',curp:'CURP',solicitud:'Solicitud',fotoNegocio:'Negocio',pagare:'Pagaré'};
+function _docTxt(k){ return _DOCTX[k]||k; }
+function _docBtnC(i,tipo,label){
+  const tiene=(i.docs||[]).includes(tipo);
+  return `<div class="qb ${tiene?'on':''}" onclick="subirDoc(${i.id},'${tipo}')">${tiene?'✓ ':''}${label}</div>`;
+}
+function subirDoc(iid,tipo){
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.capture='environment';
+  inp.onchange=()=>{ const f=inp.files&&inp.files[0]; if(!f) return;
+    const rd=new FileReader();
+    rd.onload=async()=>{ try{ await api('POST','/api/g/integrantes/'+iid+'/doc',{tipo,imagen:rd.result}); toast('Documento subido'); verGrupo(_grupoActual); }catch(e){ toast(e.message||'Error'); } };
+    rd.readAsDataURL(f);
+  };
+  inp.click();
+}
+
+async function addInt(id){
+  const nombre=document.getElementById('i-nombre').value.trim();
+  if(!nombre){ toast('Falta el nombre'); return; }
+  try{
+    await api('POST','/api/g/grupos/'+id+'/integrantes',{
+      nombre, tel:document.getElementById('i-tel').value.trim(),
+      calle:document.getElementById('i-dom').value.trim(),
+      monto:+document.getElementById('i-monto').value||0, rol:document.getElementById('i-rol').value
+    });
+    verGrupo(id);
+  }catch(e){ toast(e.message||'Error'); }
+}
+
+async function revisarGrupo(id){
+  try{
+    const d=await api('GET','/api/g/grupos/'+id+'/expediente');
+    if(!d.total){ toast('Agrega integrantes primero'); return; }
+    if(!d.todosListos){
+      const faltan=d.integrantes.filter(x=>!x.completo).map(x=>x.nombre).join(', ');
+      alert('Faltan documentos de: '+faltan+'\n\nSube INE, domicilio y firma de cada una antes de enviar a revisión.');
+      return;
+    }
+    alert('✓ Expediente completo.\n\nEl grupo está listo. Avísale a tu jefe (admin/supervisor) para que lo autorice desde el panel. Una vez autorizado, el JC entrega y podrás cobrar en las juntas.');
+  }catch(e){ toast(e.message||'Error'); }
 }
 
 // arranque
