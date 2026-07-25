@@ -222,6 +222,7 @@
     <button class="navitem" data-v="simulador"><span class="ic">🖩</span> Simulador de crédito</button>
     <button class="navitem" data-v="pl" id="nav-pl"><span class="ic">🧮</span> P&L mensual</button>
     <button class="navitem" data-v="extras" id="nav-extras"><span class="ic">🕵️</span> Extras · Prestanombres</button>
+    <button class="navitem" data-v="grupal" id="nav-grupal"><span class="ic">👥</span> Grupales</button>
   </nav>
   <div class="side-foot">
     <div class="live"><span class="dot"></span> Sincronizado en vivo</div>
@@ -876,6 +877,128 @@
     </div>
     <div class="panel"><div class="ph"><h3>Grupos detectados</h3><span class="hint" id="ex-count"></span></div><div id="ex-list"></div></div>
   </section>
+
+  <section class="view" id="grupal">
+    <style>
+      .g-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+      .g-tab{padding:8px 14px;border:1px solid var(--line);border-radius:8px;background:var(--surf-1);color:var(--dim);cursor:pointer;font-size:.82rem;font-weight:600}
+      .g-tab.on{background:var(--acc);border-color:var(--acc);color:#04240f}
+      .g-card{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px;background:var(--surf-1)}
+      .g-card .g-h{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
+      .g-nm{font-weight:700;font-size:.95rem}
+      .g-meta{color:var(--faint);font-size:.74rem;margin-top:3px}
+      .g-sem{width:11px;height:11px;border-radius:50%;display:inline-block;flex-shrink:0;margin-top:5px}
+      .g-sem.verde{background:var(--grn)} .g-sem.ambar{background:var(--gold)} .g-sem.rojo{background:var(--red)}
+      .g-badge{font-size:.68rem;padding:2px 8px;border-radius:20px;font-weight:700;white-space:nowrap}
+      .g-badge.formacion{background:rgba(151,162,178,.16);color:var(--dim)}
+      .g-badge.autorizado{background:rgba(74,140,255,.16);color:var(--blu)}
+      .g-badge.activo{background:rgba(23,138,85,.16);color:var(--grn)}
+      .g-badge.liquidado{background:rgba(151,162,178,.16);color:var(--dim)}
+      .g-btn{background:var(--acc);color:#04240f;border:0;padding:8px 14px;border-radius:8px;font-weight:700;font-size:.8rem;cursor:pointer;font-family:'Sora'}
+      .g-btn.o{background:transparent;border:1px solid var(--line);color:var(--dim)}
+      .g-btn.o:hover{border-color:var(--acc);color:var(--acc)}
+      .g-btn.sm{padding:5px 10px;font-size:.74rem}
+      .g-inp{width:100%;background:var(--surf);border:1px solid var(--line);color:var(--txt);padding:8px 10px;border-radius:7px;font-size:.85rem;font-family:inherit}
+      .g-lbl{display:block;color:var(--faint);font-size:.72rem;text-transform:uppercase;letter-spacing:.5px;margin:9px 0 4px}
+      .g-grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+      .g-int{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-top:1px dotted var(--line);font-size:.84rem}
+      .g-int .doc-ok{color:var(--grn);font-size:.74rem} .g-int .doc-no{color:var(--red);font-size:.74rem}
+      .g-rol{font-size:.68rem;padding:1px 7px;border-radius:20px;background:var(--surf-2);color:var(--dim)}
+      .g-empty{text-align:center;color:var(--faint);padding:30px 14px;font-size:.86rem}
+      .g-tot{display:flex;gap:16px;flex-wrap:wrap;margin:10px 0;padding:10px 12px;background:var(--surf-2);border-radius:8px}
+      .g-tot .n{font-family:'Sora';font-weight:800;font-size:1.2rem} .g-tot .l{color:var(--faint);font-size:.7rem}
+      .g-sol{display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-top:1px dotted var(--line);font-size:.82rem}
+    </style>
+
+    <div class="g-tabs">
+      <div class="g-tab on" data-gt="grupos">Grupos</div>
+      <div class="g-tab" data-gt="nuevo">+ Nuevo grupo</div>
+      <div class="g-tab" data-gt="reportes">Reportes</div>
+      <div class="g-tab" data-gt="config">Configuración</div>
+    </div>
+
+    <!-- LISTA DE GRUPOS -->
+    <div id="gt-grupos">
+      <div class="panel">
+        <div class="ph"><h3>Grupos</h3><span class="hint" id="g-count"></span></div>
+        <div id="g-lista"><div class="g-empty">Cargando…</div></div>
+      </div>
+    </div>
+
+    <!-- NUEVO GRUPO -->
+    <div id="gt-nuevo" style="display:none">
+      <div class="panel">
+        <div class="ph"><h3>Nuevo grupo</h3><span class="hint">Se crea en formación. Agrega integrantes y expediente, luego autoriza.</span></div>
+        <div class="g-grid2">
+          <div><label class="g-lbl">Nombre del grupo</label><input class="g-inp" id="gn-nombre" placeholder="Las Margaritas"></div>
+          <div><label class="g-lbl">Sucursal</label><select class="g-inp" id="gn-suc"></select></div>
+        </div>
+        <div class="g-grid2">
+          <div><label class="g-lbl">Frecuencia</label><select class="g-inp" id="gn-frec"><option value="semanal">Semanal</option><option value="catorcenal">Catorcenal</option></select></div>
+          <div><label class="g-lbl">Monto base por integrante</label><input class="g-inp" id="gn-monto" type="number" value="5000"></div>
+        </div>
+        <div class="g-grid2">
+          <div><label class="g-lbl">Día de junta</label><select class="g-inp" id="gn-dia"><option value="1">Lunes</option><option value="2">Martes</option><option value="3">Miércoles</option><option value="4">Jueves</option><option value="5">Viernes</option><option value="6">Sábado</option><option value="0">Domingo</option></select></div>
+          <div><label class="g-lbl">Hora</label><input class="g-inp" id="gn-hora" type="time" value="10:00"></div>
+        </div>
+        <div><label class="g-lbl">Lugar de la junta</label><input class="g-inp" id="gn-lugar" placeholder="Casa de la presidenta"></div>
+        <div style="margin-top:14px"><button class="g-btn" id="gn-crear">Crear grupo</button></div>
+      </div>
+    </div>
+
+    <!-- REPORTES -->
+    <div id="gt-reportes" style="display:none">
+      <div class="panel">
+        <div class="ph"><h3>Semáforo por grupo</h3><span class="hint">Verde: al corriente · Ámbar: con solidarios · Rojo: en riesgo</span></div>
+        <div id="g-rep-grupos"><div class="g-empty">Cargando…</div></div>
+      </div>
+      <div class="panel">
+        <div class="ph"><h3>Por asesor</h3></div>
+        <div id="g-rep-asesor"></div>
+      </div>
+      <div class="panel">
+        <div class="ph"><h3>Comisiones grupales</h3><span class="hint">Según los tres conceptos configurados</span></div>
+        <div id="g-rep-comis"></div>
+      </div>
+    </div>
+
+    <!-- CONFIG -->
+    <div id="gt-config" style="display:none">
+      <div class="panel">
+        <div class="ph"><h3>Configuración grupal</h3><span class="hint">Aplica a los grupos nuevos de esta agencia.</span></div>
+        <div class="g-grid2">
+          <div><label class="g-lbl">Tarifa (crédito)</label><input class="g-inp" id="gc-tarifa" value="s16"></div>
+          <div><label class="g-lbl" id="gc-lbl-ret">Garantía retenida (%)</label><input class="g-inp" id="gc-gar" type="number" value="10"></div>
+        </div>
+        <div class="g-grid2">
+          <div><label class="g-lbl">Etiqueta de la retención</label><input class="g-inp" id="gc-etq" value="Garantía líquida"></div>
+          <div><label class="g-lbl">Escalonamiento por ciclo (%)</label><input class="g-inp" id="gc-esc" type="number" value="20"></div>
+        </div>
+        <div class="g-grid2">
+          <div><label class="g-lbl">Mínimo integrantes</label><input class="g-inp" id="gc-min" type="number" value="5"></div>
+          <div><label class="g-lbl">Máximo integrantes</label><input class="g-inp" id="gc-max" type="number" value="10"></div>
+        </div>
+        <div class="g-grid2">
+          <div><label class="g-lbl">Multa por retardo ($)</label><input class="g-inp" id="gc-mret" type="number" value="20"></div>
+          <div><label class="g-lbl">Multa por falta ($)</label><input class="g-inp" id="gc-mfal" type="number" value="50"></div>
+        </div>
+        <div style="margin-top:14px"><button class="g-btn" id="gc-guardar">Guardar configuración</button></div>
+        <p style="color:var(--faint);font-size:.78rem;margin-top:12px;line-height:1.5">La retención se registra como <b>custodia</b> (pasivo), no como utilidad: no la confundas con caja disponible. El dinero retenido va ligado al crédito como garantía y se devuelve al liquidar. Los documentos que genera el sistema son un contrato de mutuo con obligación solidaria más un pagaré por integrante; las cláusulas son las mínimas. Consulta a tu abogado antes de usarlo formalmente.</p>
+      </div>
+    </div>
+
+    <!-- FICHA DE GRUPO (modal simple) -->
+    <div id="g-ficha" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;overflow-y:auto;padding:20px">
+      <div style="max-width:720px;margin:0 auto;background:var(--bg);border:1px solid var(--line-2);border-radius:14px;padding:18px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <h3 id="gf-nombre" style="font-family:'Sora';margin:0"></h3>
+          <button class="g-btn o sm" onclick="document.getElementById('g-ficha').style.display='none'">✕ Cerrar</button>
+        </div>
+        <div id="gf-body"></div>
+      </div>
+    </div>
+  </section>
+
   <section class="view" id="asignar">
     <div class="panel">
       <div class="ph"><h3>Asignar efectivo a un puesto</h3><span class="hint">El que recibe debe confirmar. El promotor nunca recibe.</span></div>
@@ -2621,7 +2744,7 @@ function sim(){const t=$('s-tipo').value,monto=+$('s-monto').value||0,plazo=+$('
 }
 
 /* NAV + EVENTOS */
-const titles={resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],numdiarios:['Números diarios','Cobranza por gerencia · del día y acumulado de la semana'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],bandeja:['Bandeja de entregas','Créditos por entregar · toma y entrega con evidencia'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],ranking:['Ranking de cobradores','Semana · unidades, % cobranza, clientes y cobrados con semáforo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],flujo:['Flujo / Tesorería','Efectivo del admin · dotación a la operación, nómina y capital'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo'],mapa:['Mapa de clientes','Ubicación geográfica de la cartera'],rastreo:['Rastreo de equipo','Dónde está tu gente en campo · seguridad y operación'],pl:['P&L mensual','Estado de resultados del mes · ingreso, costos, gastos y utilidad por sucursal'],extras:['Extras · Detector de prestanombres','Coincidencias por teléfono, domicilio y apellidos'],asignar:['Asignar efectivo','Mueve efectivo entre puestos · el que recibe confirma'],vobo:['Vo.Bo · Buró interno','Autoriza o declina ventas que botaron alerta roja']};
+const titles={resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],numdiarios:['Números diarios','Cobranza por gerencia · del día y acumulado de la semana'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],bandeja:['Bandeja de entregas','Créditos por entregar · toma y entrega con evidencia'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],ranking:['Ranking de cobradores','Semana · unidades, % cobranza, clientes y cobrados con semáforo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],flujo:['Flujo / Tesorería','Efectivo del admin · dotación a la operación, nómina y capital'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo'],mapa:['Mapa de clientes','Ubicación geográfica de la cartera'],rastreo:['Rastreo de equipo','Dónde está tu gente en campo · seguridad y operación'],pl:['P&L mensual','Estado de resultados del mes · ingreso, costos, gastos y utilidad por sucursal'],extras:['Extras · Detector de prestanombres','Coincidencias por teléfono, domicilio y apellidos'],grupal:['Créditos grupales','Grupos solidarios · junta semanal, garantía y pago solidario'],asignar:['Asignar efectivo','Mueve efectivo entre puestos · el que recibe confirma'],vobo:['Vo.Bo · Buró interno','Autoriza o declina ventas que botaron alerta roja']};
 function _ve(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 async function cargarVoBo(){
   try{
@@ -2684,6 +2807,7 @@ document.querySelectorAll('.navitem').forEach(n=>{ if(!n.dataset.v) return; n.on
   if(n.dataset.v==='comisiones' && !_comisCargado) cargarComisiones();
   if(n.dataset.v==='asignar') initAsignar();
   if(n.dataset.v==='extras') initExtras();
+  if(n.dataset.v==='grupal') initGrupal();
   if(n.dataset.v==='pl') cargarPL();
 }; });
 document.querySelectorAll('#period button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#period button').forEach(x=>x.classList.remove('on'));b.classList.add('on');period=b.dataset.p;render();});
@@ -3328,6 +3452,264 @@ async function asgCargarInbox(){
 async function asgConfirmar(id){ try{ await apiU('POST','/api/asignaciones/'+id+'/recibir',{}); await asgCargarDestinos(); await asgCargarInbox(); }catch(e){ alert(e.message||e); } }
 async function asgRechazar(id){ if(!confirm('¿Rechazar esta asignación? El efectivo regresa a quien la envió.'))return; try{ await apiU('POST','/api/asignaciones/'+id+'/rechazar',{}); await asgCargarInbox(); }catch(e){ alert(e.message||e); } }
 
+/* ===== Créditos grupales ===== */
+let _gCargado=false, _gSucursales=[], _gCobradores=[];
+function _gTab(t){
+  document.querySelectorAll('#grupal .g-tab').forEach(x=>x.classList.toggle('on',x.dataset.gt===t));
+  ['grupos','nuevo','reportes','config'].forEach(k=>{ const el=$('gt-'+k); if(el) el.style.display=(k===t?'':'none'); });
+  if(t==='grupos') gCargarGrupos();
+  if(t==='reportes') gCargarReportes();
+  if(t==='config') gCargarConfig();
+}
+document.querySelectorAll('#grupal .g-tab').forEach(b=>b.onclick=()=>_gTab(b.dataset.gt));
+
+async function initGrupal(){
+  // llena selects de sucursal una sola vez
+  if(!_gCargado){
+    try{
+      const suc=await apiU('GET','/api/sucursales');
+      _gSucursales=suc||[];
+      const sel=$('gn-suc'); if(sel){ sel.innerHTML=_gSucursales.map(s=>`<option value="${s.id}">${s.nombre}</option>`).join(''); }
+    }catch(e){}
+    _gCargado=true;
+  }
+  _gTab('grupos');
+}
+
+const _SEMTX={verde:'Al corriente',ambar:'Con solidarios',rojo:'En riesgo'};
+async function gCargarGrupos(){
+  const cont=$('g-lista'); cont.innerHTML='<div class="g-empty">Cargando…</div>';
+  try{
+    const d=await apiU('GET','/api/g/grupos');
+    $('g-count').textContent=(d.total||0)+' grupo'+(d.total===1?'':'s');
+    if(!d.grupos||!d.grupos.length){ cont.innerHTML='<div class="g-empty">Aún no hay grupos. Crea el primero en «+ Nuevo grupo».</div>'; return; }
+    cont.innerHTML=d.grupos.map(g=>{
+      const est=g.estado||'formacion';
+      const sem=g.semaforo||'verde';
+      const puntual=(g.juntasAl100||0)+' al 100% · '+(g.juntasConSolidario||0)+' con solidario';
+      return `<div class="g-card">
+        <div class="g-h">
+          <div style="display:flex;gap:9px">
+            <span class="g-sem ${sem}" title="${_SEMTX[sem]}"></span>
+            <div>
+              <div class="g-nm">${g.nombre}</div>
+              <div class="g-meta">${g.integrantes} integrantes · ${g.frecuencia} · cobra ${g.cobradorActual||'—'}</div>
+              <div class="g-meta">${g.junta?('Junta: '+_diaTxt(g.junta.dia)+' '+(g.junta.hora||'')+(g.junta.lugar?' · '+g.junta.lugar:'')):''}</div>
+              ${est==='activo'?`<div class="g-meta">${puntual}${g.solidariosVivos?' · '+g.solidariosVivos+' solidario(s) vivo(s)':''}</div>`:''}
+            </div>
+          </div>
+          <span class="g-badge ${est}">${est}</span>
+        </div>
+        <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
+          <button class="g-btn o sm" onclick="gFicha(${g.id})">Ver ficha</button>
+          ${est==='formacion'?`<button class="g-btn sm" onclick="gFicha(${g.id})">Integrantes y expediente</button>`:''}
+        </div>
+      </div>`;
+    }).join('');
+  }catch(e){ cont.innerHTML='<div class="g-empty">Error: '+(e.message||e)+'</div>'; }
+}
+function _diaTxt(d){ return ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'][d]||''; }
+
+let _gFichaId=null;
+async function gFicha(id){
+  _gFichaId=id;
+  const modal=$('g-ficha'); const body=$('gf-body');
+  modal.style.display='block'; body.innerHTML='<div class="g-empty">Cargando…</div>';
+  try{
+    const d=await apiU('GET','/api/g/grupos/'+id);
+    const g=d.grupo;
+    $('gf-nombre').textContent=g.nombre;
+    const estVis=(g.estado==='autorizado'&&d.integrantes.every(i=>i.saleId))?g.estado:g.estado;
+    let h='';
+    h+=`<div class="g-meta" style="margin-bottom:10px">Asesor: <b>${g.asesor}</b> · Cobra hoy: <b>${d.cobradorActual}</b> · ${g.frecuencia} · ciclo ${g.ciclo}</div>`;
+
+    // integrantes
+    h+=`<div class="panel" style="margin-bottom:12px"><div class="ph"><h3 style="font-size:.9rem">Integrantes (${d.integrantes.length})</h3></div>`;
+    d.integrantes.forEach(i=>{
+      const falt=(i.faltantes||[]).map(_docTxt).join(', ');
+      const doc=i.expedienteCompleto?'<span class="doc-ok">✓ expediente</span>':`<span class="doc-no">falta: ${falt||'—'}</span>`;
+      let botones='';
+      if(g.estado==='formacion'){
+        botones=`<div class="qbtns" style="margin-top:7px;display:flex;gap:5px;flex-wrap:wrap">
+          ${_docBtn(i,'ineFrente','INE')}
+          ${_docBtn(i,'comprobanteDom','Domicilio')}
+          ${_docBtn(i,'firma','Firma')}
+        </div>`;
+      }
+      h+=`<div class="g-int" style="display:block"><div style="display:flex;justify-content:space-between;gap:8px"><div><b>${i.nombre}</b> <span class="g-rol">${i.rol}</span><br><span class="g-meta">${fmt(i.monto)} · cuota ${fmt(i.cuota||0)}${i.garantia?' · gar '+fmt(i.garantia):''}</span></div><div style="text-align:right">${doc}</div></div>${botones}</div>`;
+    });
+    if(g.estado==='formacion'){
+      h+=`<div style="margin-top:12px">
+        <div class="g-grid2">
+          <input class="g-inp" id="gi-nombre" placeholder="Nombre de la integrante">
+          <input class="g-inp" id="gi-monto" type="number" placeholder="Monto" value="${g.montoBase||5000}">
+        </div>
+        <div class="g-grid2" style="margin-top:8px">
+          <input class="g-inp" id="gi-tel" placeholder="Teléfono">
+          <select class="g-inp" id="gi-rol"><option value="socia">Socia</option><option value="presidenta">Presidenta</option><option value="tesorera">Tesorera</option><option value="secretaria">Secretaria</option></select>
+        </div>
+        <button class="g-btn sm" style="margin-top:8px" onclick="gAddInt(${id})">+ Agregar integrante</button>
+      </div>`;
+    }
+    h+=`</div>`;
+
+    // solidarios vivos
+    if(d.solidariosVivos&&d.solidariosVivos.length){
+      h+=`<div class="panel" style="margin-bottom:12px"><div class="ph"><h3 style="font-size:.9rem">Deudas internas (solidario)</h3></div>`;
+      d.solidariosVivos.forEach(s=>{ const nm=(x)=>x; h+=`<div class="g-sol"><span>${_solNom(d,s.deudorId)} debe a ${_solNom(d,s.acreedorId)}</span><b>${fmt(s.monto)}</b></div>`; });
+      h+=`</div>`;
+    }
+
+    // acciones
+    h+=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">`;
+    if(g.estado==='formacion'){
+      h+=`<button class="g-btn" onclick="gAutorizar(${id})">Autorizar grupo</button>`;
+    }
+    if(g.estado!=='formacion'){
+      h+=`<button class="g-btn o" onclick="window.open('/api/g/grupos/${id}/documentos?t='+encodeURIComponent(TOKEN),'_blank')">📄 Contrato y pagarés</button>`;
+    }
+    if(g.estado==='autorizado'||g.estado==='activo'){
+      h+=`<button class="g-btn o" onclick="gRelevar(${id})">Relevar cobrador</button>`;
+      h+=`<button class="g-btn o" onclick="gRenovar(${id})">Renovar ciclo (+20%)</button>`;
+      h+=`<button class="g-btn o" onclick="gCerrar(${id})">Cerrar / liquidar</button>`;
+    }
+    h+=`</div>`;
+    body.innerHTML=h;
+  }catch(e){ body.innerHTML='<div class="g-empty">Error: '+(e.message||e)+'</div>'; }
+}
+function _solNom(d,id){ const i=(d.integrantes||[]).find(x=>x.id===id); return i?i.nombre:'—'; }
+
+const _DOCTX={ineFrente:'INE',ineReverso:'INE reverso',comprobanteDom:'Domicilio',firma:'Firma',curp:'CURP',solicitud:'Solicitud',fotoNegocio:'Negocio',pagare:'Pagaré'};
+function _docTxt(k){ return _DOCTX[k]||k; }
+function _docBtn(i,tipo,label){
+  const tiene=(i.docs||[]).includes(tipo);
+  return `<button class="qb ${tiene?'on':''}" style="flex:0 0 auto;padding:6px 10px" onclick="gSubirDoc(${i.id},'${tipo}','${label}')">${tiene?'✓ ':''}${label}</button>`;
+}
+function gSubirDoc(iid,tipo,label){
+  const inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.capture='environment';
+  inp.onchange=()=>{ const f=inp.files&&inp.files[0]; if(!f) return;
+    const rd=new FileReader();
+    rd.onload=async()=>{ try{ await apiU('POST','/api/g/integrantes/'+iid+'/doc',{tipo,imagen:rd.result}); gFicha(_gFichaId); }catch(e){ alert(e.message||e); } };
+    rd.readAsDataURL(f);
+  };
+  inp.click();
+}
+
+async function gAddInt(id){
+  const nombre=$('gi-nombre').value.trim(); if(!nombre){ alert('Falta el nombre'); return; }
+  try{
+    await apiU('POST','/api/g/grupos/'+id+'/integrantes',{ nombre, tel:$('gi-tel').value.trim(), monto:+$('gi-monto').value||0, rol:$('gi-rol').value });
+    gFicha(id);
+  }catch(e){ alert(e.message||e); }
+}
+
+async function gAutorizar(id){
+  if(!confirm('¿Autorizar el grupo? Se crearán los créditos de cada integrante y quedarán listos para que el JC los entregue.')) return;
+  try{
+    const r=await fetch('/api/g/grupos/'+id+'/autorizar',{ method:'POST', headers:{'Content-Type':'application/json',Authorization:'Bearer '+TOKEN}, body:'{}' });
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){
+      if(d.detalle&&Array.isArray(d.detalle)){
+        const txt=d.detalle.map(x=>x.nombre+': falta '+x.faltantes.join(', ')).join('\n');
+        alert('No se puede autorizar, expedientes incompletos:\n\n'+txt); return;
+      }
+      alert(d.error||('Error '+r.status)); return;
+    }
+    alert('Grupo autorizado. '+(d.ventasCreadas?d.ventasCreadas.length:0)+' créditos creados, listos para entrega por el JC. Garantía retenida: '+fmt(d.garantiaRetenida||0));
+    $('g-ficha').style.display='none'; gCargarGrupos();
+  }catch(e){ alert(e.message||e); }
+}
+
+async function gRelevar(id){
+  try{
+    if(!_gCobradores.length){ const u=await apiU('GET','/api/cobradores'); _gCobradores=u||[]; }
+    const nombres=_gCobradores.map((c,i)=>`${i+1}. ${c.nombre}`).join('\n');
+    const idx=prompt('¿A qué cobrador relevas el grupo?\n\n'+nombres+'\n\nEscribe el número:');
+    if(!idx) return;
+    const c=_gCobradores[+idx-1]; if(!c){ alert('Opción inválida'); return; }
+    const motivo=prompt('Motivo del relevo (opcional):')||'';
+    await apiU('PUT','/api/g/grupos/'+id+'/relevar',{ nuevoCobradorId:c.id, motivo });
+    gFicha(id); gCargarGrupos();
+  }catch(e){ alert(e.message||e); }
+}
+
+$('gn-crear').onclick=async()=>{
+  const nombre=$('gn-nombre').value.trim(); if(!nombre){ alert('Falta el nombre del grupo'); return; }
+  try{
+    await apiU('POST','/api/g/grupos',{
+      nombre, sucursalId:+$('gn-suc').value||null, frecuencia:$('gn-frec').value,
+      montoBase:+$('gn-monto').value||0,
+      junta:{ dia:+$('gn-dia').value, hora:$('gn-hora').value, lugar:$('gn-lugar').value.trim() }
+    });
+    $('gn-nombre').value=''; $('gn-lugar').value='';
+    _gTab('grupos');
+  }catch(e){ alert(e.message||e); }
+};
+
+async function gCargarConfig(){
+  try{
+    const d=await apiU('GET','/api/g/config'); const c=d.config||{};
+    $('gc-tarifa').value=c.tarifa||'s16'; $('gc-gar').value=c.garantiaPct??10;
+    $('gc-etq').value=c.etiquetaRetencion||'Garantía líquida'; $('gc-esc').value=c.escalaPct??20;
+    $('gc-min').value=c.min??5; $('gc-max').value=c.max??10;
+    $('gc-mret').value=c.multaRetardo??20; $('gc-mfal').value=c.multaFalta??50;
+  }catch(e){}
+}
+$('gc-guardar').onclick=async()=>{
+  try{
+    await apiU('POST','/api/g/config',{
+      tarifa:$('gc-tarifa').value.trim(), garantiaPct:+$('gc-gar').value, etiquetaRetencion:$('gc-etq').value.trim(),
+      escalaPct:+$('gc-esc').value, min:+$('gc-min').value, max:+$('gc-max').value,
+      multaRetardo:+$('gc-mret').value, multaFalta:+$('gc-mfal').value
+    });
+    alert('Configuración guardada.');
+  }catch(e){ alert(e.message||e); }
+};
+
+async function gCargarReportes(){
+  const g1=$('g-rep-grupos'), g2=$('g-rep-asesor'), g3=$('g-rep-comis');
+  g1.innerHTML='<div class="g-empty">Cargando…</div>';
+  try{
+    const d=await apiU('GET','/api/g/reportes/grupos');
+    if(!d.grupos.length){ g1.innerHTML='<div class="g-empty">Sin grupos activos.</div>'; g2.innerHTML=''; }
+    else{
+      g1.innerHTML=d.grupos.map(x=>`<div class="g-sol"><span><span class="g-sem ${x.semaforo}" style="margin-right:6px"></span>${x.nombre} <span class="g-meta">· ${x.asesor} · ciclo ${x.ciclo} · ${x.integrantes} int.</span></span><b>${fmt(x.cartera)}</b></div>`).join('');
+      g2.innerHTML=d.asesores.map(a=>`<div class="g-sol"><span>${a.asesor} <span class="g-meta">· ${a.grupos} grupos · ${a.integrantes} int.${a.rojos?' · '+a.rojos+' en rojo':''}</span></span><b>${fmt(a.cartera)}</b></div>`).join('');
+    }
+  }catch(e){ g1.innerHTML='<div class="g-empty">Error: '+(e.message||e)+'</div>'; }
+  try{
+    const d=await apiU('GET','/api/g/reportes/comisiones');
+    if(!d.asesores.length){ g3.innerHTML='<div class="g-empty">Sin datos.</div>'; }
+    else g3.innerHTML=d.asesores.map(a=>`<div class="g-sol"><span>${a.asesor} <span class="g-meta">· cobranza ${fmt(a.cobranza)} · ${a.gruposCerrados} cerrados</span></span><b>${fmt(a.comision)}</b></div>`).join('');
+  }catch(e){ g3.innerHTML='<div class="g-empty">'+(e.message||e)+'</div>'; }
+}
+
+async function gRenovar(id){
+  try{
+    const c=await apiU('GET','/api/g/grupos/'+id+'/cierre');
+    if(!c.puedeRenovar){
+      alert('Aún no se puede renovar.\n\nFalta liquidar: '+(c.pendiente.join(', ')||'—')+(c.solidariosVivos?'\nSolidarios sin saldar: '+c.solidariosVivos:''));
+      return;
+    }
+    const linea=c.siguienteCiclo.map(s=>s.nombre+': '+fmt(s.montoActual)+' → '+fmt(s.montoSiguiente)).join('\n');
+    if(!confirm('Renovar al ciclo '+(c.ciclo+1)+' (escala 20%):\n\n'+linea+'\n\nSe crearán créditos nuevos para entrega del JC. ¿Continuar?')) return;
+    const r=await apiU('POST','/api/g/grupos/'+id+'/renovar',{});
+    alert('Renovado al ciclo '+r.ciclo+'. '+r.ventasCreadas.length+' créditos nuevos listos para entrega. Garantía nueva: '+fmt(r.garantiaNueva));
+    $('g-ficha').style.display='none'; gCargarGrupos();
+  }catch(e){ alert(e.message||e); }
+}
+
+async function gCerrar(id){
+  try{
+    const c=await apiU('GET','/api/g/grupos/'+id+'/cierre');
+    if(!c.integrantes.every(i=>i.liquidada)){ alert('Aún hay integrantes con saldo. No se puede cerrar.'); return; }
+    if(!confirm('Cerrar el grupo como liquidado y devolver la garantía retenida ('+fmt(c.garantiaTotal)+')?')) return;
+    const r=await apiU('POST','/api/g/grupos/'+id+'/cerrar',{});
+    alert('Grupo liquidado. Garantía devuelta: '+fmt(r.garantiaDevuelta));
+    $('g-ficha').style.display='none'; gCargarGrupos();
+  }catch(e){ alert(e.message||e); }
+}
+
 /* ===== Extras · Detector de prestanombres ===== */
 let _exData=null, _exRisk='todos';
 function exNorm(s){ return String(s||'').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z0-9 ]/g,' ').replace(/\s+/g,' ').trim(); }
@@ -3468,7 +3850,7 @@ const rolLbl = {admin:'Administrador',supervisor:'Supervisor',sucursal:'Sucursal
 let _sucursales = [];
 if(ME) document.getElementById('meName').textContent = ME.nombre + ' · ' + (rolLbl[ME.rol]||ME.rol);
 if(ME && ME.rol!=='admin'){ var _nf=document.getElementById('nav-flujo'); if(_nf) _nf.style.display='none'; }
-if(ME && !(ME.rol==='admin'||ME.rol==='supervisor')){ var _ne=document.getElementById('nav-extras'); if(_ne) _ne.style.display='none'; }
+if(ME && !(ME.rol==='admin'||ME.rol==='supervisor')){ var _ne=document.getElementById('nav-extras'); if(_ne) _ne.style.display='none'; var _ng=document.getElementById('nav-grupal'); if(_ng) _ng.style.display='none'; }
 async function cargarUsuarios(){
   try{
     _sucursales = await apiU('GET','/api/sucursales');
