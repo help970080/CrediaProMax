@@ -4240,6 +4240,19 @@ app.get('*', (req, res, next) => {
   res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
 });
 
+// ===== ANEXO GRUPAL (se monta solo si FLAG_GRUPAL=1; si no, no hace nada) =====
+try {
+  require('./grupal').montar(app, {
+    pool, USE_PG, als, db, saveDB, saveRow, nextId,
+    auth, rol, logOp, fotoGuardar, fotoExpandirLista,
+    calcCredito, flujoAgregar, movAdd, saldoDe,
+    _normNombre, _canonProm,
+    jwt, JWT_SECRET, getTenant,
+    hoyMXISO: fechaMxHoyISO,
+    hoyMXDDMM: fechaMxHoyDDMM
+  });
+} catch (e) { console.error('⚠ módulo grupal no se pudo montar:', e.message); }
+
 /* ---------- Arranque (multitenant) ---------- */
 (async () => {
   const hayIndex = fs.existsSync(path.join(PUBLIC_DIR, 'index.html'));
