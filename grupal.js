@@ -135,9 +135,12 @@ module.exports.montar = function montar(app, ctx) {
   app.get('/api/g/grupos', auth, async (req, res) => {
     const g = await G(); if (!g) return res.status(400).json({ error: 'Sin agencia' });
     const u = req.user;
+    // Solo roles grupales y jefatura ven grupos. El cobrador individual no ve nada grupal.
+    const permitidos = ['admin', 'supervisor', 'sucursal', 'promotor_grupal'];
+    if (!permitidos.includes(u.rol)) return res.json({ grupos: [], total: 0 });
     let lista = g.grupos.slice();
-    // cobrador solo ve los grupos que él cobra
-    if (u.rol === 'cobrador') {
+    // el promotor grupal solo ve los grupos que él cobra
+    if (u.rol === 'promotor_grupal') {
       const yo = _normNombre(u.nombre);
       lista = lista.filter(gr => _normNombre(_cobGrupo(gr)) === yo);
     } else if (u.rol === 'sucursal') {
@@ -165,7 +168,7 @@ module.exports.montar = function montar(app, ctx) {
   });
 
   // crear grupo en formación
-  app.post('/api/g/grupos', auth, rol('admin', 'supervisor', 'sucursal', 'cobrador'), async (req, res) => {
+  app.post('/api/g/grupos', auth, rol('admin', 'supervisor', 'sucursal', 'promotor_grupal'), async (req, res) => {
     const g = await G(); if (!g) return res.status(400).json({ error: 'Sin agencia' });
     const { nombre, sucursalId, frecuencia, junta, montoBase } = req.body;
     if (!nombre || !String(nombre).trim()) return res.status(400).json({ error: 'Falta el nombre del grupo' });
@@ -216,7 +219,7 @@ module.exports.montar = function montar(app, ctx) {
   });
 
   // editar día/hora/lugar/frecuencia (no toca asesor ni cobrador)
-  app.put('/api/g/grupos/:id', auth, rol('admin', 'supervisor', 'sucursal', 'cobrador'), async (req, res) => {
+  app.put('/api/g/grupos/:id', auth, rol('admin', 'supervisor', 'sucursal', 'promotor_grupal'), async (req, res) => {
     const g = await G(); if (!g) return res.status(400).json({ error: 'Sin agencia' });
     const gr = g.grupos.find(x => x.id == req.params.id);
     if (!gr) return res.status(404).json({ error: 'Grupo no encontrado' });
@@ -238,7 +241,7 @@ module.exports.montar = function montar(app, ctx) {
     const gr = g.grupos.find(x => x.id == req.params.id);
     if (!gr) return res.status(404).json({ error: 'Grupo no encontrado' });
     const { nuevoCobradorId, motivo } = req.body;
-    const nu = (db.users || []).find(u => u.id == nuevoCobradorId && u.rol === 'cobrador' && u.activo);
+    const nu = (db.users || []).find(u => u.id == nuevoCobradorId && u.rol === 'promotor_grupal' && u.activo);
     if (!nu) return res.status(404).json({ error: 'Cobrador destino no válido' });
     const anterior = _cobGrupo(gr);
     gr.cobradorActual = _canonProm ? _canonProm(nu.nombre) : nu.nombre;
@@ -251,7 +254,7 @@ module.exports.montar = function montar(app, ctx) {
   // ================= INTEGRANTES =================
 
   // agregar integrante (crea o reusa cliente en el bloque del tenant)
-  app.post('/api/g/grupos/:id/integrantes', auth, rol('admin', 'supervisor', 'sucursal', 'cobrador'), async (req, res) => {
+  app.post('/api/g/grupos/:id/integrantes', auth, rol('admin', 'supervisor', 'sucursal', 'promotor_grupal'), async (req, res) => {
     const g = await G(); if (!g) return res.status(400).json({ error: 'Sin agencia' });
     const gr = g.grupos.find(x => x.id == req.params.id);
     if (!gr) return res.status(404).json({ error: 'Grupo no encontrado' });
@@ -300,7 +303,7 @@ module.exports.montar = function montar(app, ctx) {
   });
 
   // quitar integrante (solo en formación)
-  app.delete('/api/g/integrantes/:id', auth, rol('admin', 'supervisor', 'sucursal', 'cobrador'), async (req, res) => {
+  app.delete('/api/g/integrantes/:id', auth, rol('admin', 'supervisor', 'sucursal', 'promotor_grupal'), async (req, res) => {
     const g = await G(); if (!g) return res.status(400).json({ error: 'Sin agencia' });
     const it = g.integrantes.find(i => i.id == req.params.id);
     if (!it) return res.status(404).json({ error: 'Integrante no encontrada' });
@@ -314,7 +317,7 @@ module.exports.montar = function montar(app, ctx) {
   });
 
   // cambiar rol en la mesa directiva
-  app.put('/api/g/integrantes/:id/rol', auth, rol('admin', 'supervisor', 'sucursal', 'cobrador'), async (req, res) => {
+  app.put('/api/g/integrantes/:id/rol', auth, rol('admin', 'supervisor', 'sucursal', 'promotor_grupal'), async (req, res) => {
     const g = await G(); if (!g) return res.status(400).json({ error: 'Sin agencia' });
     const it = g.integrantes.find(i => i.id == req.params.id);
     if (!it) return res.status(404).json({ error: 'Integrante no encontrada' });
@@ -333,7 +336,7 @@ module.exports.montar = function montar(app, ctx) {
   // ================= EXPEDIENTE =================
 
   // subir/actualizar un documento del expediente (la imagen va a cobrapro_fotos)
-  app.post('/api/g/integrantes/:id/doc', auth, rol('admin', 'supervisor', 'sucursal', 'cobrador'), async (req, res) => {
+  app.post('/api/g/integrantes/:id/doc', auth, rol('admin', 'supervisor', 'sucursal', 'promotor_grupal'), async (req, res) => {
     const g = await G(); if (!g) return res.status(400).json({ error: 'Sin agencia' });
     const it = g.integrantes.find(i => i.id == req.params.id);
     if (!it) return res.status(404).json({ error: 'Integrante no encontrada' });
@@ -529,7 +532,7 @@ module.exports.montar = function montar(app, ctx) {
     if (!gr) return res.status(404).json({ error: 'Grupo no encontrado' });
     if (_estadoVisible(gr) !== 'activo') return res.status(409).json({ error: 'El grupo aún no está activo. Falta que el JC entregue los créditos (estado: ' + _estadoVisible(gr) + ')' });
     // control de acceso: cobrador solo su grupo
-    if (req.user.rol === 'cobrador' && _normNombre(_cobGrupo(gr)) !== _normNombre(req.user.nombre))
+    if (req.user.rol === 'promotor_grupal' && _normNombre(_cobGrupo(gr)) !== _normNombre(req.user.nombre))
       return res.status(403).json({ error: 'Ese grupo no es de tu ruta' });
 
     const hoy = hoyMXISO();
@@ -576,7 +579,7 @@ module.exports.montar = function montar(app, ctx) {
     if (junta.estado === 'cerrada') return res.status(409).json({ error: 'La junta ya fue cerrada' });
     const gr = g.grupos.find(x => x.id === junta.grupoId);
     if (!gr) return res.status(404).json({ error: 'Grupo no encontrado' });
-    if (req.user.rol === 'cobrador' && _normNombre(_cobGrupo(gr)) !== _normNombre(req.user.nombre))
+    if (req.user.rol === 'promotor_grupal' && _normNombre(_cobGrupo(gr)) !== _normNombre(req.user.nombre))
       return res.status(403).json({ error: 'Ese grupo no es de tu ruta' });
 
     // idempotencia por clave
@@ -597,7 +600,7 @@ module.exports.montar = function montar(app, ctx) {
     }
 
     const cob = _cobGrupo(gr);
-    const cobU = (db.users || []).find(u => u.rol === 'cobrador' && _normNombre(u.nombre) === _normNombre(cob));
+    const cobU = (db.users || []).find(u => u.rol === 'promotor_grupal' && _normNombre(u.nombre) === _normNombre(cob));
     const sidCobro = String((cobU && cobU.sucursalId) || gr.sucursalId || 1);
     const fecha = hoyMXDDMM();
     const cfg = _cfg(g);
@@ -719,7 +722,7 @@ module.exports.montar = function montar(app, ctx) {
     if (junta.estado === 'cerrada') return res.status(409).json({ error: 'La junta ya está cerrada' });
     const gr = g.grupos.find(x => x.id === junta.grupoId);
     if (!gr) return res.status(404).json({ error: 'Grupo no encontrado' });
-    if (req.user.rol === 'cobrador' && _normNombre(_cobGrupo(gr)) !== _normNombre(req.user.nombre))
+    if (req.user.rol === 'promotor_grupal' && _normNombre(_cobGrupo(gr)) !== _normNombre(req.user.nombre))
       return res.status(403).json({ error: 'Ese grupo no es de tu ruta' });
 
     const { foto, lat, lng } = req.body;
@@ -760,7 +763,7 @@ module.exports.montar = function montar(app, ctx) {
     res.json({ solidarios: vivos, total: vivos.length });
   });
 
-  app.post('/api/g/solidarios/:id/saldar', auth, rol('admin', 'supervisor', 'sucursal', 'cobrador'), async (req, res) => {
+  app.post('/api/g/solidarios/:id/saldar', auth, rol('admin', 'supervisor', 'sucursal', 'promotor_grupal'), async (req, res) => {
     const g = await G(); if (!g) return res.status(400).json({ error: 'Sin agencia' });
     const s = g.solidarios.find(x => x.id == req.params.id);
     if (!s) return res.status(404).json({ error: 'Registro no encontrado' });
@@ -1154,5 +1157,15 @@ ${pagares}
   app.get('/api/g/salud', auth, async (req, res) => {
     const g = await G();
     res.json({ ok: true, flag: FLAG, anexoId: _gid(), grupos: g ? g.grupos.length : 0 });
+  });
+
+  // lista de promotores grupales (para relevo y asignación)
+  app.get('/api/g/promotores', auth, rol('admin', 'supervisor', 'sucursal'), async (req, res) => {
+    const sucMap = {}; (db.sucursales || []).forEach(s => sucMap[s.id] = s.nombre);
+    const esSuc = req.user.rol === 'sucursal';
+    const lista = (db.users || [])
+      .filter(u => u.rol === 'promotor_grupal' && u.activo && (!esSuc || u.sucursalId === req.user.sucursalId))
+      .map(u => ({ id: u.id, nombre: u.nombre, sucursalId: u.sucursalId, sucursal: sucMap[u.sucursalId] || null }));
+    res.json(lista);
   });
 };
