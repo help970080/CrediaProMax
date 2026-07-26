@@ -765,7 +765,7 @@
       <div class="filters">
         <input id="u-nombre" placeholder="Nombre completo" style="flex:1;min-width:150px">
         <input id="u-usuario" placeholder="Usuario (ej. areyes)" style="flex:1;min-width:130px">
-        <select id="u-rol"><option value="cobrador">Cobrador</option><option value="jc">JC (Jefe de Crédito)</option><option value="sucursal">Sucursal</option><option value="supervisor">Supervisor</option><option value="admin">Administrador</option></select>
+        <select id="u-rol"><option value="cobrador">Cobrador</option><option value="promotor_grupal">Promotor Grupal</option><option value="jc">JC (Jefe de Crédito)</option><option value="sucursal">Sucursal</option><option value="supervisor">Supervisor</option><option value="admin">Administrador</option></select>
         <select id="u-suc"></select>
         <input id="u-pass" placeholder="Clave (vacío = automática)" style="min-width:150px">
         <button class="btn gold" onclick="crearUsuario()">Crear</button>
@@ -3622,9 +3622,10 @@ async function gAutorizar(id){
 
 async function gRelevar(id){
   try{
-    if(!_gCobradores.length){ const u=await apiU('GET','/api/cobradores'); _gCobradores=u||[]; }
+    if(!_gCobradores.length){ const u=await apiU('GET','/api/g/promotores'); _gCobradores=u||[]; }
+    if(!_gCobradores.length){ alert('No hay promotores grupales dados de alta. Crea uno en Usuarios con rol «Promotor Grupal».'); return; }
     const nombres=_gCobradores.map((c,i)=>`${i+1}. ${c.nombre}`).join('\n');
-    const idx=prompt('¿A qué cobrador relevas el grupo?\n\n'+nombres+'\n\nEscribe el número:');
+    const idx=prompt('¿A qué promotor grupal relevas el grupo?\n\n'+nombres+'\n\nEscribe el número:');
     if(!idx) return;
     const c=_gCobradores[+idx-1]; if(!c){ alert('Opción inválida'); return; }
     const motivo=prompt('Motivo del relevo (opcional):')||'';
