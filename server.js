@@ -678,10 +678,10 @@ app.patch('/api/users/:id', auth, rol('admin'), (req, res) => {
   if (!u) return res.status(404).json({ error: 'Usuario no encontrado' });
   if (typeof req.body.activo === 'boolean') u.activo = req.body.activo;
   if (req.body.nombre) u.nombre = String(req.body.nombre).trim();
-  if (req.body.rol && ['admin','supervisor','sucursal','cobrador','jc'].includes(req.body.rol)) u.rol = req.body.rol;
+  if (req.body.rol && ['admin','supervisor','sucursal','cobrador','jc','promotor_grupal'].includes(req.body.rol)) u.rol = req.body.rol;
   if (req.body.sucursalId !== undefined) {
     const sid = req.body.sucursalId === null || req.body.sucursalId === '' ? null : +req.body.sucursalId;
-    if ((u.rol === 'cobrador' || u.rol === 'sucursal' || u.rol === 'jc') && !sid) return res.status(400).json({ error: 'Un cobrador, JC o usuario de sucursal debe tener una sucursal asignada.' });
+    if ((u.rol === 'cobrador' || u.rol === 'sucursal' || u.rol === 'jc' || u.rol === 'promotor_grupal') && !sid) return res.status(400).json({ error: 'Un cobrador, promotor grupal, JC o usuario de sucursal debe tener una sucursal asignada.' });
     u.sucursalId = sid;
   }
   let nueva = null;
