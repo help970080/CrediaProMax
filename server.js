@@ -2179,6 +2179,23 @@ app.get('/api/dashboard', auth, (req,res)=>{
     const suc=sucursales.find(x=>x.id===s.sucursalId);
     return {id:m.id, saleId:m.saleId, fecha:m.fecha, cliente:c.nombre||'—', folio:s.folio, prom:s.prom||'—', forma:m.forma||'efectivo', monto:m.abono, origen:m.origen||'', sucursalCobro:m.sucursalCobro||s.sucursalId, sucursal:suc?suc.nombre:'—'};
   });
+  /* VENCIDA SOBRE TODA LA CARTERA.
+     Antes se sumaba por_cobrador, que solo recorre cobradores ACTIVOS y hace match por s.prom === c.nombre.
+     Todo crédito con prom vacío, mal escrito (MARTA vs MARTHA) o de un cobrador dado de baja se caía del
+     numerador pero seguía en saldo_pendiente → el % de morosidad salía por debajo de lo real.
+     Ahora se recorre el mismo universo 'sales' que alimenta saldo_pendiente: numerador y denominador cuadran.
+     Aparte se mide cuánto de ese atraso viene de créditos sin cobrador válido, que es un problema de captura
+     que hay que corregir en la base, no un número que deba esconderse. */
+  const _cobValidos = new Set(db.users.filter(u=>u.rol==='cobrador' && u.activo).map(u=>u.nombre));
+  let _venMonto=0, _venCred=0, _huerfMonto=0, _huerfCred=0;
+  const _huerfProms = new Set();
+  sales.forEach(s=>{
+    if(!_vivoAl(s)) return;
+    const at=atrasoDe(s);
+    if(!(at.montoAtraso>0)) return;
+    _venMonto+=at.montoAtraso; _venCred++;
+    if(!_cobValidos.has(s.prom)){ _huerfMonto+=at.montoAtraso; _huerfCred++; if(s.prom) _huerfProms.add(s.prom); }
+  });
   const totales={
     creditos_activos: sales.filter(s=>_vivoAl(s)).length,
     creditos_totales: sales.length,
@@ -2193,8 +2210,12 @@ app.get('/api/dashboard', auth, (req,res)=>{
     en_caja_efectivo: (miSuc==null?Object.values(db.caja):[db.caja[String(miSuc)]||{}]).reduce((a,c)=>a+((c.inicial||0)+(c.efectivo||0)+(c.entregas||0)-(c.retiros||0)),0),
     en_caja_banco: (miSuc==null?Object.values(db.caja):[db.caja[String(miSuc)]||{}]).reduce((a,c)=>a+(c.banco||0),0),
     por_entregar: db.porEntregar.filter(p=>miSuc==null||p.sucursalId===miSuc).reduce((a,p)=>a+p.monto,0),
-    atraso_total: por_cobrador.reduce((a,c)=>a+c.atraso_monto,0),
-    clientes_atrasados: por_cobrador.reduce((a,c)=>a+c.atraso_clientes,0),
+    atraso_total: _venMonto,
+    clientes_atrasados: _venCred,
+    // Diagnóstico: parte de la vencida que cuelga de créditos sin cobrador activo que coincida por nombre
+    atraso_huerfano: _huerfMonto,
+    creditos_huerfanos: _huerfCred,
+    proms_huerfanos: [..._huerfProms].sort().slice(0,15),
   };
   const _wkFin = desde + 7*86400000 - 1;
   res.json({periodo, desde:new Date(desde).toISOString(),
