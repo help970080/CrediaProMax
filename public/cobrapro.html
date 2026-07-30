@@ -260,6 +260,7 @@
       <div class="kpi r"><div class="l">Cartera vencida</div><div class="v" id="k-ven">$0</div><div class="s"><b class="n" id="k-ven-p">0%</b> de la cartera</div></div>
       <div class="kpi"><div class="l">Efectivo por entregar</div><div class="v" id="k-ef">$0</div><div class="s">cobradores + cajas</div></div>
     </div>
+    <div id="dash-hist" style="display:none;margin-top:-4px;margin-bottom:14px;padding:10px 14px;border-radius:10px;font-size:.82rem;line-height:1.45"></div>
     <div class="g2">
       <div class="panel"><div class="ph"><h3>Cobranza por día</h3><span class="hint">campo vs sucursal</span></div><div id="ch-daily"></div>
         <div class="legend"><span><i style="background:var(--acc)"></i>Cobradores en ruta</span><span><i style="background:var(--blu)"></i>Pagos en sucursal</span></div></div>
@@ -1184,11 +1185,39 @@ function pintaResumen(d){
   const _u=$('k-util'); if(_u) _u.textContent=fmt(t.utilidad_periodo||0);
   $('k-col').textContent=fmt(t.monto_colocado_periodo);
   $('k-ncred').textContent=t.nuevos_creditos_periodo+' créditos nuevos';
-  $('k-cart').textContent=fmt(t.saldo_pendiente);
-  $('k-ncli').textContent=t.creditos_activos+' créditos vigentes';
-  $('k-ven').textContent=fmt(t.atraso_total||0);
-  const pct = t.saldo_pendiente>0 ? ((t.atraso_total||0)/t.saldo_pendiente*100) : 0;
-  $('k-ven-p').textContent=pct.toFixed(1)+'% · '+(t.clientes_atrasados||0)+' clientes';
+  /* CARTERA Y VENCIDA = FOTO AL CIERRE DEL PERIODO ELEGIDO (ya no "el día de hoy").
+     Si el periodo es anterior al arranque de la operación en el sistema no hay dato serio que mostrar:
+     se pone "—" en vez de un cero que se lee como cartera perdida. */
+  const _hist=$('dash-hist');
+  const _fCorta=iso=>{ try{ return new Date(iso+'T00:00:00').toLocaleDateString('es-MX',{day:'2-digit',month:'short'}); }catch(e){ return iso||''; } };
+  if(d.sinHistorial){
+    $('k-cart').textContent='—';
+    $('k-ncli').textContent='sin historial';
+    $('k-ven').textContent='—';
+    $('k-ven-p').textContent='—';
+    if(_hist){ _hist.style.display='block';
+      _hist.style.background='rgba(220,60,60,.10)'; _hist.style.border='1px solid rgba(220,60,60,.35)'; _hist.style.color='var(--red)';
+      _hist.innerHTML='<b>Sin historial en esta fecha.</b> La operación arranca en el sistema el '+
+        (d.inicioOperISO?_fCorta(d.inicioOperISO):'—')+'. Antes de ese día no hay movimientos registrados, '+
+        'por eso la cartera y la vencida no se muestran: cualquier cifra sería inventada. '+
+        'El dinero cobrado y colocado sí son reales (son cero porque no hubo operación).';
+    }
+  }else{
+    $('k-cart').textContent=fmt(t.saldo_pendiente);
+    $('k-ncli').textContent=t.creditos_activos+' créditos vigentes'+(d.esPeriodoActual?'':' al '+_fCorta(d.corteISO));
+    $('k-ven').textContent=fmt(t.atraso_total||0);
+    const pct = t.saldo_pendiente>0 ? ((t.atraso_total||0)/t.saldo_pendiente*100) : 0;
+    $('k-ven-p').textContent=pct.toFixed(1)+'% · '+(t.clientes_atrasados||0)+' clientes';
+    if(_hist){
+      if(!d.esPeriodoActual && (d.importSinHist||0)>0){
+        _hist.style.display='block';
+        _hist.style.background='rgba(200,150,30,.10)'; _hist.style.border='1px solid rgba(200,150,30,.40)'; _hist.style.color='var(--acc)';
+        _hist.innerHTML='<b>Cartera incompleta en esta fecha.</b> '+d.importSinHist+' crédito(s) importado(s) traen su apertura fechada el día de la migración, '+
+          'así que en esta semana el sistema todavía no los ve aunque en la calle ya estaban vivos. '+
+          'La cartera y la vencida de este periodo salen por debajo de lo real.';
+      }else{ _hist.style.display='none'; }
+    }
+  }
   $('k-ef').textContent=fmt(t.por_entregar+t.en_caja_efectivo);
   const rows=[...d.por_cobrador].sort((a,b)=>(b.comisionable!=null?b.comisionable:b.pagos_recibidos)-(a.comisionable!=null?a.comisionable:a.pagos_recibidos));
   const k=cfg();
