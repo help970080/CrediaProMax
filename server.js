@@ -1628,26 +1628,30 @@ app.get('/api/sales/:id/movimientos', auth, (req, res) => {
 // Cuántos pagos semanales se esperan ya, contando por CICLO (igual que Números Diarios):
 // se espera un pago por cada ciclo que inició DESPUÉS del ciclo en que se creó/reestructuró el crédito,
 // hasta el ciclo actual inclusive. Sin gracia de 7 días: un crédito de la semana pasada ya debe 1.
-function _ciclosEsperados(anchorTs){
-  const cycleNow = _inicioCiclo(new Date(fechaMxHoyISO() + 'T00:00:00').getTime());
+// refTs opcional: fecha de corte para reconstruir la foto de una semana pasada. Sin refTs = hoy (comportamiento original).
+function _ciclosEsperados(anchorTs, refTs){
+  const _base = (refTs != null && isFinite(refTs)) ? refTs : new Date(fechaMxHoyISO() + 'T00:00:00').getTime();
+  const cycleNow = _inicioCiclo(_base);
   const firstCycle = _inicioCiclo(anchorTs) + 7 * 86400000;
   if (cycleNow < firstCycle) return 0;
   return Math.round((cycleNow - firstCycle) / (7 * 86400000)) + 1;
 }
-function calcAtraso(sale){
+/* Núcleo del cálculo de atraso, anclado a una FECHA DE CORTE y a un SALDO explícitos.
+   Así el mismo cálculo sirve para "hoy" (calcAtraso) y para reconstruir la foto de una semana pasada
+   en el dashboard, sin duplicar la fórmula ni tocar a quienes ya llaman calcAtraso(sale). */
+function _calcAtrasoCore(sale, corteTs, saldoActual){
   const cuota = sale.cuota || 0;
   // ancla del calendario: si hubo reestructura, el reloj se reinicia desde esa fecha
   const anchor = sale.reestructuraAt ? new Date(sale.reestructuraAt) : (sale.createdAt ? new Date(sale.createdAt) : new Date());
-  const dias = Math.max(0, Math.floor((Date.now() - anchor.getTime())/86400000));
+  const dias = Math.max(0, Math.floor((corteTs - anchor.getTime())/86400000));
   const _esSemanal = t => t === 'semanal' || /^s\d+$/i.test(String(t || ''));
   let cuotasDebidas = 0;
   if (sale.tipo === 'diario') cuotasDebidas = Math.min(sale.plazo || 0, dias);
-  else if (_esSemanal(sale.tipo)) cuotasDebidas = Math.min(sale.plazo || 0, _ciclosEsperados(anchor.getTime()));
+  else if (_esSemanal(sale.tipo)) cuotasDebidas = Math.min(sale.plazo || 0, _ciclosEsperados(anchor.getTime(), corteTs));
   else if (sale.tipo === 'unico') cuotasDebidas = dias >= (sale.plazo || 0) ? 1 : 0;
   else if (sale.tipo === 'p17') cuotasDebidas = Math.min(17, Math.floor(dias / ((sale.plazo || 270)/17)));
   // saldo base: total original, o el saldo reprogramado si hubo reestructura
   const saldoBase = sale.saldoBaseReestructura != null ? sale.saldoBaseReestructura : (aperturaDe(sale.id) || sale.total || 0);
-  const saldoActual = saldoDe(sale.id);
   const expectedSaldo = Math.max(0, saldoBase - cuotasDebidas * cuota);
   const montoAtraso = Math.max(0, saldoActual - expectedSaldo);
   const cuotasAtraso = cuota > 0 ? Math.round(montoAtraso / cuota) : 0;
@@ -1658,6 +1662,8 @@ function calcAtraso(sale){
                    : cuotasAtraso * Math.round((sale.plazo||270)/17);
   return { cuotasDebidas, cuotasPagadas, cuotasAtraso, montoAtraso, diasAtraso };
 }
+// Firma original intacta: atraso AL DÍA DE HOY con el saldo vivo. Todos los llamados existentes siguen igual.
+function calcAtraso(sale){ return _calcAtrasoCore(sale, Date.now(), saldoDe(sale.id)); }
 
 // ===== CORREGIR LA CUOTA DE UN CRÉDITO (tarifa mal calculada en la migración) =====
 // Ajusta SOLO la cuota de este crédito y recalcula su plazo. No toca saldos, movimientos ni caja:
@@ -2077,18 +2083,40 @@ app.get('/api/dashboard', auth, (req,res)=>{
   const _iniSem=_desdePeriodo('semana', refIso);
   const _sIni={};    // saldo antes del inicio de SEMANA  → base congelada
   const _sDesde={};  // saldo antes del inicio del PERIODO → altas/bajas del periodo
+  /* FOTO AL CIERRE DEL PERIODO: cartera y vencida ya NO son "el día de hoy".
+     _corte = último instante del periodo elegido (o ahora mismo si el periodo es el vigente).
+     _sHasta = saldo que traía cada crédito a esa fecha, reconstruido desde los movimientos.
+     En el periodo actual _corte = ahora → _sHasta == saldoDe() → los números salen idénticos a antes. */
+  const _ahora = Date.now();
+  const _corte = Math.min(hasta, _ahora);
+  const _esPeriodoActual = (hasta >= _ahora);   // el periodo elegido todavía no cierra → la foto es la de hoy
+  const _sHasta={};      // saldo del crédito AL CORTE del periodo
+  const _primerMov={};   // fecha del primer movimiento del crédito (nace en el sistema)
+  let _iniOper = Infinity;
   db.movimientos.forEach(m=>{
     const t=_parseFechaMx(m.fecha), d=(m.cargo||0)-(m.abono||0);
     if(t<_iniSem) _sIni[m.saleId]=(_sIni[m.saleId]||0)+d;
     if(t<desde)  _sDesde[m.saleId]=(_sDesde[m.saleId]||0)+d;
+    // fecha ilegible: se trata como muy antigua para no perder el movimiento del saldo (igual que saldoDe)
+    const tt = isFinite(t) ? t : 0;
+    if(tt<=_corte) _sHasta[m.saleId]=(_sHasta[m.saleId]||0)+d;
+    if(isFinite(t) && t>0){
+      if(_primerMov[m.saleId]==null || t<_primerMov[m.saleId]) _primerMov[m.saleId]=t;
+      if(t<_iniOper) _iniOper=t;
+    }
   });
+  const _saldoAl = s => (_sHasta[s.id]||0);          // saldo del crédito al corte
+  const _vivoAl  = s => _saldoAl(s) > 0.5;           // ¿estaba vigente al corte?
+  // Antes del primer movimiento registrado no hay operación que mostrar: la cartera saldría en cero y engaña.
+  const _sinHistorial = isFinite(_iniOper) && (_corte < _iniOper);
+  /* Cobertura parcial: los créditos IMPORTADOS traen su apertura fechada el día de la migración.
+     En una semana anterior a esa fecha el sistema los ve como inexistentes aunque en la calle sí estaban vivos,
+     así que la cartera de ese periodo sale corta. Se reporta para avisarlo en pantalla, no se inventa el dato. */
+  const _importSinHist = sales.filter(s=> s.importado===true && (_primerMov[s.id]==null || _primerMov[s.id] > _corte)).length;
   // ¿el crédito formaba parte de la base con la que arrancó la semana?
   const _enBaseSemana = s => ((_sIni[s.id]||0) > 0.5) || (s.importado===true && saldoDe(s.id) > 0.5);
-  // atraso acumulado por sale
-  function atrasoDe(s){
-    const totAb=db.movimientos.filter(m=>m.saleId===s.id && m.abono>0).reduce((a,m)=>a+m.abono,0);
-    return calcAtraso(s,totAb);
-  }
+  // atraso acumulado por sale, medido AL CORTE del periodo (en el periodo vigente = al día de hoy)
+  function atrasoDe(s){ return _calcAtrasoCore(s, _corte, _saldoAl(s)); }
   const por_sucursal=sucursales.map(suc=>{
     const ventas_suc=sales.filter(s=>s.sucursalId===suc.id);
     const abonos_suc=abonos.filter(m=>{ const s=sales.find(x=>x.id===m.saleId); return s && s.sucursalId===suc.id; });
@@ -2100,8 +2128,8 @@ app.get('/api/dashboard', auth, (req,res)=>{
     let atraso_monto=0, atraso_clientes=0, esperado_acum=0;
     // Cartera = dinero real (vivo). Créditos y clientes = BASE CONGELADA de la semana.
     let _carteraSuc=0, _creditosVig=0; const _cliVigSuc=new Set();
-    ventas_suc.forEach(s=>{ const sd=saldoDe(s.id); _carteraSuc+=sd; if(_enBaseSemana(s)){ _creditosVig++; _cliVigSuc.add(s.clientId); } });
-    ventas_suc.forEach(s=>{ if(saldoDe(s.id)<=0)return; const at=atrasoDe(s); esperado_acum+=at.cuotasDebidas*s.cuota; if(at.montoAtraso>0){ atraso_monto+=at.montoAtraso; atraso_clientes++; } });
+    ventas_suc.forEach(s=>{ _carteraSuc+=_saldoAl(s); if(_enBaseSemana(s)){ _creditosVig++; _cliVigSuc.add(s.clientId); } });
+    ventas_suc.forEach(s=>{ if(!_vivoAl(s))return; const at=atrasoDe(s); esperado_acum+=at.cuotasDebidas*s.cuota; if(at.montoAtraso>0){ atraso_monto+=at.montoAtraso; atraso_clientes++; } });
     // Clientes sin pago en el periodo (riesgo): vigente, no único, no nuevo del periodo, sin abono en el periodo
     const pagaronSuc=new Set(abonos_suc.map(m=>{const s=sales.find(x=>x.id===m.saleId); return s?s.clientId:null;}).filter(v=>v!=null));
     const nopagoSuc=new Set();
@@ -2120,11 +2148,11 @@ app.get('/api/dashboard', auth, (req,res)=>{
     const sus_abonos=abonos.filter(m=>{ const s=sales.find(x=>x.id===m.saleId); return s && s.prom===c.nombre; });
     const recuperado=sus_abonos.reduce((a,m)=>a+m.abono,0);
     const comisionable=sus_abonos.filter(m=>m.forma!=='descuento' && m.forma!=='recomendacion').reduce((a,m)=>a+m.abono,0);
-    const cartera=sus_sales.reduce((a,s)=>a+saldoDe(s.id),0);
+    const cartera=sus_sales.reduce((a,s)=>a+_saldoAl(s),0);
     const por_entregar=db.porEntregar.filter(p=>p.prom===c.nombre).reduce((a,p)=>a+p.monto,0);
     const suc=sucursales.find(s=>s.id===c.sucursalId);
     let atraso_monto=0, atraso_clientes=0, esperado_acum=0;
-    sus_sales.forEach(s=>{ if(saldoDe(s.id)<=0)return; const at=atrasoDe(s); esperado_acum+=at.cuotasDebidas*s.cuota; if(at.montoAtraso>0){ atraso_monto+=at.montoAtraso; atraso_clientes++; } });
+    sus_sales.forEach(s=>{ if(!_vivoAl(s))return; const at=atrasoDe(s); esperado_acum+=at.cuotasDebidas*s.cuota; if(at.montoAtraso>0){ atraso_monto+=at.montoAtraso; atraso_clientes++; } });
     // Clientes sin pago en el periodo (riesgo): vigente, no único, no nuevo del periodo, sin abono en el periodo
     const pagaronCob=new Set(sus_abonos.map(m=>{const s=sales.find(x=>x.id===m.saleId); return s?s.clientId:null;}).filter(v=>v!=null));
     const nopagoCob=new Set();
@@ -2152,10 +2180,10 @@ app.get('/api/dashboard', auth, (req,res)=>{
     return {id:m.id, saleId:m.saleId, fecha:m.fecha, cliente:c.nombre||'—', folio:s.folio, prom:s.prom||'—', forma:m.forma||'efectivo', monto:m.abono, origen:m.origen||'', sucursalCobro:m.sucursalCobro||s.sucursalId, sucursal:suc?suc.nombre:'—'};
   });
   const totales={
-    creditos_activos: sales.filter(s=>saldoDe(s.id)>0).length,
+    creditos_activos: sales.filter(s=>_vivoAl(s)).length,
     creditos_totales: sales.length,
     monto_colocado_total: sales.reduce((a,s)=>a+s.monto,0),
-    saldo_pendiente: sales.reduce((a,s)=>a+saldoDe(s.id),0),
+    saldo_pendiente: sales.reduce((a,s)=>a+_saldoAl(s),0),
     recuperado_periodo: abonos.reduce((a,m)=>a+m.abono,0),
     npagos_periodo: abonos.length,
     nuevos_creditos_periodo: nuevos.length,
@@ -2173,6 +2201,12 @@ app.get('/api/dashboard', auth, (req,res)=>{
     semanaInicioDia:_diaSemanaInicio(),
     semanaDesdeISO:(periodo==='semana'?_isoDe(desde):null),
     semanaHastaISO:(periodo==='semana'?_isoDe(_wkFin):null),
+    // Contexto de la foto histórica: hasta dónde llega la información real de la operación
+    corteISO:_isoDe(_corte),
+    esPeriodoActual:_esPeriodoActual,
+    sinHistorial:_sinHistorial,
+    inicioOperISO:(isFinite(_iniOper)?_isoDe(_iniOper):null),
+    importSinHist:_importSinHist,
     totales, por_sucursal, por_cobrador, pagos_recientes});
 });
 app.get('/api/reports/pagos', auth, (req,res)=>{
