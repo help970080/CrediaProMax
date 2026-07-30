@@ -261,6 +261,7 @@
       <div class="kpi"><div class="l">Efectivo por entregar</div><div class="v" id="k-ef">$0</div><div class="s">cobradores + cajas</div></div>
     </div>
     <div id="dash-hist" style="display:none;margin-top:-4px;margin-bottom:14px;padding:10px 14px;border-radius:10px;font-size:.82rem;line-height:1.45"></div>
+    <div id="dash-huerf" style="display:none;margin-top:-4px;margin-bottom:14px;padding:10px 14px;border-radius:10px;font-size:.82rem;line-height:1.45;background:rgba(200,150,30,.10);border:1px solid rgba(200,150,30,.40);color:var(--acc)"></div>
     <div class="g2">
       <div class="panel"><div class="ph"><h3>Cobranza por día</h3><span class="hint">campo vs sucursal</span></div><div id="ch-daily"></div>
         <div class="legend"><span><i style="background:var(--acc)"></i>Cobradores en ruta</span><span><i style="background:var(--blu)"></i>Pagos en sucursal</span></div></div>
@@ -1195,6 +1196,7 @@ function pintaResumen(d){
     $('k-ncli').textContent='sin historial';
     $('k-ven').textContent='—';
     $('k-ven-p').textContent='—';
+    const _hf0=$('dash-huerf'); if(_hf0) _hf0.style.display='none';
     if(_hist){ _hist.style.display='block';
       _hist.style.background='rgba(220,60,60,.10)'; _hist.style.border='1px solid rgba(220,60,60,.35)'; _hist.style.color='var(--red)';
       _hist.innerHTML='<b>Sin historial en esta fecha.</b> La operación arranca en el sistema el '+
@@ -1207,7 +1209,7 @@ function pintaResumen(d){
     $('k-ncli').textContent=t.creditos_activos+' créditos vigentes'+(d.esPeriodoActual?'':' al '+_fCorta(d.corteISO));
     $('k-ven').textContent=fmt(t.atraso_total||0);
     const pct = t.saldo_pendiente>0 ? ((t.atraso_total||0)/t.saldo_pendiente*100) : 0;
-    $('k-ven-p').textContent=pct.toFixed(1)+'% · '+(t.clientes_atrasados||0)+' clientes';
+    $('k-ven-p').textContent=pct.toFixed(1)+'% · '+(t.clientes_atrasados||0)+' créditos';
     if(_hist){
       if(!d.esPeriodoActual && (d.importSinHist||0)>0){
         _hist.style.display='block';
@@ -1216,6 +1218,20 @@ function pintaResumen(d){
           'así que en esta semana el sistema todavía no los ve aunque en la calle ya estaban vivos. '+
           'La cartera y la vencida de este periodo salen por debajo de lo real.';
       }else{ _hist.style.display='none'; }
+    }
+    /* La vencida ya cuenta TODA la cartera. Si parte de ella cuelga de créditos cuyo campo "cobrador"
+       no coincide con ningún usuario activo, ese dinero no aparece en el desempeño por cobrador
+       ni en el semáforo: es un error de captura que hay que corregir en la base. */
+    const _hf=$('dash-huerf');
+    if(_hf){
+      if((t.creditos_huerfanos||0)>0){
+        _hf.style.display='block';
+        _hf.innerHTML='<b>'+fmt(t.atraso_huerfano||0)+' de la vencida ('+t.creditos_huerfanos+' crédito(s)) no tiene cobrador válido.</b> '+
+          'Ya está contado en la cifra de arriba, pero no aparece en el desempeño por cobrador ni en el semáforo, '+
+          'porque el nombre del cobrador del crédito no coincide con ningún usuario activo. '+
+          (t.proms_huerfanos && t.proms_huerfanos.length ? 'Nombres a revisar: '+t.proms_huerfanos.map(x=>x||'(vacío)').join(' · ')+'. ' : '')+
+          'Se corrige en Cartera de crédito → editar cliente, donde el cobrador es un desplegable.';
+      }else{ _hf.style.display='none'; }
     }
   }
   $('k-ef').textContent=fmt(t.por_entregar+t.en_caja_efectivo);
@@ -1839,7 +1855,7 @@ async function rpVerAtraso(){
     rpAbrir('⚠️ Atraso / mora por sucursal y cobrador',`
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px">
         <div class="kpi" style="padding:10px;border-color:var(--red)"><div class="l">Atraso total</div><div class="v" style="font-size:1.3rem;color:var(--red)">${fmt(d.totales.atraso_total||0)}</div></div>
-        <div class="kpi" style="padding:10px"><div class="l">Clientes en mora</div><div class="v" style="font-size:1.3rem">${d.totales.clientes_atrasados||0}</div></div>
+        <div class="kpi" style="padding:10px"><div class="l">Créditos en mora</div><div class="v" style="font-size:1.3rem">${d.totales.clientes_atrasados||0}</div></div>
         <div class="kpi" style="padding:10px"><div class="l">% sobre cartera</div><div class="v" style="font-size:1.3rem">${d.totales.saldo_pendiente>0?((d.totales.atraso_total||0)/d.totales.saldo_pendiente*100).toFixed(1):'0'}%</div></div>
       </div>
       <h4 style="margin:6px 0;font-size:.85rem">Por sucursal</h4><table class="rp-table"><thead><tr><th>Sucursal</th><th>Encargada</th><th class="n">Créditos</th><th class="n">Cartera</th><th class="n">Atraso</th><th class="n">Clientes mora</th><th class="n">% mora</th></tr></thead><tbody>${sucs}</tbody></table>
