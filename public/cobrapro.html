@@ -1502,7 +1502,9 @@ function _oneReport(r,fechaGen){
   const fmt=n=>'$'+Math.round(n).toLocaleString('es-MX');
   const k=r.kpis; let h16=''; for(let i=1;i<=16;i++) h16+=`<th>${i}</th>`;
   const mini=n=>Math.round(n||0).toLocaleString('es-MX');
-  const rows=r.clientes.map((c,i)=>{
+  // orden alfabético por nombre del cliente (ignora acentos y mayúsculas)
+  const lista=(r.clientes||[]).slice().sort((a,b)=>String(a.nombre||'').localeCompare(String(b.nombre||''),'es',{sensitivity:'base',numeric:true}));
+  const rows=lista.map((c,i)=>{
     const pg=c.pagos||[];
     const qs=c.estados.map((e,j)=>{
       if(e==='p') return `<td class="q p">${mini(pg[j])}</td>`;
@@ -1530,7 +1532,7 @@ function _oneReport(r,fechaGen){
       <div><b style="color:#1e7a3d">1,200 = pagó su cuota completa</b></div>
       <div><b style="color:#8a6100">1,200 = abonó de menos (parcial)</b></div>
       <div><b style="color:#a8261d">✕ No pagó nada (vencido)</b></div>
-      <div><b>Tarifa</b> = cuota que le toca pagar</div>
+      <div><b>Tarifa</b> = cuota que le toca pagar · lista en orden alfabético</div>
       <div><b style="color:#aaa">· Aún no le tocaba</b></div>
       <div>"Liq." = crédito liquidado</div>
       <div><b>Pag.</b> = pagos hechos / cuotas debidas</div>
