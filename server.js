@@ -2785,24 +2785,59 @@ app.get('/api/config/semana', auth, (req, res) => {
 });
 
 /* ---------- Reporte de cartera por cobrador ---------- */
-function _tipoLblSrv(t){ return ({diario:'Diario',semanal:'Semanal',unico:'Pago único',p17:'Celulares 17'})[t] || t; }
+const _esSemanalSrv = t => t === 'semanal' || /^s\d+$/i.test(String(t || ''));
+function _tipoLblSrv(t){
+  const base = ({diario:'Diario',semanal:'Semanal',unico:'Pago único',p17:'Celulares 17'})[t];
+  if (base) return base;
+  const m = String(t||'').match(/^s(\d+)$/i);
+  return m ? ('Semanal ' + m[1]) : (t || '—');
+}
+// Número de cuotas del crédito. Los tipos s16/s17/s21/s31 son SEMANALES: si el plazo viene vacío
+// se toma del propio tipo (s16 = 16 semanas), que antes los dejaba sin calendario y sin estados.
+function _numCuotasSrv(sale){
+  const t = String(sale.tipo||'').toLowerCase();
+  let n = +sale.plazo || 0;
+  if (t === 'unico') return 1;
+  if (t === 'p17') return 17;
+  if (_esSemanalSrv(t)) { const m = t.match(/^s(\d+)$/); if (!n && m) n = +m[1]; return n || 16; }
+  return n;
+}
+/* Últimas 16 cuotas de un crédito, con el MONTO abonado en cada una.
+   Devuelve { estados, pagos }:
+     estados[i] = 'p' pagó completo · 'a' abono parcial · 'n' no pagó nada (ya venció) · 'x' aún no le tocaba
+     pagos[i]   = pesos abonados dentro de esa cuota
+   Regla: si en esa cuota entró CUALQUIER cantidad, se muestra la cantidad (nunca ✕).
+   El abono se asigna a la cuota cuya ventana lo contiene, aunque esa cuota todavía no venza,
+   así un pago adelantado (crédito recién colocado) SÍ se ve en el reporte. */
 function _ultimas16Cuotas(sale, abonos){
-  const created = sale.createdAt ? new Date(sale.createdAt) : new Date();
-  const ahora = new Date();
+  const anchor = sale.reestructuraAt ? new Date(sale.reestructuraAt) : (sale.createdAt ? new Date(sale.createdAt) : new Date());
+  const ahora = Date.now();
   const cuota = sale.cuota || 0;
-  let fechas = [];
-  if (sale.tipo === 'diario')    for (let i=1; i<=(sale.plazo||0); i++) { const d=new Date(created); d.setDate(d.getDate()+i); fechas.push(d); }
-  else if (sale.tipo === 'semanal') for (let i=1; i<=(sale.plazo||0); i++) { const d=new Date(created); d.setDate(d.getDate()+i*7); fechas.push(d); }
-  else if (sale.tipo === 'unico') { const d=new Date(created); d.setDate(d.getDate()+(sale.plazo||0)); fechas.push(d); }
-  else if (sale.tipo === 'p17') { const iv=Math.max(1, Math.round((sale.plazo||270)/17)); for (let i=1; i<=17; i++) { const d=new Date(created); d.setDate(d.getDate()+i*iv); fechas.push(d); } }
-  const estados = fechas.map((fecha, i) => {
-    if (fecha > ahora) return 'x';
-    const cutoff = new Date(fecha); cutoff.setDate(cutoff.getDate()+1);
-    const acumPagado = abonos.filter(m => _parseFechaMx(m.fecha) <= cutoff.getTime()).reduce((a,m)=>a+m.abono, 0);
-    return acumPagado >= (i+1)*cuota ? 'p' : 'n';
+  const tipo = String(sale.tipo||'').toLowerCase();
+  const n = _numCuotasSrv(sale);
+  const fechas = [];
+  if (tipo === 'diario') for (let i=1; i<=n; i++) { const d=new Date(anchor); d.setDate(d.getDate()+i); fechas.push(d); }
+  else if (tipo === 'unico') { const d=new Date(anchor); d.setDate(d.getDate()+(+sale.plazo||0)); fechas.push(d); }
+  else if (tipo === 'p17') { const iv=Math.max(1, Math.round((+sale.plazo||270)/17)); for (let i=1; i<=17; i++) { const d=new Date(anchor); d.setDate(d.getDate()+i*iv); fechas.push(d); } }
+  else for (let i=1; i<=n; i++) { const d=new Date(anchor); d.setDate(d.getDate()+i*7); fechas.push(d); } // semanal y s16/s17/s21/s31
+  if (!fechas.length) return { estados: new Array(16).fill('x'), pagos: new Array(16).fill(0) };
+  // cierre de cada cuota: el día siguiente a su vencimiento
+  const cortes = fechas.map(f => { const d=new Date(f); d.setDate(d.getDate()+1); d.setHours(0,0,0,0); return d.getTime(); });
+  const pagados = new Array(fechas.length).fill(0);
+  (abonos||[]).forEach(m => {
+    const ts = _parseFechaMx(m.fecha);
+    if (!isFinite(ts) || !ts) return;
+    let idx = cortes.findIndex(c => ts < c);          // primera cuota cuya ventana aún no cierra
+    if (idx < 0) idx = fechas.length - 1;             // abonos después del último vencimiento → última cuota
+    pagados[idx] += (m.abono || 0);
   });
-  let u = estados.slice(-16); while (u.length < 16) u.unshift('x');
-  return u;
+  const estados = fechas.map((f, i) => {
+    if (pagados[i] > 0) return (cuota > 0 && pagados[i] < cuota - 0.5) ? 'a' : 'p';  // hubo dinero → se muestra la cantidad
+    return cortes[i] <= ahora ? 'n' : 'x';
+  });
+  let u = estados.slice(-16), g = pagados.slice(-16);
+  while (u.length < 16) { u.unshift('x'); g.unshift(0); }
+  return { estados: u, pagos: g };
 }
 /* ---------- Reportes nuevos: colocación, REFIN, comisiones ---------- */
 app.get('/api/reports/colocacion', auth, rol('admin','supervisor'), (req, res) => {
@@ -3859,6 +3894,7 @@ app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, 
     const clientes = sus_sales.map(s => {
       const c = db.clients.find(x => x.id === s.clientId) || {};
       const abonos = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0);
+      const q = _ultimas16Cuotas(s, abonos);
       return {
         nombre: c.nombre || '—',
         dir: [c.calle, c.col].filter(Boolean).join(', ') || '—',
@@ -3866,11 +3902,13 @@ app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, 
         folio: s.folio,
         modalidad: _tipoLblSrv(s.tipo),
         saldo: saldoDe(s.id), cuota: s.cuota,
-        estados: _ultimas16Cuotas(s, abonos),
+        estados: q.estados,
+        pagos: q.pagos,
       };
     });
-    const totalP = clientes.reduce((a,c)=>a+c.estados.filter(e=>e==='p').length, 0);
-    const totalN = clientes.reduce((a,c)=>a+c.estados.filter(e=>e==='n').length, 0);
+    const _cnt = (f) => clientes.reduce((a,c)=>a+c.estados.filter(f).length, 0);
+    const totalP = _cnt(e => e==='p' || e==='a');   // pagó: completo o abono parcial
+    const totalN = _cnt(e => e==='n');
     return {
       cobrador: cob.nombre, sucursal: suc ? suc.nombre : '—', encargada: enc ? enc.nombre : '—',
       kpis: {
