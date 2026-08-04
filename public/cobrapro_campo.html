@@ -695,7 +695,8 @@ cargarRuta(); flush(); checkMiCorte(); cargarJC(); cargarCierreCob(); cargarComi
 function _pingUbic(){ if(!navigator.geolocation) return; navigator.geolocation.getCurrentPosition(function(p){ try{ api('POST','/api/ubicacion/ping',{lat:p.coords.latitude,lng:p.coords.longitude}); }catch(e){} }, function(){}, {enableHighAccuracy:false,timeout:8000,maximumAge:120000}); }
 _pingUbic(); setInterval(_pingUbic, 180000);
 
-setInterval(checkMiCorte, 60_000);
+setInterval(function(){ if(!document.hidden) checkMiCorte(); }, 60_000);
+document.addEventListener('visibilitychange',function(){ if(!document.hidden) checkMiCorte(); });
 </script>
 <script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){});});}</script>
 <!-- ============ Panel de ayuda con IA (idéntico en todos los módulos) ============ -->
