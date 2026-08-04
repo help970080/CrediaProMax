@@ -371,7 +371,11 @@ function guardarFirma(){
   document.getElementById('pag-ov').remove(); toast('Firma guardada');
 }
 cargar();
-setInterval(cargar,30000);
+// Auto-refresco: cada 60s y SOLO con el panel a la vista. Cada carga trae las entregas
+// con sus fotos (varios MB); refrescar con la pantalla apagada o la pestaña en segundo
+// plano gastaba ancho de banda todo el día sin que nadie lo estuviera viendo.
+setInterval(function(){ if(!document.hidden) cargar(); },60000);
+document.addEventListener('visibilitychange',function(){ if(!document.hidden) cargar(); });
 // Ping de ubicación para el rastreo del admin/supervisor (mientras la app está abierta)
 function _pingUbic(){ if(!navigator.geolocation) return; navigator.geolocation.getCurrentPosition(function(p){ try{ api('POST','/api/ubicacion/ping',{lat:p.coords.latitude,lng:p.coords.longitude}); }catch(e){} }, function(){}, {enableHighAccuracy:false,timeout:8000,maximumAge:120000}); }
 _pingUbic(); setInterval(_pingUbic, 180000);
