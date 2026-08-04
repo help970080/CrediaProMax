@@ -37,6 +37,10 @@ const JWT_SECRET = process.env.JWT_SECRET || 'cobrapro_dev_secret_cambiame';
 const DB_FILE = path.join(__dirname, 'db.json');
 
 app.use(cors({ origin: true, credentials: true }));
+// Compresión gzip de las respuestas. Si el paquete no está instalado el server arranca
+// igual, solo que sin comprimir: nunca debe impedir el arranque por una dependencia.
+try { app.use(require('compression')()); console.log('✓ gzip activo'); }
+catch (e) { console.log('ℹ compression no instalado: respuestas sin gzip'); }
 app.use(express.json({ limit: '12mb' }));
 const PUBLIC_DIR = path.join(__dirname, 'public');
 app.use(express.static(PUBLIC_DIR, {
@@ -304,6 +308,15 @@ async function fotoExpandirLista(lista, campos) {
     for (const c of campos) if (_esRefFoto(copia[c])) copia[c] = mapa.get(copia[c]) || null;
     return copia;
   });
+}
+
+// Para listados: NUNCA se manda la imagen, solo cómo pedirla.
+//   "foto:N"  → el navegador la baja de /api/foto/N y la deja en su caché
+//   "inline"  → la imagen sigue dentro del bloque (aún sin migrar): se pide con el botón Ver
+//   null      → esa entrega no tiene esa foto
+function _fotoMarca(v) {
+  if (!v || typeof v !== 'string') return null;
+  return _esRefFoto(v) ? v : 'inline';
 }
 
 // ===== ESPEJO DE MOVIMIENTOS — cola propia, igual que el oplog =====
@@ -1239,10 +1252,12 @@ app.get('/api/jc/panel', auth, rol('jc'), async (req, res) => {
   }).reverse();
   const entregados = db.sales.filter(s => s.entrega && s.entrega.jcId === req.user.id).map(s => {
     const cli = db.clients.find(c => c.id === s.clientId) || {};
-    return { id: s.id, folio: s.folio, cliente: cli.nombre, monto: s.monto, fecha: s.entrega.fecha, lat: s.entrega.lat, lng: s.entrega.lng, fotoCasa: s.entrega.fotoCasa, fotoCliente: s.entrega.fotoCliente };
+    return { id: s.id, folio: s.folio, cliente: cli.nombre, monto: s.monto, fecha: s.entrega.fecha, lat: s.entrega.lat, lng: s.entrega.lng, fotoCasa: _fotoMarca(s.entrega.fotoCasa), fotoCliente: _fotoMarca(s.entrega.fotoCliente) };
   }).reverse();
-  // El panel manda hasta 30 entregas con sus fotos: se expanden en UNA sola consulta.
-  const entregados30 = await fotoExpandirLista(entregados.slice(0, 30), ['fotoCasa', 'fotoCliente']);
+  // El panel NO manda imágenes: solo la marca de cada foto. Antes mandaba 30 entregas con
+  // sus fotos en base64 (~9 MB por carga, cada 30 segundos) y eso se iba en ancho de banda
+  // aunque nadie abriera el historial. Ahora el navegador pide cada foto una sola vez.
+  const entregados30 = entregados.slice(0, 30);
   res.json({ caja: jcCajaDe(req.user.id), sucursal: (db.sucursales.find(s => s.id === sucId) || {}).nombre || null, pendientes, recibidas: recibidas.slice(0, 30), porEntregar, entregados: entregados30 });
 });
 // Reenviar un crédito existente a la cola de entrega del JC (para reconciliar)
@@ -1383,6 +1398,42 @@ app.get('/api/sales/:id/entrega', auth, async (req, res) => {
   // Se expanden las marcas "foto:N" a base64: el frontend recibe lo mismo de siempre.
   const entrega = await fotoExpandir(s.entrega, ['fotoCasa', 'fotoCliente', 'firma']);
   res.json({ entrega: entrega || null, cliente: cli.nombre, folio: s.folio });
+});
+
+/* ===== FOTOS BAJO DEMANDA =====
+   Una etiqueta <img> no puede mandar el encabezado Authorization, por eso existe un token
+   corto aparte que viaja en la URL y SOLO sirve para leer fotos: no da acceso a nada más.
+   La foto se sirve como JPEG binario (sin base64, 33% menos) y con caché permanente:
+   una evidencia nunca cambia, así que el navegador la baja UNA vez y ya. */
+function fotoTokenFirmar(u) {
+  return jwt.sign({ scope: 'foto', tenantId: u.tenantId, uid: u.id }, JWT_SECRET, { expiresIn: '12h' });
+}
+app.get('/api/foto-token', auth, (req, res) => {
+  if (req.user.tenantId == null) return res.status(400).json({ error: 'Sin agencia seleccionada' });
+  res.json({ token: fotoTokenFirmar(req.user) });
+});
+const _RE_DATAURL = /^data:(image\/[a-zA-Z.+-]+);base64,([\s\S]+)$/;
+app.get('/api/foto/:id', async (req, res) => {
+  let p;
+  try { p = jwt.verify(String(req.query.t || ''), JWT_SECRET); } catch { return res.status(401).send('No autorizado'); }
+  // Un token de sesión normal NO sirve aquí, y este no sirve en ningún otro endpoint.
+  if (p.scope !== 'foto' || p.tenantId == null) return res.status(403).send('Token no válido para fotos');
+  if (!USE_PG) return res.status(404).send('Sin base de datos');
+  const id = +req.params.id;
+  if (!id) return res.status(400).send('Id no válido');
+  try {
+    // El tenant sale del token: una agencia nunca puede leer las fotos de otra.
+    const r = await _pgTry(() => pool.query('SELECT datos FROM cobrapro_fotos WHERE id=$1 AND tenant=$2', [id, +p.tenantId]));
+    if (!r || !r.rows.length) return res.status(404).send('Foto no encontrada');
+    const m = _RE_DATAURL.exec(r.rows[0].datos || '');
+    if (!m) return res.status(415).send('Formato de imagen no reconocido');
+    res.set('Content-Type', m[1]);
+    res.set('Cache-Control', 'private, max-age=31536000, immutable');
+    return res.send(Buffer.from(m[2], 'base64'));
+  } catch (e) {
+    console.error('⚠ /api/foto', e.message);
+    return res.status(500).send('No se pudo leer la foto');
+  }
 });
 // Datos para el pagaré (cliente + importe), usado por sucursal (PDF) y JC (firma)
 app.get('/api/sales/:id/pagare', auth, (req, res) => {
