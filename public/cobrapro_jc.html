@@ -119,6 +119,7 @@ if(ME) document.getElementById('jcName').textContent=ME.nombre;
 if(ME) document.getElementById('ava').textContent=(ME.nombre||'JC').slice(0,2).toUpperCase();
 async function cargar(){
   try{ DATA=await api('GET','/api/jc/panel');
+    await _asegurarFotoTok();
     try{ DATA.asg=await api('GET','/api/asignaciones'); }catch(e){ DATA.asg={porConfirmar:[],enviadas:[],recibidas:[]}; }
     try{ DATA.asgDest=(await api('GET','/api/asignaciones/destinos')).destinos||[]; }catch(e){ DATA.asgDest=[]; }
     pintar(); }
@@ -239,7 +240,7 @@ function pintar(){
     const entHtml = es.length ? es.map(s=>`<div class="card"><div class="top">
       <div><div class="nm">${s.cliente}</div><div class="meta">${s.folio} · ${new Date(s.fecha).toLocaleString('es-MX',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}${s.lat?` · <a href="https://maps.google.com/?q=${s.lat},${s.lng}" target="_blank" style="color:var(--blu)">📍 ubicación</a>`:''}</div></div>
       <div class="monto">${money(s.monto)}</div></div>
-      <div class="hist-fotos">${s.fotoCasa?`<img src="${s.fotoCasa}" onclick="verFoto('${s.fotoCasa}')">`:''}${s.fotoCliente?`<img src="${s.fotoCliente}" onclick="verFoto('${s.fotoCliente}')">`:''}</div></div>`).join('') : '<div class="empty">Aún no has entregado créditos.</div>';
+      <div class="hist-fotos">${_histFotos(s)}</div></div>`).join('') : '<div class="empty">Aún no has entregado créditos.</div>';
     m.innerHTML = _volver + `<div class="nm" style="margin:4px 4px 6px">💵 Movimientos de efectivo</div>${movsHtml}<div class="nm" style="margin:16px 4px 6px">📦 Créditos entregados</div>${entHtml}`;
   }
 }
@@ -259,6 +260,47 @@ async function asgEnviarJC(btn){
 }
 async function asgConfirmarJC(id){ try{ await api('POST','/api/asignaciones/'+id+'/recibir'); toast('✓ Recibido en tu caja'); await cargar(); }catch(e){ toast(e.message); } }
 async function asgRechazarJC(id){ if(!confirm('¿Rechazar? El efectivo regresa a quien lo envió.'))return; try{ await api('POST','/api/asignaciones/'+id+'/rechazar'); toast('Rechazado'); await cargar(); }catch(e){ toast(e.message); } }
+/* ===== Fotos: se piden una por una y el navegador las guarda en su caché =====
+   El panel ya no recibe las imágenes, solo la marca de cada una. Un <img> no puede mandar
+   el encabezado de sesión, por eso se pide un token corto que solo sirve para ver fotos. */
+let _fotoTok=null;
+async function _asegurarFotoTok(){
+  if(_fotoTok) return _fotoTok;
+  try{ _fotoTok=(await api('GET','/api/foto-token')).token; }catch(e){ _fotoTok=null; }
+  return _fotoTok;
+}
+function _fotoUrl(v){
+  if(!v||typeof v!=='string') return null;
+  if(v.slice(0,5)==='data:') return v;                       // imagen vieja, aún en el bloque
+  if(v.slice(0,5)==='foto:'&&_fotoTok) return '/api/foto/'+v.slice(5)+'?t='+encodeURIComponent(_fotoTok);
+  return null;
+}
+// Si el token de fotos venció, se pide uno nuevo y se reintenta UNA vez.
+async function _fotoFalla(img){
+  if(img.dataset.re) { img.style.display='none'; return; }
+  img.dataset.re='1'; _fotoTok=null;
+  const t=await _asegurarFotoTok();
+  if(!t){ img.style.display='none'; return; }
+  img.src=img.src.replace(/\?t=.*$/,'')+'?t='+encodeURIComponent(t);
+}
+// Evidencia que todavía vive dentro del bloque (sin migrar): se pide solo al tocarla.
+async function verEvidencia(id){
+  try{
+    const d=await api('GET','/api/sales/'+id+'/entrega'); const e=d.entrega||{};
+    const im=[e.fotoCasa,e.fotoCliente].filter(x=>x&&String(x).slice(0,5)==='data:');
+    if(!im.length){ toast('Sin evidencia guardada'); return; }
+    const ov=document.createElement('div'); ov.className='ov'; ov.style.alignItems='center'; ov.onclick=()=>ov.remove();
+    ov.innerHTML=im.map(u=>`<img src="${u}" style="max-width:92%;max-height:42vh;border-radius:12px;margin:4px">`).join('');
+    document.body.appendChild(ov);
+  }catch(err){ toast(err.message); }
+}
+function _histFotos(s){
+  const a=_fotoUrl(s.fotoCasa), b=_fotoUrl(s.fotoCliente);
+  const tag=u=>`<img loading="lazy" src="${u}" onerror="_fotoFalla(this)" onclick="verFoto(this.src)">`;
+  let h=''; if(a) h+=tag(a); if(b) h+=tag(b);
+  if(!h&&(s.fotoCasa||s.fotoCliente)) h=`<button class="btn" onclick="verEvidencia(${s.id})">📷 Ver evidencia</button>`;
+  return h;
+}
 function verFoto(src){ const ov=document.createElement('div'); ov.className='ov'; ov.style.alignItems='center'; ov.onclick=()=>ov.remove();
   ov.innerHTML=`<img src="${src}" style="max-width:92%;max-height:88vh;border-radius:12px">`; document.body.appendChild(ov); }
 
@@ -283,17 +325,32 @@ function abrirEntrega(saleId,cliente,monto){
   ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
   document.body.appendChild(ov);
 }
-function leerFoto(input,cual){
+/* Comprime sin cargar la imagen completa en base64 antes de tiempo: createImageBitmap
+   decodifica en memoria nativa y se libera con .close(). Con readAsDataURL los teléfonos
+   de gama baja tronaban con "memoria insuficiente" al tomar la evidencia. */
+async function _fotoComprimida(file,max,calidad){
+  max=max||900; calidad=calidad||0.55;
+  let bmp=null,url=null;
+  try{
+    if(window.createImageBitmap){ bmp=await createImageBitmap(file); }
+    else{ url=URL.createObjectURL(file); bmp=await new Promise((ok,no)=>{ const i=new Image(); i.onload=()=>ok(i); i.onerror=no; i.src=url; }); }
+    let w=bmp.width,h=bmp.height;
+    if(w>max||h>max){ if(w>h){ h=Math.round(h*max/w); w=max; } else { w=Math.round(w*max/h); h=max; } }
+    const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+    cv.getContext('2d').drawImage(bmp,0,0,w,h);
+    return cv.toDataURL('image/jpeg',calidad);
+  } finally {
+    if(bmp&&bmp.close) bmp.close();
+    if(url) URL.revokeObjectURL(url);
+  }
+}
+async function leerFoto(input,cual){
   const f=input.files&&input.files[0]; if(!f) return;
-  const rd=new FileReader();
-  rd.onload=()=>{ const img=new Image(); img.onload=()=>{
-    const max=900; let w=img.width,h=img.height; if(w>max||h>max){ if(w>h){h=Math.round(h*max/w);w=max;}else{w=Math.round(w*max/h);h=max;} }
-    const cv=document.createElement('canvas'); cv.width=w; cv.height=h; cv.getContext('2d').drawImage(img,0,0,w,h);
-    const data=cv.toDataURL('image/jpeg',0.55);
+  try{
+    const data=await _fotoComprimida(f);
     if(cual==='casa'){ _ent.fotoCasa=data; document.getElementById('fb-casa').classList.add('ok'); document.getElementById('fb-casa-t').textContent='✓ Foto de la casa lista'; }
     else { _ent.fotoCliente=data; document.getElementById('fb-cli').classList.add('ok'); document.getElementById('fb-cli-t').textContent='✓ Foto del cliente lista'; }
-  }; img.src=rd.result; };
-  rd.readAsDataURL(f);
+  }catch(e){ toast('No se pudo leer la foto. Vuelve a tomarla.'); }
 }
 function capturarGeo(){
   const t=document.getElementById('geo-txt');
@@ -371,9 +428,8 @@ function guardarFirma(){
   document.getElementById('pag-ov').remove(); toast('Firma guardada');
 }
 cargar();
-// Auto-refresco: cada 60s y SOLO con el panel a la vista. Cada carga trae las entregas
-// con sus fotos (varios MB); refrescar con la pantalla apagada o la pestaña en segundo
-// plano gastaba ancho de banda todo el día sin que nadie lo estuviera viendo.
+// Auto-refresco: cada 60s y SOLO con el panel a la vista. Con la pantalla apagada o la
+// pestaña en segundo plano no se pide nada: antes seguía llamando cada 30s todo el día.
 setInterval(function(){ if(!document.hidden) cargar(); },60000);
 document.addEventListener('visibilitychange',function(){ if(!document.hidden) cargar(); });
 // Ping de ubicación para el rastreo del admin/supervisor (mientras la app está abierta)
