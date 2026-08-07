@@ -1387,11 +1387,17 @@ async function ctVerFoto(id){
 }
 
 let _cartSuc=[];
+/* Compara nombres de cobrador de forma tolerante: el <option> sin atributo value devuelve el texto
+   con espacios colapsados/recortados, así que "VERO  ANGEL " nunca empataba con s.prom y el filtro
+   dejaba la lista en ceros. _nkey quita acentos, dobles espacios, invisibles y mayúsculas. */
+const _nkey=s=>String(s==null?'':s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[\u200B-\u200D\uFEFF]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
+const _escAt=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const _opts=arr=>'<option value="">Todos</option>'+arr.map(c=>`<option value="${_escAt(c)}">${_escAt(c)}</option>`).join('');
 const TIPO_LBL={diario:'Diario',semanal:'Semanal',s16:'Semanal 16',s17:'Semanal 17',s21:'21 sem',s31:'31 sem',unico:'Pago único',p17:'Cel 17'};
 async function cargarCartSuc(){
   try{ _cartSuc=(await api('GET','/api/sales')).filter(s=>s.entregado!==false);
     const cobs=[...new Set(_cartSuc.map(s=>s.prom).filter(Boolean))].sort();
-    const sel=document.getElementById('cs-cob'); if(sel) sel.innerHTML='<option value="">Todos</option>'+cobs.map(c=>`<option>${c}</option>`).join('');
+    const sel=document.getElementById('cs-cob'); if(sel){ const prev=sel.value; sel.innerHTML=_opts(cobs); sel.value=prev; if(sel.selectedIndex<0) sel.selectedIndex=0; }
     pintaCartSuc();
   }catch(e){ document.getElementById('cs-rows').innerHTML='<tr><td colspan="5" style="color:var(--red);padding:10px">'+e.message+'</td></tr>'; }
 }
@@ -1399,7 +1405,7 @@ function pintaCartSuc(){
   const q=(document.getElementById('cs-q').value||'').toLowerCase();
   const fc=document.getElementById('cs-cob').value, ft=document.getElementById('cs-tipo').value, fe=document.getElementById('cs-est').value;
   const rows=_cartSuc.filter(s=>{
-    if(fc && s.prom!==fc) return false;
+    if(fc && _nkey(s.prom)!==_nkey(fc)) return false;
     if(ft && s.tipo!==ft) return false;
     if(fe==='act' && !(s.saldo>0)) return false;
     if(fe==='liq' && s.saldo>0) return false;
@@ -1429,14 +1435,14 @@ async function cargarOportSuc(){
     _oport=await api('GET','/api/oportunidades');
     document.getElementById('op-max').textContent=fmt(_oport.ofertaParaleloMax||4000);
     const cobs=[...new Set([..._oport.refin,..._oport.paralelo].map(r=>r.cobrador).filter(Boolean))].sort();
-    const sel=document.getElementById('op-cob'); if(sel) sel.innerHTML='<option value="">Todos</option>'+cobs.map(c=>`<option>${c}</option>`).join('');
+    const sel=document.getElementById('op-cob'); if(sel){ const prev=sel.value; sel.innerHTML=_opts(cobs); sel.value=prev; if(sel.selectedIndex<0) sel.selectedIndex=0; }
     pintaOportSuc();
   }catch(e){ document.getElementById('op-refin-rows').innerHTML='<tr><td colspan="6" style="color:var(--red);padding:10px">'+e.message+'</td></tr>'; }
 }
 function pintaOportSuc(){
   const q=(document.getElementById('op-q').value||'').toLowerCase();
   const fc=document.getElementById('op-cob').value;
-  const filtra=r=>{ if(fc && r.cobrador!==fc) return false; if(q){ const b=((r.cliente||'')+' '+(r.folio||'')+' '+(r.cobrador||'')).toLowerCase(); if(!b.includes(q)) return false; } return true; };
+  const filtra=r=>{ if(fc && _nkey(r.cobrador)!==_nkey(fc)) return false; if(q){ const b=((r.cliente||'')+' '+(r.folio||'')+' '+(r.cobrador||'')).toLowerCase(); if(!b.includes(q)) return false; } return true; };
   const rf=_oport.refin.filter(filtra), pl=_oport.paralelo.filter(filtra);
   document.getElementById('op-nrefin').textContent=rf.length;
   document.getElementById('op-nparal').textContent=pl.length;
