@@ -361,8 +361,9 @@
         <div id="ct-adm-resumen" style="display:flex;gap:8px;flex-wrap:wrap"></div>
       </div>
       <div id="ct-adm-suc" style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0"></div>
-      <div style="margin:4px 0 10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><select id="ct-adm-fsuc" onchange="ctAdmFiltrar()" style="min-width:220px;background:var(--surf-2);border:1px solid var(--line);color:var(--ink);font-family:'Sora';padding:8px 10px;border-radius:8px"><option value="">Todas las sucursales</option></select><button class="btn" id="ct-btn-llamar" style="display:none;background:#22a06b;color:#fff;border:none" onclick="vozAbrir()">📞 Llamar a los no pagos</button><span id="ct-voz-cred" style="font-size:.78rem;color:var(--dim)"></span></div>
-      <div style="overflow-x:auto">
+      <div style="margin:4px 0 10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><select id="ct-adm-fsuc" onchange="ctAdmFiltrar()" style="min-width:220px;background:var(--surf-2);border:1px solid var(--line);color:var(--ink);font-family:'Sora';padding:8px 10px;border-radius:8px"><option value="">Todas las sucursales</option></select><button class="btn" id="ct-btn-llamar" style="display:none;background:#22a06b;color:#fff;border:none" onclick="vozAbrir()">📞 Llamar a los no pagos</button><button class="btn" id="ct-btn-recup" onclick="ctRecupToggle()">📈 Vista gráfica</button><span id="ct-voz-cred" style="font-size:.78rem;color:var(--dim)"></span></div>
+      <div id="ct-recup" style="display:none"></div>
+      <div id="ct-adm-lista" style="overflow-x:auto">
         <table id="ct-adm-tbl">
           <thead><tr>
             <th>Cliente</th><th>Gerencia</th><th>Cobrador</th><th class="n">Atraso</th><th class="n">Últ. pago</th><th>Resultado de la visita</th><th class="n">Evidencia</th><th class="n">Estado</th>
@@ -3175,6 +3176,113 @@ async function toggleCierreAdmin(btn){
   btn.disabled=true;
   try{ await apiU('POST','/api/cierre-semana/'+(cerrar?'cerrar':'reabrir'),{}); await cargarNumDiarios(); }
   catch(e){ alert(e.message); } finally{ btn.disabled=false; }
+}
+
+/* ===== Recuperación de morosos (vista gráfica dentro de Contactos) ===== */
+let _rc=null, _rcCub='', _rcSem=8;
+const _RC_COL={ recuperandose:'#4a9d3f', goteo:'#e0a020', estancado:'#9a9a92', muerto:'#c94a3d' };
+const _RC_LBL={ recuperandose:'Recuperándose', goteo:'Goteo', estancado:'Estancado', muerto:'No se mueve' };
+function ctRecupToggle(){
+  const box=document.getElementById('ct-recup'), tbl=document.getElementById('ct-adm-lista'), b=document.getElementById('ct-btn-recup');
+  const abrir = box.style.display==='none';
+  box.style.display = abrir?'block':'none';
+  if(tbl) tbl.style.display = abrir?'none':'block';
+  b.textContent = abrir?'📋 Ver lista':'📈 Vista gráfica';
+  b.classList.toggle('gold', abrir);
+  if(abrir && !_rc) ctRecupCargar();
+}
+async function ctRecupCargar(){
+  const box=document.getElementById('ct-recup');
+  box.innerHTML='<div style="color:var(--faint);padding:18px">Calculando recuperación…</div>';
+  try{ _rc=await apiU('GET','/api/contactos/recuperacion?semanas='+_rcSem); _rcPintar(); }
+  catch(e){ box.innerHTML='<div style="color:var(--red);padding:18px">'+e.message+'</div>'; }
+}
+function _rcSemCambia(v){ _rcSem=+v||8; _rc=null; ctRecupCargar(); }
+function _rcFiltro(cub){ _rcCub = (_rcCub===cub)?'':cub; _rcPintar(); }
+function _rcRows(){
+  let rows=(_rc&&_rc.rows||[]).slice();
+  const f=document.getElementById('ct-adm-fsuc'); const fv=f?f.value:'';
+  if(fv) rows=rows.filter(r=>String(r.sucursalId)===fv);
+  if(_rcCub) rows=rows.filter(r=>r.cubeta===_rcCub);
+  return rows.sort((a,b)=>(a.recuperadoPct-b.recuperadoPct)||(b.saldo-a.saldo));
+}
+function _rcCuadro(e){
+  const c = e==='v'?'#4a9d3f' : e==='p'?'#e0a020' : e==='n'?'#c94a3d' : 'var(--line)';
+  return `<span style="display:inline-block;width:9px;height:14px;background:${c};margin-right:2px;border-radius:2px"></span>`;
+}
+function _rcTarjeta(cub,d,tot){
+  const pct = tot>0?Math.round(d.monto/tot*100):0;
+  const act = _rcCub===cub;
+  return `<div onclick="_rcFiltro('${cub}')" style="cursor:pointer;flex:1;min-width:130px;background:var(--surf-2);border:1px solid ${act?_RC_COL[cub]:'var(--line)'};border-left:4px solid ${_RC_COL[cub]};border-radius:9px;padding:9px 12px">
+    <div style="font-size:.7rem;color:var(--faint)">${_RC_LBL[cub]}</div>
+    <div style="font-size:1.25rem;font-weight:700;color:${_RC_COL[cub]}">${d.n}</div>
+    <div style="font-size:.72rem;color:var(--dim)">${fmt(d.monto)} · ${pct}% del saldo</div></div>`;
+}
+function _rcPintar(){
+  const box=document.getElementById('ct-recup'); if(!box||!_rc) return;
+  const R=_rc.resumen||{}, rows=_rcRows();
+  const tot=R.saldo||0;
+  const cards=['recuperandose','goteo','estancado','muerto'].map(k=>_rcTarjeta(k,R[k]||{n:0,monto:0},tot)).join('');
+  // gráfico apilado por semana
+  const ev=_rc.evolucion||[];
+  const maxE=Math.max(1,...ev.map(e=>e.recuperandose+e.goteo+e.estancado+e.muerto));
+  const barras=ev.map(e=>{
+    const seg=k=>{ const h=Math.round((e[k]/maxE)*120); return h>0?`<div title="${_RC_LBL[k]}: ${e[k]}" style="background:${_RC_COL[k]};height:${h}px"></div>`:''; };
+    return `<div style="flex:1;text-align:center">
+      <div style="display:flex;flex-direction:column;justify-content:flex-end;height:124px">${seg('muerto')}${seg('estancado')}${seg('goteo')}${seg('recuperandose')}</div>
+      <div style="font-size:.64rem;color:var(--faint);margin-top:4px">${e.label}</div></div>`;
+  }).join('');
+  const leyC=['recuperandose','goteo','estancado','muerto'].map(k=>`<span style="font-size:.74rem;color:var(--dim)"><span style="display:inline-block;width:9px;height:9px;background:${_RC_COL[k]};margin-right:4px;border-radius:2px"></span>${_RC_LBL[k]}</span>`).join('');
+  // barras por cobrador
+  const pc=(_rc.porCobrador||[]).slice(0,12);
+  const maxC=Math.max(1,...pc.map(x=>x.recuperado));
+  const cobs=pc.map(x=>{
+    const w=Math.round(x.recuperado/maxC*100);
+    const col=w>=60?'#4a9d3f':w>=25?'#e0a020':'#c94a3d';
+    return `<div style="display:flex;align-items:center;gap:9px;margin-bottom:7px">
+      <span style="width:92px;font-size:.8rem;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${x.cobrador}</span>
+      <div style="flex:1;background:var(--surf-2);height:18px;border-radius:4px"><div style="width:${w}%;background:${col};height:18px;border-radius:4px"></div></div>
+      <span style="width:92px;text-align:right;font-size:.8rem;font-weight:700">${fmt(x.recuperado)}</span>
+      <span style="width:112px;text-align:right;font-size:.72rem;color:var(--faint)">${x.gestionados}/${x.clientes} gestionados</span></div>`;
+  }).join('')||'<div style="color:var(--faint);font-size:.82rem">Sin datos por cobrador.</div>';
+  // tabla de patrón
+  const cab=(_rc.semanas||[]).map(s=>`<span style="display:inline-block;width:11px;font-size:.55rem;color:var(--faint);text-align:center">${s.label.split(' ')[0]}</span>`).join('');
+  const filas=rows.map(r=>`<tr>
+      <td><b>${r.nombre}</b>${r.ncred>1?' <span style="font-size:.68rem;color:var(--faint)">('+r.ncred+' créditos)</span>':''}<div style="font-size:.7rem;color:var(--faint)">${_ndSucName(r.sucursalId)} · ${r.folio}</div></td>
+      <td style="font-size:.8rem">${r.cobrador}</td>
+      <td style="white-space:nowrap">${r.serie.map(_rcCuadro).join('')}<div style="font-size:.7rem;color:${_RC_COL[r.cubeta]}">${r.etiqueta}</div></td>
+      <td class="n" style="font-size:.8rem;color:${r.diasSinPagar==null?'var(--red)':(r.diasSinPagar<=8?'var(--grn)':r.diasSinPagar<=21?'#caa23a':'var(--red)')}">${r.diasSinPagar==null?'nunca':r.diasSinPagar+' d'}</td>
+      <td class="n">${fmt(r.saldo)}</td>
+      <td class="n" style="font-weight:700;color:${_RC_COL[r.cubeta]}">${r.recuperadoPct}%<div style="font-size:.68rem;font-weight:400;color:var(--faint)">${fmt(r.recuperado)}</div></td>
+    </tr>`).join('')||'<tr><td colspan="6" style="text-align:center;color:var(--faint);padding:16px">Sin clientes en este filtro.</td></tr>';
+  box.innerHTML=`
+  <div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:12px">${cards}</div>
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+    <span style="font-size:.78rem;color:var(--faint)">Ventana</span>
+    <select onchange="_rcSemCambia(this.value)" style="background:var(--surf-2);border:1px solid var(--line);color:var(--ink);font-family:'Sora';padding:6px 9px;border-radius:8px">
+      <option value="8"${_rcSem===8?' selected':''}>8 semanas</option><option value="12"${_rcSem===12?' selected':''}>12 semanas</option><option value="16"${_rcSem===16?' selected':''}>16 semanas</option></select>
+    ${_rcCub?`<button class="btn" style="padding:5px 11px;font-size:.76rem" onclick="_rcFiltro('${_rcCub}')">✕ Quitar filtro: ${_RC_LBL[_rcCub]}</button>`:'<span style="font-size:.74rem;color:var(--faint)">Toca una tarjeta para filtrar la lista</span>'}
+    <span style="margin-left:auto;font-size:.78rem;color:var(--dim)">${rows.length} de ${(_rc.rows||[]).length} clientes</span>
+  </div>
+  <div style="background:var(--surf-2);border:1px solid var(--line);border-radius:11px;padding:13px 15px;margin-bottom:12px">
+    <div style="font-weight:700;font-size:.9rem">Cómo se mueve la cartera morosa</div>
+    <div style="font-size:.74rem;color:var(--faint);margin-bottom:11px">Clientes por estado, semana a semana</div>
+    <div style="display:flex;align-items:flex-end;gap:6px">${barras}</div>
+    <div style="display:flex;gap:13px;flex-wrap:wrap;margin-top:9px">${leyC}</div>
+  </div>
+  <div style="background:var(--surf-2);border:1px solid var(--line);border-radius:11px;padding:13px 15px;margin-bottom:12px">
+    <div style="font-weight:700;font-size:.9rem">Quién sí está recuperando</div>
+    <div style="font-size:.74rem;color:var(--faint);margin-bottom:11px">Pesos cobrados a sus morosos en la ventana · contra gestión registrada</div>
+    ${cobs}
+  </div>
+  <div style="overflow-x:auto">
+    <table><thead><tr><th>Cliente</th><th>Cobrador</th><th>Patrón de pago<div style="font-weight:400;margin-top:2px">${cab}</div></th><th class="n">Sin pagar</th><th class="n">Saldo</th><th class="n">Recuperado</th></tr></thead>
+    <tbody>${filas}</tbody></table>
+  </div>
+  <div style="display:flex;gap:15px;flex-wrap:wrap;margin-top:9px;font-size:.74rem;color:var(--dim)">
+    <span>${_rcCuadro('v')} cubrió su tarifa</span><span>${_rcCuadro('p')} pago parcial</span><span>${_rcCuadro('n')} no pagó</span><span>${_rcCuadro('na')} aún no era cliente</span>
+    <span>Recuperado = lo cobrado en la ventana ÷ saldo al inicio</span>
+  </div>`;
 }
 
 /* ===== Contactos (admin/supervisor): avance + validación ===== */
