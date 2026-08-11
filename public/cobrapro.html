@@ -3207,6 +3207,8 @@ function _rcRows(){
   return rows.sort((a,b)=>(a.recuperadoPct-b.recuperadoPct)||(b.saldo-a.saldo));
 }
 function _rcCuadro(e){
+  // 'c' = semana en curso sin pago aún: no es un "no pagó", todavía puede caer el abono
+  if(e==='c') return '<span title="Semana en curso · aún puede pagar" style="display:inline-block;width:9px;height:14px;background:repeating-linear-gradient(45deg,var(--line),var(--line) 2px,transparent 2px,transparent 4px);border:1px dashed var(--faint);margin-right:2px;border-radius:2px;box-sizing:border-box"></span>';
   const c = e==='v'?'#4a9d3f' : e==='p'?'#e0a020' : e==='n'?'#c94a3d' : 'var(--line)';
   return `<span style="display:inline-block;width:9px;height:14px;background:${c};margin-right:2px;border-radius:2px"></span>`;
 }
@@ -3218,6 +3220,21 @@ function _rcTarjeta(cub,d,tot){
     <div style="font-size:1.25rem;font-weight:700;color:${_RC_COL[cub]}">${d.n}</div>
     <div style="font-size:.72rem;color:var(--dim)">${fmt(d.monto)} · ${pct}% del saldo</div></div>`;
 }
+// Desglose auditable: de qué clientes salió el dinero que se le acredita a un cobrador
+function _rcDetalleCob(cob){
+  const rows=(_rc&&_rc.rows||[]).filter(r=>r.cobrador===cob).sort((a,b)=>b.recuperado-a.recuperado);
+  const tot=rows.reduce((a,r)=>a+r.recuperado,0);
+  const conPago=rows.filter(r=>r.recuperado>0).length;
+  const fil=rows.map(r=>`<tr>
+    <td style="font-size:.8rem"><b>${r.nombre}</b><div style="font-size:.68rem;color:var(--faint)">${r.folio} · tarifa ${fmt(r.tarifa)}</div></td>
+    <td style="white-space:nowrap">${r.serie.map(_rcCuadro).join('')}</td>
+    <td class="n" style="font-size:.78rem;color:${_RC_COL[r.cubeta]}">${_RC_LBL[r.cubeta]}</td>
+    <td class="n" style="font-weight:700">${fmt(r.recuperado)}</td></tr>`).join('');
+  _flModal(`<h3 style="margin:0 0 3px">Desglose · ${cob}</h3>
+    <p style="font-size:.78rem;color:var(--dim);margin:0 0 10px">${rows.length} morosos · <b>${conPago}</b> abonaron algo · ${rows.length-conPago} no soltaron un peso. Total <b>${fmt(tot)}</b>.</p>
+    <div style="max-height:60vh;overflow:auto"><table style="width:100%"><thead><tr><th>Cliente</th><th>Patrón</th><th class="n">Estado</th><th class="n">Aportó</th></tr></thead><tbody>${fil||'<tr><td colspan="4" style="padding:14px;color:var(--faint)">Sin clientes.</td></tr>'}</tbody></table></div>
+    <div style="margin-top:11px;display:flex;justify-content:flex-end"><button class="btn" onclick="this.closest('.flmodal').remove()">Cerrar</button></div>`,'760px');
+}
 function _rcPintar(){
   const box=document.getElementById('ct-recup'); if(!box||!_rc) return;
   const R=_rc.resumen||{}, rows=_rcRows();
@@ -3228,9 +3245,9 @@ function _rcPintar(){
   const maxE=Math.max(1,...ev.map(e=>e.recuperandose+e.goteo+e.estancado+e.muerto));
   const barras=ev.map(e=>{
     const seg=k=>{ const h=Math.round((e[k]/maxE)*120); return h>0?`<div title="${_RC_LBL[k]}: ${e[k]}" style="background:${_RC_COL[k]};height:${h}px"></div>`:''; };
-    return `<div style="flex:1;text-align:center">
-      <div style="display:flex;flex-direction:column;justify-content:flex-end;height:124px">${seg('muerto')}${seg('estancado')}${seg('goteo')}${seg('recuperandose')}</div>
-      <div style="font-size:.64rem;color:var(--faint);margin-top:4px">${e.label}</div></div>`;
+    return `<div style="flex:1;text-align:center" title="${e.rango||e.label}${e.enCurso?' · semana en curso':''}">
+      <div style="display:flex;flex-direction:column;justify-content:flex-end;height:124px;${e.enCurso?'opacity:.72':''}">${seg('muerto')}${seg('estancado')}${seg('goteo')}${seg('recuperandose')}</div>
+      <div style="font-size:.64rem;color:${e.enCurso?'var(--acc)':'var(--faint)'};margin-top:4px">${e.label}${e.enCurso?'<div style="font-size:.56rem">en curso</div>':''}</div></div>`;
   }).join('');
   const leyC=['recuperandose','goteo','estancado','muerto'].map(k=>`<span style="font-size:.74rem;color:var(--dim)"><span style="display:inline-block;width:9px;height:9px;background:${_RC_COL[k]};margin-right:4px;border-radius:2px"></span>${_RC_LBL[k]}</span>`).join('');
   // barras por cobrador
@@ -3239,14 +3256,16 @@ function _rcPintar(){
   const cobs=pc.map(x=>{
     const w=Math.round(x.recuperado/maxC*100);
     const col=w>=60?'#4a9d3f':w>=25?'#e0a020':'#c94a3d';
-    return `<div style="display:flex;align-items:center;gap:9px;margin-bottom:7px">
+    return `<div onclick="_rcDetalleCob('${String(x.cobrador).replace(/'/g,"\\'")}')" title="Ver de qué clientes salió ese dinero" style="cursor:pointer;display:flex;align-items:center;gap:9px;margin-bottom:7px">
       <span style="width:92px;font-size:.8rem;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${x.cobrador}</span>
       <div style="flex:1;background:var(--surf-2);height:18px;border-radius:4px"><div style="width:${w}%;background:${col};height:18px;border-radius:4px"></div></div>
       <span style="width:92px;text-align:right;font-size:.8rem;font-weight:700">${fmt(x.recuperado)}</span>
       <span style="width:112px;text-align:right;font-size:.72rem;color:var(--faint)">${x.gestionados}/${x.clientes} gestionados</span></div>`;
   }).join('')||'<div style="color:var(--faint);font-size:.82rem">Sin datos por cobrador.</div>';
   // tabla de patrón
-  const cab=(_rc.semanas||[]).map(s=>`<span style="display:inline-block;width:11px;font-size:.55rem;color:var(--faint);text-align:center">${s.label.split(' ')[0]}</span>`).join('');
+  const cab=(_rc.semanas||[]).map(s=>`<span title="${s.rango||s.label}${s.enCurso?' · en curso':''}" style="display:inline-block;width:11px;font-size:.55rem;color:${s.enCurso?'var(--acc)':'var(--faint)'};text-align:center">${s.label.split(' ')[0]}</span>`).join('');
+  const _r0=(_rc.semanas||[])[0], _rN=(_rc.semanas||[])[(_rc.semanas||[]).length-1];
+  const rango = _r0&&_rN ? `<span style="font-size:.74rem;color:var(--dim)">Del <b>${_r0.rango.split(' al ')[0]}</b> al <b>${_rN.rango.split(' al ')[1]}</b> · última semana en curso</span>` : '';
   const filas=rows.map(r=>`<tr>
       <td><b>${r.nombre}</b>${r.ncred>1?' <span style="font-size:.68rem;color:var(--faint)">('+r.ncred+' créditos)</span>':''}<div style="font-size:.7rem;color:var(--faint)">${_ndSucName(r.sucursalId)} · ${r.folio}</div></td>
       <td style="font-size:.8rem">${r.cobrador}</td>
@@ -3261,7 +3280,8 @@ function _rcPintar(){
     <span style="font-size:.78rem;color:var(--faint)">Ventana</span>
     <select onchange="_rcSemCambia(this.value)" style="background:var(--surf-2);border:1px solid var(--line);color:var(--ink);font-family:'Sora';padding:6px 9px;border-radius:8px">
       <option value="8"${_rcSem===8?' selected':''}>8 semanas</option><option value="12"${_rcSem===12?' selected':''}>12 semanas</option><option value="16"${_rcSem===16?' selected':''}>16 semanas</option></select>
-    ${_rcCub?`<button class="btn" style="padding:5px 11px;font-size:.76rem" onclick="_rcFiltro('${_rcCub}')">✕ Quitar filtro: ${_RC_LBL[_rcCub]}</button>`:'<span style="font-size:.74rem;color:var(--faint)">Toca una tarjeta para filtrar la lista</span>'}
+    ${rango}
+    ${_rcCub?`<button class="btn" style="padding:5px 11px;font-size:.76rem" onclick="_rcFiltro('${_rcCub}')">✕ Quitar filtro: ${_RC_LBL[_rcCub]}</button>`:'<span style="font-size:.74rem;color:var(--faint)">Toca una tarjeta para filtrar</span>'}
     <span style="margin-left:auto;font-size:.78rem;color:var(--dim)">${rows.length} de ${(_rc.rows||[]).length} clientes</span>
   </div>
   <div style="background:var(--surf-2);border:1px solid var(--line);border-radius:11px;padding:13px 15px;margin-bottom:12px">
@@ -3272,7 +3292,7 @@ function _rcPintar(){
   </div>
   <div style="background:var(--surf-2);border:1px solid var(--line);border-radius:11px;padding:13px 15px;margin-bottom:12px">
     <div style="font-weight:700;font-size:.9rem">Quién sí está recuperando</div>
-    <div style="font-size:.74rem;color:var(--faint);margin-bottom:11px">Pesos cobrados a cada moroso <b>desde la semana en que cayó</b> · contra gestión registrada</div>
+    <div style="font-size:.74rem;color:var(--faint);margin-bottom:11px">Pesos cobrados a cada moroso <b>desde la semana en que cayó</b> · contra gestión registrada · <b>toca una barra</b> para ver de qué clientes salió</div>
     ${cobs}
   </div>
   <div style="overflow-x:auto">
@@ -3280,7 +3300,7 @@ function _rcPintar(){
     <tbody>${filas}</tbody></table>
   </div>
   <div style="display:flex;gap:15px;flex-wrap:wrap;margin-top:9px;font-size:.74rem;color:var(--dim)">
-    <span>${_rcCuadro('v')} cubrió su tarifa</span><span>${_rcCuadro('p')} pago parcial</span><span>${_rcCuadro('n')} no pagó</span><span>${_rcCuadro('na')} aún no era cliente</span>
+    <span>${_rcCuadro('v')} cubrió su tarifa</span><span>${_rcCuadro('p')} pago parcial</span><span>${_rcCuadro('n')} no pagó</span><span>${_rcCuadro('na')} aún no era cliente</span><span>${_rcCuadro('c')} semana en curso · aún puede pagar</span>
     <span>Recuperado = lo cobrado <b>desde que cayó</b> ÷ saldo al inicio · no incluye la cobranza normal previa</span>
     <span>Solo aparecen morosos reales: 3+ semanas caídas en la ventana o con atraso vencido hoy</span>
   </div>`;
