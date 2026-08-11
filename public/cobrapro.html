@@ -3272,7 +3272,7 @@ function _rcPintar(){
   </div>
   <div style="background:var(--surf-2);border:1px solid var(--line);border-radius:11px;padding:13px 15px;margin-bottom:12px">
     <div style="font-weight:700;font-size:.9rem">Quién sí está recuperando</div>
-    <div style="font-size:.74rem;color:var(--faint);margin-bottom:11px">Pesos cobrados a sus morosos en la ventana · contra gestión registrada</div>
+    <div style="font-size:.74rem;color:var(--faint);margin-bottom:11px">Pesos cobrados a cada moroso <b>desde la semana en que cayó</b> · contra gestión registrada</div>
     ${cobs}
   </div>
   <div style="overflow-x:auto">
@@ -3281,7 +3281,8 @@ function _rcPintar(){
   </div>
   <div style="display:flex;gap:15px;flex-wrap:wrap;margin-top:9px;font-size:.74rem;color:var(--dim)">
     <span>${_rcCuadro('v')} cubrió su tarifa</span><span>${_rcCuadro('p')} pago parcial</span><span>${_rcCuadro('n')} no pagó</span><span>${_rcCuadro('na')} aún no era cliente</span>
-    <span>Recuperado = lo cobrado en la ventana ÷ saldo al inicio</span>
+    <span>Recuperado = lo cobrado <b>desde que cayó</b> ÷ saldo al inicio · no incluye la cobranza normal previa</span>
+    <span>Solo aparecen morosos reales: 3+ semanas caídas en la ventana o con atraso vencido hoy</span>
   </div>`;
 }
 
