@@ -440,7 +440,13 @@ function render(){
   const efectivo=cob.filter(e=>e.forma==='efectivo').reduce((a,e)=>a+propioDe(e),0);
   const banco=cob.filter(e=>e.forma==='transferencia'||e.forma==='deposito').reduce((a,e)=>a+propioDe(e),0);
   const ajuste=cob.filter(e=>e.forma==='ajuste').reduce((a,e)=>a+e.monto,0);
-  const vis=Object.values(estado).filter(e=>e.status).length;
+  /* Visitas = clientes DISTINTOS de la base semanal ya gestionados en la SEMANA (no solo hoy):
+     pagaron cualquier día (cobradoSemana, incluye pagos en sucursal/JC), tienen no-pago o promesa
+     registrada en la semana (gestionSemana) o los gestionados hoy en esta sesión. */
+  const _idsVis=new Set();
+  (clientes||[]).forEach(c=>{ if(c.enBase===false) return; if((c.cobradoSemana||0)>0 || c.gestionSemana===true) _idsVis.add(c.id); });
+  Object.keys(estado).forEach(id=>{ if(!(estado[id]&&estado[id].status)) return; const c=(clientes||[]).find(x=>x.id===+id); if(c && c.enBase!==false) _idsVis.add(+id); });
+  const vis=Math.min(_idsVis.size,_baseSem().length);
   const semana=_semanaPrevia+totCob;
   const obj=_objetivo>0?_objetivo:META;
   const pct= obj>0? Math.round(semana/obj*100):0;
