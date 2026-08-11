@@ -2653,6 +2653,20 @@ function _recuperacionMorosos(nSem, scope){
     if(ct && ct < r.desde) r.desde = ct;
     if((saldoSale[s.id]||0) > (saldoSale[r.sales[0]]||0)) { r.cobrador = s.prom||r.cobrador; r.folio = s.folio||r.folio; }
   });
+  // Atraso vencido por cliente, reusando el saldo ya calculado (no llama saldoDe: sería O(n·m))
+  const _abon = {};
+  db.movimientos.forEach(m=>{ if(m.abono>0) _abon[m.saleId] = (_abon[m.saleId]||0) + m.abono; });
+  const _ahora = Date.now();
+  const _byId = new Map(ventas.map(v=>[v.id, v]));
+  cli.forEach(r=>{
+    let v = 0;
+    r.sales.forEach(id=>{
+      const sale = _byId.get(id); if(!sale) return;
+      const sal = saldoSale[id]||0; if(sal<=0) return;
+      try{ const ca = _calcAtrasoCore(sale, _ahora, sal); if(ca && ca.montoAtraso>0) v += Math.min(sal, ca.montoAtraso); }catch(e){}
+    });
+    r.vencido = Math.round(v);
+  });
   const ini = sem[0].start, fin = sem[sem.length-1].end;
   const pagos = new Map(), ultPago = new Map();
   db.movimientos.forEach(m=>{
@@ -2679,8 +2693,14 @@ function _recuperacionMorosos(nSem, scope){
     });
     const vis = serie.slice(EXTRA);
     const fallas = vis.filter(x=>x==='p'||x==='n').length;
-    if(fallas < 2 && vis[vis.length-1] !== 'n') return;           // buen pagador: no es caso de recuperación
-    const pagadoVentana = pg.slice(EXTRA).reduce((a,b)=>a+b,0);
+    // Universo = MOROSO de verdad. Dos formas de entrar: traer atraso vencido hoy, o haber caído
+    // 3+ semanas de la ventana (así no se pierden los que ya se pusieron al corriente, que son
+    // justo la buena noticia). Fallar 1-2 semanas de 8 es un cliente normal, no un caso de recuperación.
+    if(fallas < 3 && r.vencido <= 0) return;
+    // Lo COBRADO DESDE QUE CAYÓ, no toda la cobranza de la ventana: si el cliente venía al corriente
+    // y falló hasta la semana 6, lo que pagó en las semanas 1-5 es cobranza normal, no recuperación.
+    const iCaida = vis.findIndex(x=>x==='p'||x==='n');
+    const pagadoVentana = iCaida < 0 ? 0 : pg.slice(EXTRA+iCaida).reduce((a,b)=>a+b,0);
     let saldoIni = 0; r.sales.forEach(id=>{ saldoIni += (iniSale[id]||0); });
     if(saldoIni <= 0) saldoIni = r.saldo + pagadoVentana;
     const up = ultPago.get(cid) || 0;
@@ -2688,7 +2708,7 @@ function _recuperacionMorosos(nSem, scope){
     rows.push({
       clientId: cid, folio: r.folio, cobrador: r.cobrador, sucursalId: r.sucursalId, ncred: r.ncred,
       nombre: c.nombre || '—', direccion: [c.calle,c.col,c.ciudad].filter(Boolean).join(', '), tel: c.tel || '',
-      saldo: Math.round(r.saldo), tarifa: Math.round(r.tarifa), serie: vis,
+      saldo: Math.round(r.saldo), tarifa: Math.round(r.tarifa), vencido: r.vencido||0, serie: vis,
       cubeta: _cubetaDe(vis), etiqueta: _etiquetaPatron(vis, !up),
       recuperado: Math.round(pagadoVentana),
       recuperadoPct: saldoIni > 0 ? Math.round(pagadoVentana/saldoIni*100) : 0,
