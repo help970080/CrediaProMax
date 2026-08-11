@@ -2604,7 +2604,7 @@ const _MESES_MX = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','
 function _lblSemana(ts){ const d=new Date(ts); return String(d.getDate()).padStart(2,'0')+' '+_MESES_MX[d.getMonth()]; }
 // Cubeta a partir del patrón visible: 'muerto' | 'recuperandose' | 'goteo' | 'estancado'
 function _cubetaDe(vis){
-  const reales = vis.filter(x=>x!=='na');
+  const reales = vis.filter(x=>x!=='na' && x!=='c');   // 'c' = semana en curso, aún sin veredicto
   if(!reales.length) return 'estancado';
   if(!reales.some(x=>x==='v'||x==='p')) return 'muerto';        // ni un peso en toda la ventana
   const u4 = reales.slice(-4);
@@ -2615,7 +2615,7 @@ function _cubetaDe(vis){
 }
 // Frase corta que traduce el patrón para quien no quiera interpretar cuadritos
 function _etiquetaPatron(vis, nuncaPago){
-  const reales = vis.filter(x=>x!=='na');
+  const reales = vis.filter(x=>x!=='na' && x!=='c');
   if(!reales.length) return 'Crédito nuevo';
   if(!reales.some(x=>x==='v'||x==='p')) return nuncaPago ? 'Nunca ha pagado' : ('Sin pagos en '+reales.length+' sem');
   let rachaV=0; for(let i=reales.length-1;i>=0;i--){ if(reales[i]==='v') rachaV++; else break; }
@@ -2629,14 +2629,18 @@ function _etiquetaPatron(vis, nuncaPago){
 function _recuperacionMorosos(nSem, scope){
   const N = Math.max(4, Math.min(16, +nSem || 8));
   const EXTRA = 3;                                        // semanas previas: sirven para clasificar la 1ª barra del gráfico
-  const baseIso = _semanaContactos();
-  const w0 = _semanaDesdeISO(baseIso);
+  // Ancla en la semana EN CURSO, no en la última cerrada: si anclamos en _semanaContactos() la
+  // vista deja fuera la semana que está corriendo y parece que los datos se detuvieron hace días.
+  const w0 = _semanaDesdeISO(_semanaActualISO());
   const sem = [];
   for(let i=N+EXTRA-1; i>=0; i--){
     const st = new Date(w0.start); st.setDate(st.getDate() - i*7); st.setHours(0,0,0,0);
-    sem.push({ iso:_isoDe(st.getTime()), start:st.getTime(), end:st.getTime()+7*86400000, label:_lblSemana(st.getTime()) });
+    const fin = new Date(st.getTime()+6*86400000);
+    sem.push({ iso:_isoDe(st.getTime()), start:st.getTime(), end:st.getTime()+7*86400000,
+      label:_lblSemana(st.getTime()), rango:_lblSemana(st.getTime())+' al '+_lblSemana(fin.getTime()), enCurso:(i===0) });
   }
-  const vacio = { semanas:sem.slice(EXTRA).map(s=>({iso:s.iso,label:s.label})), rows:[], resumen:{}, evolucion:[], porCobrador:[] };
+  const _pubSem = () => sem.slice(EXTRA).map(x=>({iso:x.iso,label:x.label,rango:x.rango,enCurso:!!x.enCurso}));
+  const vacio = { semanas:_pubSem(), rows:[], resumen:{}, evolucion:[], porCobrador:[] };
   const activos = new Set(db.clients.filter(c=>c.activo!==false).map(c=>c.id));
   const saldoSale = {};
   db.movimientos.forEach(m=>{ saldoSale[m.saleId] = (saldoSale[m.saleId]||0) + (m.cargo||0) - (m.abono||0); });
@@ -2675,8 +2679,15 @@ function _recuperacionMorosos(nSem, scope){
     const ts = _parseFechaMx(m.fecha); if(!ts) return;
     if(ts > (ultPago.get(cid)||0)) ultPago.set(cid, ts);
     if(ts < ini || ts >= fin) return;
-    const k = Math.floor((ts - ini)/(7*86400000));
-    if(k<0 || k>=sem.length) return;
+    // Reparto contra los CORTES REALES del ciclo, no dividiendo entre 7 días en milisegundos:
+    // si la agencia opera en una zona con horario de verano, una semana dura 167 o 169 horas y
+    // la división fija recorrería los pagos una casilla a partir del cambio de hora.
+    let k = Math.floor((ts - ini)/(7*86400000));
+    if(k >= sem.length) k = sem.length - 1;
+    if(k < 0) k = 0;
+    while(k > 0 && ts < sem[k].start) k--;
+    while(k < sem.length-1 && ts >= sem[k].end) k++;
+    if(ts < sem[k].start || ts >= sem[k].end) return;
     let a = pagos.get(cid); if(!a){ a = new Array(sem.length).fill(0); pagos.set(cid, a); }
     a[k] += m.abono;
   });
@@ -2688,11 +2699,13 @@ function _recuperacionMorosos(nSem, scope){
     const serie = sem.map((w,k)=>{
       if(r.desde !== Infinity && r.desde >= w.end) return 'na';  // el crédito aún no existía
       const monto = pg[k]||0;
-      if(r.tarifa > 0) return monto >= r.tarifa-0.5 ? 'v' : (monto>0 ? 'p' : 'n');
-      return monto>0 ? 'v' : 'n';
+      const e = r.tarifa > 0 ? (monto >= r.tarifa-0.5 ? 'v' : (monto>0 ? 'p' : 'n')) : (monto>0 ? 'v' : 'n');
+      // La semana en curso aún no termina: si no ha pagado todavía puede hacerlo, no es un 'no pagó'.
+      if(sem[k].enCurso && e === 'n') return 'c';
+      return e;
     });
     const vis = serie.slice(EXTRA);
-    const fallas = vis.filter(x=>x==='p'||x==='n').length;
+    const fallas = vis.filter(x=>x==='p'||x==='n').length;   // 'c' = semana en curso, aún no es falla
     // Universo = MOROSO de verdad. Dos formas de entrar: traer atraso vencido hoy, o haber caído
     // 3+ semanas de la ventana (así no se pierden los que ya se pusieron al corriente, que son
     // justo la buena noticia). Fallar 1-2 semanas de 8 es un cliente normal, no un caso de recuperación.
@@ -2719,7 +2732,7 @@ function _recuperacionMorosos(nSem, scope){
   // Alcance por rol ANTES de los agregados, para que tarjetas y gráficos cuadren con la lista
   const vis_rows = typeof scope === 'function' ? rows.filter(scope) : rows;
   const evolucion = sem.slice(EXTRA).map((w, j)=>{
-    const acum = { iso:w.iso, label:w.label, recuperandose:0, goteo:0, estancado:0, muerto:0 };
+    const acum = { iso:w.iso, label:w.label, rango:w.rango, enCurso:!!w.enCurso, recuperandose:0, goteo:0, estancado:0, muerto:0 };
     vis_rows.forEach(r=>{
       const pgc = pagos.get(r.clientId) || new Array(sem.length).fill(0);
       const info = cli.get(r.clientId);
@@ -2746,7 +2759,7 @@ function _recuperacionMorosos(nSem, scope){
     if(!x){ x = { cobrador:r.cobrador, clientes:0, recuperado:0, gestionados:0 }; porCob.set(r.cobrador, x); }
     x.clientes++; x.recuperado += r.recuperado; if(gestCli.has(r.clientId)) x.gestionados++;
   });
-  return { semanas: sem.slice(EXTRA).map(s=>({iso:s.iso,label:s.label})), rows: vis_rows, resumen, evolucion,
+  return { semanas: _pubSem(), rows: vis_rows, resumen, evolucion,
     porCobrador: [...porCob.values()].sort((a,b)=>b.recuperado-a.recuperado) };
 }
 // Analítica de recuperación (scoped por rol, igual que /api/contactos)
