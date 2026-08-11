@@ -2000,6 +2000,9 @@ app.get('/api/mi-ruta', auth, (req, res) => {
   const hoy = fechaMxHoyDDMM();
   const wkStart = _inicioCiclo(new Date(fechaMxHoyISO()+'T00:00:00').getTime(), _diaSemanaInicio());   // inicio del ciclo actual (hora de México, no UTC)
   const _sIniRuta = _mapSaldoInicioSemana(wkStart);   // base congelada de la semana
+  // Créditos con gestión de campo (no-pago / promesa) hecha por ESTE cobrador durante la semana en curso.
+  // Sirve para que el contador de Visitas sea acumulado semanal y no solo del día.
+  const _gestSem = new Set((db.gestiones||[]).filter(g => g.por === req.user.nombre && _diaMxMs(g.fecha) >= wkStart).map(g => g.saleId));
   res.json(ventas.map(s => {
     const c = db.clients.find(x => x.id === s.clientId) || {};
     if (c.activo === false) return null;
@@ -2018,7 +2021,7 @@ app.get('/api/mi-ruta', auth, (req, res) => {
     return { id: s.id, folio: s.folio, nombre: c.nombre || '—', dir: [c.calle, c.col].filter(Boolean).join(', '), tel: c.tel || '', tipo: s.tipo, cuota: s.cuota, saldo: saldoDe(s.id),
       // enBase: el crédito ya existía con saldo al ARRANCAR la semana. Los vendidos a media semana entran hasta la próxima.
       enBase: ((_sIniRuta[s.id]||0) > 0.5) || (s.importado===true && saldoDe(s.id) > 0.5),
-      cobradoHoy, formaHoy, pagoExterno, externoForma, cobradoSemana,
+      cobradoHoy, formaHoy, pagoExterno, externoForma, cobradoSemana, gestionSemana: _gestSem.has(s.id),
       atraso: at.montoAtraso, diasAtraso: at.diasAtraso, cuotasAtraso: at.cuotasAtraso, cuotasDebidas: at.cuotasDebidas, cuotasPagadas: at.cuotasPagadas, tieneEvidencia: !!s.entrega, op: oportunidadDe(s) };
   }).filter(Boolean));
 });
