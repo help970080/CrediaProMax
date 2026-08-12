@@ -2316,17 +2316,16 @@ function _fechasProgSrv(s){
    martes NO debe nada. Exigir el día calendario exacto marcaba en rojo a clientes al corriente
    (caso real: cuota del 11/08 pagada el 09 y el 10). Para crédito SEMANAL basta que haya abonado
    dentro del ciclo de la semana; el DIARIO sí se exige día por día, porque ahí cada día es una cuota. */
-function _cubiertoDia(sale, dStart, dEnd, pagosTs){
-  if(sale.tipo==='diario'){                                  // diario: cada día es una cuota, se exige ese día
-    return (pagosTs.get(sale.id)||[]).some(t => t>=dStart && t<dEnd);
-  }
-  // Semanal: la cuota se cubre con dinero que entró DESPUÉS de la cuota anterior y hasta el cierre
-  // de hoy. Así el que abona 1-2 días antes de su día de ruta queda al corriente, pero NO basta
-  // "pagó algo esta semana": el abono de la cuota anterior no cubre la de hoy.
-  const prog = _fechasProgSrv(sale);
-  let desde = _diaMxMs(sale.createdAt);                      // antes de la 1ª cuota: cuenta desde el alta
-  for(const t of prog){ if(t >= dEnd) break; if(t < dStart) desde = t; }
-  return (pagosTs.get(sale.id)||[]).some(t => t > desde && t < dEnd);
+/* "No pago" = NO ABONÓ NADA. Si el cliente soltó aunque sea un peso dentro del ciclo de la semana,
+   NO es no-pago aunque venga atrasado: ahí el cobrador sí trabajó. El atraso no se pierde, se
+   reporta por su vía — Contactos lista a quien no cubrió su tarifa completa, y el reporte de
+   recuperación muestra el patrón. Son dos preguntas distintas y no deben mezclarse en la misma
+   casilla: aquí "¿le sacó dinero?", allá "¿está al corriente?".
+   El diario sí se exige día por día, porque ahí cada día es una cuota. */
+function _cubiertoDia(sale, dStart, dEnd, wkStart, pagosTs){
+  const ts = pagosTs.get(sale.id) || [];
+  if(sale.tipo==='diario') return ts.some(t => t>=dStart && t<dEnd);
+  return ts.some(t => t>=wkStart && t<dEnd);
 }
 // ¿Se esperaba un cobro de este crédito en el día [dStart,dEnd)? (no cuenta la venta nueva del día)
 function _esperaCobroDia(s, dStart, dEnd){
@@ -2383,7 +2382,7 @@ app.get('/api/reports/numeros-diarios', auth, rol('admin','supervisor'), (req,re
       const esDesc = m.forma==='descuento';
       if(t>=wkStart && t<wkEnd){ if(!esDesc){ acumColl+=m.abono; acumCli.add(ref.cli); } semCob.add(m.saleId); }
       if(t>=dStart && t<dEnd && !esDesc){ diaColl+=m.abono; diaCli.add(ref.cli); }
-      let a=pagosTs.get(m.saleId); if(!a){ a=[]; pagosTs.set(m.saleId,a); } a.push(t); }
+      if(!esDesc){ let a=pagosTs.get(m.saleId); if(!a){ a=[]; pagosTs.set(m.saleId,a); } a.push(t); } }   // el primer pago descontado no es cobranza
     // No pagos (riesgo): créditos con cobro esperado que NO abonaron (día y acumulado de la semana)
     const espDia=[], espSem=[];
     activeVs.forEach(s=>{
@@ -2392,7 +2391,7 @@ app.get('/api/reports/numeros-diarios', auth, rol('admin','supervisor'), (req,re
       if(s.tipo!=='unico' && !(ct>=wkStart && ct<wkEnd)) espSem.push(s); // esperado en la semana (= reporte semanal)
     });
     // un crédito que ya dio su PRIMER PAGO (descuento al alta) no cuenta como "no pago", aunque ese pago no sea cobranza de campo
-    const dia_nopago=espDia.filter(s=>!_cubiertoDia(s, dStart, dEnd, pagosTs)).length;
+    const dia_nopago=espDia.filter(s=>!_cubiertoDia(s, dStart, dEnd, wkStart, pagosTs)).length;
     const acum_nopago=espSem.filter(s=>!semCob.has(s.id)).length;
     return { id:suc.id, gerencia:suc.nombre, clientes_totales, debito_total,
       dia_clientes:diaCli.size, dia_coll:diaColl, dia_nopago,
@@ -2440,22 +2439,25 @@ app.get('/api/reports/numeros-diarios-suc', auth, rol('admin','supervisor','sucu
       const esDesc = m.forma==='descuento';
       if(t>=wkStart && t<wkEnd){ if(!esDesc){ acumColl+=m.abono; acumCli.add(ref.cli); } semCob.add(m.saleId); }
       if(t>=dStart && t<dEnd && !esDesc){ diaColl+=m.abono; diaCli.add(ref.cli); }
-      let a=pagosTs.get(m.saleId); if(!a){ a=[]; pagosTs.set(m.saleId,a); } a.push(t); }
+      if(!esDesc){ let a=pagosTs.get(m.saleId); if(!a){ a=[]; pagosTs.set(m.saleId,a); } a.push(t); } }   // el primer pago descontado no es cobranza
     const espDia=[], espSem=[];
     vs.forEach(s=>{ const ct=_diaMxMs(s.createdAt);
       if((_sIniDia[s.id]||0)>0.5 && _esperaCobroDia(s, dStart, dEnd)) espDia.push(s);
       if(s.tipo!=='unico' && !(ct>=wkStart && ct<wkEnd)) espSem.push(s); });
-    const sinDia = espDia.filter(s=>!_cubiertoDia(s, dStart, dEnd, pagosTs));
+    const sinDia = espDia.filter(s=>!_cubiertoDia(s, dStart, dEnd, wkStart, pagosTs));
     const sinSem = espSem.filter(s=>!semCob.has(s.id));
     const dia_nopago=sinDia.length;
     const acum_nopago=sinSem.length;
     // Desglose auditable: qué créditos exactos se están contando como no-pago del día
     const _det = s => { const c=db.clients.find(x=>x.id===s.clientId)||{};
       return { saleId:s.id, folio:s.folio||'—', cliente:c.nombre||'—', tipo:s.tipo, cuota:s.cuota||0, saldo:Math.round(saldoDe(s.id)) }; };
-    const detalle = req.query.detalle==='1' ? { dia_nopago: sinDia.map(_det), esperados_dia: espDia.map(_det) } : undefined;
+    const detalle = req.query.detalle==='1'
+      ? { dia_nopago: sinDia.map(_det), esperados_dia: espDia.map(_det),
+          sem_nopago: sinSem.map(_det), esperados_sem: espSem.map(_det) }
+      : undefined;
     return { id:prom, cobrador:prom, clientes_totales, debito_total,
       dia_clientes:diaCli.size, dia_coll:diaColl, dia_nopago, dia_esperados:espDia.length, detalle,
-      acum_clientes:acumCli.size, acum_coll:acumColl, acum_nopago,
+      acum_clientes:acumCli.size, acum_coll:acumColl, acum_nopago, sem_esperados:espSem.length,
       // Meta fija = 100% de la cartera del cobrador (débito y clientes)
       objetivo: { cobranza: debito_total, clientes: clientes_totales } };
   }).sort((a,b)=> b.acum_coll - a.acum_coll);
