@@ -2311,6 +2311,15 @@ function _fechasProgSrv(s){
   else if(s.tipo==='p17'){ const iv=Math.max(1,Math.round((P||270)/17)); for(let i=1;i<=17;i++){ const d=new Date(created); d.setDate(d.getDate()+i*iv); out.push(d.getTime()); } }
   return out;
 }
+/* ¿La cuota de este crédito ya está cubierta al cierre del día consultado?
+   En campo el cobrador pasa cuando pasa: el cliente semanal que le paga el domingo su cuota del
+   martes NO debe nada. Exigir el día calendario exacto marcaba en rojo a clientes al corriente
+   (caso real: cuota del 11/08 pagada el 09 y el 10). Para crédito SEMANAL basta que haya abonado
+   dentro del ciclo de la semana; el DIARIO sí se exige día por día, porque ahí cada día es una cuota. */
+function _cubiertoDia(sale, diaCob, cicloCob){
+  if(sale.tipo==='diario') return diaCob.has(sale.id);
+  return cicloCob.has(sale.id) || diaCob.has(sale.id);
+}
 // ¿Se esperaba un cobro de este crédito en el día [dStart,dEnd)? (no cuenta la venta nueva del día)
 function _esperaCobroDia(s, dStart, dEnd){
   const c = _diaMxMs(s.createdAt);
@@ -2359,12 +2368,13 @@ app.get('/api/reports/numeros-diarios', auth, rol('admin','supervisor'), (req,re
     const clientes_totales = new Set(activeVs.map(s=>s.clientId)).size;
     const debito_total = activeVs.reduce((a,s)=>a+(s.cuota||0),0);
     let diaColl=0, acumColl=0; const diaCli=new Set(), acumCli=new Set();
-    // Cubiertos por CRÉDITO (saleId). Con Sets de clientId, un cliente con 2 créditos que pagaba
-    // uno tapaba el otro, y el enganche de un crédito nuevo tapaba el crédito viejo sin pagar.
-    const diaCob=new Set(), semCob=new Set();  // saleId cubiertos, incl. primer pago del alta
+    /* Cubiertos por CRÉDITO (saleId), no por cliente: con Sets de clientId, un cliente con 2
+       créditos que pagaba uno tapaba el otro, y el enganche de un crédito nuevo tapaba al viejo. */
+    const diaCob=new Set(), semCob=new Set(), cicloCob=new Set();
     for(const m of abonosAll){ const ref=saleSuc[m.saleId]; if(!ref||ref.suc!==suc.id) continue; const t=_parseFechaMx(m.fecha);
       const esDesc = m.forma==='descuento';
       if(t>=wkStart && t<wkEnd){ if(!esDesc){ acumColl+=m.abono; acumCli.add(ref.cli); } semCob.add(m.saleId); }
+      if(t>=wkStart && t<dEnd) cicloCob.add(m.saleId);   // pagó dentro del ciclo, hasta el día consultado
       if(t>=dStart && t<dEnd){ if(!esDesc){ diaColl+=m.abono; diaCli.add(ref.cli); } diaCob.add(m.saleId); } }
     // No pagos (riesgo): créditos con cobro esperado que NO abonaron (día y acumulado de la semana)
     const espDia=[], espSem=[];
@@ -2374,7 +2384,7 @@ app.get('/api/reports/numeros-diarios', auth, rol('admin','supervisor'), (req,re
       if(s.tipo!=='unico' && !(ct>=wkStart && ct<wkEnd)) espSem.push(s); // esperado en la semana (= reporte semanal)
     });
     // un crédito que ya dio su PRIMER PAGO (descuento al alta) no cuenta como "no pago", aunque ese pago no sea cobranza de campo
-    const dia_nopago=espDia.filter(s=>!diaCob.has(s.id)).length;
+    const dia_nopago=espDia.filter(s=>!_cubiertoDia(s, diaCob, cicloCob)).length;
     const acum_nopago=espSem.filter(s=>!semCob.has(s.id)).length;
     return { id:suc.id, gerencia:suc.nombre, clientes_totales, debito_total,
       dia_clientes:diaCli.size, dia_coll:diaColl, dia_nopago,
@@ -2417,19 +2427,17 @@ app.get('/api/reports/numeros-diarios-suc', auth, rol('admin','supervisor','sucu
     const clientes_totales = new Set(vs.map(s=>s.clientId)).size;
     const debito_total = vs.reduce((a,s)=>a+(s.cuota||0),0);
     let diaColl=0, acumColl=0; const diaCli=new Set(), acumCli=new Set();
-    /* Cubiertos por CRÉDITO, no por cliente. Antes eran Sets de clientId y eso colapsaba los
-       créditos: un cliente con 2 créditos que pagaba uno quedaba "cubierto" en los dos, y el
-       enganche de un crédito nuevo (forma 'descuento') tapaba el crédito viejo sin pagar. */
-    const diaCob=new Set(), semCob=new Set();  // saleId cubiertos, incl. primer pago del alta
+    const diaCob=new Set(), semCob=new Set(), cicloCob=new Set();  // por CRÉDITO, no por cliente
     for(const m of abonosAll){ const ref=saleRef[m.saleId]; if(!ref||ref.prom!==prom) continue; const t=_parseFechaMx(m.fecha);
       const esDesc = m.forma==='descuento';
       if(t>=wkStart && t<wkEnd){ if(!esDesc){ acumColl+=m.abono; acumCli.add(ref.cli); } semCob.add(m.saleId); }
+      if(t>=wkStart && t<dEnd) cicloCob.add(m.saleId);   // pagó dentro del ciclo, hasta el día consultado
       if(t>=dStart && t<dEnd){ if(!esDesc){ diaColl+=m.abono; diaCli.add(ref.cli); } diaCob.add(m.saleId); } }
     const espDia=[], espSem=[];
     vs.forEach(s=>{ const ct=_diaMxMs(s.createdAt);
       if((_sIniDia[s.id]||0)>0.5 && _esperaCobroDia(s, dStart, dEnd)) espDia.push(s);
       if(s.tipo!=='unico' && !(ct>=wkStart && ct<wkEnd)) espSem.push(s); });
-    const sinDia = espDia.filter(s=>!diaCob.has(s.id));
+    const sinDia = espDia.filter(s=>!_cubiertoDia(s, diaCob, cicloCob));
     const sinSem = espSem.filter(s=>!semCob.has(s.id));
     const dia_nopago=sinDia.length;
     const acum_nopago=sinSem.length;
@@ -2438,8 +2446,8 @@ app.get('/api/reports/numeros-diarios-suc', auth, rol('admin','supervisor','sucu
       return { saleId:s.id, folio:s.folio||'—', cliente:c.nombre||'—', tipo:s.tipo, cuota:s.cuota||0, saldo:Math.round(saldoDe(s.id)) }; };
     const detalle = req.query.detalle==='1' ? { dia_nopago: sinDia.map(_det), esperados_dia: espDia.map(_det) } : undefined;
     return { id:prom, cobrador:prom, clientes_totales, debito_total,
-      dia_clientes:diaCli.size, dia_coll:diaColl, dia_nopago, dia_esperados:espDia.length,
-      acum_clientes:acumCli.size, acum_coll:acumColl, acum_nopago, detalle,
+      dia_clientes:diaCli.size, dia_coll:diaColl, dia_nopago, dia_esperados:espDia.length, detalle,
+      acum_clientes:acumCli.size, acum_coll:acumColl, acum_nopago,
       // Meta fija = 100% de la cartera del cobrador (débito y clientes)
       objetivo: { cobranza: debito_total, clientes: clientes_totales } };
   }).sort((a,b)=> b.acum_coll - a.acum_coll);
@@ -3074,9 +3082,19 @@ function _ultimas16Cuotas(sale, abonos){
     if (pagados[i] > 0) return (cuota > 0 && pagados[i] < cuota - 0.5) ? 'a' : 'p';  // hubo dinero → se muestra la cantidad
     return cortes[i] <= ahora ? 'n' : 'x';
   });
-  let u = estados.slice(-16), g = pagados.slice(-16);
-  while (u.length < 16) { u.unshift('x'); g.unshift(0); }
-  return { estados: u, pagos: g };
+  /* Ventana de 16 columnas ANCLADA EN EL PRESENTE, no al final del plazo.
+     Con slice(-16) un crédito de 17+ cuotas (s17/s21/s31) perdía la cuota 1: el cliente recién
+     colocado pagaba su primera semana y la celda salía vacía con Pag. "—", porque las 16 columnas
+     se gastaban mostrando cuotas futuras. Ahora la ventana termina en la cuota vigente (o en la
+     última con dinero, si pagó adelantado) y solo se recorre cuando el crédito rebasa 16 cuotas. */
+  let fin = cortes.findIndex(c => c > ahora);              // cuota en curso
+  if (fin < 0) fin = fechas.length - 1;                    // ya vencieron todas
+  for (let i = pagados.length - 1; i > fin; i--) if (pagados[i] > 0) { fin = i; break; }  // pago adelantado
+  fin = Math.min(fechas.length - 1, Math.max(fin, 15));    // nunca menos de 16 columnas
+  const ini = Math.max(0, fin - 15);
+  let u = estados.slice(ini, fin + 1), g = pagados.slice(ini, fin + 1);
+  while (u.length < 16) { u.push('x'); g.push(0); }        // rellena a la derecha: el pasado no se pierde
+  return { estados: u, pagos: g, desdeCuota: ini + 1 };
 }
 /* ---------- Reportes nuevos: colocación, REFIN, comisiones ---------- */
 app.get('/api/reports/colocacion', auth, rol('admin','supervisor'), (req, res) => {
@@ -4132,7 +4150,11 @@ app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, 
     const sus_sales = db.sales.filter(s => s.prom === cob.nombre && activos.has(s.clientId));
     const clientes = sus_sales.map(s => {
       const c = db.clients.find(x => x.id === s.clientId) || {};
-      const abonos = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0);
+      // Solo cobranza REAL: el "primer pago descontado al inicio" (forma 'descuento') de s16/s17/s21/s31
+      // no lo cobró nadie en campo — se descuenta de lo que se le entrega al cliente. Pintarlo como
+      // pago hacía ver cobrados a créditos recién colocados que aún no tienen su primera cuota.
+      // Los demás reportes ya lo excluyen así; este era el único que lo contaba.
+      const abonos = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0 && m.forma !== 'descuento' && m.forma !== 'recomendacion');
       const q = _ultimas16Cuotas(s, abonos);
       return {
         nombre: c.nombre || '—',
