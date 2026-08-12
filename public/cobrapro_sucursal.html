@@ -1142,7 +1142,7 @@ async function cargarNumDiariosSuc(){
       return `<tr style="text-align:right;border-top:1px solid var(--line)">
       <td style="text-align:left;padding:9px 8px;font-weight:600">${(r.cobrador||'—')}</td>
       <td style="padding:9px 8px">${r.dia_clientes}</td><td style="padding:9px 8px">${money(r.dia_coll)}</td>
-      <td style="padding:9px 8px;color:${r.dia_nopago>0?'#d6432d':'var(--dim)'};font-weight:${r.dia_nopago>0?'700':'400'}">${r.dia_nopago}</td>
+      <td onclick="ndDetalleNoPago('${String(r.cobrador||'').replace(/'/g,"\\'")}')" title="Ver qué créditos se están contando" style="padding:9px 8px;cursor:pointer;text-decoration:${r.dia_nopago>0?'underline dotted':'none'};color:${r.dia_nopago>0?'#d6432d':'var(--dim)'};font-weight:${r.dia_nopago>0?'700':'400'}">${r.dia_nopago}</td>
       <td style="padding:9px 8px">${r.acum_clientes}</td><td style="padding:9px 8px">${money(r.acum_coll)}</td>
       <td style="padding:9px 8px;color:${obj>0?'var(--txt)':'var(--dim)'}">${obj>0?money(obj):'sin meta'}</td>
       <td style="padding:9px 8px;font-weight:700;color:${am==null?'var(--dim)':metaCol(am)}">${am==null?'—':am+'%'}</td>
@@ -1160,6 +1160,26 @@ async function cargarNumDiariosSuc(){
       <td style="padding:9px 8px;color:var(--acc)">${pct(t.acum_coll,t.debito_total)}</td></tr>`;
     tbl.innerHTML=head+'<tbody>'+(body||'<tr><td style="padding:14px;color:var(--dim)">Sin datos para este día.</td></tr>')+foot+'</tbody>';
   }catch(e){ if(info) info.textContent='No se pudo cargar: '+(e.message||e); }
+}
+// Desglose auditable de los no-pagos del día: qué crédito exacto se está contando y por qué
+async function ndDetalleNoPago(cob){
+  const diaEl=document.getElementById('nd-dia'); const dia=diaEl?diaEl.value:'';
+  const ov=document.getElementById('overlay');
+  ov.innerHTML='<div class="modal"><h3>Cargando…</h3></div>'; ov.classList.add('on');
+  try{
+    const d=await api('GET','/api/reports/numeros-diarios-suc?detalle=1'+(dia?('&dia='+encodeURIComponent(dia)):''));
+    const r=(d.rows||[]).find(x=>String(x.cobrador)===String(cob));
+    const det=(r&&r.detalle)||{}; const sin=det.dia_nopago||[]; const esp=det.esperados_dia||[];
+    const money=v=>'$'+Math.round(v||0).toLocaleString('es-MX');
+    const fila=x=>`<tr><td style="padding:6px 4px"><b>${x.cliente}</b><div style="font-size:.68rem;color:var(--dim)">${x.folio} · ${x.tipo}</div></td><td style="padding:6px 4px;text-align:right">${money(x.cuota)}</td><td style="padding:6px 4px;text-align:right">${money(x.saldo)}</td></tr>`;
+    ov.innerHTML=`<div class="modal" style="max-width:560px">
+      <h3 style="margin-bottom:4px">No pagos · ${cob}</h3>
+      <p style="font-size:.78rem;color:var(--dim);margin-bottom:12px">Día ${d.dia} · se esperaba cobro en <b>${esp.length}</b> crédito(s) · <b>${sin.length}</b> sin abono.</p>
+      <div style="max-height:52vh;overflow:auto"><table style="width:100%;font-size:.82rem">
+        <thead><tr style="color:var(--dim);font-size:.68rem;text-transform:uppercase"><th style="text-align:left;padding:4px">Crédito sin pago</th><th style="text-align:right;padding:4px">Cuota</th><th style="text-align:right;padding:4px">Saldo</th></tr></thead>
+        <tbody>${sin.map(fila).join('')||'<tr><td colspan="3" style="padding:12px;color:var(--dim)">Ninguno: cobró todos los esperados.</td></tr>'}</tbody></table></div>
+      <div class="modal-actions"><button class="ma cancel" onclick="cerrar()">Cerrar</button></div></div>`;
+  }catch(e){ ov.innerHTML=`<div class="modal"><h3>No se pudo cargar</h3><p style="font-size:.82rem;color:var(--dim)">${e.message||e}</p><div class="modal-actions"><button class="ma cancel" onclick="cerrar()">Cerrar</button></div></div>`; }
 }
 async function cargarResumen(){
   try{
