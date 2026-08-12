@@ -198,7 +198,7 @@
       </div>
       <div id="nd-info" style="color:var(--acc);font-size:.82rem;margin-bottom:8px;font-weight:600"></div>
       <div style="overflow-x:auto"><table id="nd-tbl" style="width:100%;border-collapse:collapse;font-size:.86rem"></table></div>
-      <div class="sub" style="margin-top:10px;font-size:.74rem;line-height:1.5">La <b>meta es el 100%</b> de la cartera activa. <b>% Coll</b> = cobranza acumulada de la semana ÷ débito. <b style="color:#d6432d">No pago</b> = clientes con cobro esperado que no abonaron (no cuenta primer pago/descuentos).</div>
+      <div class="sub" style="margin-top:10px;font-size:.74rem;line-height:1.5">La <b>meta es el 100%</b> de la cartera activa. <b>% Coll</b> = cobranza acumulada de la semana ÷ débito. <b style="color:#d6432d">No pago</b> = créditos con cobro esperado que <b>no abonaron ni un peso</b> (no cuenta primer pago/descuentos). Como el ciclo de cobro es semanal, el que manda es el de la <b>semana</b>; el del día es solo el pulso de hoy. Quien abonó de menos no sale aquí, sale en <b>Contactos</b>. Toca cualquiera de los dos números para ver quiénes son.</div>
     </div>
   </div>
   <div id="view-op">
@@ -1135,7 +1135,8 @@ async function cargarNumDiariosSuc(){
     const objDe=r=> (r.objetivo&&r.objetivo.cobranza>0)?r.objetivo.cobranza:0;
     const head=`<thead><tr style="text-align:right;color:var(--dim);font-size:.68rem;text-transform:uppercase">
       <th style="text-align:left;padding:6px 8px">Cobrador</th><th style="padding:6px 8px">Cts día</th><th style="padding:6px 8px">Coll día</th>
-      <th style="padding:6px 8px">No pago</th><th style="padding:6px 8px">Cts acum</th><th style="padding:6px 8px">Coll acum</th>
+      <th style="padding:6px 8px">No pago día</th><th style="padding:6px 8px">Cts acum</th><th style="padding:6px 8px">Coll acum</th>
+      <th style="padding:6px 8px">No pago sem</th>
       <th style="padding:6px 8px">Objetivo</th><th style="padding:6px 8px">% Meta</th><th style="padding:6px 8px">% Coll</th></tr></thead>`;
     const body=(d.rows||[]).map(r=>{
       const obj=objDe(r); const am=obj>0?Math.round(r.acum_coll/obj*100):null;
@@ -1144,6 +1145,7 @@ async function cargarNumDiariosSuc(){
       <td style="padding:9px 8px">${r.dia_clientes}</td><td style="padding:9px 8px">${money(r.dia_coll)}</td>
       <td onclick="ndDetalleNoPago('${String(r.cobrador||'').replace(/'/g,"\\'")}')" title="Ver qué créditos se están contando" style="padding:9px 8px;cursor:pointer;text-decoration:${r.dia_nopago>0?'underline dotted':'none'};color:${r.dia_nopago>0?'#d6432d':'var(--dim)'};font-weight:${r.dia_nopago>0?'700':'400'}">${r.dia_nopago}</td>
       <td style="padding:9px 8px">${r.acum_clientes}</td><td style="padding:9px 8px">${money(r.acum_coll)}</td>
+      <td onclick="ndDetalleNoPago('${String(r.cobrador||'').replace(/'/g,"\\'")}','sem')" title="Clientes sin un solo abono en la semana" style="padding:9px 8px;cursor:pointer;text-decoration:${r.acum_nopago>0?'underline dotted':'none'};color:${r.acum_nopago>0?'#d6432d':'var(--dim)'};font-weight:${r.acum_nopago>0?'800':'400'}">${r.acum_nopago}</td>
       <td style="padding:9px 8px;color:${obj>0?'var(--txt)':'var(--dim)'}">${obj>0?money(obj):'sin meta'}</td>
       <td style="padding:9px 8px;font-weight:700;color:${am==null?'var(--dim)':metaCol(am)}">${am==null?'—':am+'%'}</td>
       <td style="padding:9px 8px;font-weight:700;color:var(--acc)">${pct(r.acum_coll,r.debito_total)}</td></tr>`;
@@ -1155,6 +1157,7 @@ async function cargarNumDiariosSuc(){
       <td style="text-align:left;padding:9px 8px">TOTAL</td><td style="padding:9px 8px">${t.dia_clientes||0}</td><td style="padding:9px 8px">${money(t.dia_coll)}</td>
       <td style="padding:9px 8px;color:${(t.dia_nopago||0)>0?'#d6432d':'inherit'}">${t.dia_nopago||0}</td>
       <td style="padding:9px 8px">${t.acum_clientes||0}</td><td style="padding:9px 8px">${money(t.acum_coll)}</td>
+      <td style="padding:9px 8px;color:${(t.acum_nopago||0)>0?'#d6432d':'inherit'}">${t.acum_nopago||0}</td>
       <td style="padding:9px 8px">${totObj>0?money(totObj):'—'}</td>
       <td style="padding:9px 8px;color:${totAm==null?'inherit':metaCol(totAm)}">${totAm==null?'—':totAm+'%'}</td>
       <td style="padding:9px 8px;color:var(--acc)">${pct(t.acum_coll,t.debito_total)}</td></tr>`;
@@ -1162,19 +1165,22 @@ async function cargarNumDiariosSuc(){
   }catch(e){ if(info) info.textContent='No se pudo cargar: '+(e.message||e); }
 }
 // Desglose auditable de los no-pagos del día: qué crédito exacto se está contando y por qué
-async function ndDetalleNoPago(cob){
+async function ndDetalleNoPago(cob, modo){
   const diaEl=document.getElementById('nd-dia'); const dia=diaEl?diaEl.value:'';
   const ov=document.getElementById('overlay');
   ov.innerHTML='<div class="modal"><h3>Cargando…</h3></div>'; ov.classList.add('on');
   try{
     const d=await api('GET','/api/reports/numeros-diarios-suc?detalle=1'+(dia?('&dia='+encodeURIComponent(dia)):''));
     const r=(d.rows||[]).find(x=>String(x.cobrador)===String(cob));
-    const det=(r&&r.detalle)||{}; const sin=det.dia_nopago||[]; const esp=det.esperados_dia||[];
+    const det=(r&&r.detalle)||{};
+    const sem = modo==='sem';
+    const sin = (sem?det.sem_nopago:det.dia_nopago)||[];
+    const esp = (sem?det.esperados_sem:det.esperados_dia)||[];
     const money=v=>'$'+Math.round(v||0).toLocaleString('es-MX');
     const fila=x=>`<tr><td style="padding:6px 4px"><b>${x.cliente}</b><div style="font-size:.68rem;color:var(--dim)">${x.folio} · ${x.tipo}</div></td><td style="padding:6px 4px;text-align:right">${money(x.cuota)}</td><td style="padding:6px 4px;text-align:right">${money(x.saldo)}</td></tr>`;
     ov.innerHTML=`<div class="modal" style="max-width:560px">
       <h3 style="margin-bottom:4px">No pagos · ${cob}</h3>
-      <p style="font-size:.78rem;color:var(--dim);margin-bottom:12px">Día ${d.dia} · se esperaba cobro en <b>${esp.length}</b> crédito(s) · <b>${sin.length}</b> sin abono.</p>
+      <p style="font-size:.78rem;color:var(--dim);margin-bottom:12px">${sem?('Semana '+d.semanaDesdeISO+' al '+d.semanaHastaISO):('Día '+d.dia)} · se esperaba cobro en <b>${esp.length}</b> crédito(s) · <b>${sin.length}</b> sin un solo abono.</p>
       <div style="max-height:52vh;overflow:auto"><table style="width:100%;font-size:.82rem">
         <thead><tr style="color:var(--dim);font-size:.68rem;text-transform:uppercase"><th style="text-align:left;padding:4px">Crédito sin pago</th><th style="text-align:right;padding:4px">Cuota</th><th style="text-align:right;padding:4px">Saldo</th></tr></thead>
         <tbody>${sin.map(fila).join('')||'<tr><td colspan="3" style="padding:12px;color:var(--dim)">Ninguno: cobró todos los esperados.</td></tr>'}</tbody></table></div>
