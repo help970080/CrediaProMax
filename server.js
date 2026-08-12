@@ -2359,21 +2359,23 @@ app.get('/api/reports/numeros-diarios', auth, rol('admin','supervisor'), (req,re
     const clientes_totales = new Set(activeVs.map(s=>s.clientId)).size;
     const debito_total = activeVs.reduce((a,s)=>a+(s.cuota||0),0);
     let diaColl=0, acumColl=0; const diaCli=new Set(), acumCli=new Set();
-    const diaCob=new Set(), semCob=new Set();  // cubiertos incl. primer pago del alta (solo para no marcarlos "no pago")
+    // Cubiertos por CRÉDITO (saleId). Con Sets de clientId, un cliente con 2 créditos que pagaba
+    // uno tapaba el otro, y el enganche de un crédito nuevo tapaba el crédito viejo sin pagar.
+    const diaCob=new Set(), semCob=new Set();  // saleId cubiertos, incl. primer pago del alta
     for(const m of abonosAll){ const ref=saleSuc[m.saleId]; if(!ref||ref.suc!==suc.id) continue; const t=_parseFechaMx(m.fecha);
       const esDesc = m.forma==='descuento';
-      if(t>=wkStart && t<wkEnd){ if(!esDesc){ acumColl+=m.abono; acumCli.add(ref.cli); } semCob.add(ref.cli); }
-      if(t>=dStart && t<dEnd){ if(!esDesc){ diaColl+=m.abono; diaCli.add(ref.cli); } diaCob.add(ref.cli); } }
-    // No pagos (riesgo): clientes con cobro esperado que NO abonaron (día y acumulado de la semana)
-    const espDia=new Set(), espSem=new Set();
+      if(t>=wkStart && t<wkEnd){ if(!esDesc){ acumColl+=m.abono; acumCli.add(ref.cli); } semCob.add(m.saleId); }
+      if(t>=dStart && t<dEnd){ if(!esDesc){ diaColl+=m.abono; diaCli.add(ref.cli); } diaCob.add(m.saleId); } }
+    // No pagos (riesgo): créditos con cobro esperado que NO abonaron (día y acumulado de la semana)
+    const espDia=[], espSem=[];
     activeVs.forEach(s=>{
       const ct = _diaMxMs(s.createdAt);
-      if((_sIniDia[s.id]||0)>0.5 && _esperaCobroDia(s, dStart, dEnd)) espDia.add(s.clientId);
-      if(s.tipo!=='unico' && !(ct>=wkStart && ct<wkEnd)) espSem.add(s.clientId); // esperado en la semana (= reporte semanal)
+      if((_sIniDia[s.id]||0)>0.5 && _esperaCobroDia(s, dStart, dEnd)) espDia.push(s);
+      if(s.tipo!=='unico' && !(ct>=wkStart && ct<wkEnd)) espSem.push(s); // esperado en la semana (= reporte semanal)
     });
-    // un cliente que ya dio su PRIMER PAGO (descuento al alta) no cuenta como "no pago", aunque ese pago no sea cobranza de campo
-    const dia_nopago=[...espDia].filter(id=>!diaCob.has(id)).length;
-    const acum_nopago=[...espSem].filter(id=>!semCob.has(id)).length;
+    // un crédito que ya dio su PRIMER PAGO (descuento al alta) no cuenta como "no pago", aunque ese pago no sea cobranza de campo
+    const dia_nopago=espDia.filter(s=>!diaCob.has(s.id)).length;
+    const acum_nopago=espSem.filter(s=>!semCob.has(s.id)).length;
     return { id:suc.id, gerencia:suc.nombre, clientes_totales, debito_total,
       dia_clientes:diaCli.size, dia_coll:diaColl, dia_nopago,
       acum_clientes:acumCli.size, acum_coll:acumColl, acum_nopago,
@@ -2415,20 +2417,29 @@ app.get('/api/reports/numeros-diarios-suc', auth, rol('admin','supervisor','sucu
     const clientes_totales = new Set(vs.map(s=>s.clientId)).size;
     const debito_total = vs.reduce((a,s)=>a+(s.cuota||0),0);
     let diaColl=0, acumColl=0; const diaCli=new Set(), acumCli=new Set();
-    const diaCob=new Set(), semCob=new Set();  // cubiertos incl. primer pago del alta
+    /* Cubiertos por CRÉDITO, no por cliente. Antes eran Sets de clientId y eso colapsaba los
+       créditos: un cliente con 2 créditos que pagaba uno quedaba "cubierto" en los dos, y el
+       enganche de un crédito nuevo (forma 'descuento') tapaba el crédito viejo sin pagar. */
+    const diaCob=new Set(), semCob=new Set();  // saleId cubiertos, incl. primer pago del alta
     for(const m of abonosAll){ const ref=saleRef[m.saleId]; if(!ref||ref.prom!==prom) continue; const t=_parseFechaMx(m.fecha);
       const esDesc = m.forma==='descuento';
-      if(t>=wkStart && t<wkEnd){ if(!esDesc){ acumColl+=m.abono; acumCli.add(ref.cli); } semCob.add(ref.cli); }
-      if(t>=dStart && t<dEnd){ if(!esDesc){ diaColl+=m.abono; diaCli.add(ref.cli); } diaCob.add(ref.cli); } }
-    const espDia=new Set(), espSem=new Set();
+      if(t>=wkStart && t<wkEnd){ if(!esDesc){ acumColl+=m.abono; acumCli.add(ref.cli); } semCob.add(m.saleId); }
+      if(t>=dStart && t<dEnd){ if(!esDesc){ diaColl+=m.abono; diaCli.add(ref.cli); } diaCob.add(m.saleId); } }
+    const espDia=[], espSem=[];
     vs.forEach(s=>{ const ct=_diaMxMs(s.createdAt);
-      if((_sIniDia[s.id]||0)>0.5 && _esperaCobroDia(s, dStart, dEnd)) espDia.add(s.clientId);
-      if(s.tipo!=='unico' && !(ct>=wkStart && ct<wkEnd)) espSem.add(s.clientId); });
-    const dia_nopago=[...espDia].filter(id=>!diaCob.has(id)).length;
-    const acum_nopago=[...espSem].filter(id=>!semCob.has(id)).length;
+      if((_sIniDia[s.id]||0)>0.5 && _esperaCobroDia(s, dStart, dEnd)) espDia.push(s);
+      if(s.tipo!=='unico' && !(ct>=wkStart && ct<wkEnd)) espSem.push(s); });
+    const sinDia = espDia.filter(s=>!diaCob.has(s.id));
+    const sinSem = espSem.filter(s=>!semCob.has(s.id));
+    const dia_nopago=sinDia.length;
+    const acum_nopago=sinSem.length;
+    // Desglose auditable: qué créditos exactos se están contando como no-pago del día
+    const _det = s => { const c=db.clients.find(x=>x.id===s.clientId)||{};
+      return { saleId:s.id, folio:s.folio||'—', cliente:c.nombre||'—', tipo:s.tipo, cuota:s.cuota||0, saldo:Math.round(saldoDe(s.id)) }; };
+    const detalle = req.query.detalle==='1' ? { dia_nopago: sinDia.map(_det), esperados_dia: espDia.map(_det) } : undefined;
     return { id:prom, cobrador:prom, clientes_totales, debito_total,
-      dia_clientes:diaCli.size, dia_coll:diaColl, dia_nopago,
-      acum_clientes:acumCli.size, acum_coll:acumColl, acum_nopago,
+      dia_clientes:diaCli.size, dia_coll:diaColl, dia_nopago, dia_esperados:espDia.length,
+      acum_clientes:acumCli.size, acum_coll:acumColl, acum_nopago, detalle,
       // Meta fija = 100% de la cartera del cobrador (débito y clientes)
       objetivo: { cobranza: debito_total, clientes: clientes_totales } };
   }).sort((a,b)=> b.acum_coll - a.acum_coll);
