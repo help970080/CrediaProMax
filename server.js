@@ -2316,9 +2316,17 @@ function _fechasProgSrv(s){
    martes NO debe nada. Exigir el día calendario exacto marcaba en rojo a clientes al corriente
    (caso real: cuota del 11/08 pagada el 09 y el 10). Para crédito SEMANAL basta que haya abonado
    dentro del ciclo de la semana; el DIARIO sí se exige día por día, porque ahí cada día es una cuota. */
-function _cubiertoDia(sale, diaCob, cicloCob){
-  if(sale.tipo==='diario') return diaCob.has(sale.id);
-  return cicloCob.has(sale.id) || diaCob.has(sale.id);
+function _cubiertoDia(sale, dStart, dEnd, pagosTs){
+  if(sale.tipo==='diario'){                                  // diario: cada día es una cuota, se exige ese día
+    return (pagosTs.get(sale.id)||[]).some(t => t>=dStart && t<dEnd);
+  }
+  // Semanal: la cuota se cubre con dinero que entró DESPUÉS de la cuota anterior y hasta el cierre
+  // de hoy. Así el que abona 1-2 días antes de su día de ruta queda al corriente, pero NO basta
+  // "pagó algo esta semana": el abono de la cuota anterior no cubre la de hoy.
+  const prog = _fechasProgSrv(sale);
+  let desde = _diaMxMs(sale.createdAt);                      // antes de la 1ª cuota: cuenta desde el alta
+  for(const t of prog){ if(t >= dEnd) break; if(t < dStart) desde = t; }
+  return (pagosTs.get(sale.id)||[]).some(t => t > desde && t < dEnd);
 }
 // ¿Se esperaba un cobro de este crédito en el día [dStart,dEnd)? (no cuenta la venta nueva del día)
 function _esperaCobroDia(s, dStart, dEnd){
@@ -2370,12 +2378,12 @@ app.get('/api/reports/numeros-diarios', auth, rol('admin','supervisor'), (req,re
     let diaColl=0, acumColl=0; const diaCli=new Set(), acumCli=new Set();
     /* Cubiertos por CRÉDITO (saleId), no por cliente: con Sets de clientId, un cliente con 2
        créditos que pagaba uno tapaba el otro, y el enganche de un crédito nuevo tapaba al viejo. */
-    const diaCob=new Set(), semCob=new Set(), cicloCob=new Set();
+    const semCob=new Set(), pagosTs=new Map();
     for(const m of abonosAll){ const ref=saleSuc[m.saleId]; if(!ref||ref.suc!==suc.id) continue; const t=_parseFechaMx(m.fecha);
       const esDesc = m.forma==='descuento';
       if(t>=wkStart && t<wkEnd){ if(!esDesc){ acumColl+=m.abono; acumCli.add(ref.cli); } semCob.add(m.saleId); }
-      if(t>=wkStart && t<dEnd) cicloCob.add(m.saleId);   // pagó dentro del ciclo, hasta el día consultado
-      if(t>=dStart && t<dEnd){ if(!esDesc){ diaColl+=m.abono; diaCli.add(ref.cli); } diaCob.add(m.saleId); } }
+      if(t>=dStart && t<dEnd && !esDesc){ diaColl+=m.abono; diaCli.add(ref.cli); }
+      let a=pagosTs.get(m.saleId); if(!a){ a=[]; pagosTs.set(m.saleId,a); } a.push(t); }
     // No pagos (riesgo): créditos con cobro esperado que NO abonaron (día y acumulado de la semana)
     const espDia=[], espSem=[];
     activeVs.forEach(s=>{
@@ -2384,7 +2392,7 @@ app.get('/api/reports/numeros-diarios', auth, rol('admin','supervisor'), (req,re
       if(s.tipo!=='unico' && !(ct>=wkStart && ct<wkEnd)) espSem.push(s); // esperado en la semana (= reporte semanal)
     });
     // un crédito que ya dio su PRIMER PAGO (descuento al alta) no cuenta como "no pago", aunque ese pago no sea cobranza de campo
-    const dia_nopago=espDia.filter(s=>!_cubiertoDia(s, diaCob, cicloCob)).length;
+    const dia_nopago=espDia.filter(s=>!_cubiertoDia(s, dStart, dEnd, pagosTs)).length;
     const acum_nopago=espSem.filter(s=>!semCob.has(s.id)).length;
     return { id:suc.id, gerencia:suc.nombre, clientes_totales, debito_total,
       dia_clientes:diaCli.size, dia_coll:diaColl, dia_nopago,
@@ -2427,17 +2435,17 @@ app.get('/api/reports/numeros-diarios-suc', auth, rol('admin','supervisor','sucu
     const clientes_totales = new Set(vs.map(s=>s.clientId)).size;
     const debito_total = vs.reduce((a,s)=>a+(s.cuota||0),0);
     let diaColl=0, acumColl=0; const diaCli=new Set(), acumCli=new Set();
-    const diaCob=new Set(), semCob=new Set(), cicloCob=new Set();  // por CRÉDITO, no por cliente
+    const semCob=new Set(), pagosTs=new Map();   // por CRÉDITO, no por cliente
     for(const m of abonosAll){ const ref=saleRef[m.saleId]; if(!ref||ref.prom!==prom) continue; const t=_parseFechaMx(m.fecha);
       const esDesc = m.forma==='descuento';
       if(t>=wkStart && t<wkEnd){ if(!esDesc){ acumColl+=m.abono; acumCli.add(ref.cli); } semCob.add(m.saleId); }
-      if(t>=wkStart && t<dEnd) cicloCob.add(m.saleId);   // pagó dentro del ciclo, hasta el día consultado
-      if(t>=dStart && t<dEnd){ if(!esDesc){ diaColl+=m.abono; diaCli.add(ref.cli); } diaCob.add(m.saleId); } }
+      if(t>=dStart && t<dEnd && !esDesc){ diaColl+=m.abono; diaCli.add(ref.cli); }
+      let a=pagosTs.get(m.saleId); if(!a){ a=[]; pagosTs.set(m.saleId,a); } a.push(t); }
     const espDia=[], espSem=[];
     vs.forEach(s=>{ const ct=_diaMxMs(s.createdAt);
       if((_sIniDia[s.id]||0)>0.5 && _esperaCobroDia(s, dStart, dEnd)) espDia.push(s);
       if(s.tipo!=='unico' && !(ct>=wkStart && ct<wkEnd)) espSem.push(s); });
-    const sinDia = espDia.filter(s=>!_cubiertoDia(s, diaCob, cicloCob));
+    const sinDia = espDia.filter(s=>!_cubiertoDia(s, dStart, dEnd, pagosTs));
     const sinSem = espSem.filter(s=>!semCob.has(s.id));
     const dia_nopago=sinDia.length;
     const acum_nopago=sinSem.length;
@@ -3070,13 +3078,28 @@ function _ultimas16Cuotas(sale, abonos){
   if (!fechas.length) return { estados: new Array(16).fill('x'), pagos: new Array(16).fill(0) };
   // cierre de cada cuota: el día siguiente a su vencimiento
   const cortes = fechas.map(f => { const d=new Date(f); d.setDate(d.getDate()+1); d.setHours(0,0,0,0); return d.getTime(); });
+  /* Aplicación EN CASCADA: cada abono liquida primero la cuota pendiente más antigua, igual que la
+     tabla de amortización y que la contabilidad de cobranza (el dinero paga la deuda más vieja).
+     Antes el abono caía en la ventana de su fecha, y pagar dos días tarde inventaba una cuota impaga:
+     el cliente que abonó su cuota del 04/08 el día 06 dejaba la cuota 1 en ✕ y le acreditaba el doble
+     a la cuota 2, apareciendo en atraso aunque no debiera nada. */
   const pagados = new Array(fechas.length).fill(0);
-  (abonos||[]).forEach(m => {
-    const ts = _parseFechaMx(m.fecha);
-    if (!isFinite(ts) || !ts) return;
-    let idx = cortes.findIndex(c => ts < c);          // primera cuota cuya ventana aún no cierra
-    if (idx < 0) idx = fechas.length - 1;             // abonos después del último vencimiento → última cuota
-    pagados[idx] += (m.abono || 0);
+  const cuotaObj = cuota > 0 ? cuota : 0;
+  const orden = (abonos||[]).map(m => ({ ts:_parseFechaMx(m.fecha), monto:m.abono||0 }))
+                            .filter(x => isFinite(x.ts) && x.ts && x.monto > 0)
+                            .sort((a,b) => a.ts - b.ts);
+  let cur = 0;
+  orden.forEach(ab => {
+    let resto = ab.monto;
+    while (resto > 0.5 && cur < pagados.length) {
+      if (cuotaObj <= 0) { pagados[cur] += resto; resto = 0; break; }   // sin cuota definida: todo a la casilla actual
+      const falta = cuotaObj - pagados[cur];
+      if (falta <= 0.5) { cur++; continue; }
+      const aplica = Math.min(falta, resto);
+      pagados[cur] += aplica; resto -= aplica;
+      if (pagados[cur] >= cuotaObj - 0.5) cur++;
+    }
+    if (resto > 0.5 && pagados.length) pagados[pagados.length-1] += resto;  // excedente al final del plazo
   });
   const estados = fechas.map((f, i) => {
     if (pagados[i] > 0) return (cuota > 0 && pagados[i] < cuota - 0.5) ? 'a' : 'p';  // hubo dinero → se muestra la cantidad
