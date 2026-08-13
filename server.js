@@ -3066,7 +3066,7 @@ function _numCuotasSrv(sale){
    Regla: si en esa cuota entró CUALQUIER cantidad, se muestra la cantidad (nunca ✕).
    El abono se asigna a la cuota cuya ventana lo contiene, aunque esa cuota todavía no venza,
    así un pago adelantado (crédito recién colocado) SÍ se ve en el reporte. */
-function _ultimas16Cuotas(sale, abonos){
+function _ultimas16Cuotas(sale, abonos, liqTs){
   const anchor = sale.reestructuraAt ? new Date(sale.reestructuraAt) : (sale.createdAt ? new Date(sale.createdAt) : new Date());
   const ahora = Date.now();
   const cuota = sale.cuota || 0;
@@ -3113,6 +3113,10 @@ function _ultimas16Cuotas(sale, abonos){
   });
   const estados = fechas.map((f, i) => {
     if (pagados[i] > 0) return (cuota > 0 && pagados[i] < cuota - 0.5) ? 'a' : 'p';  // hubo dinero → se muestra la cantidad
+    // Crédito ya liquidado: las cuotas posteriores al cierre NO existen y no pueden ser ✕.
+    // Antes el cliente que liquidaba a media tabla arrastraba una fila de ✕ hasta el final del
+    // plazo, aparecía en "Monto en atraso" y esas cuotas fantasma le bajaban la eficiencia.
+    if (liqTs && cortes[i] > liqTs) return 'x';
     return cortes[i] <= ahora ? 'n' : 'x';
   });
   /* Ventana de 16 columnas ANCLADA EN EL PRESENTE, no al final del plazo.
@@ -4190,7 +4194,13 @@ app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor','sucursa
       // pago hacía ver cobrados a créditos recién colocados que aún no tienen su primera cuota.
       // Los demás reportes ya lo excluyen así; este era el único que lo contaba.
       const abonos = db.movimientos.filter(m => m.saleId === s.id && m.abono > 0 && m.forma !== 'descuento' && m.forma !== 'recomendacion');
-      const q = _ultimas16Cuotas(s, abonos);
+      // Si el crédito ya no tiene saldo, el reloj se detiene el día del último abono: de ahí en
+      // adelante no hay cuotas que cobrar (incluye los liquidados por REFIN).
+      const _sal = saldoDe(s.id);
+      const _liq = _sal > 0.5 ? null : db.movimientos
+        .filter(m => m.saleId === s.id && m.abono > 0)
+        .reduce((mx, m) => Math.max(mx, _parseFechaMx(m.fecha) || 0), 0) || null;
+      const q = _ultimas16Cuotas(s, abonos, _liq);
       return {
         nombre: c.nombre || '—',
         dir: [c.calle, c.col].filter(Boolean).join(', ') || '—',
