@@ -185,6 +185,27 @@
     <button class="snb" data-vw="oport" onclick="setVw('oport')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">🎯 Oportunidades</button>
     <button class="snb" data-vw="mora" onclick="setVw('mora')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">📉 Mora</button>
     <button class="snb" data-vw="numdiarios" onclick="setVw('numdiarios')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">📅 Números diarios</button>
+    <button class="snb" data-vw="repcartera" onclick="setVw('repcartera')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">🖨️ Cartera por cobrador</button>
+  </div>
+
+  <div id="view-repcartera" style="display:none">
+    <div class="panel">
+      <h2 style="margin:0 0 2px">🖨️ Cartera por cobrador</h2>
+      <div class="sub" style="margin-bottom:14px">Hoja de ruta imprimible con el calendario de pagos de cada cliente. Solo tus cobradores.</div>
+      <div class="frow" style="align-items:flex-end">
+        <div class="field"><label>Cobrador</label>
+          <select id="cs-repcob"><option value="all">Todos mis cobradores</option></select></div>
+        <div class="field" style="flex:0 0 auto"><label>&nbsp;</label>
+          <button class="btn gold" onclick="imprimirCarteraSuc()">🖨️ Generar e imprimir</button></div>
+      </div>
+      <div style="background:var(--surf-2);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-top:14px;font-size:.8rem;color:var(--dim);line-height:1.6">
+        Cada hoja trae clientes asignados, cartera total, monto en atraso y eficiencia, con una casilla por cuota:<br>
+        <b style="background:#1c5fa8;color:#fff;padding:1px 6px;border-radius:3px">1,200</b> pagó esta semana ·
+        <b style="color:#1e7a3d">1,200</b> cuota completa ·
+        <b style="color:#8a6100">1,200</b> abono parcial ·
+        <b style="color:#a8261d">✕</b> no pagó nada
+      </div>
+    </div>
   </div>
   <div id="view-numdiarios" style="display:none">
     <div class="panel">
@@ -317,12 +338,6 @@
       <div class="frow">
         <div class="field"><label>Modalidad</label><select id="cs-tipo" onchange="pintaCartSuc()"><option value="">Todas</option><option value="diario">Diario</option><option value="semanal">Semanal</option><option value="s16">Semanal 16</option><option value="s17">Semanal 17</option><option value="s21">21 semanas</option><option value="s31">31 semanas</option><option value="unico">Pago único</option><option value="p17">Celulares 17</option></select></div>
         <div class="field"><label>Estado</label><select id="cs-est" onchange="pintaCartSuc()"><option value="">Todos</option><option value="act">Con saldo</option><option value="liq">Liquidados</option></select></div>
-      </div>
-      <div class="frow" style="align-items:flex-end">
-        <div class="field"><label>Cartera por cobrador (imprimible)</label>
-          <select id="cs-repcob"><option value="all">Todos mis cobradores</option></select></div>
-        <div class="field" style="flex:0 0 auto"><label>&nbsp;</label>
-          <button class="btn gold" onclick="imprimirCarteraSuc()">🖨️ Imprimir cartera</button></div>
       </div>
       <div style="color:var(--dim);font-size:.85rem;margin:4px 0 10px" id="cs-count"></div>
       <div style="overflow-x:auto"><table><thead><tr><th>Cliente</th><th>Cobrador</th><th>Modalidad</th><th class="n">Cuota</th><th class="n">Saldo</th></tr></thead><tbody id="cs-rows"></tbody></table></div>
@@ -1113,8 +1128,10 @@ function setVw(vw){
   document.getElementById('view-oport').style.display=vw==='oport'?'':'none';
   document.getElementById('view-mora').style.display=vw==='mora'?'':'none';
   document.getElementById('view-numdiarios').style.display=vw==='numdiarios'?'':'none';
+  document.getElementById('view-repcartera').style.display=vw==='repcartera'?'':'none';
   if(vw==='resumen') cargarResumen();
   if(vw==='cartera') cargarCartSuc();
+  if(vw==='repcartera') cargarCartSuc();   // reusa la carga: llena el selector de cobradores
   if(vw==='contactos') cargarContactos();
   if(vw==='oport') cargarOportSuc();
   if(vw==='mora') cargarMoraSuc();
