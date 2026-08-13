@@ -3090,18 +3090,23 @@ function _ultimas16Cuotas(sale, abonos){
   const orden = (abonos||[]).map(m => ({ ts:_parseFechaMx(m.fecha), monto:m.abono||0 }))
                             .filter(x => isFinite(x.ts) && x.ts && x.monto > 0)
                             .sort((a,b) => a.ts - b.ts);
+  // Se marca la casilla que recibió dinero del ciclo EN CURSO, para poder pintarla distinto:
+  // así el gerente ve de un vistazo quién pagó esta semana y quién trae el abono de semanas pasadas.
+  const wkIni = _inicioCiclo(Date.now());
+  const frescos = new Array(fechas.length).fill(false);
   let cur = 0;
   orden.forEach(ab => {
     let resto = ab.monto;
+    const esta = ab.ts >= wkIni;
     while (resto > 0.5 && cur < pagados.length) {
-      if (cuotaObj <= 0) { pagados[cur] += resto; resto = 0; break; }   // sin cuota definida: todo a la casilla actual
+      if (cuotaObj <= 0) { pagados[cur] += resto; if(esta) frescos[cur]=true; resto = 0; break; }
       const falta = cuotaObj - pagados[cur];
       if (falta <= 0.5) { cur++; continue; }
       const aplica = Math.min(falta, resto);
-      pagados[cur] += aplica; resto -= aplica;
+      pagados[cur] += aplica; resto -= aplica; if(esta) frescos[cur]=true;
       if (pagados[cur] >= cuotaObj - 0.5) cur++;
     }
-    if (resto > 0.5 && pagados.length) pagados[pagados.length-1] += resto;  // excedente al final del plazo
+    if (resto > 0.5 && pagados.length) { pagados[pagados.length-1] += resto; if(esta) frescos[pagados.length-1]=true; }
   });
   const estados = fechas.map((f, i) => {
     if (pagados[i] > 0) return (cuota > 0 && pagados[i] < cuota - 0.5) ? 'a' : 'p';  // hubo dinero → se muestra la cantidad
@@ -3117,9 +3122,9 @@ function _ultimas16Cuotas(sale, abonos){
   for (let i = pagados.length - 1; i > fin; i--) if (pagados[i] > 0) { fin = i; break; }  // pago adelantado
   fin = Math.min(fechas.length - 1, Math.max(fin, 15));    // nunca menos de 16 columnas
   const ini = Math.max(0, fin - 15);
-  let u = estados.slice(ini, fin + 1), g = pagados.slice(ini, fin + 1);
-  while (u.length < 16) { u.push('x'); g.push(0); }        // rellena a la derecha: el pasado no se pierde
-  return { estados: u, pagos: g, desdeCuota: ini + 1 };
+  let u = estados.slice(ini, fin + 1), g = pagados.slice(ini, fin + 1), h = frescos.slice(ini, fin + 1);
+  while (u.length < 16) { u.push('x'); g.push(0); h.push(false); }   // rellena a la derecha: el pasado no se pierde
+  return { estados: u, pagos: g, frescos: h, desdeCuota: ini + 1 };
 }
 /* ---------- Reportes nuevos: colocación, REFIN, comisiones ---------- */
 app.get('/api/reports/colocacion', auth, rol('admin','supervisor'), (req, res) => {
@@ -4164,9 +4169,11 @@ app.get('/api/reports/desglose', auth, rol('admin', 'supervisor', 'sucursal'), (
   });
 });
 
-app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, res) => {
+app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor','sucursal'), (req, res) => {
   const promFilter = req.query.prom;
-  const cobradores = db.users.filter(u => u.rol === 'cobrador' && u.activo);
+  let cobradores = db.users.filter(u => u.rol === 'cobrador' && u.activo);
+  // El gerente solo ve a los cobradores de su propia sucursal
+  if (req.user.rol === 'sucursal') cobradores = cobradores.filter(u => Number(u.sucursalId) === Number(req.user.sucursalId));
   const sel = (promFilter && promFilter !== 'all') ? cobradores.filter(c => c.nombre === promFilter) : cobradores;
   const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
   const reportes = sel.map(cob => {
@@ -4190,6 +4197,7 @@ app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor'), (req, 
         saldo: saldoDe(s.id), cuota: s.cuota,
         estados: q.estados,
         pagos: q.pagos,
+        frescos: q.frescos,
       };
     });
     const _cnt = (f) => clientes.reduce((a,c)=>a+c.estados.filter(f).length, 0);
