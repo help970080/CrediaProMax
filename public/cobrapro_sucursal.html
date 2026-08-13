@@ -318,6 +318,12 @@
         <div class="field"><label>Modalidad</label><select id="cs-tipo" onchange="pintaCartSuc()"><option value="">Todas</option><option value="diario">Diario</option><option value="semanal">Semanal</option><option value="s16">Semanal 16</option><option value="s17">Semanal 17</option><option value="s21">21 semanas</option><option value="s31">31 semanas</option><option value="unico">Pago único</option><option value="p17">Celulares 17</option></select></div>
         <div class="field"><label>Estado</label><select id="cs-est" onchange="pintaCartSuc()"><option value="">Todos</option><option value="act">Con saldo</option><option value="liq">Liquidados</option></select></div>
       </div>
+      <div class="frow" style="align-items:flex-end">
+        <div class="field"><label>Cartera por cobrador (imprimible)</label>
+          <select id="cs-repcob"><option value="all">Todos mis cobradores</option></select></div>
+        <div class="field" style="flex:0 0 auto"><label>&nbsp;</label>
+          <button class="btn gold" onclick="imprimirCarteraSuc()">🖨️ Imprimir cartera</button></div>
+      </div>
       <div style="color:var(--dim);font-size:.85rem;margin:4px 0 10px" id="cs-count"></div>
       <div style="overflow-x:auto"><table><thead><tr><th>Cliente</th><th>Cobrador</th><th>Modalidad</th><th class="n">Cuota</th><th class="n">Saldo</th></tr></thead><tbody id="cs-rows"></tbody></table></div>
     </div>
@@ -1187,6 +1193,73 @@ async function ndDetalleNoPago(cob, modo){
       <div class="modal-actions"><button class="ma cancel" onclick="cerrar()">Cerrar</button></div></div>`;
   }catch(e){ ov.innerHTML=`<div class="modal"><h3>No se pudo cargar</h3><p style="font-size:.82rem;color:var(--dim)">${e.message||e}</p><div class="modal-actions"><button class="ma cancel" onclick="cerrar()">Cerrar</button></div></div>`; }
 }
+/* Cartera por Cobrador imprimible — mismo reporte del panel admin.
+   El endpoint acota los cobradores a la sucursal del gerente, así que aquí no hay que filtrar nada. */
+async function imprimirCarteraSuc(){
+  const sel=document.getElementById('cs-repcob'); const prom=sel?sel.value:'all';
+  try{
+    const d=await api('GET','/api/reports/cartera-cobrador?prom='+encodeURIComponent(prom));
+    if(!d.reportes||!d.reportes.length){ alert('Sin datos para imprimir.'); return; }
+    const w=window.open('','_blank'); if(!w){ alert('Permite ventanas emergentes para imprimir.'); return; }
+    w.document.write(_buildPrintHTML(d)); w.document.close();
+  }catch(e){ alert(e.message); }
+}
+function _buildPrintHTML(d){
+  const fechaGen=new Date(d.generadoEn).toLocaleString('es-MX');
+  const css=`@page{size:letter landscape;margin:0.35in}*{box-sizing:border-box}body{font-family:-apple-system,Helvetica,Arial,sans-serif;color:#1a1a1a;margin:0;font-size:9pt}.report{page-break-after:always}.report:last-child{page-break-after:auto}.head{display:flex;align-items:center;gap:14px;border-bottom:1px solid #b3851f;padding-bottom:8px;margin-bottom:10px}.logo{width:42px;height:42px;background:#b3851f;color:#fff;font-weight:700;font-size:22pt;display:flex;align-items:center;justify-content:center;border-radius:6px;flex-shrink:0}.title{flex:1}.title h1{font-size:13pt;margin:0;font-weight:700}.title .sub{font-size:7pt;color:#888;margin-top:1pt}.info{font-size:7.5pt;color:#555;text-align:right;line-height:1.5}.info b{color:#1a1a1a}.kpis{display:flex;gap:8px;margin:10px 0}.kpi{flex:1;background:#f4f4f4;padding:6px 10px;border-top:2px solid #1a1a1a}.kpi.bad{border-top-color:#a8261d}.kpi.ok{border-top-color:#1e7a3d}.kpi .l{font-size:6.5pt;font-weight:700;color:#888;text-transform:uppercase}.kpi .v{font-size:12pt;font-weight:700;margin-top:2px}.kpi.bad .v{color:#a8261d}.kpi.ok .v{color:#1e7a3d}table{width:100%;border-collapse:collapse;font-size:7pt}thead th{background:#1a1a1a;color:#fff;padding:5px 3px;font-size:6.5pt;font-weight:700;text-align:center;border:0.3pt solid #555}tbody td{padding:4px 4px;border:0.2pt solid #ccc;vertical-align:middle;text-align:center;font-size:7.5pt}tbody td.cli{text-align:left;padding:4px 6px}tbody td.cli .nm{font-weight:700;font-size:7.5pt}tbody td.cli .dir{font-size:6pt;color:#666;margin-top:1pt}tbody td.cli .tel{font-size:6pt;color:#888}tbody tr:nth-child(even) td:not(.q){background:#fafafa}td.q{font-weight:700;font-size:6.6pt;padding:4px 1px;white-space:nowrap}td.q.p{background:#d8f0df;color:#1e7a3d}td.q.a{background:#fdf1cf;color:#8a6100}td.q.hoy{background:#1c5fa8;color:#fff;box-shadow:inset 0 0 0 1pt #0d3f75}td.q.hoy.a{background:#3f8ed0;color:#fff}td.q.n{background:#fde0db;color:#a8261d;font-size:9pt}td.q.x{background:#fff;color:#aaa;font-size:9pt}td.tar{font-weight:700;color:#1a1a1a}td.saldo.liq{color:#1e7a3d;font-weight:700}.leyenda{display:flex;gap:18px;padding:6px 10px;background:#fafafa;border-top:0.3pt solid #ccc;border-bottom:0.3pt solid #ccc;margin-top:8px;font-size:6.5pt;color:#555}.firmas{display:flex;gap:20px;margin-top:30px}.firma{flex:1;text-align:center;font-size:6.5pt;color:#555}.firma .line{border-top:0.5pt solid #555;padding-top:3px;font-weight:700}.foot{text-align:center;font-size:6pt;color:#888;margin-top:10px}@media print{body{print-color-adjust:exact;-webkit-print-color-adjust:exact}}`;
+  const reps=d.reportes.map(r=>_oneReport(r,fechaGen)).join('');
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Cartera por Cobrador</title><style>${css}</style></head><body>${reps}<scr`+`ipt>window.addEventListener('load',()=>setTimeout(()=>window.print(),400));</scr`+`ipt></body></html>`;
+}
+function _oneReport(r,fechaGen){
+  const fmt=n=>'$'+Math.round(n).toLocaleString('es-MX');
+  const k=r.kpis; let h16=''; for(let i=1;i<=16;i++) h16+=`<th>${i}</th>`;
+  const mini=n=>Math.round(n||0).toLocaleString('es-MX');
+  // orden alfabético por nombre del cliente (ignora acentos y mayúsculas)
+  const lista=(r.clientes||[]).slice().sort((a,b)=>String(a.nombre||'').localeCompare(String(b.nombre||''),'es',{sensitivity:'base',numeric:true}));
+  const rows=lista.map((c,i)=>{
+    const pg=c.pagos||[], fr=c.frescos||[];
+    const qs=c.estados.map((e,j)=>{
+      // azul = el dinero entró en la semana vigente; verde/ámbar = cobranza de semanas anteriores
+      const nuevo = fr[j] ? ' hoy' : '';
+      if(e==='p') return `<td class="q p${nuevo}">${mini(pg[j])}</td>`;
+      if(e==='a') return `<td class="q a${nuevo}">${mini(pg[j])}</td>`;   // abono parcial: se ve la cantidad, no una ✕
+      if(e==='n') return '<td class="q n">✕</td>';
+      return '<td class="q x">·</td>';
+    }).join('');
+    const totP=c.estados.filter(e=>e==='p'||e==='a').length;
+    const totA=c.estados.filter(e=>e!=='x').length;
+    return `<tr><td>${i+1}</td><td class="cli"><div class="nm">${c.nombre}</div><div class="dir">${c.dir}</div><div class="tel">📞 ${c.tel||'—'}</div></td><td>${c.folio}</td><td>${c.modalidad}</td><td class="tar">${c.cuota>0?fmt(c.cuota):'—'}</td><td class="saldo${c.saldo<=0?' liq':''}">${c.saldo<=0?'Liq.':fmt(c.saldo)}</td>${qs}<td>${totA>0?(totP+'/'+totA):'—'}</td></tr>`;
+  }).join('');
+  return `<div class="report">
+    <div class="head"><div class="logo">₵</div>
+      <div class="title"><h1>${(BRAND.nombre||'CobraPro')} · Cartera por Cobrador</h1><div class="sub">${(BRAND.nombre||'CobraPro')} · sistema de crédito y cobranza</div></div>
+      <div class="info"><b>Cobrador:</b> ${r.cobrador}<br><b>Sucursal:</b> ${r.sucursal} · <b>Encargada:</b> ${r.encargada}<br><b>Periodo:</b> últimas 16 cuotas<br><b>Generado:</b> ${fechaGen}</div></div>
+    <div class="kpis">
+      <div class="kpi"><div class="l">Clientes asignados</div><div class="v">${k.clientes}</div></div>
+      <div class="kpi"><div class="l">Cartera total</div><div class="v">${fmt(k.cartera)}</div></div>
+      <div class="kpi bad"><div class="l">Monto en atraso</div><div class="v">${fmt(k.atrasoMonto)} · ${k.atrasoClientes} cli</div></div>
+      <div class="kpi ok"><div class="l">Eficiencia (16 cuotas)</div><div class="v">${k.eficiencia.toFixed(1)}% · ${k.totalP}/${k.totalP+k.totalN}</div></div>
+    </div>
+    <table><thead><tr><th>#</th><th>Cliente · Domicilio · Tel.</th><th>Folio</th><th>Modal.</th><th>Tarifa</th><th>Saldo</th>${h16}<th>Pag.</th></tr></thead>
+    <tbody>${rows||'<tr><td colspan="23" style="padding:18px;color:#888;text-align:center">Sin clientes asignados.</td></tr>'}</tbody></table>
+    <div class="leyenda">
+      <div><b style="background:#1c5fa8;color:#fff;padding:1pt 4pt;border-radius:2pt">1,200 = pagó ESTA SEMANA</b></div>
+      <div><b style="color:#1e7a3d">1,200 = pagó su cuota completa</b></div>
+      <div><b style="color:#8a6100">1,200 = abonó de menos (parcial)</b></div>
+      <div><b style="color:#a8261d">✕ No pagó nada (vencido)</b></div>
+      <div><b>Tarifa</b> = cuota que le toca pagar · lista en orden alfabético</div>
+      <div><b style="color:#aaa">· Aún no le tocaba</b></div>
+      <div>"Liq." = crédito liquidado</div>
+      <div><b>Pag.</b> = pagos hechos / cuotas debidas</div>
+    </div>
+    <div class="firmas">
+      <div class="firma"><div class="line">Cobrador</div>${r.cobrador}</div>
+      <div class="firma"><div class="line">Encargada de sucursal</div>${r.encargada}</div>
+      <div class="firma"><div class="line">Supervisor / Administrador</div>${ME?ME.nombre:''}</div>
+    </div>
+    <div class="foot">${(BRAND.nombre||"CobraPro")} · Generado ${fechaGen}</div>
+  </div>`;
+}
 async function cargarResumen(){
   try{
     const d=await api('GET','/api/dashboard?periodo='+_periodoSuc);
@@ -1424,6 +1497,7 @@ async function cargarCartSuc(){
   try{ _cartSuc=(await api('GET','/api/sales')).filter(s=>s.entregado!==false);
     const cobs=[...new Set(_cartSuc.map(s=>s.prom).filter(Boolean))].sort();
     const sel=document.getElementById('cs-cob'); if(sel){ const prev=sel.value; sel.innerHTML=_opts(cobs); sel.value=prev; if(sel.selectedIndex<0) sel.selectedIndex=0; }
+    const rp=document.getElementById('cs-repcob'); if(rp){ const prev=rp.value; rp.innerHTML='<option value="all">Todos mis cobradores</option>'+cobs.map(c=>`<option value="${_escAt(c)}">${_escAt(c)}</option>`).join(''); rp.value=prev; if(rp.selectedIndex<0) rp.selectedIndex=0; }
     pintaCartSuc();
   }catch(e){ document.getElementById('cs-rows').innerHTML='<tr><td colspan="5" style="color:var(--red);padding:10px">'+e.message+'</td></tr>'; }
 }
