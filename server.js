@@ -3078,8 +3078,13 @@ function _ultimas16Cuotas(sale, abonos){
   else if (tipo === 'p17') { const iv=Math.max(1, Math.round((+sale.plazo||270)/17)); for (let i=1; i<=17; i++) { const d=new Date(anchor); d.setDate(d.getDate()+i*iv); fechas.push(d); } }
   else for (let i=1; i<=n; i++) { const d=new Date(anchor); d.setDate(d.getDate()+i*7); fechas.push(d); } // semanal y s16/s17/s21/s31
   if (!fechas.length) return { estados: new Array(16).fill('x'), pagos: new Array(16).fill(0) };
-  // cierre de cada cuota: el día siguiente a su vencimiento
-  const cortes = fechas.map(f => { const d=new Date(f); d.setDate(d.getDate()+1); d.setHours(0,0,0,0); return d.getTime(); });
+  /* Cada cuota se mide contra su CICLO DE COBRANZA completo (p.ej. miércoles a martes), no contra
+     el día exacto en que cae por la fecha de alta. El cobrador recorre su ruta a lo largo de la
+     semana: el cliente de alta en jueves que abona el martes siguiente pagó dentro de su semana,
+     y anclando la ventana al alta quedaba fuera y salía ✕ aunque sí hubiera pagado. */
+  const _porCiclo = _esSemanalSrv(tipo);
+  const cortes = fechas.map(f => _porCiclo ? _inicioCiclo(f) + 7*86400000
+                                           : (() => { const d=new Date(f); d.setDate(d.getDate()+1); d.setHours(0,0,0,0); return d.getTime(); })());
   /* Cada abono se pinta en la SEMANA EN QUE ENTRÓ, no en la cuota que liquida. Así la ✕ queda en la
      semana que el cliente realmente falló y no se recorre hasta el final del calendario.
      Se descartó aplicar en cascada (el dinero paga la deuda más vieja): cuadra el total pero mueve
@@ -3090,11 +3095,19 @@ function _ultimas16Cuotas(sale, abonos){
   const pagados = new Array(fechas.length).fill(0);
   const wkIni = _inicioCiclo(Date.now());
   const frescos = new Array(fechas.length).fill(false);   // dinero del ciclo EN CURSO: se pinta distinto
+  const ciclo0 = _porCiclo && fechas.length ? _inicioCiclo(fechas[0]) : 0;
   (abonos||[]).forEach(m => {
     const ts = _parseFechaMx(m.fecha);
     if (!isFinite(ts) || !ts || !(m.abono > 0)) return;
-    let idx = cortes.findIndex(c => ts < c);            // primera cuota cuya ventana aún no cierra
-    if (idx < 0) idx = fechas.length - 1;               // abonos posteriores al último vencimiento
+    let idx;
+    if (_porCiclo) {
+      idx = Math.round((_inicioCiclo(ts) - ciclo0) / (7*86400000));   // la semana de cobranza en que entró
+      if (idx < 0) idx = 0;
+      if (idx > fechas.length - 1) idx = fechas.length - 1;
+    } else {
+      idx = cortes.findIndex(c => ts < c);              // primera cuota cuya ventana aún no cierra
+      if (idx < 0) idx = fechas.length - 1;             // abonos posteriores al último vencimiento
+    }
     pagados[idx] += m.abono;
     if (ts >= wkIni) frescos[idx] = true;
   });
