@@ -3080,33 +3080,23 @@ function _ultimas16Cuotas(sale, abonos){
   if (!fechas.length) return { estados: new Array(16).fill('x'), pagos: new Array(16).fill(0) };
   // cierre de cada cuota: el día siguiente a su vencimiento
   const cortes = fechas.map(f => { const d=new Date(f); d.setDate(d.getDate()+1); d.setHours(0,0,0,0); return d.getTime(); });
-  /* Aplicación EN CASCADA: cada abono liquida primero la cuota pendiente más antigua, igual que la
-     tabla de amortización y que la contabilidad de cobranza (el dinero paga la deuda más vieja).
-     Antes el abono caía en la ventana de su fecha, y pagar dos días tarde inventaba una cuota impaga:
-     el cliente que abonó su cuota del 04/08 el día 06 dejaba la cuota 1 en ✕ y le acreditaba el doble
-     a la cuota 2, apareciendo en atraso aunque no debiera nada. */
+  /* Cada abono se pinta en la SEMANA EN QUE ENTRÓ, no en la cuota que liquida. Así la ✕ queda en la
+     semana que el cliente realmente falló y no se recorre hasta el final del calendario.
+     Se descartó aplicar en cascada (el dinero paga la deuda más vieja): cuadra el total pero mueve
+     cada abono una casilla y el hueco viaja al último lugar, que es justo lo que no deja ver cuándo
+     dejó de pagar. Consecuencia asumida: quien paga tarde deja ✕ en su semana y el abono aparece en
+     la siguiente, posiblemente al doble. Eso es lo que de verdad ocurrió y el total sigue cuadrando
+     en la columna Pag.; el atraso vivo se mide en "Monto en atraso" y en Contactos. */
   const pagados = new Array(fechas.length).fill(0);
-  const cuotaObj = cuota > 0 ? cuota : 0;
-  const orden = (abonos||[]).map(m => ({ ts:_parseFechaMx(m.fecha), monto:m.abono||0 }))
-                            .filter(x => isFinite(x.ts) && x.ts && x.monto > 0)
-                            .sort((a,b) => a.ts - b.ts);
-  // Se marca la casilla que recibió dinero del ciclo EN CURSO, para poder pintarla distinto:
-  // así el gerente ve de un vistazo quién pagó esta semana y quién trae el abono de semanas pasadas.
   const wkIni = _inicioCiclo(Date.now());
-  const frescos = new Array(fechas.length).fill(false);
-  let cur = 0;
-  orden.forEach(ab => {
-    let resto = ab.monto;
-    const esta = ab.ts >= wkIni;
-    while (resto > 0.5 && cur < pagados.length) {
-      if (cuotaObj <= 0) { pagados[cur] += resto; if(esta) frescos[cur]=true; resto = 0; break; }
-      const falta = cuotaObj - pagados[cur];
-      if (falta <= 0.5) { cur++; continue; }
-      const aplica = Math.min(falta, resto);
-      pagados[cur] += aplica; resto -= aplica; if(esta) frescos[cur]=true;
-      if (pagados[cur] >= cuotaObj - 0.5) cur++;
-    }
-    if (resto > 0.5 && pagados.length) { pagados[pagados.length-1] += resto; if(esta) frescos[pagados.length-1]=true; }
+  const frescos = new Array(fechas.length).fill(false);   // dinero del ciclo EN CURSO: se pinta distinto
+  (abonos||[]).forEach(m => {
+    const ts = _parseFechaMx(m.fecha);
+    if (!isFinite(ts) || !ts || !(m.abono > 0)) return;
+    let idx = cortes.findIndex(c => ts < c);            // primera cuota cuya ventana aún no cierra
+    if (idx < 0) idx = fechas.length - 1;               // abonos posteriores al último vencimiento
+    pagados[idx] += m.abono;
+    if (ts >= wkIni) frescos[idx] = true;
   });
   const estados = fechas.map((f, i) => {
     if (pagados[i] > 0) return (cuota > 0 && pagados[i] < cuota - 0.5) ? 'a' : 'p';  // hubo dinero → se muestra la cantidad
