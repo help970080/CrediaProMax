@@ -2799,6 +2799,123 @@ app.get('/api/contactos/recuperacion', auth, rol('admin','supervisor','sucursal'
   res.json(_recuperacionMorosos(req.query.semanas, scope));
 });
 
+/* ---------- EFECTIVIDAD DE GESTIÓN SOBRE MOROSOS ----------
+   La lista de morosos de la semana W se TRABAJA durante la semana W+1,
+   así que la efectividad se mide cruzando esa lista contra los pagos de
+   la semana siguiente. Dos indicadores, dos responsables:
+     · efectividad → el GERENTE (gestionó y recuperó)
+     · validacion  → el SUPERVISOR (revisó el trabajo)
+   Un contacto sin validar SIGUE contando como gestionado.
+   Solo lee: no escribe ni toca esquema. */
+function _efectividadContactos(iso, scope){
+  const wb      = _semanaDesdeISO(iso);
+  const winIni  = wb.end;                       // arranque de la semana en que se gestiona
+  const winFin  = wb.end + 7*86400000;          // fin de esa misma semana
+
+  let rows = _listaContactos(iso);
+  if(scope) rows = rows.filter(scope);
+
+  /* --- pagos de la ventana de recuperación, en una sola pasada --- */
+  const cids    = new Set(rows.map(r=>r.clientId));
+  const saleCli = {};                            // saleId -> clientId (solo de la lista)
+  for(const s of db.sales){ if(cids.has(s.clientId)) saleCli[s.id] = s.clientId; }
+
+  const pagoVentana = new Map();                 // clientId -> monto abonado en la ventana
+  for(const m of db.movimientos){
+    if(!(m.abono>0)) continue;
+    const cid = saleCli[m.saleId];
+    if(cid == null) continue;
+    const t = _parseFechaMx(m.fecha);
+    if(t >= winIni && t < winFin) pagoVentana.set(cid, (pagoVentana.get(cid)||0) + m.abono);
+  }
+
+  /* --- acumuladores --- */
+  const nuevoGrupo = (nombre, sucursalId) => ({
+    nombre, sucursalId,
+    asignados:0, gestionados:0, recuperados:0,
+    sinGestionPagaron:0, validados:0, conEvidencia:0,
+    montoAtraso:0, montoRecuperado:0
+  });
+  const porCobrador = new Map();
+  const porSucursal = new Map();
+  const porResultado= new Map();                 // resultado -> {gestionados, recuperados, monto}
+  const global = nuevoGrupo('TOTAL', null);
+
+  for(const r of rows){
+    const g          = r.gestion || null;
+    const gestionado = !!(g && (g.resultado || g.tieneEvidencia));
+    const pagado     = pagoVentana.get(r.clientId) || 0;
+    const recuperado = gestionado && pagado > 0;
+
+    const kc = r.cobrador || '—';
+    const ks = String(r.sucursalId == null ? '—' : r.sucursalId);
+    if(!porCobrador.has(kc)) porCobrador.set(kc, nuevoGrupo(kc, r.sucursalId));
+    if(!porSucursal.has(ks)) porSucursal.set(ks, nuevoGrupo(_nombreSucursal(r.sucursalId), r.sucursalId));
+
+    for(const acc of [porCobrador.get(kc), porSucursal.get(ks), global]){
+      acc.asignados++;
+      acc.montoAtraso += (r.monto_atraso||0);
+      if(gestionado){
+        acc.gestionados++;
+        if(g.validado)       acc.validados++;
+        if(g.tieneEvidencia) acc.conEvidencia++;
+        if(recuperado){ acc.recuperados++; acc.montoRecuperado += pagado; }
+      }else if(pagado > 0){
+        acc.sinGestionPagaron++;                 // pagó solo, sin que nadie lo gestionara
+      }
+    }
+
+    if(gestionado){
+      const k = g.resultado || '(sin resultado)';
+      if(!porResultado.has(k)) porResultado.set(k, { resultado:k, gestionados:0, recuperados:0, monto:0 });
+      const pr = porResultado.get(k);
+      pr.gestionados++;
+      if(recuperado){ pr.recuperados++; pr.monto += pagado; }
+    }
+  }
+
+  /* --- derivados --- */
+  const cerrar = a => Object.assign(a, {
+    cobertura   : a.asignados   ? +(a.gestionados/a.asignados  *100).toFixed(1) : 0,
+    efectividad : a.gestionados ? +(a.recuperados/a.gestionados*100).toFixed(1) : 0,
+    validacion  : a.gestionados ? +(a.validados  /a.gestionados*100).toFixed(1) : 0,
+    montoRecuperado: Math.round(a.montoRecuperado),
+    montoAtraso    : Math.round(a.montoAtraso)
+  });
+
+  const listaCob = [...porCobrador.values()].map(cerrar).sort((a,b)=>b.efectividad-a.efectividad);
+  const listaSuc = [...porSucursal.values()].map(cerrar).sort((a,b)=>b.efectividad-a.efectividad);
+  const listaRes = [...porResultado.values()].map(p=>Object.assign(p,{
+    efectividad: p.gestionados ? +(p.recuperados/p.gestionados*100).toFixed(1) : 0,
+    monto: Math.round(p.monto)
+  })).sort((a,b)=>b.gestionados-a.gestionados);
+
+  return {
+    semana: iso,
+    ventana: { desde: new Date(winIni).toISOString().slice(0,10),
+               hasta: new Date(winFin-1).toISOString().slice(0,10) },
+    total: cerrar(global),
+    por_cobrador: listaCob,
+    por_sucursal: listaSuc,
+    por_resultado: listaRes
+  };
+}
+
+// Nombre de sucursal (tolerante: si no existe devuelve la clave)
+function _nombreSucursal(id){
+  const s = db.sucursales.find(x=>Number(x.id)===Number(id));
+  return s ? (s.nombre || ('Suc '+id)) : ('Suc '+(id==null?'—':id));
+}
+
+app.get('/api/contactos/efectividad', auth, rol('admin','supervisor','sucursal','cobrador'), (req,res)=>{
+  const iso = (req.query.semana && /^\d{4}-\d{2}-\d{2}$/.test(req.query.semana))
+              ? req.query.semana : _semanaContactos();
+  let scope = null;
+  if(req.user.rol==='sucursal')      scope = r => Number(r.sucursalId)===Number(req.user.sucursalId);
+  else if(req.user.rol==='cobrador') scope = r => r.cobrador===req.user.nombre;
+  res.json(_efectividadContactos(iso, scope));
+});
+
 /* ---------- CIERRE DE SEMANA (cobrador → sucursal → admin) ---------- */
 // Estado del cierre de la semana (scoped por rol). Permite ver quién ya cerró.
 app.get('/api/cierre-semana', auth, (req,res)=>{
