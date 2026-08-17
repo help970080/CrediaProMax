@@ -2799,28 +2799,57 @@ app.get('/api/contactos/recuperacion', auth, rol('admin','supervisor','sucursal'
   res.json(_recuperacionMorosos(req.query.semanas, scope));
 });
 
-/* ---------- EFECTIVIDAD DE GESTIÓN SOBRE MOROSOS ----------
-   La lista de morosos de la semana W se TRABAJA durante la semana W+1,
-   así que la efectividad se mide cruzando esa lista contra los pagos de
-   la semana siguiente. Dos indicadores, dos responsables:
-     · efectividad → el GERENTE (gestionó y recuperó)
+/* ---------- EFECTIVIDAD DE GESTIÓN SOBRE MOROSOS (v2 · por canal) ----------
+   La lista de morosos de la semana W se TRABAJA durante la semana W+1, así que
+   la efectividad se mide cruzando esa lista contra los pagos de la semana W+1.
+
+   IMPORTANTE: el campo `resultado` de db.contactos lo escriben DOS fuentes:
+     · el gerente, eligiendo del catálogo CT_RESULTADOS  → gestión HUMANA
+     · el IVR, con textos libres tipo "✅ Contestó (32s)" → llamada AUTOMÁTICA
+   Mezclarlas infla la cobertura y hunde la efectividad. Aquí se separan en
+   tres universos excluyentes: humano / ivr / sin_gestion.
+
+   Dos indicadores, dos responsables:
+     · efectividad → el GERENTE  (gestionó y recuperó)
      · validacion  → el SUPERVISOR (revisó el trabajo)
    Un contacto sin validar SIGUE contando como gestionado.
+
    Solo lee: no escribe ni toca esquema. */
+
+// Catálogo que usa el panel de sucursal. Si se agrega una opción allá, agrégala aquí.
+const CT_RESULTADOS_SRV = ['Pagó en la visita','Prometió pagar','Convenio de pago',
+  'No se encontraba','Se negó a pagar','Domicilio no localizado','Cliente ilocalizable','Otro'];
+
+// Quita el paréntesis final: "✅ Contestó (32s)" y "✅ Contestó (33s)" son la misma categoría.
+function _normResultado(s){ return String(s||'').replace(/\s*\([^)]*\)\s*$/,'').trim(); }
+
+/* Clasifica la gestión de una fila: 'humano' | 'ivr' | 'ninguno'
+   Regla: si el resultado está en el catálogo, o hay foto de evidencia, fue una
+   persona (el IVR no sube fotos ni escribe texto del catálogo). El humano gana
+   sobre el IVR cuando ambos tocaron al mismo cliente. */
+function _canalGestion(g){
+  if(!g) return 'ninguno';
+  const res = String(g.resultado||'').trim();
+  if(res && CT_RESULTADOS_SRV.includes(res)) return 'humano';
+  if(g.tieneEvidencia) return 'humano';
+  if(res || g.llamado) return 'ivr';
+  return 'ninguno';
+}
+
 function _efectividadContactos(iso, scope){
-  const wb      = _semanaDesdeISO(iso);
-  const winIni  = wb.end;                       // arranque de la semana en que se gestiona
-  const winFin  = wb.end + 7*86400000;          // fin de esa misma semana
+  const wb     = _semanaDesdeISO(iso);
+  const winIni = wb.end;                        // semana en que se trabaja la lista
+  const winFin = wb.end + 7*86400000;
 
   let rows = _listaContactos(iso);
   if(scope) rows = rows.filter(scope);
 
-  /* --- pagos de la ventana de recuperación, en una sola pasada --- */
+  /* --- pagos de la ventana, en una sola pasada --- */
   const cids    = new Set(rows.map(r=>r.clientId));
-  const saleCli = {};                            // saleId -> clientId (solo de la lista)
+  const saleCli = {};
   for(const s of db.sales){ if(cids.has(s.clientId)) saleCli[s.id] = s.clientId; }
 
-  const pagoVentana = new Map();                 // clientId -> monto abonado en la ventana
+  const pagoVentana = new Map();
   for(const m of db.movimientos){
     if(!(m.abono>0)) continue;
     const cid = saleCli[m.saleId];
@@ -2831,21 +2860,25 @@ function _efectividadContactos(iso, scope){
 
   /* --- acumuladores --- */
   const nuevoGrupo = (nombre, sucursalId) => ({
-    nombre, sucursalId,
-    asignados:0, gestionados:0, recuperados:0,
-    sinGestionPagaron:0, validados:0, conEvidencia:0,
-    montoAtraso:0, montoRecuperado:0
+    nombre, sucursalId, asignados:0, montoAtraso:0,
+    // canal humano (gerente)
+    gestionados:0, recuperados:0, validados:0, conEvidencia:0, montoRecuperado:0,
+    // canal IVR
+    ivr_tocados:0, ivr_recuperados:0, ivr_monto:0,
+    // nadie los tocó
+    sin_gestion:0, sin_gestion_pagaron:0, sin_gestion_monto:0
   });
-  const porCobrador = new Map();
-  const porSucursal = new Map();
-  const porResultado= new Map();                 // resultado -> {gestionados, recuperados, monto}
+  const porCobrador  = new Map();
+  const porSucursal  = new Map();
+  const porResultado = new Map();   // catálogo humano
+  const porIvr       = new Map();   // resultados del IVR, normalizados
   const global = nuevoGrupo('TOTAL', null);
 
   for(const r of rows){
-    const g          = r.gestion || null;
-    const gestionado = !!(g && (g.resultado || g.tieneEvidencia));
-    const pagado     = pagoVentana.get(r.clientId) || 0;
-    const recuperado = gestionado && pagado > 0;
+    const g      = r.gestion || null;
+    const canal  = _canalGestion(g);
+    const pagado = pagoVentana.get(r.clientId) || 0;
+    const pago   = pagado > 0;
 
     const kc = r.cobrador || '—';
     const ks = String(r.sucursalId == null ? '—' : r.sucursalId);
@@ -2855,49 +2888,84 @@ function _efectividadContactos(iso, scope){
     for(const acc of [porCobrador.get(kc), porSucursal.get(ks), global]){
       acc.asignados++;
       acc.montoAtraso += (r.monto_atraso||0);
-      if(gestionado){
+      if(canal === 'humano'){
         acc.gestionados++;
         if(g.validado)       acc.validados++;
         if(g.tieneEvidencia) acc.conEvidencia++;
-        if(recuperado){ acc.recuperados++; acc.montoRecuperado += pagado; }
-      }else if(pagado > 0){
-        acc.sinGestionPagaron++;                 // pagó solo, sin que nadie lo gestionara
+        if(pago){ acc.recuperados++; acc.montoRecuperado += pagado; }
+      }else if(canal === 'ivr'){
+        acc.ivr_tocados++;
+        if(pago){ acc.ivr_recuperados++; acc.ivr_monto += pagado; }
+      }else{
+        acc.sin_gestion++;
+        if(pago){ acc.sin_gestion_pagaron++; acc.sin_gestion_monto += pagado; }
       }
     }
 
-    if(gestionado){
-      const k = g.resultado || '(sin resultado)';
+    if(canal === 'humano'){
+      const k = String(g.resultado||'').trim() || '(sin resultado)';
       if(!porResultado.has(k)) porResultado.set(k, { resultado:k, gestionados:0, recuperados:0, monto:0 });
       const pr = porResultado.get(k);
       pr.gestionados++;
-      if(recuperado){ pr.recuperados++; pr.monto += pagado; }
+      if(pago){ pr.recuperados++; pr.monto += pagado; }
+    }else if(canal === 'ivr'){
+      const k = _normResultado(g.resultado) || '(llamada sin resultado)';
+      if(!porIvr.has(k)) porIvr.set(k, { resultado:k, llamadas:0, recuperados:0, monto:0 });
+      const pi = porIvr.get(k);
+      pi.llamadas++;
+      if(pago){ pi.recuperados++; pi.monto += pagado; }
     }
   }
 
   /* --- derivados --- */
+  const pct = (a,b) => b ? +(a/b*100).toFixed(1) : 0;
   const cerrar = a => Object.assign(a, {
-    cobertura   : a.asignados   ? +(a.gestionados/a.asignados  *100).toFixed(1) : 0,
-    efectividad : a.gestionados ? +(a.recuperados/a.gestionados*100).toFixed(1) : 0,
-    validacion  : a.gestionados ? +(a.validados  /a.gestionados*100).toFixed(1) : 0,
-    montoRecuperado: Math.round(a.montoRecuperado),
-    montoAtraso    : Math.round(a.montoAtraso)
+    cobertura              : pct(a.gestionados, a.asignados),
+    efectividad            : pct(a.recuperados, a.gestionados),
+    validacion             : pct(a.validados,   a.gestionados),
+    ivr_efectividad        : pct(a.ivr_recuperados,     a.ivr_tocados),
+    sin_gestion_efectividad: pct(a.sin_gestion_pagaron, a.sin_gestion),
+    montoRecuperado : Math.round(a.montoRecuperado),
+    ivr_monto       : Math.round(a.ivr_monto),
+    sin_gestion_monto: Math.round(a.sin_gestion_monto),
+    montoAtraso     : Math.round(a.montoAtraso)
   });
 
-  const listaCob = [...porCobrador.values()].map(cerrar).sort((a,b)=>b.efectividad-a.efectividad);
-  const listaSuc = [...porSucursal.values()].map(cerrar).sort((a,b)=>b.efectividad-a.efectividad);
+  const listaCob = [...porCobrador.values()].map(cerrar)
+    .sort((a,b)=> b.efectividad-a.efectividad || b.gestionados-a.gestionados);
+  const listaSuc = [...porSucursal.values()].map(cerrar)
+    .sort((a,b)=> b.efectividad-a.efectividad || b.gestionados-a.gestionados);
   const listaRes = [...porResultado.values()].map(p=>Object.assign(p,{
-    efectividad: p.gestionados ? +(p.recuperados/p.gestionados*100).toFixed(1) : 0,
-    monto: Math.round(p.monto)
+    efectividad: pct(p.recuperados,p.gestionados), monto: Math.round(p.monto)
   })).sort((a,b)=>b.gestionados-a.gestionados);
+  const listaIvr = [...porIvr.values()].map(p=>Object.assign(p,{
+    efectividad: pct(p.recuperados,p.llamadas), monto: Math.round(p.monto)
+  })).sort((a,b)=>b.llamadas-a.llamadas);
+
+  const T = cerrar(global);
+
+  /* Comparativo de los tres canales, lado a lado. Es la lectura de la junta:
+     si "sin gestión" recupera parecido a los canales trabajados, la gestión no
+     está agregando valor (o se está gestionando justo a los más difíciles). */
+  const comparativo = {
+    humano      : { tocados:T.gestionados, recuperados:T.recuperados,
+                    efectividad:T.efectividad, monto:T.montoRecuperado },
+    ivr         : { tocados:T.ivr_tocados, recuperados:T.ivr_recuperados,
+                    efectividad:T.ivr_efectividad, monto:T.ivr_monto },
+    sin_gestion : { tocados:T.sin_gestion, recuperados:T.sin_gestion_pagaron,
+                    efectividad:T.sin_gestion_efectividad, monto:T.sin_gestion_monto }
+  };
 
   return {
     semana: iso,
     ventana: { desde: new Date(winIni).toISOString().slice(0,10),
                hasta: new Date(winFin-1).toISOString().slice(0,10) },
-    total: cerrar(global),
+    total: T,
+    comparativo,
     por_cobrador: listaCob,
     por_sucursal: listaSuc,
-    por_resultado: listaRes
+    por_resultado: listaRes,
+    por_resultado_ivr: listaIvr
   };
 }
 
