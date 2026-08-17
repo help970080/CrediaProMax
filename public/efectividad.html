@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Efectividad de gestión · CobraPro</title>
+<style>
+:root{
+  --bg:#05070F;--card:rgba(17,24,42,.72);--borde:rgba(120,150,220,.16);
+  --tx:#EEF2FF;--tn:#7E8DB5;
+  --c1:#FF2E93;--c2:#A855F7;--c3:#22D3EE;--c4:#A3E635;--c5:#FB923C;
+  --d:"Bahnschrift","Archivo Narrow","Segoe UI Semibold",system-ui,sans-serif;
+  --n:"Consolas","SF Mono",monospace;--c:"Segoe UI",system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:var(--bg);color:var(--tx);font-family:var(--c);min-height:100vh;
+  padding:20px clamp(12px,2vw,30px) 34px;
+  background-image:
+    radial-gradient(880px 520px at 8% -10%,rgba(255,46,147,.16),transparent 60%),
+    radial-gradient(760px 480px at 96% 4%,rgba(34,211,238,.14),transparent 58%),
+    radial-gradient(700px 600px at 50% 108%,rgba(168,85,247,.13),transparent 60%);
+  background-attachment:fixed;
+}
+.barra{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+.marca h1{font-family:var(--d);font-size:clamp(16px,1.5vw,22px);font-weight:700}
+.marca span{font-family:var(--d);font-size:10px;letter-spacing:.26em;text-transform:uppercase;color:var(--tn)}
+.util{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.util select{
+  font-family:var(--d);font-size:12px;letter-spacing:.08em;
+  background:rgba(17,24,42,.9);border:1px solid var(--borde);color:var(--tx);
+  padding:10px 13px;border-radius:11px;cursor:pointer;
+}
+.util select:focus-visible{outline:2px solid var(--c3);outline-offset:2px}
+.vent{font-family:var(--n);font-size:11.5px;color:var(--tn)}
+
+.aviso{
+  background:rgba(251,146,60,.10);border:1px solid rgba(251,146,60,.35);
+  border-radius:14px;padding:14px 18px;margin-bottom:13px;
+  font-size:13px;line-height:1.5;color:#FFD9B0;
+}
+.aviso b{color:var(--c5)}
+
+.bento{display:grid;grid-template-columns:repeat(12,1fr);gap:13px}
+.t{background:var(--card);border:1px solid var(--borde);border-radius:18px;padding:16px 18px;
+   position:relative;overflow:hidden;display:flex;flex-direction:column;backdrop-filter:blur(14px)}
+.t::after{content:"";position:absolute;top:0;left:14%;right:14%;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.28),transparent)}
+.et{font-family:var(--d);font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--tn);
+  margin-bottom:12px;display:flex;justify-content:space-between;gap:8px}
+.et b{color:var(--tx);font-weight:600}
+
+/* anillos */
+.anillo{grid-column:span 4;align-items:center;text-align:center;min-height:196px}
+.aro{position:relative;width:clamp(108px,9.5vw,142px);aspect-ratio:1;margin:0 auto}
+.aro svg{width:100%;height:100%;transform:rotate(-90deg)}
+.aro circle{transition:stroke-dasharray 1s cubic-bezier(.2,.85,.3,1)}
+.aro .mid{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.aro .mid b{font-family:var(--n);font-size:clamp(21px,2.1vw,30px);font-weight:700;line-height:1}
+.aro .mid s{font-family:var(--d);font-size:8.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--tn);text-decoration:none;margin-top:3px}
+.nota{font-size:11.5px;color:var(--tn);margin-top:10px;line-height:1.45}
+.nota em{font-style:normal;font-family:var(--n);font-weight:700;color:var(--tx)}
+
+/* comparativo de canales */
+.canales{grid-column:span 12}
+.cgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:13px}
+.canal{
+  border:1px solid var(--borde);border-radius:15px;padding:16px 17px;
+  background:rgba(9,14,26,.5);position:relative;overflow:hidden;
+}
+.canal::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--tono);
+  box-shadow:0 0 16px 1px var(--tono)}
+.canal h3{font-family:var(--d);font-size:11px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--tn);margin-bottom:12px}
+.canal .big{font-family:var(--n);font-size:clamp(28px,3vw,44px);font-weight:700;line-height:1;color:var(--tono)}
+.canal .big i{font-style:normal;font-size:.42em;color:var(--tn);margin-left:3px}
+.canal .sub{font-size:12px;color:var(--tn);margin-top:9px;line-height:1.5}
+.canal .sub em{font-style:normal;font-family:var(--n);font-weight:700;color:var(--tx)}
+.canal .pista{height:7px;background:rgba(120,150,220,.1);border-radius:4px;overflow:hidden;margin-top:12px}
+.canal .pista i{display:block;height:100%;width:0;border-radius:4px;background:var(--tono);
+  box-shadow:0 0 14px -2px var(--tono);transition:width 1s cubic-bezier(.2,.85,.3,1)}
+@media(max-width:820px){.cgrid{grid-template-columns:1fr}}
+
+/* escalera del catálogo */
+.escalera{grid-column:span 7;min-height:280px}
+.erow{display:flex;align-items:center;gap:11px;padding:7px 0}
+.erow .lb{font-size:12.5px;width:132px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.erow .pista{flex:1;height:20px;background:rgba(120,150,220,.09);border-radius:6px;overflow:hidden;position:relative}
+.erow .pista i{display:block;height:100%;width:0;border-radius:6px;transition:width .95s cubic-bezier(.2,.85,.3,1)}
+.erow .pc{font-family:var(--n);font-size:13px;font-weight:700;width:46px;text-align:right}
+.erow .nn{font-family:var(--n);font-size:11px;color:var(--tn);width:80px;text-align:right}
+
+/* sucursales */
+.sucs{grid-column:span 5;min-height:280px}
+.barras{flex:1;display:flex;align-items:flex-end;gap:clamp(6px,1vw,18px);padding-top:24px;position:relative}
+.bcol{flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%;min-width:0}
+.btubo{position:relative;flex:1;display:flex;align-items:flex-end}
+.bfill{width:100%;border-radius:7px 7px 3px 3px;height:0;transition:height .95s cubic-bezier(.2,.85,.3,1);position:relative}
+.bfill span{position:absolute;top:-21px;left:0;right:0;text-align:center;font-family:var(--n);font-size:12px;font-weight:700}
+.bnom{text-align:center;font-family:var(--d);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--tn);padding-top:8px;height:32px;overflow:hidden;line-height:1.25}
+
+/* tabla de gerentes */
+.gente{grid-column:span 12}
+.tb{width:100%;border-collapse:collapse;font-size:12.5px}
+.tb th{font-family:var(--d);font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--tn);
+  text-align:left;padding:0 9px 10px;border-bottom:1px solid var(--borde);font-weight:600}
+.tb th.r,.tb td.r{text-align:right}
+.tb td{padding:9px;border-bottom:1px solid rgba(120,150,220,.08)}
+.tb td.n{font-family:var(--n)}
+.tb .mini{height:6px;background:rgba(120,150,220,.1);border-radius:3px;overflow:hidden;min-width:56px}
+.tb .mini i{display:block;height:100%;width:0;border-radius:3px;transition:width .9s cubic-bezier(.2,.85,.3,1)}
+.pos{font-family:var(--d);color:var(--tn);width:24px}
+
+.cargando,.vacio{
+  grid-column:span 12;text-align:center;padding:44px 20px;color:var(--tn);
+  font-family:var(--d);letter-spacing:.16em;text-transform:uppercase;font-size:12px;
+}
+.vacio b{display:block;color:var(--tx);font-size:15px;letter-spacing:.04em;
+  text-transform:none;font-family:var(--c);margin-top:10px;font-weight:400}
+@media(max-width:1240px){.escalera,.sucs{grid-column:span 12}.anillo{grid-column:span 12}}
+@media(prefers-reduced-motion:reduce){*{transition-duration:.01ms!important}}
+</style>
+</head>
+<body>
+
+<div class="barra">
+  <div class="marca"><h1>Efectividad de gestión</h1><span>Cobranza sobre morosos</span></div>
+  <div class="util">
+    <select id="sel-semana"><option>Cargando…</option></select>
+    <span class="vent" id="vent">—</span>
+  </div>
+</div>
+
+<div id="aviso"></div>
+<div class="bento" id="bento">
+  <div class="cargando">Consultando…</div>
+</div>
+
+<script>
+const $=i=>document.getElementById(i);
+const TK=localStorage.getItem('cobrapro_token');
+const pes=n=>"$"+Number(n||0).toLocaleString("es-MX",{maximumFractionDigits:0});
+const sem=p=>p>=60?"var(--c4)":p>=30?"var(--c5)":"var(--c1)";
+const PAL=["var(--c4)","var(--c3)","var(--c2)","var(--c5)","var(--c1)","#64748B","#94A3B8"];
+const api=(p)=>fetch(p,{headers:{Authorization:'Bearer '+TK}}).then(r=>{
+  if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); });
+
+const fmtFecha=iso=>{const[a,m,d]=iso.split('-');
+  return d+'/'+m+'/'+a.slice(2);};
+// Retrocede n semanas desde un ISO, sin asumir en qué día arranca el ciclo
+const menosSemanas=(iso,n)=>{const[a,m,d]=iso.split('-').map(Number);
+  const t=new Date(a,m-1,d); t.setDate(t.getDate()-7*n);
+  return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0');};
+
+function aro(el,pct,c1,c2,txt,sub){
+  const R=40,C=2*Math.PI*R,g="g"+el.id;
+  el.innerHTML=`<svg viewBox="0 0 100 100"><defs>
+    <linearGradient id="${g}" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c2}"/></linearGradient>
+    <filter id="f${g}" x="-55%" y="-55%" width="210%" height="210%">
+      <feGaussianBlur stdDeviation="3" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+    <circle cx="50" cy="50" r="${R}" fill="none" stroke="rgba(120,150,220,.12)" stroke-width="9"/>
+    <circle cx="50" cy="50" r="${R}" fill="none" stroke="url(#${g})" stroke-width="9"
+      stroke-linecap="round" filter="url(#f${g})" stroke-dasharray="0 ${C}"
+      data-da="${Math.min(Math.max(pct,0),100)/100*C} ${C}"/></svg>
+    <div class="mid"><b>${txt}</b><s>${sub}</s></div>`;
+  const c=el.querySelector("[data-da]");
+  requestAnimationFrame(()=>c.setAttribute("stroke-dasharray",c.dataset.da));
+}
+
+function pintar(d){
+  const T=d.total, C=d.comparativo;
+  $("vent").textContent="Recuperación medida del "+fmtFecha(d.ventana.desde)+" al "+fmtFecha(d.ventana.hasta);
+
+  /* aviso si la ventana sigue abierta */
+  const hoy=new Date(); hoy.setHours(0,0,0,0);
+  const [ya,ym,yd]=d.ventana.hasta.split('-').map(Number);
+  const fin=new Date(ya,ym-1,yd);
+  $("aviso").innerHTML = fin>=hoy
+    ? `<div class="aviso">La ventana de recuperación de este ciclo <b>todavía no cierra</b>
+       (termina el ${fmtFecha(d.ventana.hasta)}). Los recuperados van a seguir subiendo:
+       no compares este número contra ciclos ya cerrados.</div>` : '';
+
+  if(!T.asignados){
+    $("bento").innerHTML='<div class="vacio">Sin lista<b>Este ciclo no generó lista de morosos.</b></div>';
+    return;
+  }
+
+  const canal=(t,tono,dat,total,txt)=>`
+    <div class="canal" style="--tono:${tono}">
+      <h3>${t}</h3>
+      <div class="big">${dat.efectividad}<i>%</i></div>
+      <div class="pista"><i data-w="${dat.efectividad}"></i></div>
+      <div class="sub"><em>${dat.recuperados}</em> de <em>${dat.tocados}</em> ${txt}
+        · <em>${pes(dat.monto)}</em> recuperados<br>
+        ${total? Math.round(dat.tocados/total*100):0}% de la lista</div>
+    </div>`;
+
+  $("bento").innerHTML=`
+    <div class="t anillo"><div class="et">Cobertura</div><div class="aro" id="a1"></div>
+      <div class="nota" id="n1"></div></div>
+    <div class="t anillo"><div class="et">Efectividad del gerente</div><div class="aro" id="a2"></div>
+      <div class="nota" id="n2"></div></div>
+    <div class="t anillo"><div class="et">Validación del supervisor</div><div class="aro" id="a3"></div>
+      <div class="nota" id="n3"></div></div>
+
+    <div class="t canales"><div class="et">Comparativo por canal <b>quién recuperó y cuánto</b></div>
+      <div class="cgrid">
+        ${canal('Gestión del gerente','var(--c4)',C.humano,T.asignados,'gestionados pagaron')}
+        ${canal('Llamada del IVR','var(--c3)',C.ivr,T.asignados,'llamados pagaron')}
+        ${canal('Nadie los tocó','var(--c1)',C.sin_gestion,T.asignados,'pagaron solos')}
+      </div></div>
+
+    <div class="t escalera"><div class="et">Escalera del catálogo <b>% que sí pagó</b></div>
+      <div id="esc"></div></div>
+
+    <div class="t sucs"><div class="et">Sucursales <b>efectividad</b></div>
+      <div class="barras" id="barras"></div></div>
+
+    <div class="t gente"><div class="et">Gerentes y rutas <b>ordenado por efectividad</b></div>
+      <table class="tb"><thead><tr>
+        <th></th><th>Ruta</th><th>Sucursal</th><th class="r">Lista</th><th class="r">Gestionados</th>
+        <th class="r">Recuperados</th><th style="width:15%">Efectividad</th><th class="r">%</th>
+        <th class="r">Recuperado</th></tr></thead><tbody id="tb"></tbody></table></div>`;
+
+  aro($("a1"),T.cobertura,"#22D3EE","#A855F7",T.cobertura+"%","de la lista");
+  aro($("a2"),T.efectividad,"#A3E635","#22D3EE",T.efectividad+"%","recuperó");
+  aro($("a3"),T.validacion,"#A855F7","#FF2E93",T.validacion+"%","revisado");
+  $("n1").innerHTML=`<em>${T.gestionados}</em> gestionados de <em>${T.asignados}</em> morosos`;
+  $("n2").innerHTML=`<em>${T.recuperados}</em> pagaron · <em>${pes(T.montoRecuperado)}</em> de <em>${pes(T.montoAtraso)}</em> en atraso`;
+  $("n3").innerHTML=`<em>${T.validados}</em> validadas · <em>${T.conEvidencia}</em> con foto`;
+
+  /* escalera del catálogo */
+  $("esc").innerHTML=d.por_resultado.length
+    ? d.por_resultado.map((r,i)=>`
+      <div class="erow"><span class="lb" title="${r.resultado}">${r.resultado}</span>
+        <span class="pista"><i data-w="${r.efectividad}"
+          style="background:linear-gradient(90deg,${PAL[i%PAL.length]},${PAL[i%PAL.length]}55);
+                 box-shadow:0 0 16px -4px ${PAL[i%PAL.length]}"></i></span>
+        <span class="pc" style="color:${PAL[i%PAL.length]}">${r.efectividad}%</span>
+        <span class="nn">${r.recuperados}/${r.gestionados}</span></div>`).join('')
+    : '<div class="vacio" style="grid-column:auto">Sin gestiones humanas en este ciclo</div>';
+
+  /* sucursales */
+  $("barras").innerHTML=d.por_sucursal.map(s=>{
+    const h=Math.min(s.efectividad,100);
+    return `<div class="bcol"><div class="btubo">
+      <div class="bfill" data-h="${h}" style="background:linear-gradient(180deg,${sem(s.efectividad)},${sem(s.efectividad)}22);box-shadow:0 0 24px -6px ${sem(s.efectividad)}">
+      <span style="color:${sem(s.efectividad)}">${s.efectividad}%</span></div></div>
+      <div class="bnom" title="${s.nombre}">${s.nombre}</div></div>`;}).join('');
+
+  /* gerentes */
+  $("tb").innerHTML=d.por_cobrador.map((c,i)=>`
+    <tr><td class="pos">${i+1}</td>
+      <td><b>${c.nombre}</b></td>
+      <td style="color:var(--tn)">${c.nombre===c.sucursal?'':''}${_suc(d,c.sucursalId)}</td>
+      <td class="n r">${c.asignados}</td>
+      <td class="n r">${c.gestionados}</td>
+      <td class="n r">${c.recuperados}</td>
+      <td><span class="mini"><i data-w="${c.efectividad}" style="background:${sem(c.efectividad)};box-shadow:0 0 10px -2px ${sem(c.efectividad)}"></i></span></td>
+      <td class="n r" style="color:${sem(c.efectividad)};font-weight:700">${c.efectividad}%</td>
+      <td class="n r">${pes(c.montoRecuperado)}</td></tr>`).join('');
+
+  requestAnimationFrame(()=>{
+    document.querySelectorAll('[data-w]').forEach(e=>e.style.width=e.dataset.w+'%');
+    document.querySelectorAll('[data-h]').forEach(e=>e.style.height=e.dataset.h+'%');
+  });
+}
+function _suc(d,id){const s=d.por_sucursal.find(x=>x.sucursalId===id);return s?s.nombre:'—';}
+
+/* ---- arranque: la primera consulta define el ciclo, el selector retrocede de 7 en 7 ---- */
+(async()=>{
+  if(!TK){ $("bento").innerHTML='<div class="vacio">Sin sesión<b>Abre esta vista desde el panel de CobraPro, ya con sesión iniciada.</b></div>'; return; }
+  try{
+    const base=await api('/api/contactos/efectividad');
+    $("sel-semana").innerHTML=Array.from({length:12},(_,k)=>{
+      const iso=menosSemanas(base.semana,k);
+      return `<option value="${iso}">${k===0?'Ciclo actual · ':''}${fmtFecha(iso)}</option>`;}).join('');
+    pintar(base);
+    $("sel-semana").onchange=async e=>{
+      $("bento").innerHTML='<div class="cargando">Consultando…</div>';
+      try{ pintar(await api('/api/contactos/efectividad?semana='+e.target.value)); }
+      catch(err){ $("bento").innerHTML='<div class="vacio">Error<b>'+err.message+'</b></div>'; }
+    };
+  }catch(err){
+    $("bento").innerHTML='<div class="vacio">No se pudo consultar<b>'+err.message+' — revisa que la sesión siga activa.</b></div>';
+  }
+})();
+</script>
+</body>
+</html>
