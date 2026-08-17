@@ -202,8 +202,13 @@ function pintar(d){
   const hoy=new Date(); hoy.setHours(0,0,0,0);
   const [ya,ym,yd]=d.ventana.hasta.split('-').map(Number);
   const fin=new Date(ya,ym-1,yd);
-  $("aviso").innerHTML = fin>=hoy
-    ? `<div class="aviso">La ventana de recuperación de este ciclo <b>todavía no cierra</b>
+  $("aviso").innerHTML = (!T.gestionados && !T.ivr_tocados && fin>=hoy)
+    ? `<div class="aviso">Esta lista <b>todavía no entra a gestión</b>. Se arma con los morosos
+       del ${fmtFecha(d.semana)} y los gerentes la trabajan del ${fmtFecha(d.ventana.desde)}
+       al ${fmtFecha(d.ventana.hasta)}. Mientras el ciclo no cierre, la lista sale inflada porque
+       casi nadie ha cubierto su tarifa completa.</div>`
+    : fin>=hoy
+    ? `<div class="aviso">La ventana de recuperación <b>todavía no cierra</b>
        (termina el ${fmtFecha(d.ventana.hasta)}). Los recuperados van a seguir subiendo:
        no compares este número contra ciclos ya cerrados.</div>` : '';
 
@@ -303,9 +308,12 @@ function _suc(d,id){const s=d.por_sucursal.find(x=>x.sucursalId===id);return s?s
   if(!TK){ $("bento").innerHTML='<div class="vacio">Sin sesión<b>Abre esta vista desde el panel de CobraPro, ya con sesión iniciada.</b></div>'; return; }
   try{
     const base=await api('/api/contactos/efectividad');
-    $("sel-semana").innerHTML=Array.from({length:12},(_,k)=>{
-      const iso=menosSemanas(base.semana,k);
-      return `<option value="${iso}">${k===0?'Ciclo actual · ':''}${fmtFecha(iso)}</option>`;}).join('');
+    // k negativo = ciclos posteriores (lista todavía sin trabajar); k positivo = ciclos ya cerrados
+    $("sel-semana").innerHTML=Array.from({length:14},(_,j)=>{
+      const k=j-2, iso=menosSemanas(base.semana,k);
+      const etq = k<0 ? 'Lista en curso · '
+                : k===0 ? 'Trabajándose ahora · ' : '';
+      return `<option value="${iso}" ${k===0?'selected':''}>${etq}${fmtFecha(iso)}</option>`;}).join('');
     pintar(base);
     $("sel-semana").onchange=async e=>{
       $("bento").innerHTML='<div class="cargando">Consultando…</div>';
