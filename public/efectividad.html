@@ -85,8 +85,29 @@ body{
 .escalera{grid-column:span 7;min-height:280px}
 .erow{display:flex;align-items:center;gap:11px;padding:7px 0}
 .erow .lb{font-size:12.5px;width:132px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.erow .pista{flex:1;height:20px;background:rgba(120,150,220,.09);border-radius:6px;overflow:hidden;position:relative}
-.erow .pista i{display:block;height:100%;width:0;border-radius:6px;transition:width .95s cubic-bezier(.2,.85,.3,1)}
+.erow .pista{flex:1;height:20px;background:rgba(120,150,220,.09);border-radius:6px;position:relative}
+.erow .pista i{display:block;height:100%;width:0;border-radius:6px;position:relative;
+  transition:width .95s cubic-bezier(.2,.85,.3,1)}
+
+/* barrido de luz que recorre la barra, escalonado por fila */
+.erow .pista i::after{
+  content:"";position:absolute;inset:0;border-radius:6px;pointer-events:none;
+  background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.45) 50%,transparent 100%);
+  background-size:42% 100%;background-repeat:no-repeat;
+  animation:barrido 2.9s linear infinite;animation-delay:var(--retraso,0s);
+}
+@keyframes barrido{0%{background-position:-70% 0}100%{background-position:170% 0}}
+
+/* punto que late en la punta de la barra */
+.tip{position:absolute;right:0;top:50%;width:9px;height:9px;margin:-4.5px -4.5px 0 0;
+  border-radius:50%;background:currentColor;box-shadow:0 0 13px 2px currentColor}
+.tip::before,.tip::after{
+  content:"";position:absolute;left:50%;top:50%;width:24px;height:24px;margin:-12px 0 0 -12px;
+  border-radius:50%;border:1.5px solid currentColor;opacity:0;
+  animation:pulso 2.8s ease-out infinite;animation-delay:var(--retraso,0s);
+}
+.tip::after{animation-delay:calc(var(--retraso,0s) + 1.4s)}
+@keyframes pulso{0%{transform:scale(.25);opacity:.85}100%{transform:scale(1.8);opacity:0}}
 .erow .pc{font-family:var(--n);font-size:13px;font-weight:700;width:46px;text-align:right}
 .erow .nn{font-family:var(--n);font-size:11px;color:var(--tn);width:80px;text-align:right}
 
@@ -119,7 +140,10 @@ body{
 .vacio b{display:block;color:var(--tx);font-size:15px;letter-spacing:.04em;
   text-transform:none;font-family:var(--c);margin-top:10px;font-weight:400}
 @media(max-width:1240px){.escalera,.sucs{grid-column:span 12}.anillo{grid-column:span 12}}
-@media(prefers-reduced-motion:reduce){*{transition-duration:.01ms!important}}
+@media(prefers-reduced-motion:reduce){
+  *{transition-duration:.01ms!important}
+  .erow .pista i::after,.tip::before,.tip::after{animation:none;opacity:0}
+}
 </style>
 </head>
 <body>
@@ -234,13 +258,17 @@ function pintar(d){
 
   /* escalera del catálogo */
   $("esc").innerHTML=d.por_resultado.length
-    ? d.por_resultado.map((r,i)=>`
-      <div class="erow"><span class="lb" title="${r.resultado}">${r.resultado}</span>
+    ? d.por_resultado.map((r,i)=>{
+        const col=PAL[i%PAL.length];
+        return `<div class="erow"><span class="lb" title="${r.resultado}">${r.resultado}</span>
         <span class="pista"><i data-w="${r.efectividad}"
-          style="background:linear-gradient(90deg,${PAL[i%PAL.length]},${PAL[i%PAL.length]}55);
-                 box-shadow:0 0 16px -4px ${PAL[i%PAL.length]}"></i></span>
-        <span class="pc" style="color:${PAL[i%PAL.length]}">${r.efectividad}%</span>
-        <span class="nn">${r.recuperados}/${r.gestionados}</span></div>`).join('')
+          style="--retraso:${(i*0.26).toFixed(2)}s;color:${col};
+                 background:linear-gradient(90deg,${col},${col}55);
+                 box-shadow:0 0 16px -4px ${col}">${
+                 r.efectividad>0?`<span class="tip" style="--retraso:${(i*0.26).toFixed(2)}s"></span>`:''
+          }</i></span>
+        <span class="pc" style="color:${col}">${r.efectividad}%</span>
+        <span class="nn">${r.recuperados}/${r.gestionados}</span></div>`;}).join('')
     : '<div class="vacio" style="grid-column:auto">Sin gestiones humanas en este ciclo</div>';
 
   /* sucursales */
