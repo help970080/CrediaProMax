@@ -4315,9 +4315,13 @@ app.get('/api/reports/desglose', auth, rol('admin', 'supervisor', 'sucursal'), (
       const vigente = existed && (saldoIni > 0.5 || createdEsta || (esImp && saldoFin > 0.5)) && clienteActivo(s.clientId);
       if (vigente) {
         totalClientes++;
-        valorCartera += Math.max(0, saldoFin);
+        valorCartera += Math.max(0, saldoFin);   // la cartera sí crece el día que se coloca: el dinero ya salió
         const exp = expSemanal(s);
-        debito += exp;
+        // El crédito colocado ESTA semana todavía no tiene cuota que cobrar: su primer pago cae la
+        // semana siguiente. Contarlo en el débito inflaba el denominador y hundía Cobranza/débito
+        // justo en las semanas de mayor colocación. Es el mismo criterio que ya usan "sin pago" y
+        // el reporte semanal de no pagos.
+        if (!createdEsta) debito += exp;
         // sin pago: vigente que NO es venta nueva de la semana, con cobro esperado, y no abonó
         if (!createdEsta && exp > 0 && abonoSem < 0.5) { sinPago++; debitoSinPago += exp; carteraSinPago += Math.max(0, saldoFin); }
       }
