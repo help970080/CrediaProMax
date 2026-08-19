@@ -3399,7 +3399,9 @@ app.get('/api/reports/refin', auth, rol('admin','supervisor'), (req, res) => {
     nuevoMonto: refins.reduce((a,r)=>a+r.nuevoMonto,0),
     neto: refins.reduce((a,r)=>a+r.neto,0),
   };
-  res.json({ desde: desde.toISOString(), hasta: hasta.toISOString(), refins, totales });
+  // _rangoReporte devuelve timestamps en rango.desde/rango.hasta; aquí se usaban las variables
+  // sueltas `desde`/`hasta`, que no existen en este scope → ReferenceError y 500 al abrir el reporte.
+  res.json({ desde: new Date(desdeMs).toISOString(), hasta: new Date(hastaMs).toISOString(), label: rango.label, refins, totales });
 });
 
 app.get('/api/reports/recoleccion', auth, rol('admin', 'supervisor'), (req, res) => {
