@@ -3253,7 +3253,11 @@ function _numCuotasSrv(sale){
    así un pago adelantado (crédito recién colocado) SÍ se ve en el reporte. */
 function _ultimas16Cuotas(sale, abonos, liqTs){
   const anchor = sale.reestructuraAt ? new Date(sale.reestructuraAt) : (sale.createdAt ? new Date(sale.createdAt) : new Date());
-  const ahora = Date.now();
+  /* Fecha de negocio en hora de MÉXICO, nunca Date.now(): el server corre en UTC y de las 6 p.m.
+     en adelante ya está en el día siguiente. Eso movía el ciclo vigente un día antes de tiempo,
+     wkIni caía en la semana que aún no empieza y ningún abono se pintaba como "de esta semana".
+     Al mismo tiempo adelantaba el vencimiento de las cuotas por unas horas cada noche. */
+  const ahora = new Date(fechaMxHoyISO()+'T00:00:00').getTime() + 86400000 - 1;   // cierre del día MX
   const cuota = sale.cuota || 0;
   const tipo = String(sale.tipo||'').toLowerCase();
   const n = _numCuotasSrv(sale);
@@ -3278,7 +3282,7 @@ function _ultimas16Cuotas(sale, abonos, liqTs){
      la siguiente, posiblemente al doble. Eso es lo que de verdad ocurrió y el total sigue cuadrando
      en la columna Pag.; el atraso vivo se mide en "Monto en atraso" y en Contactos. */
   const pagados = new Array(fechas.length).fill(0);
-  const wkIni = _inicioCiclo(Date.now());
+  const wkIni = _inicioCiclo(new Date(fechaMxHoyISO()+'T00:00:00').getTime());
   const frescos = new Array(fechas.length).fill(false);   // dinero del ciclo EN CURSO: se pinta distinto
   const ciclo0 = _porCiclo && fechas.length ? _inicioCiclo(fechas[0]) : 0;
   (abonos||[]).forEach(m => {
