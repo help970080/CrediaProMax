@@ -968,7 +968,7 @@ async function abrirBandeja(){
     const acc = modo==='cola'
       ? `<button class="bd-b gold" onclick="bdTomar(${c.saleId})">📥 Tomar</button>`
       : modo==='mias'
-      ? `<button class="bd-b gold" onclick="abrirEntrega(${c.saleId},'${esc(c.cliente)}',${c.entregaMonto})">📦 Entregar + evidencia</button><button class="bd-b" onclick="bdSoltar(${c.saleId})">↩ Soltar</button>`
+      ? `<button class="bd-b gold" onclick="abrirEntrega(${c.saleId},'${esc(c.cliente)}',${c.entregaMonto},${c.firmado?1:0})">📦 Entregar + evidencia</button><button class="bd-b" onclick="bdSoltar(${c.saleId})">↩ Soltar</button>`
       : `<div style="font-size:.72rem;color:var(--acc)">🔒 Lo entrega ${c.tomadoPor?c.tomadoPor.nombre:'—'}</div>`;
     return `<div class="bd-card"><div style="font-weight:600">${c.cliente}</div>
       <div style="font-size:.7rem;color:var(--faint)">${c.folio} · ruta ${c.prom||'—'} · ${f}</div>
@@ -1024,16 +1024,51 @@ async function bdSoltar(id){ try{ await api('POST','/api/entregas/'+id+'/soltar'
 let _ent={saleId:null,fotoCasa:null,fotoCliente:null,lat:null,lng:null,firma:null}, _firmaCanvas=null;
 function _entOv(html){ const ov=document.createElement('div'); ov.className='entov'; ov.style.cssText='position:fixed;inset:0;background:rgba(10,15,25,.6);z-index:10000;display:flex;align-items:flex-start;justify-content:center;padding:14px;overflow:auto'; ov.onclick=e=>{if(e.target===ov)ov.remove();}; ov.innerHTML=`<div style="background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:18px;width:min(460px,96vw)">${html}</div>`; document.body.appendChild(ov); return ov; }
 const _fbtn="display:flex;align-items:center;gap:10px;width:100%;padding:12px;margin-bottom:8px;background:var(--surf-2);border:1px dashed var(--line-2);border-radius:10px;color:var(--dim);font-family:Sora;font-size:.85rem;cursor:pointer;text-align:left";
-function abrirEntrega(saleId,cliente,monto){
-  _ent={saleId,fotoCasa:null,fotoCliente:null,lat:null,lng:null,firma:null};
+function abrirEntrega(saleId,cliente,monto,yaFirmo){
+  _ent={saleId,fotoCasa:null,fotoCliente:null,lat:null,lng:null,firma:null,yaFirmo:!!yaFirmo};
+  /* Si el cliente ya firmó por link, su expediente ya está completo: solo se revisa lo que mandó
+     y se confirma. No se le pide al gerente ir a tomar foto de la casa ni del cliente. */
+  if(yaFirmo) return _entregaFirmada(saleId,cliente,monto);
   _entOv(`<h3 style="margin:0 0 2px">Entregar crédito</h3><div style="font-size:.82rem;color:var(--dim);margin-bottom:12px">${cliente} · entrega ${fmt(monto)}</div>
     <label id="fb-casa" style="${_fbtn}">🏠 <span id="fb-casa-t">Foto de la casa</span><input type="file" accept="image/*" capture="environment" style="display:none" onchange="leerFotoE(this,'casa')"></label>
     <label id="fb-cli" style="${_fbtn}">🧍 <span id="fb-cli-t">Foto del cliente</span><input type="file" accept="image/*" capture="environment" style="display:none" onchange="leerFotoE(this,'cliente')"></label>
     <button class="btn" style="width:100%;margin-bottom:8px;background:var(--surf-2);border:1px solid var(--line);color:var(--dim);padding:11px;border-radius:9px;font-family:Sora;cursor:pointer" id="geo-btn" onclick="capturarGeoE()">📍 Capturar ubicación GPS</button>
     <div id="geo-txt" style="font-size:.76rem;color:var(--faint);margin-bottom:8px">Ubicación: sin capturar</div>
-    <button id="fb-pag" style="${_fbtn}" onclick="abrirPagareFirmaE()">📄 <span id="fb-pag-t">Pagaré — firma del cliente</span></button>
+    ${yaFirmo
+      ? '<div style="padding:11px;margin-bottom:8px;border:1px solid var(--grn);border-radius:9px;background:rgba(80,160,100,.08);color:var(--grn);font-size:.84rem;font-weight:700">✅ Pagaré ya firmado por el cliente en su celular</div>'
+      : `<button id="fb-pag" style="${_fbtn}" onclick="abrirPagareFirmaE()">📄 <span id="fb-pag-t">Pagaré — firma del cliente</span></button>`}
     <button id="ent-ok" onclick="confirmarEntregaE(this)" style="width:100%;margin-top:4px;background:var(--acc);color:#1b2330;border:none;padding:12px;border-radius:9px;font-family:Sora;font-weight:700;cursor:pointer">Confirmar entrega</button>
     <button onclick="this.closest('.entov').remove()" style="width:100%;margin-top:8px;background:var(--surf-2);border:1px solid var(--line);color:var(--dim);padding:10px;border-radius:9px;font-family:Sora;cursor:pointer">Cancelar</button>`);
+}
+async function _entregaFirmada(saleId,cliente,monto){
+  _entOv(`<h3 style="margin:0 0 2px">Entregar crédito</h3>
+    <div style="font-size:.82rem;color:var(--dim);margin-bottom:12px">${cliente} · entrega ${fmt(monto)}</div>
+    <div id="ef-box" style="color:var(--faint);font-size:.85rem;padding:16px 0">Cargando lo que mandó el cliente…</div>`);
+  let e;
+  try{ e=await api('GET','/api/sales/'+saleId+'/firma-evidencia'); }
+  catch(err){ document.getElementById('ef-box').innerHTML='<span style="color:var(--red)">'+err.message+'</span>'; return; }
+  const img=(src,t)=> src
+    ? `<div style="flex:1;min-width:110px"><div style="font-size:.68rem;color:var(--faint);margin-bottom:4px">${t}</div>
+       <img src="${src}" onclick="_zoomFoto(this.src)" style="width:100%;border-radius:8px;border:1px solid var(--line);cursor:zoom-in"></div>`
+    : `<div style="flex:1;min-width:110px"><div style="font-size:.68rem;color:var(--faint);margin-bottom:4px">${t}</div>
+       <div style="padding:18px 6px;text-align:center;color:var(--faint);font-size:.72rem;border:1px dashed var(--line);border-radius:8px">no enviada</div></div>`;
+  document.getElementById('ef-box').innerHTML=`
+    <div style="padding:9px 11px;border:1px solid var(--grn);border-radius:9px;background:rgba(80,160,100,.08);color:var(--grn);font-size:.8rem;font-weight:700;margin-bottom:11px">
+      ✅ Firmado por el cliente · ${e.fecha||''} ${e.hora||''}</div>
+    <div style="display:flex;gap:8px;margin-bottom:9px">${img(e.ineFrente,'INE frente')}${img(e.selfie,'Con su INE')}</div>
+    <div style="font-size:.68rem;color:var(--faint);margin-bottom:4px">Firma</div>
+    <img src="${e.firma||''}" style="width:100%;background:#fff;border-radius:8px;border:1px solid var(--line);margin-bottom:10px">
+    <div style="font-size:.68rem;color:var(--faint);margin-bottom:12px">Comprobante ${e.hashDoc||''}</div>
+    <button class="btn" style="width:100%;margin-bottom:8px;background:var(--surf-2);border:1px solid var(--line);color:var(--dim);padding:11px;border-radius:9px;font-family:Sora;cursor:pointer" id="geo-btn" onclick="capturarGeoE()">📍 Capturar ubicación (opcional)</button>
+    <div id="geo-txt" style="font-size:.76rem;color:var(--faint);margin-bottom:10px">Ubicación: sin capturar</div>
+    <button id="ent-ok" onclick="confirmarEntregaE(this)" style="width:100%;background:var(--acc);color:#1b2330;border:none;padding:12px;border-radius:9px;font-family:Sora;font-weight:700;cursor:pointer">Confirmar entrega de ${fmt(monto)}</button>
+    <button onclick="this.closest('.entov').remove()" style="width:100%;margin-top:8px;background:var(--surf-2);border:1px solid var(--line);color:var(--dim);padding:10px;border-radius:9px;font-family:Sora;cursor:pointer">Cancelar</button>`;
+}
+function _zoomFoto(src){
+  const d=document.createElement('div');
+  d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:9999;display:flex;align-items:center;justify-content:center;padding:14px';
+  d.innerHTML='<img src="'+src+'" style="max-width:100%;max-height:100%;border-radius:8px">';
+  d.onclick=()=>d.remove(); document.body.appendChild(d);
 }
 // Comprime la foto con bajo consumo de memoria (evita el base64 gigante que tumbaba teléfonos de gama baja)
 function _fotoComprimida(f, MAX, Q){
@@ -1084,8 +1119,13 @@ function initFirmaPadE(canvas){ _firmaCanvas=canvas; const ctx=canvas.getContext
 function limpiarFirmaE(){ if(_firmaCanvas) _firmaCanvas.getContext('2d').clearRect(0,0,_firmaCanvas.width,_firmaCanvas.height); }
 function guardarFirmaE(){ if(!_firmaCanvas||_firmaCanvas._empty()){ toast('El cliente debe firmar primero'); return; } _ent.firma=_firmaCanvas.toDataURL('image/png'); const p=document.getElementById('fb-pag'); p.style.borderColor='var(--grn)'; document.getElementById('fb-pag-t').textContent='✓ Pagaré firmado'; _firmaCanvas.closest('.entov').remove(); }
 async function confirmarEntregaE(btn){
-  if(!_ent.fotoCasa||!_ent.fotoCliente){ toast('Faltan las fotos: casa y cliente'); return; }
-  if(!_ent.firma){ toast('Falta la firma del pagaré'); return; }
+  /* Solo se exigen fotos y firma cuando NO hubo firma por link. Si el cliente ya mandó su INE,
+     selfie y firma desde su celular, el expediente está completo y no hay visita domiciliaria
+     que documentar: el gerente revisa lo que llegó y confirma. */
+  if(!_ent.yaFirmo){
+    if(!_ent.fotoCasa || !_ent.fotoCliente){ toast('Faltan las fotos: casa y cliente'); return; }
+    if(!_ent.firma){ toast('Falta la firma del pagaré'); return; }
+  }
   btn.disabled=true; btn.textContent='Enviando…';
   try{ await api('POST','/api/sales/'+_ent.saleId+'/entregar',{lat:_ent.lat,lng:_ent.lng,fotoCasa:_ent.fotoCasa,fotoCliente:_ent.fotoCliente,firma:_ent.firma});
     document.querySelectorAll('.entov').forEach(o=>o.remove()); toast('Crédito entregado · pagaré firmado'); cargarCaja(); abrirBandeja();
