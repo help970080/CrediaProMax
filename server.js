@@ -1356,9 +1356,11 @@ app.post('/api/firma/:token', async (req, res) => {
 
     let { ineFrente, ineReverso, selfie, firma, acepto } = req.body || {};
     if (!acepto) return res.status(400).json({ error: 'Falta aceptar el contrato' });
+    // Obligatorios: frente de la INE, selfie con el documento y firma. El reverso NO se pide:
+    // solo trae datos que ya están capturados en el expediente, y cada foto de más es una
+    // oportunidad de que el cliente se atore y termine llamando al asesor. Si llega, se guarda.
     const falta = [];
     if (!ineFrente) falta.push('el frente de tu INE');
-    if (!ineReverso) falta.push('el reverso de tu INE');
     if (!selfie) falta.push('la foto sosteniendo tu INE');
     if (!firma) falta.push('tu firma');
     if (falta.length) return res.status(400).json({ error: 'Falta ' + falta.join(', ') });
@@ -1368,13 +1370,13 @@ app.post('/api/firma/:token', async (req, res) => {
     // Las 4 imágenes salen del blob y quedan como "foto:N" (misma vía que la entrega)
     if (FOTOS) {
       ineFrente  = await fotoGuardar(ineFrente,  'sale:' + s.id + ':ineFrente');
-      ineReverso = await fotoGuardar(ineReverso, 'sale:' + s.id + ':ineReverso');
+      if (ineReverso) ineReverso = await fotoGuardar(ineReverso, 'sale:' + s.id + ':ineReverso');
       selfie     = await fotoGuardar(selfie,     'sale:' + s.id + ':selfie');
       firma      = await fotoGuardar(firma,      'sale:' + s.id + ':firmaDigital');
     }
     s.firmaDigital = {
       fecha: fechaMxHoyDDMM(), hora: horaMxHHMM(), ts: new Date().toISOString(),
-      ineFrente, ineReverso, selfie, firma,
+      ineFrente, ineReverso: ineReverso || null, selfie, firma,
       hashDoc: hash,                                  // qué documento aceptó
       ip: firmaIP(req), agente: String(req.headers['user-agent'] || '').slice(0, 180),
       via: 'link',
