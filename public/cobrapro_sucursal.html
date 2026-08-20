@@ -960,6 +960,10 @@ async function abrirBandeja(){
   const esc=s=>String(s||'').replace(/'/g,"\\'");
   const card=(c,modo)=>{
     const f=new Date(c.createdAt).toLocaleDateString('es-MX',{day:'2-digit',month:'short'});
+    // Firma por link: solo si la agencia lo tiene prendido y el crédito aún no está firmado
+    const fir = !d.firmaOn ? ''
+      : c.firmado ? '<div style="font-size:.72rem;color:var(--grn);margin-top:6px">✅ Contrato firmado por el cliente</div>'
+      : `<button class="bd-b" style="border-color:#25D366;color:#25D366" onclick="mandarFirma(${c.saleId})">📲 ${c.linkEnviado?'Reenviar':'Mandar'} link de firma</button>`;
     const acc = modo==='cola'
       ? `<button class="bd-b gold" onclick="bdTomar(${c.saleId})">📥 Tomar</button>`
       : modo==='mias'
@@ -968,7 +972,7 @@ async function abrirBandeja(){
     return `<div class="bd-card"><div style="font-weight:600">${c.cliente}</div>
       <div style="font-size:.7rem;color:var(--faint)">${c.folio} · ruta ${c.prom||'—'} · ${f}</div>
       <div style="font-size:.72rem;color:var(--dim);margin-top:3px">📍 ${c.dir||'—'}</div>
-      <div style="margin-top:5px;font-size:.8rem">Entrega: <b style="color:var(--grn)">${fmt(c.entregaMonto)}</b></div>${acc}</div>`;
+      <div style="margin-top:5px;font-size:.8rem">Entrega: <b style="color:var(--grn)">${fmt(c.entregaMonto)}</b></div>${acc}${fir}</div>`;
   };
   const sec=(t,arr,modo,vacio)=>`<div style="font-size:.76rem;color:var(--dim);font-weight:600;margin:12px 0 6px">${t}</div><div class="bd-grid">${arr.length?arr.map(c=>card(c,modo)).join(''):'<div style="color:var(--faint);font-size:.82rem;padding:6px">'+vacio+'</div>'}</div>`;
   let ov=document.getElementById('bd-ov');
@@ -982,6 +986,19 @@ async function abrirBandeja(){
     ${sec('Por entregar (bandeja común)',d.bandeja,'cola','No hay créditos por entregar.')}
     ${d.deOtros.length?sec('Tomados por otros',d.deOtros,'otros',''):''}
   </div>`;
+}
+/* Pide el link de firma y abre WhatsApp con el mensaje ya escrito.
+   Si no hay teléfono del cliente, abre WhatsApp sin destinatario para elegir el contacto. */
+async function mandarFirma(saleId){
+  try{
+    const r=await api('POST','/api/sales/'+saleId+'/firma-link',{});
+    let tel=String(r.tel||'').replace(/\D/g,'');
+    if(tel.length===10) tel='52'+tel;
+    const url='https://wa.me/'+(tel||'')+'?text='+encodeURIComponent(r.texto);
+    window.open(url,'_blank');
+    toast('Link generado para '+(r.cliente||r.folio));
+    abrirBandeja();
+  }catch(e){ toast(e.message); }
 }
 async function bdTomar(id){ try{ await api('POST','/api/entregas/'+id+'/tomar'); abrirBandeja(); }catch(e){ toast(e.message); } }
 async function bdSoltar(id){ try{ await api('POST','/api/entregas/'+id+'/soltar'); abrirBandeja(); }catch(e){ toast(e.message); } }
