@@ -1302,6 +1302,19 @@ function firmaIP(req) {
   return String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
 }
 
+// Ver la evidencia que ya mandó el cliente, para revisarla antes de entregar
+app.get('/api/sales/:id/firma-evidencia', auth, rol('admin', 'supervisor', 'sucursal', 'jc'), async (req, res) => {
+  const s = db.sales.find(x => x.id == req.params.id);
+  if (!s || !s.firmaDigital) return res.status(404).json({ error: 'Este crédito no tiene firma digital' });
+  const f = await fotoExpandir(s.firmaDigital, ['ineFrente', 'ineReverso', 'selfie', 'firma']);
+  const c = db.clients.find(x => x.id === s.clientId) || {};
+  res.json({
+    folio: s.folio, cliente: c.nombre || '', fecha: f.fecha, hora: f.hora,
+    ineFrente: f.ineFrente || null, ineReverso: f.ineReverso || null, selfie: f.selfie || null, firma: f.firma || null,
+    hashDoc: f.hashDoc, ip: f.ip,
+  });
+});
+
 // Generar (o regenerar) el link para mandarlo por WhatsApp
 app.post('/api/sales/:id/firma-link', auth, rol('admin', 'supervisor', 'sucursal', 'jc'), (req, res) => {
   if (!firmaHabilitada()) return res.status(404).json({ error: 'Firma digital no habilitada en esta agencia' });
@@ -1402,11 +1415,18 @@ app.post('/api/sales/:id/entregar', auth, rol('admin', 'supervisor', 'sucursal',
   if (s.entregado === true || s.entrega) return res.status(409).json({ error: 'Ese crédito ya fue entregado' });
   const { lat, lng, firma: _firmaIn, fotoCasa: _casaIn, fotoCliente: _cliIn } = req.body;
   let fotoCasa = _casaIn, fotoCliente = _cliIn, firma = _firmaIn;
-  if (!fotoCasa || !fotoCliente) return res.status(400).json({ error: 'Sube la foto de la casa y la foto del cliente' });
-  // Si el cliente ya firmó por link, esa firma vale y no se le vuelve a pedir en la entrega.
+  /* Si el cliente ya firmó por link, su expediente YA tiene INE, selfie y firma. Volver a pedir
+     foto de la casa y del cliente obliga a una visita domiciliaria que en este flujo no ocurre
+     (el cliente firma desde su casa y el dinero se entrega en sucursal). Se reutiliza lo que él
+     mandó: su selfie hace de foto del cliente y la foto de la casa queda opcional. */
   const _yaFirmoLink = !!(s.firmaDigital && s.firmaDigital.firma);
-  if (!firma && !_yaFirmoLink) return res.status(400).json({ error: 'Falta la firma del pagaré del cliente' });
-  if (!firma && _yaFirmoLink) firma = s.firmaDigital.firma;
+  if (_yaFirmoLink) {
+    if (!fotoCliente) fotoCliente = s.firmaDigital.selfie || null;
+    if (!firma) firma = s.firmaDigital.firma;
+  } else {
+    if (!fotoCasa || !fotoCliente) return res.status(400).json({ error: 'Sube la foto de la casa y la foto del cliente' });
+    if (!firma) return res.status(400).json({ error: 'Falta la firma del pagaré del cliente' });
+  }
   const esJefe = req.user.rol === 'admin' || req.user.rol === 'supervisor';
   // si lo tomó alguien más, no permitir entregarlo (salvo admin/supervisor)
   if (s.tomadoPor && !(s.tomadoPor.rol === req.user.rol && s.tomadoPor.id === req.user.id) && !esJefe)
