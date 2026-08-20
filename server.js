@@ -1451,12 +1451,14 @@ app.get('/api/entregas/bandeja', auth, rol('admin', 'supervisor', 'sucursal', 'j
   const scope = scopeEntregas(req.user);
   const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
   const map = s => { const c = db.clients.find(x => x.id === s.clientId) || {}; return { saleId: s.id, folio: s.folio, cliente: c.nombre || '—', dir: [c.calle, c.col, c.ciudad].filter(Boolean).join(', '), tel: c.tel || '', prom: s.prom, sucursal: sucMap[s.sucursalId] || '—', tipo: s.tipo, monto: s.monto, entregaMonto: entregaMontoDe(s), createdAt: s.createdAt, tomadoPor: s.tomadoPor || null,
-    firmado: !!s.firmaDigital, linkEnviado: !!s.firmaLink }; };
+    firmado: !!s.firmaDigital, firmadoEl: s.firmaDigital ? s.firmaDigital.fecha : null,
+    linkEnviado: !!s.firmaLink, linkFecha: s.firmaLink ? s.firmaLink.creado : null }; };
   const pend = db.sales.filter(s => s.entregado !== true && (scope == null || s.sucursalId === scope));
   const mine = s => s.tomadoPor && s.tomadoPor.rol === req.user.rol && s.tomadoPor.id === req.user.id;
   res.json({
     rol: req.user.rol, posicion: Math.round(posicionCash(req.user)), disponible: Math.round(disponibleEntrega(req.user)),
     firmaOn: firmaHabilitada(),
+    firmadosPendientes: firmaHabilitada() ? pend.filter(s => s.firmaDigital).length : 0,
     bandeja: pend.filter(s => !s.tomadoPor).map(map).reverse(),
     mias: pend.filter(mine).map(map).reverse(),
     deOtros: pend.filter(s => s.tomadoPor && !mine(s)).map(map).reverse()
