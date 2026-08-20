@@ -1261,6 +1261,130 @@ app.get('/api/jc/panel', auth, rol('jc'), async (req, res) => {
   res.json({ caja: jcCajaDe(req.user.id), sucursal: (db.sucursales.find(s => s.id === sucId) || {}).nombre || null, pendientes, recibidas: recibidas.slice(0, 30), porEntregar, entregados: entregados30 });
 });
 // Reenviar un crédito existente a la cola de entrega del JC (para reconciliar)
+/* ---------- FIRMA DIGITAL POR LINK (contrato + pagaré) ----------
+   El cliente firma desde su celular sin cuenta ni contraseña. Se prende por agencia con
+   db.config.firmaDigital; donde está apagado, los endpoints responden 404 y nadie lo ve.
+   El token sigue el mismo patrón que el de fotos: scope propio, tenant adentro, y no sirve
+   para ningún otro endpoint. Lleva jti para poder invalidarlo al usarse o al reenviarlo. */
+/* Se prende SOLO con la variable de entorno FIRMA_TENANTS (ids separados por coma, ej "2").
+   Se eligió env y no un dato en el blob para que no haya migración, para poder apagarlo al
+   instante desde Render sin desplegar, y para que sea imposible encenderlo por accidente en
+   otra agencia: donde no está en la lista, los endpoints responden 404 y el botón ni aparece. */
+const FIRMA_TENANTS = new Set(String(process.env.FIRMA_TENANTS || '').split(',').map(x => x.trim()).filter(Boolean));
+function firmaHabilitada() {
+  const st = als.getStore();
+  return !!(st && st.tenantId != null && FIRMA_TENANTS.has(String(st.tenantId)));
+}
+function firmaTokenFirmar(saleId, tenantId, jti) {
+  return jwt.sign({ scope: 'firma', saleId: +saleId, tenantId: +tenantId, jti }, JWT_SECRET, { expiresIn: '30d' });
+}
+// Lo que el cliente ve y firma. Se hashea para poder probar DESPUÉS qué documento aceptó:
+// si cambia el monto, el plazo o la cuota, el hash deja de cuadrar y se nota.
+function firmaDocumento(s) {
+  const c = db.clients.find(x => x.id === s.clientId) || {};
+  const brand = (db.config && db.config.brand && db.config.brand.nombre) || 'CobraPro';
+  const suc = db.sucursales.find(x => x.id === s.sucursalId);
+  const pagos = s.tipo === 'unico' ? 1 : s.plazo;
+  return {
+    folio: s.folio, acreedor: brand, sucursal: suc ? suc.nombre : '',
+    fecha: s.createdAt, lugar: [c.ciudad, c.estado].filter(Boolean).join(', ') || (suc ? suc.nombre : ''),
+    cliente: { nombre: c.nombre || '—', domicilio: [c.calle, c.col, c.ciudad, c.estado].filter(Boolean).join(', ') || '—', tel: c.tel || '', curp: c.curp || '' },
+    monto: s.monto, total: s.total, cuota: s.cuota, pagos,
+    freq: s.tipo === 'diario' ? 'diarios' : (s.tipo === 'unico' ? 'único' : 'semanales'),
+    primerPago: s.primerPago || 0, entregaMonto: s.entregaMonto != null ? s.entregaMonto : s.monto,
+    articulos: s.articulos || [],
+  };
+}
+function firmaHash(doc) {
+  return crypto.createHash('sha256').update(JSON.stringify(doc)).digest('hex').slice(0, 32);
+}
+function firmaIP(req) {
+  return String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+}
+
+// Generar (o regenerar) el link para mandarlo por WhatsApp
+app.post('/api/sales/:id/firma-link', auth, rol('admin', 'supervisor', 'sucursal', 'jc'), (req, res) => {
+  if (!firmaHabilitada()) return res.status(404).json({ error: 'Firma digital no habilitada en esta agencia' });
+  const s = db.sales.find(x => x.id == req.params.id);
+  if (!s) return res.status(404).json({ error: 'Crédito no encontrado' });
+  if (s.firmaDigital) return res.status(409).json({ error: 'Este crédito ya fue firmado el ' + (s.firmaDigital.fecha || '') });
+  const scope = scopeEntregas(req.user);
+  if (scope != null && s.sucursalId !== scope) return res.status(403).json({ error: 'Ese crédito no es de tu sucursal' });
+  const jti = crypto.randomBytes(9).toString('hex');
+  s.firmaLink = { jti, creado: new Date().toISOString(), por: req.user.nombre };
+  saveDB();
+  const tid = als.getStore().tenantId;
+  const token = firmaTokenFirmar(s.id, tid, jti);
+  const base = (req.headers.origin || ('https://' + req.headers.host)).replace(/\/$/, '');
+  const url = base + '/firma.html?t=' + token;
+  const c = db.clients.find(x => x.id === s.clientId) || {};
+  const marca = (db.config && db.config.brand && db.config.brand.nombre) || 'CobraPro';
+  const texto = `Hola ${(c.nombre || '').split(' ')[0] || ''}, soy de ${marca}. Para terminar tu crédito ${s.folio} entra a este link desde tu celular, revisa tu contrato y fírmalo. Vas a necesitar tu INE.\n\n${url}\n\nEl link es solo para ti y vence en 30 días.`;
+  res.json({ url, texto, folio: s.folio, cliente: c.nombre || '', tel: c.tel || '' });
+});
+
+// PÚBLICO: leer el documento a firmar
+app.get('/api/firma/:token', async (req, res) => {
+  let p;
+  try { p = jwt.verify(String(req.params.token), JWT_SECRET); } catch { return res.status(401).json({ error: 'El link venció o no es válido' }); }
+  if (p.scope !== 'firma' || p.tenantId == null) return res.status(403).json({ error: 'Link no válido' });
+  const blob = await getTenant(p.tenantId);
+  if (!blob) return res.status(404).json({ error: 'Agencia no encontrada' });
+  return als.run({ tenantId: +p.tenantId, db: blob }, () => {
+    if (!firmaHabilitada()) return res.status(404).json({ error: 'Firma digital no habilitada' });
+    const s = db.sales.find(x => x.id === p.saleId);
+    if (!s) return res.status(404).json({ error: 'Crédito no encontrado' });
+    if (!s.firmaLink || s.firmaLink.jti !== p.jti) return res.status(409).json({ error: 'Este link ya no está vigente. Pide uno nuevo.' });
+    if (s.firmaDigital) return res.json({ yaFirmado: true, fecha: s.firmaDigital.fecha });
+    res.json({ yaFirmado: false, doc: firmaDocumento(s) });
+  });
+});
+
+// PÚBLICO: recibir INE, selfie y firma
+app.post('/api/firma/:token', async (req, res) => {
+  let p;
+  try { p = jwt.verify(String(req.params.token), JWT_SECRET); } catch { return res.status(401).json({ error: 'El link venció o no es válido' }); }
+  if (p.scope !== 'firma' || p.tenantId == null) return res.status(403).json({ error: 'Link no válido' });
+  const blob = await getTenant(p.tenantId);
+  if (!blob) return res.status(404).json({ error: 'Agencia no encontrada' });
+  return als.run({ tenantId: +p.tenantId, db: blob }, async () => {
+    if (!firmaHabilitada()) return res.status(404).json({ error: 'Firma digital no habilitada' });
+    const s = db.sales.find(x => x.id === p.saleId);
+    if (!s) return res.status(404).json({ error: 'Crédito no encontrado' });
+    if (!s.firmaLink || s.firmaLink.jti !== p.jti) return res.status(409).json({ error: 'Este link ya no está vigente' });
+    if (s.firmaDigital) return res.status(409).json({ error: 'Este crédito ya fue firmado' });
+
+    let { ineFrente, ineReverso, selfie, firma, acepto } = req.body || {};
+    if (!acepto) return res.status(400).json({ error: 'Falta aceptar el contrato' });
+    const falta = [];
+    if (!ineFrente) falta.push('el frente de tu INE');
+    if (!ineReverso) falta.push('el reverso de tu INE');
+    if (!selfie) falta.push('la foto sosteniendo tu INE');
+    if (!firma) falta.push('tu firma');
+    if (falta.length) return res.status(400).json({ error: 'Falta ' + falta.join(', ') });
+
+    const doc = firmaDocumento(s);
+    const hash = firmaHash(doc);
+    // Las 4 imágenes salen del blob y quedan como "foto:N" (misma vía que la entrega)
+    if (FOTOS) {
+      ineFrente  = await fotoGuardar(ineFrente,  'sale:' + s.id + ':ineFrente');
+      ineReverso = await fotoGuardar(ineReverso, 'sale:' + s.id + ':ineReverso');
+      selfie     = await fotoGuardar(selfie,     'sale:' + s.id + ':selfie');
+      firma      = await fotoGuardar(firma,      'sale:' + s.id + ':firmaDigital');
+    }
+    s.firmaDigital = {
+      fecha: fechaMxHoyDDMM(), hora: horaMxHHMM(), ts: new Date().toISOString(),
+      ineFrente, ineReverso, selfie, firma,
+      hashDoc: hash,                                  // qué documento aceptó
+      ip: firmaIP(req), agente: String(req.headers['user-agent'] || '').slice(0, 180),
+      via: 'link',
+    };
+    s.firmaLink = null;                               // el link se quema al usarse
+    saveDB();
+    res.json({ ok: true, folio: s.folio, hash });
+  });
+});
+
 app.post('/api/sales/:id/pendiente-entrega', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
   const s = db.sales.find(x => x.id == req.params.id);
   if (!s) return res.status(404).json({ error: 'Crédito no encontrado' });
@@ -1277,7 +1401,10 @@ app.post('/api/sales/:id/entregar', auth, rol('admin', 'supervisor', 'sucursal',
   const { lat, lng, firma: _firmaIn, fotoCasa: _casaIn, fotoCliente: _cliIn } = req.body;
   let fotoCasa = _casaIn, fotoCliente = _cliIn, firma = _firmaIn;
   if (!fotoCasa || !fotoCliente) return res.status(400).json({ error: 'Sube la foto de la casa y la foto del cliente' });
-  if (!firma) return res.status(400).json({ error: 'Falta la firma del pagaré del cliente' });
+  // Si el cliente ya firmó por link, esa firma vale y no se le vuelve a pedir en la entrega.
+  const _yaFirmoLink = !!(s.firmaDigital && s.firmaDigital.firma);
+  if (!firma && !_yaFirmoLink) return res.status(400).json({ error: 'Falta la firma del pagaré del cliente' });
+  if (!firma && _yaFirmoLink) firma = s.firmaDigital.firma;
   const esJefe = req.user.rol === 'admin' || req.user.rol === 'supervisor';
   // si lo tomó alguien más, no permitir entregarlo (salvo admin/supervisor)
   if (s.tomadoPor && !(s.tomadoPor.rol === req.user.rol && s.tomadoPor.id === req.user.id) && !esJefe)
@@ -1321,11 +1448,13 @@ app.post('/api/sales/:id/entregar', auth, rol('admin', 'supervisor', 'sucursal',
 app.get('/api/entregas/bandeja', auth, rol('admin', 'supervisor', 'sucursal', 'jc'), (req, res) => {
   const scope = scopeEntregas(req.user);
   const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
-  const map = s => { const c = db.clients.find(x => x.id === s.clientId) || {}; return { saleId: s.id, folio: s.folio, cliente: c.nombre || '—', dir: [c.calle, c.col, c.ciudad].filter(Boolean).join(', '), tel: c.tel || '', prom: s.prom, sucursal: sucMap[s.sucursalId] || '—', tipo: s.tipo, monto: s.monto, entregaMonto: entregaMontoDe(s), createdAt: s.createdAt, tomadoPor: s.tomadoPor || null }; };
+  const map = s => { const c = db.clients.find(x => x.id === s.clientId) || {}; return { saleId: s.id, folio: s.folio, cliente: c.nombre || '—', dir: [c.calle, c.col, c.ciudad].filter(Boolean).join(', '), tel: c.tel || '', prom: s.prom, sucursal: sucMap[s.sucursalId] || '—', tipo: s.tipo, monto: s.monto, entregaMonto: entregaMontoDe(s), createdAt: s.createdAt, tomadoPor: s.tomadoPor || null,
+    firmado: !!s.firmaDigital, linkEnviado: !!s.firmaLink }; };
   const pend = db.sales.filter(s => s.entregado !== true && (scope == null || s.sucursalId === scope));
   const mine = s => s.tomadoPor && s.tomadoPor.rol === req.user.rol && s.tomadoPor.id === req.user.id;
   res.json({
     rol: req.user.rol, posicion: Math.round(posicionCash(req.user)), disponible: Math.round(disponibleEntrega(req.user)),
+    firmaOn: firmaHabilitada(),
     bandeja: pend.filter(s => !s.tomadoPor).map(map).reverse(),
     mias: pend.filter(mine).map(map).reverse(),
     deOtros: pend.filter(s => s.tomadoPor && !mine(s)).map(map).reverse()
@@ -3399,9 +3528,19 @@ app.get('/api/reports/refin', auth, rol('admin','supervisor'), (req, res) => {
     nuevoMonto: refins.reduce((a,r)=>a+r.nuevoMonto,0),
     neto: refins.reduce((a,r)=>a+r.neto,0),
   };
+  /* Diagnóstico: cuando el reporte sale vacío hay que poder distinguir "no hubo REFIN esta semana"
+     de "los REFIN no se están registrando por el flujo que los marca". Sin esto solo se ve un cero
+     y no hay forma de saber cuál de las dos cosas es. */
+  const _todos = db.movimientos.filter(m => m.forma === 'refin' && m.abono > 0);
+  const _ult = _todos.reduce((mx,m) => { const t=_parseFechaMx(m.fecha)||0; return t>mx.t ? {t, fecha:m.fecha} : mx; }, {t:0, fecha:null});
+  const diag = {
+    historico: _todos.length,                                   // REFIN registrados en toda la historia
+    ultimo: _ult.fecha,                                         // fecha del último
+    creditosConRefinDe: db.sales.filter(x => x.refinDe != null).length,   // créditos nacidos de un REFIN
+  };
   // _rangoReporte devuelve timestamps en rango.desde/rango.hasta; aquí se usaban las variables
   // sueltas `desde`/`hasta`, que no existen en este scope → ReferenceError y 500 al abrir el reporte.
-  res.json({ desde: new Date(desdeMs).toISOString(), hasta: new Date(hastaMs).toISOString(), label: rango.label, refins, totales });
+  res.json({ desde: new Date(desdeMs).toISOString(), hasta: new Date(hastaMs).toISOString(), label: rango.label, refins, totales, diag });
 });
 
 app.get('/api/reports/recoleccion', auth, rol('admin', 'supervisor'), (req, res) => {
