@@ -165,7 +165,7 @@
   <div class="hmeta">
     <div class="live"><span class="dot"></span> Sincronizado en vivo</div>
     <div class="clock mono" id="clock"></div>
-    <button onclick="abrirBandeja()" style="background:var(--vio);border:1px solid var(--vio);color:#fff;font-family:'Sora';font-weight:700;font-size:.78rem;padding:7px 12px;border-radius:8px;cursor:pointer">📦 Entregas</button>
+    <button onclick="abrirBandeja()" style="position:relative;background:var(--vio);border:1px solid var(--vio);color:#fff;font-family:'Sora';font-weight:700;font-size:.78rem;padding:7px 12px;border-radius:8px;cursor:pointer">📦 Entregas<span id="bd-badge" style="display:none;position:absolute;top:-7px;right:-7px;min-width:19px;height:19px;padding:0 5px;background:#25D366;color:#0b2b18;border-radius:10px;font-size:.66rem;line-height:19px;text-align:center;font-weight:800"></span></button>
     <button onclick="abrirDesglose()" style="background:var(--acc);border:1px solid var(--acc);color:#1b2330;font-family:'Sora';font-weight:700;font-size:.78rem;padding:7px 12px;border-radius:8px;cursor:pointer">📋 Desglose</button>
     <button onclick="salir()" style="background:var(--surf-3);border:1px solid var(--line-2);color:var(--dim);font-family:'Sora';font-size:.78rem;padding:7px 12px;border-radius:8px;cursor:pointer">Salir</button>
   </div>
@@ -962,8 +962,9 @@ async function abrirBandeja(){
     const f=new Date(c.createdAt).toLocaleDateString('es-MX',{day:'2-digit',month:'short'});
     // Firma por link: solo si la agencia lo tiene prendido y el crédito aún no está firmado
     const fir = !d.firmaOn ? ''
-      : c.firmado ? '<div style="font-size:.72rem;color:var(--grn);margin-top:6px">✅ Contrato firmado por el cliente</div>'
-      : `<button class="bd-b" style="border-color:#25D366;color:#25D366" onclick="mandarFirma(${c.saleId})">📲 ${c.linkEnviado?'Reenviar':'Mandar'} link de firma</button>`;
+      : c.firmado ? `<div style="font-size:.72rem;color:var(--grn);margin-top:6px;font-weight:700">✅ Firmado por el cliente${c.firmadoEl?' · '+c.firmadoEl:''}</div>`
+      : c.linkEnviado ? `<button class="bd-b" style="border-color:#caa23a;color:#caa23a" onclick="mandarFirma(${c.saleId})">📲 Reenviar link · sin firmar hace ${dias(c.linkFecha)} d</button>`
+      : `<button class="bd-b" style="border-color:#25D366;color:#25D366" onclick="mandarFirma(${c.saleId})">📲 Mandar link de firma</button>`;
     const acc = modo==='cola'
       ? `<button class="bd-b gold" onclick="bdTomar(${c.saleId})">📥 Tomar</button>`
       : modo==='mias'
@@ -974,7 +975,8 @@ async function abrirBandeja(){
       <div style="font-size:.72rem;color:var(--dim);margin-top:3px">📍 ${c.dir||'—'}</div>
       <div style="margin-top:5px;font-size:.8rem">Entrega: <b style="color:var(--grn)">${fmt(c.entregaMonto)}</b></div>${acc}${fir}</div>`;
   };
-  const sec=(t,arr,modo,vacio)=>`<div style="font-size:.76rem;color:var(--dim);font-weight:600;margin:12px 0 6px">${t}</div><div class="bd-grid">${arr.length?arr.map(c=>card(c,modo)).join(''):'<div style="color:var(--faint);font-size:.82rem;padding:6px">'+vacio+'</div>'}</div>`;
+  const dias=iso=>{ if(!iso) return 0; return Math.floor((Date.now()-new Date(iso).getTime())/86400000); };
+  const sec=(t,arr,modo,vacio)=>`<div style="font-size:.76rem;color:var(--dim);font-weight:600;margin:12px 0 6px">${t}</div><div class="bd-grid">${arr.length?arr.slice().sort((a,b)=>(b.firmado?1:0)-(a.firmado?1:0)).map(c=>card(c,modo)).join(''):'<div style="color:var(--faint);font-size:.82rem;padding:6px">'+vacio+'</div>'}</div>`;
   let ov=document.getElementById('bd-ov');
   if(!ov){ ov=document.createElement('div'); ov.id='bd-ov'; ov.className='dgov'; ov.onclick=e=>{if(e.target===ov)ov.remove();}; document.body.appendChild(ov); }
   ov.innerHTML=`<div class="dgbox">
@@ -989,6 +991,23 @@ async function abrirBandeja(){
 }
 /* Pide el link de firma y abre WhatsApp con el mensaje ya escrito.
    Si no hay teléfono del cliente, abre WhatsApp sin destinatario para elegir el contacto. */
+let _firmasPrev=null;
+async function _vigilarFirmas(){
+  try{
+    const d=await api('GET','/api/entregas/bandeja');
+    const b=document.getElementById('bd-badge'); if(!b) return;
+    if(!d.firmaOn){ b.style.display='none'; return; }
+    const n=d.firmadosPendientes||0;
+    b.textContent=n; b.style.display = n>0 ? 'block' : 'none';
+    if(_firmasPrev!==null && n>_firmasPrev){
+      const nuevos=[...(d.bandeja||[]),...(d.mias||[]),...(d.deOtros||[])].filter(c=>c.firmado);
+      const ult=nuevos[0];
+      toast('✅ '+(n-_firmasPrev)+' cliente(s) firmaron su contrato'+(ult?': '+ult.cliente:''));
+      try{ new Audio('data:audio/wav;base64,UklGRl4AAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YToAAAAA').play(); }catch(_){}
+    }
+    _firmasPrev=n;
+  }catch(e){}
+}
 async function mandarFirma(saleId){
   try{
     const r=await api('POST','/api/sales/'+saleId+'/firma-link',{});
@@ -1602,6 +1621,9 @@ async function _init(){
 // Ping de ubicación para el rastreo del admin/supervisor (mientras la app está abierta)
 function _pingUbic(){ if(!navigator.geolocation) return; navigator.geolocation.getCurrentPosition(function(p){ try{ api('POST','/api/ubicacion/ping',{lat:p.coords.latitude,lng:p.coords.longitude}); }catch(e){} }, function(){}, {enableHighAccuracy:false,timeout:8000,maximumAge:120000}); }
 _pingUbic(); setInterval(_pingUbic, 180000);
+  /* Avisa cuando un cliente firma por link. Sin esto el gerente tenía que abrir la bandeja
+     y fijarse crédito por crédito: mandaba el link y se quedaba sin saber cuándo firmaron. */
+  _vigilarFirmas(); setInterval(_vigilarFirmas, 60000);
 
 }
 _init();
