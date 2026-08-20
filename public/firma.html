@@ -54,7 +54,7 @@
 const T = new URLSearchParams(location.search).get('t') || '';
 const app = document.getElementById('app');
 const fmt = n => '$' + Math.round(n||0).toLocaleString('es-MX');
-const fotos = { ineFrente:null, ineReverso:null, selfie:null };
+const fotos = { ineFrente:null, selfie:null };
 let doc = null, firmaVacia = true;
 
 function pantalla(html){ app.innerHTML = html; }
@@ -109,8 +109,8 @@ function render(){
 
     <div class="card">
       <h2>Tu identificación</h2>
-      ${['ineFrente','ineReverso','selfie'].map((k,i)=>{
-        const t = ['Frente de tu INE','Reverso de tu INE','Foto tuya sosteniendo tu INE'][i];
+      ${['ineFrente','selfie'].map((k,i)=>{
+        const t = ['Frente de tu INE','Foto tuya sosteniendo tu INE'][i];
         return `<div class="paso" id="p-${k}"><div class="n">${i+1}</div><div class="t">${t}</div></div>
         <label class="foto" id="l-${k}"><span>Toca para tomar la foto</span>
           <input type="file" accept="image/*" capture="environment" onchange="subir('${k}',this)"></label>`;
@@ -177,7 +177,7 @@ function limpiar(){
   cv.getContext('2d').clearRect(0,0,cv.width,cv.height); firmaVacia=true; revisar();
 }
 function revisar(){
-  const ok = fotos.ineFrente && fotos.ineReverso && fotos.selfie && !firmaVacia &&
+  const ok = fotos.ineFrente && fotos.selfie && !firmaVacia &&
              document.getElementById('acepto') && document.getElementById('acepto').checked;
   const b = document.getElementById('enviar'); if(b) b.disabled = !ok;
 }
