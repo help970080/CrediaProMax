@@ -4320,6 +4320,118 @@ function _ultimasSemanas(n, inicioDia) {
   return out;
 }
 /* ---------- Aging de mora (cubetas de morosidad) ---------- */
+/* ---------- PANEL DE INICIO ----------
+   Un solo endpoint arma toda la pantalla para no encadenar cuatro llamadas.
+   El embudo mide SEMANAS CONSECUTIVAS SIN PAGAR, no días de atraso: el atraso en días mezcla
+   al que abona de menos con el que no da nada, y un abono grande lo borra aunque el cliente
+   lleve meses sin aparecer. La racha solo se rompe pagando. */
+function _inicioBucket(r) {
+  if (r <= 0) return 0;
+  if (r === 1) return 1;
+  if (r === 2) return 2;
+  if (r === 3) return 3;
+  if (r <= 6) return 4;
+  return 5;
+}
+const _INICIO_LBL = ['Pagó esta semana', '1 semana', '2 semanas', '3 semanas', '4 a 6 semanas', '7+ semanas'];
+function _inicioDatos(nSem) {
+  const N = Math.max(8, Math.min(20, +nSem || 10));
+  const hoyTs = new Date(fechaMxHoyISO() + 'T00:00:00').getTime();
+  const c0 = _inicioCiclo(hoyTs);                       // ciclo EN CURSO
+  const ciclos = [];                                    // del más viejo al actual
+  for (let i = N - 1; i >= 0; i--) ciclos.push(c0 - i * 7 * 86400000);
+  const finCiclo = t => t + 7 * 86400000;
+  const idxDe = ts => { const k = Math.round((_inicioCiclo(ts) - ciclos[0]) / (7 * 86400000)); return (k >= 0 && k < N) ? k : -1; };
+
+  const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
+  const saldo = {};
+  db.movimientos.forEach(m => { saldo[m.saleId] = (saldo[m.saleId] || 0) + (m.cargo || 0) - (m.abono || 0); });
+  const ventas = db.sales.filter(s => activos.has(s.clientId) && s.entregado !== false && (saldo[s.id] || 0) > 0.5);
+
+  // pagos por crédito y por ciclo (una sola pasada; el primer pago descontado no es cobranza)
+  const pagos = new Map();
+  let cobradoCiclo = 0; const cobradoSuc = {};
+  const sucDe = {}; ventas.forEach(s => { sucDe[s.id] = s.sucursalId; });
+  db.movimientos.forEach(m => {
+    if (!(m.abono > 0) || m.forma === 'descuento' || m.forma === 'recomendacion') return;
+    if (sucDe[m.saleId] == null) return;
+    const ts = _parseFechaMx(m.fecha); if (!ts) return;
+    const k = idxDe(ts); if (k < 0) return;
+    let a = pagos.get(m.saleId); if (!a) { a = new Array(N).fill(0); pagos.set(m.saleId, a); }
+    a[k] += m.abono;
+    if (k === N - 1) { cobradoCiclo += m.abono; const sid = sucDe[m.saleId]; cobradoSuc[sid] = (cobradoSuc[sid] || 0) + m.abono; }
+  });
+
+  // embudo + esperado por sucursal
+  const cubetas = _INICIO_LBL.map((lbl, i) => ({ i, lbl, n: 0, monto: 0 }));
+  const espSuc = {}, cliSuc = {};
+  const detalle = _INICIO_LBL.map(() => []);
+  ventas.forEach(s => {
+    const nace = s.createdAt ? _diaMxMs(s.createdAt) : 0;
+    if (nace && nace >= c0) return;                     // colocado esta semana: aún no le tocaba
+    const a = pagos.get(s.id) || new Array(N).fill(0);
+    let racha = 0;
+    if (!(a[N - 1] > 0)) {                              // si ya pagó en el ciclo en curso, racha 0
+      for (let k = N - 2; k >= 0; k--) { if (a[k] > 0) break; racha++; }
+      if (racha > N - 1) racha = N - 1;
+    }
+    const b = _inicioBucket(racha);
+    cubetas[b].n++; cubetas[b].monto += Math.round(saldo[s.id] || 0);
+    if (detalle[b].length < 400) {
+      const c = db.clients.find(x => x.id === s.clientId) || {};
+      detalle[b].push({ folio: s.folio, cliente: c.nombre || '—', tel: c.tel || '', cobrador: s.prom || '—',
+        sucursalId: s.sucursalId, saldo: Math.round(saldo[s.id] || 0), cuota: s.cuota || 0,
+        // racha topada por la ventana: quien nunca pagó llega al máximo y hay que leerlo como "o más"
+        semanas: racha, masDe: racha >= N - 1 });
+    }
+    const sid = s.sucursalId;
+    cliSuc[sid] = (cliSuc[sid] || 0) + 1;
+    if (s.tipo !== 'unico') espSuc[sid] = (espSuc[sid] || 0) + (s.cuota || 0);
+  });
+
+  // KPIs comparativos
+  const colocSem = ciclos.map((ini, k) => {
+    let m = 0;
+    db.sales.forEach(s => { if (!s.createdAt || !activos.has(s.clientId)) return;
+      const t = _diaMxMs(s.createdAt); if (t >= ini && t < finCiclo(ini)) m += (s.monto || 0); });
+    return { ini: _isoDe(ini), lbl: _lblSemana(ini), monto: Math.round(m), enCurso: k === N - 1 };
+  });
+  const cliHoy = new Set(ventas.map(s => s.clientId)).size;
+  const hace4 = ciclos[N - 5] || ciclos[0];
+  const cliAntes = new Set(ventas.filter(s => { const t = s.createdAt ? _diaMxMs(s.createdAt) : 0; return t < hace4; }).map(s => s.clientId)).size;
+  const espTotal = Object.values(espSuc).reduce((a, b) => a + b, 0);
+  const mora = cubetas.slice(1).reduce((a, c) => ({ n: a.n + c.n, monto: a.monto + c.monto }), { n: 0, monto: 0 });
+
+  const sucursales = db.sucursales.map(su => ({
+    id: su.id, nombre: su.nombre, clientes: cliSuc[su.id] || 0,
+    cobrado: Math.round(cobradoSuc[su.id] || 0), esperado: Math.round(espSuc[su.id] || 0),
+    pct: espSuc[su.id] > 0 ? Math.round((cobradoSuc[su.id] || 0) / espSuc[su.id] * 100) : 0,
+  })).filter(x => x.clientes > 0).sort((a, b) => b.clientes - a.clientes);
+
+  return {
+    marca: (db.config && db.config.brand && db.config.brand.nombre) || 'CobraPro',
+    semanaIni: _isoDe(c0), semanaFin: _isoDe(c0 + 6 * 86400000),
+    kpis: {
+      clientes: cliHoy, clientesDelta: cliAntes > 0 ? Math.round((cliHoy / cliAntes - 1) * 1000) / 10 : null,
+      cobranza: Math.round(cobradoCiclo), esperado: espTotal,
+      cobranzaPct: espTotal > 0 ? Math.round(cobradoCiclo / espTotal * 1000) / 10 : null,
+      colocacion: colocSem[N - 1].monto, colocacionPrev: colocSem[N - 2] ? colocSem[N - 2].monto : 0,
+      moraMonto: mora.monto, moraClientes: mora.n,
+    },
+    embudo: cubetas, sucursales, colocacion: colocSem.slice(-8), detalle,
+  };
+}
+app.get('/api/reports/inicio', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
+  const d = _inicioDatos(req.query.semanas);
+  if (req.user.rol === 'sucursal') {          // el gerente solo ve su sucursal
+    const sid = Number(req.user.sucursalId);
+    d.sucursales = d.sucursales.filter(s => Number(s.id) === sid);
+    d.detalle = d.detalle.map(l => l.filter(x => Number(x.sucursalId) === sid));
+  }
+  if (req.query.detalle == null) delete d.detalle;   // el detalle solo cuando se pide
+  res.json(d);
+});
+
 app.get('/api/reports/aging', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
   let ventas = db.sales.filter(s => s.entregado !== false);
   if (req.user.rol === 'sucursal') ventas = ventas.filter(s => Number(s.sucursalId) === Number(req.user.sucursalId || 0));
