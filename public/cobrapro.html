@@ -3358,14 +3358,29 @@ function pintaInicio(){
       k.colocacion>=k.colocacionPrev?'ok':'bad','📤','rgba(200,146,26,.14)') +
     _iniKpi('Cartera sin pagar', fmt(k.moraMonto), k.moraClientes+' crédito(s) con racha', k.moraClientes?'bad':'ok','⚠️','rgba(201,72,58,.12)');
 
-  const maxN=Math.max(1,...d.embudo.map(c=>c.n));
+  /* Nada de cono. El que paga (493) aplasta a los demás y, peor, la peor cubeta suele ser la más
+     grande — un embudo que se cierra estaría mintiendo. Se saca "pagó" como cifra aparte y las
+     cubetas de problema se escalan ENTRE ELLAS, que es donde está la comparación que importa. */
   const tot=d.embudo.reduce((a,c)=>a+c.n,0)||1;
-  document.getElementById('ini-embudo').innerHTML = d.embudo.map((c,i)=>{
-    const w=Math.max(26, Math.round(c.n/maxN*100));
-    return `<div onclick="iniDetalle(${i})" title="Ver los ${c.n} créditos" style="cursor:pointer;margin-bottom:3px;display:flex;justify-content:center">
-      <div style="width:${w}%;background:${_INI_COL[i]};color:#fff;border-radius:3px;height:38px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.82rem;white-space:nowrap;padding:0 8px;overflow:hidden">
-        ${c.lbl} · ${c.n} <span style="opacity:.8;font-weight:400;margin-left:6px">${Math.round(c.n/tot*100)}%</span></div></div>`;
-  }).join('') + `<div class="sub" style="margin-top:10px">${tot} crédito(s) vigentes · no cuenta lo colocado esta semana</div>`;
+  const ok=d.embudo[0], malos=d.embudo.slice(1);
+  const maxM=Math.max(1,...malos.map(c=>c.n));
+  const totMal=malos.reduce((a,c)=>a+c.n,0);
+  document.getElementById('ini-embudo').innerHTML = `
+    <div onclick="iniDetalle(0)" style="cursor:pointer;display:flex;align-items:center;gap:12px;padding:11px 13px;border-radius:10px;background:rgba(47,138,82,.10);border:1px solid rgba(47,138,82,.28);margin-bottom:14px">
+      <div style="font-size:1.5rem;font-weight:800;color:var(--grn);line-height:1">${ok.n}</div>
+      <div style="flex:1"><div style="font-weight:700;font-size:.86rem;color:var(--grn)">${ok.lbl}</div>
+        <div class="sub" style="margin:0">${Math.round(ok.n/tot*100)}% de la cartera vigente</div></div>
+      <div style="font-size:1rem;color:var(--grn);opacity:.5">›</div></div>
+    <div class="sub" style="margin:0 0 8px;font-weight:600">${totMal} con racha sin pagar</div>` +
+    malos.map((c,j)=>{
+      const i=j+1, w=Math.max(5, Math.round(c.n/maxM*100));
+      return `<div onclick="iniDetalle(${i})" title="Ver los ${c.n} créditos" style="cursor:pointer;display:flex;align-items:center;gap:9px;margin-bottom:6px">
+        <span class="sub" style="margin:0;width:104px;flex:0 0 auto;text-align:right;font-size:.75rem;white-space:nowrap">${c.lbl}</span>
+        <div style="flex:1;background:var(--surf-2);border-radius:4px;height:22px;overflow:hidden">
+          <div style="width:${w}%;height:100%;background:${_INI_COL[i]};border-radius:4px"></div></div>
+        <b style="width:34px;flex:0 0 auto;font-size:.84rem">${c.n}</b>
+        <span class="sub" style="margin:0;width:56px;flex:0 0 auto;font-size:.72rem">${fmt(c.monto)}</span></div>`;
+    }).join('') + `<div class="sub" style="margin-top:11px">${tot} crédito(s) vigentes · no cuenta lo colocado esta semana</div>`;
 
   const maxSuc=Math.max(1,...d.sucursales.map(x=>x.clientes));
   document.getElementById('ini-suc').innerHTML = d.sucursales.length
