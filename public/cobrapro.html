@@ -1053,6 +1053,29 @@ const TOKEN = (()=>{ try{ return localStorage.getItem('cobrapro_token'); }catch(
 const ME = (()=>{ try{ return JSON.parse(localStorage.getItem('cobrapro_user')||'null'); }catch(e){ return null; } })();
 const BRAND = (()=>{ try{ return JSON.parse(localStorage.getItem('cobrapro_brand')||'null')||{nombre:'CobraPro'}; }catch(e){ return {nombre:'CobraPro'}; } })();
 try{ if(BRAND.nombre){ const bn=document.getElementById('brandName'); if(bn) bn.textContent=BRAND.nombre; document.title=BRAND.nombre+' · Crédito y Cobranza'; } }catch(e){}
+/* Módulos apagados por el superadmin. Se esconde el botón del menú, no se borra la sección:
+   si mañana lo vuelven a encender, aparece sin desplegar nada. Si el usuario estaba parado en
+   un módulo que acaban de apagar, se le regresa al primero disponible en vez de dejarlo en blanco. */
+function aplicarModulos(off){
+  const lista = Array.isArray(off) ? off : [];
+  document.querySelectorAll('.navitem[data-v]').forEach(b=>{
+    b.style.display = lista.includes(b.dataset.v) ? 'none' : '';
+  });
+  const act = document.querySelector('.navitem.on[data-v]');
+  if(act && lista.includes(act.dataset.v)){
+    const primero = document.querySelector('.navitem[data-v]:not([style*="none"])');
+    if(primero) primero.click();
+  }
+}
+try{ aplicarModulos(BRAND.modulosOff); }catch(e){}
+// La sesión pudo abrirse antes de que el superadmin cambiara algo: se revalida al cargar.
+setTimeout(async()=>{ try{
+  const b=await apiU('GET','/api/brand');
+  if(b && Array.isArray(b.modulosOff)){
+    aplicarModulos(b.modulosOff);
+    try{ const g=JSON.parse(localStorage.getItem('cobrapro_brand')||'{}'); g.modulosOff=b.modulosOff; localStorage.setItem('cobrapro_brand',JSON.stringify(g)); }catch(_){}
+  }
+}catch(_){} }, 1200);
 if(!TOKEN){ location.replace('index.html'); }
 async function apiU(method, path, body){
   const r = await fetch(path, { method, headers:{'Content-Type':'application/json', Authorization:'Bearer '+TOKEN}, body: body?JSON.stringify(body):undefined });
