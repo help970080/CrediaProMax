@@ -199,6 +199,7 @@
   <div class="logo"><div class="mk">₵</div><div><h1 id="brandName">CobraPro</h1><span id="brandSub">Crédito · Cobranza</span></div></div>
   <nav id="nav">
     <div class="nav-lbl">Operación</div>
+    <button class="navitem" data-v="inicio"><span class="ic">🏠</span> Inicio</button>
     <button class="navitem on" data-v="resumen"><span class="ic">▣</span> Resumen</button>
     <button class="navitem" onclick="window.open('scorecard.html','_blank')"><span class="ic">📊</span> Scorecard <span style="margin-left:auto;font-size:.7rem;opacity:.6">↗</span></button>
     <button class="navitem" data-v="numdiarios"><span class="ic">📅</span> Números diarios</button>
@@ -244,6 +245,21 @@
   </div>
 
   <!-- RESUMEN -->
+  <section class="view" id="inicio">
+    <div id="ini-kpis" class="kpis" style="margin-bottom:14px"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px" id="ini-medio">
+      <div class="card"><div class="ph"><h3>Semanas consecutivas sin pagar</h3></div>
+        <div class="sub" style="margin:-4px 0 12px">Toca una barra para ver quiénes son</div>
+        <div id="ini-embudo"></div></div>
+      <div class="card"><div class="ph"><h3>Cobranza por sucursal</h3></div>
+        <div class="sub" style="margin:-4px 0 12px">Semana en curso · cobrado contra lo esperado</div>
+        <div id="ini-suc"></div></div>
+    </div>
+    <div class="card"><div class="ph"><h3>Colocación por semana</h3></div>
+      <div class="sub" style="margin:-4px 0 12px">Últimas 8 semanas · monto entregado a clientes</div>
+      <div id="ini-coloc"></div></div>
+  </section>
+
   <section class="view on" id="resumen">
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 12px;padding:8px 10px;background:var(--surf-2);border:1px solid var(--line);border-radius:9px">
       <span style="font-size:.82rem;color:var(--faint)">Periodo de:</span>
@@ -1811,7 +1827,7 @@ async function rpVerRefin(){
   try{
     const d = await apiU('GET','/api/reports/refin'+(_rpRef?('?periodo=semana&ref='+_rpRef):'?periodo=semana'));
     _rpActual='refin'; _rpData=d;
-    const rows = d.refins.map(r=>`<tr><td class="mono" style="font-size:.74rem">${r.fecha}</td><td class="nm">${r.cliente}</td><td>${r.cobrador}</td><td>${r.sucursal}</td><td class="mono" style="font-size:.74rem">${r.oldFolio}→${r.nuevoFolio||'—'}</td><td class="n">${fmt(r.saldoLiquidado)}</td><td class="n">${fmt(r.nuevoMonto)}</td><td class="n" style="color:var(--grn)">${fmt(r.neto)}</td></tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--faint);padding:18px">Sin REFIN en la semana seleccionada</td></tr>';
+    const rows = d.refins.map(r=>`<tr><td class="mono" style="font-size:.74rem">${r.fecha}</td><td class="nm">${r.cliente}</td><td>${r.cobrador}</td><td>${r.sucursal}</td><td class="mono" style="font-size:.74rem">${r.oldFolio}→${r.nuevoFolio||'—'}</td><td class="n">${fmt(r.saldoLiquidado)}</td><td class="n">${fmt(r.nuevoMonto)}</td><td class="n" style="color:var(--grn)">${fmt(r.neto)}</td></tr>`).join('') || `<tr><td colspan="8" style="text-align:center;color:var(--faint);padding:18px">Sin REFIN en la semana seleccionada${d.diag?`<div style="margin-top:8px;font-size:.78rem;color:var(--dim)">En toda la historia hay <b>${d.diag.historico}</b> REFIN registrado(s)${d.diag.ultimo?(' · el último el <b>'+d.diag.ultimo+'</b>'):''} · <b>${d.diag.creditosConRefinDe}</b> crédito(s) nacieron de un REFIN.<br>Si aquí sale 0, los refinanciamientos no se están capturando con el botón REFIN de la sucursal.</div>`:''}</td></tr>`;
     rpAbrir('🔄 REFIN — refinanciamientos del periodo',`
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px">
         <div class="kpi b" style="padding:10px"><div class="l">Operaciones</div><div class="v" style="font-size:1.25rem">${d.totales.n}</div></div>
@@ -2805,7 +2821,7 @@ function sim(){const t=$('s-tipo').value,monto=+$('s-monto').value||0,plazo=+$('
 }
 
 /* NAV + EVENTOS */
-const titles={resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],numdiarios:['Números diarios','Cobranza por gerencia · del día y acumulado de la semana'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],bandeja:['Bandeja de entregas','Créditos por entregar · toma y entrega con evidencia'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],ranking:['Ranking de cobradores','Semana · unidades, % cobranza, clientes y cobrados con semáforo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],flujo:['Flujo / Tesorería','Efectivo del admin · dotación a la operación, nómina y capital'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo'],mapa:['Mapa de clientes','Ubicación geográfica de la cartera'],rastreo:['Rastreo de equipo','Dónde está tu gente en campo · seguridad y operación'],pl:['P&L mensual','Estado de resultados del mes · ingreso, costos, gastos y utilidad por sucursal'],extras:['Extras · Detector de prestanombres','Coincidencias por teléfono, domicilio y apellidos'],grupal:['Créditos grupales','Grupos solidarios · junta semanal, garantía y pago solidario'],asignar:['Asignar efectivo','Mueve efectivo entre puestos · el que recibe confirma'],vobo:['Vo.Bo · Buró interno','Autoriza o declina ventas que botaron alerta roja']};
+const titles={inicio:['Inicio','Panorama de la semana · cobranza, colocación y mora'],resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],numdiarios:['Números diarios','Cobranza por gerencia · del día y acumulado de la semana'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],bandeja:['Bandeja de entregas','Créditos por entregar · toma y entrega con evidencia'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],ranking:['Ranking de cobradores','Semana · unidades, % cobranza, clientes y cobrados con semáforo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],flujo:['Flujo / Tesorería','Efectivo del admin · dotación a la operación, nómina y capital'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo'],mapa:['Mapa de clientes','Ubicación geográfica de la cartera'],rastreo:['Rastreo de equipo','Dónde está tu gente en campo · seguridad y operación'],pl:['P&L mensual','Estado de resultados del mes · ingreso, costos, gastos y utilidad por sucursal'],extras:['Extras · Detector de prestanombres','Coincidencias por teléfono, domicilio y apellidos'],grupal:['Créditos grupales','Grupos solidarios · junta semanal, garantía y pago solidario'],asignar:['Asignar efectivo','Mueve efectivo entre puestos · el que recibe confirma'],vobo:['Vo.Bo · Buró interno','Autoriza o declina ventas que botaron alerta roja']};
 function _ve(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 async function cargarVoBo(){
   try{
@@ -2860,6 +2876,7 @@ document.querySelectorAll('.navitem').forEach(n=>{ if(!n.dataset.v) return; n.on
   if(n.dataset.v==='reportes') renderReportesLive();
   if(n.dataset.v==='flujo') cargarFlujo();
   if(n.dataset.v==='bandeja') cargarBandeja();
+  if(n.dataset.v==='inicio') cargarInicio();
   if(n.dataset.v==='vobo') cargarVoBo();
   if(n.dataset.v==='rastreo') initRastreo();
   if(n.dataset.v==='transferencias'){ _trSel.clear(); trInit(); $('tr-resultados').innerHTML='<div style="color:var(--faint);padding:12px;font-size:.85rem">Elige un cobrador o busca un cliente para empezar.</div>'; $('tr-toolbar').style.display='none'; $('tr-batchbar').style.display='none'; trCargarLog(); }
@@ -3308,6 +3325,91 @@ function _rcPintar(){
     <span>Recuperado = lo cobrado <b>desde que cayó</b> ÷ saldo al inicio · no incluye la cobranza normal previa</span>
     <span>Solo aparecen morosos reales: 3+ semanas caídas en la ventana o con atraso vencido hoy</span>
   </div>`;
+}
+
+
+/* ===== Panel de Inicio ===== */
+const _INI_COL=['#2f8a52','#7cb342','#d9962a','#e07b39','#c9483a','#8d2f26'];
+let _iniData=null;
+async function cargarInicio(){
+  const K=document.getElementById('ini-kpis');
+  K.innerHTML='<div class="card" style="grid-column:1/-1;color:var(--faint)">Calculando…</div>';
+  try{ _iniData=await apiU('GET','/api/reports/inicio?detalle=1'); pintaInicio(); }
+  catch(e){ K.innerHTML='<div class="card" style="grid-column:1/-1;color:var(--red)">'+e.message+'</div>'; }
+}
+function _iniKpi(t,v,d,cls,ic,bg){
+  return `<div class="card" style="display:flex;gap:12px;align-items:flex-start">
+    <div style="width:42px;height:42px;border-radius:11px;background:${bg};display:flex;align-items:center;justify-content:center;font-size:19px;flex:0 0 auto">${ic}</div>
+    <div><div class="sub" style="margin:0">${t}</div>
+    <div style="font-size:1.6rem;font-weight:800;letter-spacing:-.02em;line-height:1.1">${v}</div>
+    <div style="font-size:.72rem;font-weight:600;margin-top:2px" class="${cls}">${d}</div></div></div>`;
+}
+function pintaInicio(){
+  const d=_iniData, k=d.kpis;
+  const flecha=n=> n==null?'' : (n>=0?'▲ ':'▼ ');
+  document.getElementById('ini-kpis').innerHTML =
+    _iniKpi('Clientes activos', k.clientes.toLocaleString('es-MX'),
+      k.clientesDelta==null?'sin comparativo':(flecha(k.clientesDelta)+Math.abs(k.clientesDelta)+'% vs hace 4 semanas'),
+      k.clientesDelta>=0?'ok':'bad','👥','rgba(43,108,176,.12)') +
+    _iniKpi('Cobranza de la semana', fmt(k.cobranza),
+      k.cobranzaPct==null?'—':(k.cobranzaPct+'% de lo esperado'), k.cobranzaPct>=95?'ok':'warn','💵','rgba(47,138,82,.12)') +
+    _iniKpi('Colocación de la semana', fmt(k.colocacion),
+      k.colocacionPrev? (flecha(k.colocacion-k.colocacionPrev)+Math.abs(Math.round((k.colocacion/k.colocacionPrev-1)*100))+'% vs semana anterior') : 'primera semana',
+      k.colocacion>=k.colocacionPrev?'ok':'bad','📤','rgba(200,146,26,.14)') +
+    _iniKpi('Cartera sin pagar', fmt(k.moraMonto), k.moraClientes+' crédito(s) con racha', k.moraClientes?'bad':'ok','⚠️','rgba(201,72,58,.12)');
+
+  const maxN=Math.max(1,...d.embudo.map(c=>c.n));
+  const tot=d.embudo.reduce((a,c)=>a+c.n,0)||1;
+  document.getElementById('ini-embudo').innerHTML = d.embudo.map((c,i)=>{
+    const w=Math.max(26, Math.round(c.n/maxN*100));
+    return `<div onclick="iniDetalle(${i})" title="Ver los ${c.n} créditos" style="cursor:pointer;margin-bottom:3px;display:flex;justify-content:center">
+      <div style="width:${w}%;background:${_INI_COL[i]};color:#fff;border-radius:3px;height:38px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.82rem;white-space:nowrap;padding:0 8px;overflow:hidden">
+        ${c.lbl} · ${c.n} <span style="opacity:.8;font-weight:400;margin-left:6px">${Math.round(c.n/tot*100)}%</span></div></div>`;
+  }).join('') + `<div class="sub" style="margin-top:10px">${tot} crédito(s) vigentes · no cuenta lo colocado esta semana</div>`;
+
+  const maxSuc=Math.max(1,...d.sucursales.map(x=>x.clientes));
+  document.getElementById('ini-suc').innerHTML = d.sucursales.length
+    ? `<table style="width:100%"><thead><tr><th>Sucursal</th><th class="n">Clientes</th><th class="n">Cobrado</th><th class="n">% Coll</th></tr></thead><tbody>`
+      + d.sucursales.map(x=>{
+        const col = x.pct>=95?'var(--grn)' : x.pct>=80?'#caa23a' : 'var(--red)';
+        return `<tr><td><b>${x.nombre}</b></td><td class="n">${x.clientes}</td><td class="n">${fmt(x.cobrado)}</td>
+          <td class="n"><span style="background:rgba(0,0,0,.05);color:${col};font-weight:700;padding:2px 9px;border-radius:20px;font-size:.76rem">${x.pct}%</span></td></tr>`;
+      }).join('') + '</tbody></table>'
+    : '<div class="sub">Sin sucursales con cartera.</div>';
+
+  const maxC=Math.max(1,...d.colocacion.map(x=>x.monto));
+  document.getElementById('ini-coloc').innerHTML =
+    `<div style="display:flex;align-items:flex-end;gap:12px;height:170px;padding-top:20px">` +
+    d.colocacion.map(x=>{
+      const h=Math.max(2, Math.round(x.monto/maxC*100));
+      return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%">
+        <div style="font-size:.72rem;font-weight:700;margin-bottom:5px;color:${x.enCurso?'var(--faint)':'var(--ink,var(--txt))'}">${x.enCurso&&!x.monto?'en curso':'$'+Math.round(x.monto/1000)+'k'}</div>
+        <div style="width:100%;max-width:56px;height:${h}%;background:${x.enCurso?'var(--acc)':'#2b6cb0'};border-radius:4px 4px 0 0"></div>
+        <div class="sub" style="margin:6px 0 0;font-size:.7rem">${x.lbl}</div></div>`;
+    }).join('') + '</div>';
+}
+function iniDetalle(i){
+  const lista=((_iniData&&_iniData.detalle)||[])[i]||[];
+  const lbl=_iniData.embudo[i].lbl;
+  const fil=lista.slice().sort((a,b)=>b.saldo-a.saldo).map(x=>`<tr>
+    <td><b>${x.cliente}</b><div class="sub" style="margin:0">${x.folio} · ${x.cobrador}</div></td>
+    <td class="n">${x.semanas}${x.masDe?'+':''}</td><td class="n">${fmt(x.cuota)}</td><td class="n">${fmt(x.saldo)}</td></tr>`).join('');
+  _flModal(`<h3 style="margin:0 0 3px">${lbl}</h3>
+    <p class="sub" style="margin:0 0 12px">${lista.length} crédito(s) · ordenados por saldo</p>
+    <div style="max-height:60vh;overflow:auto"><table style="width:100%"><thead><tr><th>Cliente</th><th class="n">Sem</th><th class="n">Cuota</th><th class="n">Saldo</th></tr></thead>
+    <tbody>${fil||'<tr><td colspan="4" style="padding:14px;color:var(--faint)">Sin créditos en esta cubeta.</td></tr>'}</tbody></table></div>
+    <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="iniCSV(${i})">⭳ CSV</button>
+      <button class="btn" onclick="this.closest('.flmodal').remove()">Cerrar</button></div>`,'720px');
+}
+function iniCSV(i){
+  const lista=((_iniData&&_iniData.detalle)||[])[i]||[];
+  const filas=[['Cliente','Folio','Cobrador','Telefono','Semanas sin pagar','Cuota','Saldo']]
+    .concat(lista.map(x=>[x.cliente,x.folio,x.cobrador,x.tel,x.semanas+(x.masDe?'+':''),x.cuota,x.saldo]));
+  const csv=filas.map(r=>r.map(v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}));
+  a.download='sin_pagar_'+i+'.csv'; a.click();
 }
 
 /* ===== Contactos (admin/supervisor): avance + validación ===== */
