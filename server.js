@@ -618,15 +618,58 @@ app.post('/api/auth/login', async (req, res) => {
   if (!u || !bcrypt.compareSync(password, u.passwordHash)) return res.status(401).json({ error: 'Usuario o contraseña inválidos' });
   const brand = (blob.config && blob.config.brand) || { nombre: 'CobraPro' };
   const token = jwt.sign({ id: u.id, rol: u.rol, nombre: u.nombre, sucursalId: u.sucursalId, tenantId: +tid }, JWT_SECRET, { expiresIn: '12h' });
-  res.json({ token, user: { id: u.id, nombre: u.nombre, rol: u.rol, sucursalId: u.sucursalId, usuario: u.usuario }, brand });
+  res.json({ token, user: { id: u.id, nombre: u.nombre, rol: u.rol, sucursalId: u.sucursalId, usuario: u.usuario },
+    brand, modulosOff: modulosOffDe(blob) });
 });
 app.get('/api/auth/me', auth, (req, res) => res.json(req.user));
 app.get('/api/brand', auth, (req, res) => {
-  if (req.user.tenantId != null) return res.json((db.config && db.config.brand) || { nombre: 'CobraPro' });
+  if (req.user.tenantId != null) return res.json(Object.assign({},
+    (db.config && db.config.brand) || { nombre: 'CobraPro' }, { modulosOff: modulosOffDe(db) }));
   res.json({ nombre: 'CobraPro · Panel maestro' });
 });
 
+/* ---------- MÓDULOS POR AGENCIA ----------
+   El superadmin enciende o apaga secciones sin tocar código ni desplegar. Se guarda la lista de
+   APAGADOS (no de encendidos) para que una agencia nueva nazca con todo prendido y para que un
+   módulo que se agregue después aparezca solo, sin tener que ir a marcarlo agencia por agencia. */
+const MODULOS = [
+  { k: 'inicio', n: 'Inicio' }, { k: 'resumen', n: 'Resumen' }, { k: 'numdiarios', n: 'Números diarios' },
+  { k: 'cartera', n: 'Cartera de crédito' }, { k: 'estado', n: 'Estado de cuenta' },
+  { k: 'bandeja', n: 'Bandeja de entregas' }, { k: 'vobo', n: 'Vo.Bo · Buró' },
+  { k: 'rastreo', n: 'Rastreo de equipo' }, { k: 'promotores', n: 'Cobradores en ruta' },
+  { k: 'ranking', n: 'Ranking' }, { k: 'transferencias', n: 'Transferencias' },
+  { k: 'sucursales', n: 'Sucursales' }, { k: 'comisiones', n: 'Motor de comisiones' },
+  { k: 'conciliacion', n: 'Conciliación' }, { k: 'flujo', n: 'Flujo / Tesorería' },
+  { k: 'asignar', n: 'Asignar efectivo' }, { k: 'reportes', n: 'Reportes' },
+  { k: 'mapa', n: 'Mapa de clientes' }, { k: 'simulador', n: 'Simulador' },
+  { k: 'pl', n: 'P&L mensual' }, { k: 'extras', n: 'Extras · Prestanombres' },
+  { k: 'grupal', n: 'Créditos grupales' }, { k: 'usuarios', n: 'Usuarios y accesos' },
+];
+const MOD_KEYS = new Set(MODULOS.map(m => m.k));
+function modulosOffDe(blob) {
+  const l = blob && blob.config && blob.config.modulosOff;
+  return Array.isArray(l) ? l.filter(k => MOD_KEYS.has(k)) : [];
+}
+
 /* ---------- SUPERADMIN: gestión de agencias ---------- */
+// Catálogo de módulos para pintar los interruptores
+app.get('/api/super/modulos', auth, superOnly, (req, res) => res.json({ modulos: MODULOS }));
+// Leer / guardar los módulos apagados de una agencia
+app.get('/api/super/tenants/:id/modulos', auth, superOnly, async (req, res) => {
+  const blob = await getTenant(+req.params.id);
+  if (!blob) return res.status(404).json({ error: 'Agencia no encontrada' });
+  res.json({ modulos: MODULOS, off: modulosOffDe(blob) });
+});
+app.put('/api/super/tenants/:id/modulos', auth, superOnly, async (req, res) => {
+  const tid = +req.params.id;
+  const blob = await getTenant(tid);
+  if (!blob) return res.status(404).json({ error: 'Agencia no encontrada' });
+  const off = Array.isArray(req.body.off) ? [...new Set(req.body.off.filter(k => MOD_KEYS.has(k)))] : [];
+  blob.config = blob.config || {};
+  blob.config.modulosOff = off;
+  saveRow(tid, blob);
+  res.json({ ok: true, off });
+});
 app.get('/api/super/tenants', auth, superOnly, (req, res) => {
   const list = (SYS.tenants || []).map(t => {
     const b = tenantCache[t.id];
@@ -665,7 +708,8 @@ app.post('/api/super/enter/:id', auth, superOnly, async (req, res) => {
   if (!blob) return res.status(404).json({ error: 'Agencia no encontrada' });
   const t = (SYS.tenants || []).find(x => x.id === tid);
   const token = jwt.sign({ id: 0, rol: 'admin', nombre: 'Soporte (superadmin)', sucursalId: null, tenantId: tid, super: true }, JWT_SECRET, { expiresIn: '6h' });
-  res.json({ token, user: { id: 0, nombre: 'Soporte', rol: 'admin', sucursalId: null, usuario: 'soporte' }, brand: (blob.config && blob.config.brand) || { nombre: t ? t.nombre : 'CobraPro' } });
+  res.json({ token, user: { id: 0, nombre: 'Soporte', rol: 'admin', sucursalId: null, usuario: 'soporte' },
+    brand: Object.assign({}, (blob.config && blob.config.brand) || { nombre: t ? t.nombre : 'CobraPro' }, { modulosOff: modulosOffDe(blob) }) });
 });
 
 /* ---------- Usuarios (panel de alta de usuarios y contraseñas) ---------- */
