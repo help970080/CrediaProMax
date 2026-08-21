@@ -4366,14 +4366,21 @@ function _inicioDatos(nSem) {
   const cubetas = _INICIO_LBL.map((lbl, i) => ({ i, lbl, n: 0, monto: 0 }));
   const espSuc = {}, cliSuc = {};
   const detalle = _INICIO_LBL.map(() => []);
+  const fin = ciclos[N - 1] + 7 * 86400000;
   ventas.forEach(s => {
-    const nace = s.createdAt ? _diaMxMs(s.createdAt) : 0;
-    if (nace && nace >= c0) return;                     // colocado esta semana: aún no le tocaba
+    /* La racha solo puede contar semanas en las que al crédito YA le tocaba pagar. Antes se contaba
+       desde el fondo de la ventana, así que el crédito entregado la semana pasada acumulaba ceros
+       de semanas en las que ni existía y aterrizaba en "7+ semanas". Se arranca en la semana de su
+       PRIMERA cuota programada, y si esa cuota cae en el ciclo en curso todavía no entra al embudo. */
+    const prog = _fechasProgSrv(s);
+    const t1 = prog.length ? prog[0] : ((s.createdAt ? _diaMxMs(s.createdAt) : 0) + 7 * 86400000);
+    if (!t1 || t1 >= ciclos[N - 1]) return;             // su primera cuota es de esta semana o futura
+    let k1 = Math.round((_inicioCiclo(t1) - ciclos[0]) / (7 * 86400000));
+    if (k1 < 0) k1 = 0;                                 // nació antes de la ventana: cuenta desde el inicio
     const a = pagos.get(s.id) || new Array(N).fill(0);
     let racha = 0;
     if (!(a[N - 1] > 0)) {                              // si ya pagó en el ciclo en curso, racha 0
-      for (let k = N - 2; k >= 0; k--) { if (a[k] > 0) break; racha++; }
-      if (racha > N - 1) racha = N - 1;
+      for (let k = N - 2; k >= k1; k--) { if (a[k] > 0) break; racha++; }
     }
     const b = _inicioBucket(racha);
     cubetas[b].n++; cubetas[b].monto += Math.round(saldo[s.id] || 0);
@@ -4382,7 +4389,7 @@ function _inicioDatos(nSem) {
       detalle[b].push({ folio: s.folio, cliente: c.nombre || '—', tel: c.tel || '', cobrador: s.prom || '—',
         sucursalId: s.sucursalId, saldo: Math.round(saldo[s.id] || 0), cuota: s.cuota || 0,
         // racha topada por la ventana: quien nunca pagó llega al máximo y hay que leerlo como "o más"
-        semanas: racha, masDe: racha >= N - 1 });
+        semanas: racha, masDe: racha >= (N - 1 - k1) });
     }
     const sid = s.sucursalId;
     cliSuc[sid] = (cliSuc[sid] || 0) + 1;
