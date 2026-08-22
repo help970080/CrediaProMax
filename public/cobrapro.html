@@ -66,6 +66,13 @@
     #rp-menu{grid-template-columns:1fr !important}
   }
   @media(max-width:420px){ .kpis{grid-template-columns:1fr} }
+  /* Embudo: la etiqueta y el monto se encogen antes que la barra, que es lo que hay que ver. */
+  .ini-lbl{width:96px;font-size:.75rem}
+  .lbl-sm{display:none}
+  .ini-monto{width:62px}
+  @media(max-width:760px){ .ini-lbl{width:74px;font-size:.68rem} .ini-monto{width:54px;font-size:.66rem} }
+  @media(max-width:400px){ .ini-lbl{width:56px;font-size:.66rem} .ini-monto{display:none}
+    .lbl-lg{display:none} .lbl-sm{display:inline} }
   .top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:22px;flex-wrap:wrap}
   .top h2{font-size:1.5rem;font-weight:700;letter-spacing:-.02em}
   .top p{font-size:.84rem;color:var(--dim);margin-top:2px}
@@ -247,7 +254,7 @@
   <!-- RESUMEN -->
   <section class="view" id="inicio">
     <div id="ini-kpis" class="kpis" style="margin-bottom:14px"></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px" id="ini-medio">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-bottom:14px" id="ini-medio">
       <div class="card"><div class="ph"><h3>Semanas consecutivas sin pagar</h3></div>
         <div class="sub" style="margin:-4px 0 12px">Toca una barra para ver quiénes son</div>
         <div id="ini-embudo"></div></div>
@@ -3398,11 +3405,11 @@ function pintaInicio(){
     malos.map((c,j)=>{
       const i=j+1, w=Math.max(5, Math.round(c.n/maxM*100));
       return `<div onclick="iniDetalle(${i})" title="Ver los ${c.n} créditos" style="cursor:pointer;display:flex;align-items:center;gap:9px;margin-bottom:6px">
-        <span class="sub" style="margin:0;width:104px;flex:0 0 auto;text-align:right;font-size:.75rem;white-space:nowrap">${c.lbl}</span>
-        <div style="flex:1;background:var(--surf-2);border-radius:4px;height:22px;overflow:hidden">
+        <span class="sub ini-lbl" style="margin:0;flex:0 0 auto;text-align:right;white-space:nowrap"><span class="lbl-lg">${c.lbl}</span><span class="lbl-sm">${c.lbl.replace(/semanas?/,'sem')}</span></span>
+        <div style="flex:1 1 40px;min-width:40px;background:var(--surf-2);border-radius:4px;height:22px;overflow:hidden">
           <div style="width:${w}%;height:100%;background:${_INI_COL[i]};border-radius:4px"></div></div>
-        <b style="width:34px;flex:0 0 auto;font-size:.84rem">${c.n}</b>
-        <span class="sub" style="margin:0;width:56px;flex:0 0 auto;font-size:.72rem">${fmt(c.monto)}</span></div>`;
+        <b style="flex:0 0 auto;min-width:26px;text-align:right;font-size:.84rem">${c.n}</b>
+        <span class="sub ini-monto" style="margin:0;flex:0 0 auto;text-align:right;font-size:.72rem;white-space:nowrap">${fmt(c.monto)}</span></div>`;
     }).join('') + `<div class="sub" style="margin-top:11px">${tot} crédito(s) vigentes · no cuenta lo colocado esta semana</div>`;
 
   const maxSuc=Math.max(1,...d.sucursales.map(x=>x.clientes));
