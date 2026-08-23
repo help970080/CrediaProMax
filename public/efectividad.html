@@ -113,6 +113,11 @@ body{
 
 /* sucursales */
 .sucs{grid-column:span 5;min-height:280px}
+    .conv{grid-column:span 12}
+    .cvg{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:11px;margin-top:4px}
+    .cvc{background:rgba(120,150,220,.06);border:1px solid rgba(120,150,220,.14);border-radius:12px;padding:12px 14px}
+    .cvc b{display:block;font-size:1.5rem;line-height:1.1;font-weight:800}
+    .cvc s{display:block;text-decoration:none;font-size:.72rem;color:#8b97ad;margin-top:2px}
 .barras{flex:1;display:flex;align-items:flex-end;gap:clamp(6px,1vw,18px);padding-top:24px;position:relative}
 .bcol{flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%;min-width:0}
 .btubo{position:relative;flex:1;display:flex;align-items:flex-end}
@@ -242,6 +247,10 @@ function pintar(d){
         ${canal('Nadie los tocó','var(--c1)',C.sin_gestion,T.asignados,'pagaron solos')}
       </div></div>
 
+    <div class="t conv" id="tconv" style="display:none"><div class="et">Convenios de pago <b>pactados y cómo van</b></div>
+      <div class="cvg" id="cvg"></div>
+      <div class="nota" id="cvn" style="margin-top:10px"></div></div>
+
     <div class="t escalera"><div class="et">Escalera del catálogo <b>% que sí pagó</b></div>
       <div id="esc"></div></div>
 
@@ -300,6 +309,25 @@ function pintar(d){
     document.querySelectorAll('[data-w]').forEach(e=>e.style.width=e.dataset.w+'%');
     document.querySelectorAll('[data-h]').forEach(e=>e.style.height=e.dataset.h+'%');
   });
+  pintarConvenios();
+}
+/* Convenios: se piden aparte para no acoplar este panel al de efectividad.
+   Si la agencia no ha pactado ninguno, la tarjeta ni aparece. */
+async function pintarConvenios(){
+  let d; try{ d=await api('/api/reports/convenios'); }catch(e){ return; }
+  if(!d || !d.total) return;
+  const COL={cumplido:'var(--c4)',vigente:'var(--c5)',incumplido:'var(--c1)',cancelado:'#64748B'};
+  const LBL={cumplido:'Cumplidos',vigente:'Vigentes',incumplido:'Incumplidos',cancelado:'Cancelados'};
+  const pac=d.convenios.reduce((a,c)=>a+c.total,0), rec=d.convenios.reduce((a,c)=>a+c.pagado,0);
+  $("cvg").innerHTML = d.resumen.map(r=>`<div class="cvc">
+      <s>${LBL[r.estado]}</s><b style="color:${COL[r.estado]}">${r.n}</b><s>${pes(r.monto)}</s></div>`).join('')
+    + `<div class="cvc"><s>Recuperado</s><b style="color:var(--c4)">${pes(rec)}</b>
+        <s>de ${pes(pac)} pactados${pac?(' · '+Math.round(rec/pac*100)+'%'):''}</s></div>`;
+  const top=(d.porCobrador||[]).slice(0,5);
+  $("cvn").innerHTML = top.length
+    ? '<b>Cumplimiento por cobrador:</b> ' + top.map(x=>`${x.nombre} ${x.pct}% (${x.cumplidos}/${x.n})`).join(' · ')
+    : '';
+  $("tconv").style.display='';
 }
 function _suc(d,id){const s=d.por_sucursal.find(x=>x.sucursalId===id);return s?s.nombre:'—';}
 
