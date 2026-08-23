@@ -226,6 +226,7 @@
     <button class="navitem" data-v="flujo" id="nav-flujo"><span class="ic">🏦</span> Flujo / Tesorería</button>
     <button class="navitem" data-v="asignar" id="nav-asignar"><span class="ic">💸</span> Asignar efectivo</button>
     <button class="navitem" data-v="reportes"><span class="ic">📑</span> Reportes</button>
+    <button class="navitem" data-v="convenios"><span class="ic">🤝</span> Convenios</button>
     <button class="navitem" data-v="usuarios"><span class="ic">👤</span> Usuarios</button>
     <button class="navitem" data-v="mapa"><span class="ic">🗺️</span> Mapa de clientes</button>
     <button class="navitem" data-v="simulador"><span class="ic">🖩</span> Simulador de crédito</button>
@@ -717,6 +718,10 @@
   </section>
 
   <!-- REPORTES -->
+  <section class="view" id="convenios">
+    <div id="cv-box"></div>
+  </section>
+
   <section class="view" id="reportes">
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 12px;padding:8px 10px;background:var(--surf-2);border:1px solid var(--line);border-radius:9px">
       <span style="font-size:.82rem;color:var(--faint)">Semana de:</span>
@@ -2851,7 +2856,8 @@ function sim(){const t=$('s-tipo').value,monto=+$('s-monto').value||0,plazo=+$('
 }
 
 /* NAV + EVENTOS */
-const titles={inicio:['Inicio','Panorama de la semana · cobranza, colocación y mora'],resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],numdiarios:['Números diarios','Cobranza por gerencia · del día y acumulado de la semana'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],bandeja:['Bandeja de entregas','Créditos por entregar · toma y entrega con evidencia'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],ranking:['Ranking de cobradores','Semana · unidades, % cobranza, clientes y cobrados con semáforo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],flujo:['Flujo / Tesorería','Efectivo del admin · dotación a la operación, nómina y capital'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo'],mapa:['Mapa de clientes','Ubicación geográfica de la cartera'],rastreo:['Rastreo de equipo','Dónde está tu gente en campo · seguridad y operación'],pl:['P&L mensual','Estado de resultados del mes · ingreso, costos, gastos y utilidad por sucursal'],extras:['Extras · Detector de prestanombres','Coincidencias por teléfono, domicilio y apellidos'],grupal:['Créditos grupales','Grupos solidarios · junta semanal, garantía y pago solidario'],asignar:['Asignar efectivo','Mueve efectivo entre puestos · el que recibe confirma'],vobo:['Vo.Bo · Buró interno','Autoriza o declina ventas que botaron alerta roja']};
+const titles={inicio:['Inicio','Panorama de la semana · cobranza, colocación y mora'],
+  convenios:['Convenios de pago','Pactados con el cliente · cumplimiento calculado contra los abonos reales'],resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],numdiarios:['Números diarios','Cobranza por gerencia · del día y acumulado de la semana'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],bandeja:['Bandeja de entregas','Créditos por entregar · toma y entrega con evidencia'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],ranking:['Ranking de cobradores','Semana · unidades, % cobranza, clientes y cobrados con semáforo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],flujo:['Flujo / Tesorería','Efectivo del admin · dotación a la operación, nómina y capital'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo'],mapa:['Mapa de clientes','Ubicación geográfica de la cartera'],rastreo:['Rastreo de equipo','Dónde está tu gente en campo · seguridad y operación'],pl:['P&L mensual','Estado de resultados del mes · ingreso, costos, gastos y utilidad por sucursal'],extras:['Extras · Detector de prestanombres','Coincidencias por teléfono, domicilio y apellidos'],grupal:['Créditos grupales','Grupos solidarios · junta semanal, garantía y pago solidario'],asignar:['Asignar efectivo','Mueve efectivo entre puestos · el que recibe confirma'],vobo:['Vo.Bo · Buró interno','Autoriza o declina ventas que botaron alerta roja']};
 function _ve(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 async function cargarVoBo(){
   try{
@@ -2907,6 +2913,7 @@ document.querySelectorAll('.navitem').forEach(n=>{ if(!n.dataset.v) return; n.on
   if(n.dataset.v==='flujo') cargarFlujo();
   if(n.dataset.v==='bandeja') cargarBandeja();
   if(n.dataset.v==='inicio') cargarInicio();
+  if(n.dataset.v==='convenios') cargarConvenios();
   if(n.dataset.v==='vobo') cargarVoBo();
   if(n.dataset.v==='rastreo') initRastreo();
   if(n.dataset.v==='transferencias'){ _trSel.clear(); trInit(); $('tr-resultados').innerHTML='<div style="color:var(--faint);padding:12px;font-size:.85rem">Elige un cobrador o busca un cliente para empezar.</div>'; $('tr-toolbar').style.display='none'; $('tr-batchbar').style.display='none'; trCargarLog(); }
@@ -3357,6 +3364,72 @@ function _rcPintar(){
   </div>`;
 }
 
+
+/* ===== Reporte de convenios (mismo bloque en sucursal y admin) ===== */
+const _CV_COL={cumplido:'var(--grn)',vigente:'#caa23a',incumplido:'var(--red)',cancelado:'var(--faint)'};
+const _CV_LBL={cumplido:'Cumplidos',vigente:'Vigentes',incumplido:'Incumplidos',cancelado:'Cancelados'};
+let _cvData=null;
+async function cargarConvenios(){
+  const box=document.getElementById('cv-box'); if(!box) return;
+  box.innerHTML='<div class="sub" style="padding:16px">Calculando…</div>';
+  try{ _cvData=await (typeof apiU==='function'?apiU:api)('GET','/api/reports/convenios'); pintaConvenios(); }
+  catch(e){ box.innerHTML='<div style="color:var(--red);padding:16px">'+e.message+'</div>'; }
+}
+function _cvTabla(titulo,filas){
+  if(!filas.length) return '';
+  return `<div class="card" style="margin-bottom:12px"><div class="ph"><h3>${titulo}</h3></div>
+    <div style="overflow-x:auto"><table style="width:100%"><thead><tr><th>${titulo.split(' ').pop()}</th>
+      <th class="n">Convenios</th><th class="n">Cumplidos</th><th class="n">Vigentes</th><th class="n">Incumplidos</th>
+      <th class="n">Pactado</th><th class="n">Recuperado</th><th class="n">% Cumpl.</th></tr></thead><tbody>`
+    + filas.map(x=>{
+      const col = x.pct>=70?'var(--grn)' : x.pct>=40?'#caa23a' : 'var(--red)';
+      return `<tr><td><b>${x.nombre}</b></td><td class="n">${x.n}</td>
+        <td class="n" style="color:var(--grn)">${x.cumplidos}</td><td class="n" style="color:#caa23a">${x.vigentes}</td>
+        <td class="n" style="color:var(--red)">${x.incumplidos}</td>
+        <td class="n">${fmt(x.pactado)}</td><td class="n">${fmt(x.recuperado)}</td>
+        <td class="n"><span style="background:rgba(0,0,0,.05);color:${col};font-weight:700;padding:2px 9px;border-radius:20px;font-size:.76rem">${x.pct}%</span></td></tr>`;
+    }).join('') + '</tbody></table></div></div>';
+}
+function pintaConvenios(){
+  const d=_cvData, box=document.getElementById('cv-box');
+  if(!d.total) { box.innerHTML='<div class="card"><div class="sub" style="padding:8px">Aún no se ha pactado ningún convenio.</div></div>'; return; }
+  const recTot=d.convenios.reduce((a,c)=>a+c.pagado,0), pacTot=d.convenios.reduce((a,c)=>a+c.total,0);
+  const chips=d.resumen.map(r=>`<div class="card" style="flex:1;min-width:130px;padding:12px 14px">
+      <div class="sub" style="margin:0">${_CV_LBL[r.estado]}</div>
+      <div style="font-size:1.5rem;font-weight:800;color:${_CV_COL[r.estado]};line-height:1.1">${r.n}</div>
+      <div class="sub" style="margin:0">${fmt(r.monto)}</div></div>`).join('');
+  const fil=d.convenios.map(c=>`<tr>
+      <td><b>${c.cliente}</b><div class="sub" style="margin:0">${c.folio} · ${c.cobrador}</div></td>
+      <td class="n">${c.fecha}</td>
+      <td class="n">${c.pagos} × ${fmt(c.montoPago)}<div class="sub" style="margin:0">${c.periodicidad}</div></td>
+      <td class="n">${fmt(c.total)}</td>
+      <td class="n">${fmt(c.pagado)}<div class="sub" style="margin:0">${c.cubiertos}/${c.pagos} pagos</div></td>
+      <td class="n"><span style="color:${_CV_COL[c.estado]};font-weight:700">${_CV_LBL[c.estado].replace(/s$/,'')}</span></td>
+      <td class="n"><button class="btn" style="padding:4px 9px;font-size:.74rem" onclick="cvVerFirma(${c.id})">✍ Firma</button></td>
+    </tr>`).join('');
+  box.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">${chips}</div>
+    <div class="card" style="margin-bottom:12px"><div class="sub" style="margin:0">
+      Pactado <b>${fmt(pacTot)}</b> · recuperado <b style="color:var(--grn)">${fmt(recTot)}</b>
+      ${pacTot?(' · '+Math.round(recTot/pacTot*100)+'% del total pactado'):''}</div></div>`
+    + _cvTabla('Por sucursal', d.porSucursal) + _cvTabla('Por cobrador', d.porCobrador)
+    + `<div class="card"><div class="ph"><h3>Todos los convenios</h3></div>
+       <div style="overflow-x:auto"><table style="width:100%"><thead><tr><th>Cliente</th><th class="n">Pactado el</th>
+       <th class="n">Acuerdo</th><th class="n">Total</th><th class="n">Pagado</th><th class="n">Estado</th><th></th></tr></thead>
+       <tbody>${fil}</tbody></table></div></div>`;
+}
+async function cvVerFirma(id){
+  try{
+    const r=await (typeof apiU==='function'?apiU:api)('GET','/api/convenios/'+id+'/firma');
+    const ov=document.createElement('div');
+    ov.style.cssText='position:fixed;inset:0;background:rgba(10,15,25,.72);z-index:9999;display:flex;align-items:center;justify-content:center;padding:18px';
+    ov.onclick=()=>ov.remove();
+    ov.innerHTML=`<div style="background:var(--surf);border-radius:14px;padding:16px;max-width:460px;width:100%" onclick="event.stopPropagation()">
+      <b>${r.cliente}</b><div class="sub" style="margin:0 0 10px">${r.folio} · firmado el ${r.fecha}</div>
+      ${r.firma?`<img src="${r.firma}" style="width:100%;background:#fff;border-radius:9px;border:1px solid var(--line)">`:'<div class="sub">Sin firma guardada</div>'}
+      <div style="text-align:right;margin-top:10px"><button class="btn" onclick="this.closest('div').parentNode.remove()">Cerrar</button></div></div>`;
+    document.body.appendChild(ov);
+  }catch(e){ toast(e.message); }
+}
 
 /* ===== Panel de Inicio ===== */
 const _INI_COL=['#2f8a52','#7cb342','#d9962a','#e07b39','#c9483a','#8d2f26'];
