@@ -186,6 +186,13 @@
     <button class="snb" data-vw="mora" onclick="setVw('mora')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">📉 Mora</button>
     <button class="snb" data-vw="numdiarios" onclick="setVw('numdiarios')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">📅 Números diarios</button>
     <button class="snb" data-vw="repcartera" onclick="setVw('repcartera')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">🖨️ Cartera por cobrador</button>
+    <button class="snb" data-vw="convenios" onclick="setVw('convenios')" style="background:var(--surf-2);color:var(--txt);border:1px solid var(--line);padding:9px 15px;border-radius:9px;font-family:'Sora';font-weight:700;cursor:pointer">🤝 Convenios</button>
+  </div>
+
+  <div id="view-convenios" style="display:none">
+    <div class="panel"><h2 style="margin:0 0 2px">🤝 Convenios de pago</h2>
+      <div class="sub" style="margin-bottom:14px">Los que pactaste con el cliente y cómo van. El cumplimiento se calcula solo, contra los abonos reales.</div>
+      <div id="cv-box"></div></div>
   </div>
 
   <div id="view-repcartera" style="display:none">
@@ -260,6 +267,21 @@
           <div class="field"><label>Ciudad / municipio <span class="req">*</span></label><input id="n-ciudad" placeholder="Ciudad o municipio"></div>
           <div class="field"><label>Estado <span class="req">*</span></label><input id="n-estado" placeholder="Estado"></div>
         </div>
+        <div class="sect-lbl">Aval / obligado solidario
+          <label style="float:right;font-weight:400;font-size:.78rem;display:flex;align-items:center;gap:7px;cursor:pointer">
+            <input type="checkbox" id="n-conaval" onchange="toggleAval()" style="width:17px;height:17px">
+            <span>Este crédito lleva aval</span></label></div>
+        <div id="n-avalbox" style="display:none">
+          <div class="frow">
+            <div class="field"><label>Nombre del aval <span class="req">*</span></label><input id="n-av-nom" placeholder="Nombre completo"></div>
+            <div class="field"><label>Teléfono <span class="req">*</span></label><input id="n-av-tel" inputmode="numeric" placeholder="10 dígitos"></div>
+          </div>
+          <div class="frow">
+            <div class="field"><label>Domicilio</label><input id="n-av-dom" placeholder="Calle, colonia"></div>
+            <div class="field"><label>Parentesco</label><input id="n-av-par" placeholder="Ej. hermana, esposo"></div>
+          </div>
+        </div>
+
         <div class="sect-lbl">Producto de crédito</div>
         <div class="frow">
           <div class="field"><label>Modalidad</label><select id="n-tipo" onchange="fillPlazos();calc()"><option value="diario">Diario</option><option value="semanal" selected>Semanal</option><option value="s16">Semanal 16 (primer pago)</option><option value="s17">Semanal 17 (primer pago)</option><option value="s21">21 semanas (primer pago)</option><option value="s31">31 semanas (primer pago)</option><option value="unico">Pago único</option><option value="p17">Celulares 17 pagos</option></select></div>
@@ -738,6 +760,25 @@ function calc(){
     ${extra}
     <div class="calc-row big"><span>Cuota ${freq}</span><span class="v">${fmt(r.cuota)}</span></div>`;
 }
+/* Aval opcional: se guarda en el CRÉDITO, no en el cliente. El mismo cliente puede traer aval en
+   uno y no en otro, y cuando se cae la cobranza lo que se busca es el aval de ESE crédito. */
+function toggleAval(){
+  const on=document.getElementById('n-conaval').checked;
+  document.getElementById('n-avalbox').style.display=on?'':'none';
+}
+function leerAval(){
+  if(!document.getElementById('n-conaval')?.checked) return null;
+  const nom=(document.getElementById('n-av-nom').value||'').trim();
+  const tel=(document.getElementById('n-av-tel').value||'').replace(/\D/g,'');
+  if(!nom || tel.length<10){ toast('Si el crédito lleva aval, pon su nombre y un teléfono de 10 dígitos'); return 'ERR'; }
+  return { nombre:nom, tel, domicilio:(document.getElementById('n-av-dom').value||'').trim(),
+           parentesco:(document.getElementById('n-av-par').value||'').trim() };
+}
+function limpiarAval(){
+  const c=document.getElementById('n-conaval'); if(c) c.checked=false;
+  ['n-av-nom','n-av-tel','n-av-dom','n-av-par'].forEach(id=>{const e=document.getElementById(id); if(e) e.value='';});
+  const b=document.getElementById('n-avalbox'); if(b) b.style.display='none';
+}
 async function agregarCreditoExistente(clienteId){
   cerrar();
   const t=document.getElementById('n-tipo').value; const monto=+document.getElementById('n-monto').value||0;
@@ -745,12 +786,13 @@ async function agregarCreditoExistente(clienteId){
   const prom=document.getElementById('n-prom').value;
   if(!prom){toast('Selecciona el cobrador para este crédito');return;}
   try{
-    const d=await api('POST','/api/sales',{clienteExistenteId:clienteId,prom,tipo:t,plazo,monto,dias:plazo,articulos:leerArticulos()});
+    const _av=leerAval(); if(_av==='ERR') return;
+    const d=await api('POST','/api/sales',{clienteExistenteId:clienteId,prom,tipo:t,plazo,monto,dias:plazo,articulos:leerArticulos(),aval:_av});
     caja.ncred++; caja.coloc+=monto;
     const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
     movs.unshift({hora,txt:`Crédito ${d.folio} — ${d.cliente} (${prom}) · 2º crédito`,monto:0});
     ['n-cli','n-tel','n-calle','n-col','n-ref','n-curp','n-ciudad','n-estado'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-    resetArticulos();
+    resetArticulos(); limpiarAval();
     render(); _buscar();
     toast(`✓ ${d.folio} agregado a ${d.cliente} · ahora tiene ${d.totalCreditosCliente} créditos · cuota ${fmt(d.cuota)}`);
   }catch(e){ toast(e.message); }
@@ -850,7 +892,7 @@ if(document.readyState==='loading') document.addEventListener('DOMContentLoaded'
 function limpiarNuevoCredito(){
   ['n-cli','n-tel','n-calle','n-col','n-ref','n-curp','n-ciudad','n-estado'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const mt=document.getElementById('n-monto'); if(mt) mt.value=5000;
-  try{ resetArticulos(); }catch(e){}
+  try{ resetArticulos(); limpiarAval(); }catch(e){}
   const bs=document.getElementById('buro-sem'); if(bs)bs.style.display='none'; _buroLast='';
   try{ calc(); }catch(e){}
 }
@@ -871,9 +913,10 @@ async function crearCredito(){
   const plazo=+(document.getElementById('n-plazo')?.value||0);
   const tel=document.getElementById('n-tel').value||''; const prom=document.getElementById('n-prom').value;
   if(!prom){toast('Esta sucursal no tiene cobradores dados de alta. Pídele al admin que cree el usuario cobrador y lo asigne a tu sucursal.');return;}
+  const _avalPend=leerAval(); if(_avalPend==='ERR') return;
   // fetch directo para poder leer el 409 estructurado de validación
   try{
-    const r=await fetch('/api/sales',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+TOKEN},body:JSON.stringify({nombre,tel,calle,col,ciudad,estado,curp,prom,tipo:t,plazo,monto,dias:plazo,articulos:leerArticulos()})});
+    const r=await fetch('/api/sales',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+TOKEN},body:JSON.stringify({nombre,tel,calle,col,ciudad,estado,curp,prom,tipo:t,plazo,monto,dias:plazo,articulos:leerArticulos(),aval:_avalPend})});
     const d=await r.json().catch(()=>({}));
     if(r.status===202 && d.voBo){
       document.getElementById('overlay').innerHTML=`<div class="modal">
@@ -1205,9 +1248,11 @@ function setVw(vw){
   document.getElementById('view-mora').style.display=vw==='mora'?'':'none';
   document.getElementById('view-numdiarios').style.display=vw==='numdiarios'?'':'none';
   document.getElementById('view-repcartera').style.display=vw==='repcartera'?'':'none';
+  document.getElementById('view-convenios').style.display=vw==='convenios'?'':'none';
   if(vw==='resumen') cargarResumen();
   if(vw==='cartera') cargarCartSuc();
   if(vw==='repcartera') cargarCartSuc();   // reusa la carga: llena el selector de cobradores
+  if(vw==='convenios') cargarConvenios();
   if(vw==='contactos') cargarContactos();
   if(vw==='oport') cargarOportSuc();
   if(vw==='mora') cargarMoraSuc();
@@ -1522,7 +1567,8 @@ function pintaContactos(){
     return `<div class="bd-card" data-cid="${r.clientId}" style="margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
         <div><div style="font-weight:700">${r.nombre}</div><div style="font-size:.78rem;color:var(--faint)">${r.direccion||''}</div>
-          <div style="font-size:.78rem;color:var(--dim);margin-top:3px">🧍 ${r.cobrador||'—'} · ${r.tel||'sin tel'}</div></div>
+          <div style="font-size:.78rem;color:var(--dim);margin-top:3px">🧍 ${r.cobrador||'—'} · ${r.tel||'sin tel'}</div>
+          ${r.aval?`<div style="font-size:.78rem;color:#7c5cd6;margin-top:3px">🤝 Aval: ${r.aval.nombre}${r.aval.parentesco?' ('+r.aval.parentesco+')':''}${r.aval.tel?` · <a href="tel:${r.aval.tel}" style="color:#7c5cd6;font-weight:700">${r.aval.tel}</a>`:''}</div>`:''}</div>
         <div style="text-align:right"><div style="color:var(--red);font-weight:700">${fmt(r.monto_atraso||0)}</div>
           <div style="font-size:.72rem;color:var(--faint)">atraso</div>
           <div style="font-size:.72rem;color:var(--faint);margin-top:2px">Últ. pago: ${r.ultima_fecha_pago||'—'}</div></div>
@@ -1538,6 +1584,7 @@ function pintaContactos(){
       <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
         <button class="bd-b" style="flex:1;min-width:130px" onclick="ctCarta(${r.clientId},'invitacion')">📄 Carta invitación</button>
         <button class="bd-b" style="flex:1;min-width:130px" onclick="ctCarta(${r.clientId},'firme')">⚖️ Requerimiento</button>
+        <button class="bd-b" style="flex:1;min-width:130px;border-color:#7c5cd6;color:#7c5cd6" onclick="cvAbrir(${r.saleId},'${String(r.nombre||'').replace(/'/g,"\\'")}',${r.saldo||0},${r.tarifa_semana||0})">🤝 Convenio de pago</button>
       </div>
       <div class="ct-foto-badge" style="margin-top:4px">${evBadge}</div>
     </div>`;
@@ -1566,6 +1613,151 @@ async function ctGuardar(cid,btn){
     delete _ctEvid[cid];
     toast('Gestión guardada'); await cargarContactos();
   }catch(e){ toast(e.message); btn.textContent=_t; btn.disabled=false; }
+}
+/* ===== Reporte de convenios (mismo bloque en sucursal y admin) ===== */
+const _CV_COL={cumplido:'var(--grn)',vigente:'#caa23a',incumplido:'var(--red)',cancelado:'var(--faint)'};
+const _CV_LBL={cumplido:'Cumplidos',vigente:'Vigentes',incumplido:'Incumplidos',cancelado:'Cancelados'};
+let _cvData=null;
+async function cargarConvenios(){
+  const box=document.getElementById('cv-box'); if(!box) return;
+  box.innerHTML='<div class="sub" style="padding:16px">Calculando…</div>';
+  try{ _cvData=await (typeof apiU==='function'?apiU:api)('GET','/api/reports/convenios'); pintaConvenios(); }
+  catch(e){ box.innerHTML='<div style="color:var(--red);padding:16px">'+e.message+'</div>'; }
+}
+function _cvTabla(titulo,filas){
+  if(!filas.length) return '';
+  return `<div class="card" style="margin-bottom:12px"><div class="ph"><h3>${titulo}</h3></div>
+    <div style="overflow-x:auto"><table style="width:100%"><thead><tr><th>${titulo.split(' ').pop()}</th>
+      <th class="n">Convenios</th><th class="n">Cumplidos</th><th class="n">Vigentes</th><th class="n">Incumplidos</th>
+      <th class="n">Pactado</th><th class="n">Recuperado</th><th class="n">% Cumpl.</th></tr></thead><tbody>`
+    + filas.map(x=>{
+      const col = x.pct>=70?'var(--grn)' : x.pct>=40?'#caa23a' : 'var(--red)';
+      return `<tr><td><b>${x.nombre}</b></td><td class="n">${x.n}</td>
+        <td class="n" style="color:var(--grn)">${x.cumplidos}</td><td class="n" style="color:#caa23a">${x.vigentes}</td>
+        <td class="n" style="color:var(--red)">${x.incumplidos}</td>
+        <td class="n">${fmt(x.pactado)}</td><td class="n">${fmt(x.recuperado)}</td>
+        <td class="n"><span style="background:rgba(0,0,0,.05);color:${col};font-weight:700;padding:2px 9px;border-radius:20px;font-size:.76rem">${x.pct}%</span></td></tr>`;
+    }).join('') + '</tbody></table></div></div>';
+}
+function pintaConvenios(){
+  const d=_cvData, box=document.getElementById('cv-box');
+  if(!d.total) { box.innerHTML='<div class="card"><div class="sub" style="padding:8px">Aún no se ha pactado ningún convenio.</div></div>'; return; }
+  const recTot=d.convenios.reduce((a,c)=>a+c.pagado,0), pacTot=d.convenios.reduce((a,c)=>a+c.total,0);
+  const chips=d.resumen.map(r=>`<div class="card" style="flex:1;min-width:130px;padding:12px 14px">
+      <div class="sub" style="margin:0">${_CV_LBL[r.estado]}</div>
+      <div style="font-size:1.5rem;font-weight:800;color:${_CV_COL[r.estado]};line-height:1.1">${r.n}</div>
+      <div class="sub" style="margin:0">${fmt(r.monto)}</div></div>`).join('');
+  const fil=d.convenios.map(c=>`<tr>
+      <td><b>${c.cliente}</b><div class="sub" style="margin:0">${c.folio} · ${c.cobrador}</div></td>
+      <td class="n">${c.fecha}</td>
+      <td class="n">${c.pagos} × ${fmt(c.montoPago)}<div class="sub" style="margin:0">${c.periodicidad}</div></td>
+      <td class="n">${fmt(c.total)}</td>
+      <td class="n">${fmt(c.pagado)}<div class="sub" style="margin:0">${c.cubiertos}/${c.pagos} pagos</div></td>
+      <td class="n"><span style="color:${_CV_COL[c.estado]};font-weight:700">${_CV_LBL[c.estado].replace(/s$/,'')}</span></td>
+      <td class="n"><button class="btn" style="padding:4px 9px;font-size:.74rem" onclick="cvVerFirma(${c.id})">✍ Firma</button></td>
+    </tr>`).join('');
+  box.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">${chips}</div>
+    <div class="card" style="margin-bottom:12px"><div class="sub" style="margin:0">
+      Pactado <b>${fmt(pacTot)}</b> · recuperado <b style="color:var(--grn)">${fmt(recTot)}</b>
+      ${pacTot?(' · '+Math.round(recTot/pacTot*100)+'% del total pactado'):''}</div></div>`
+    + _cvTabla('Por sucursal', d.porSucursal) + _cvTabla('Por cobrador', d.porCobrador)
+    + `<div class="card"><div class="ph"><h3>Todos los convenios</h3></div>
+       <div style="overflow-x:auto"><table style="width:100%"><thead><tr><th>Cliente</th><th class="n">Pactado el</th>
+       <th class="n">Acuerdo</th><th class="n">Total</th><th class="n">Pagado</th><th class="n">Estado</th><th></th></tr></thead>
+       <tbody>${fil}</tbody></table></div></div>`;
+}
+async function cvVerFirma(id){
+  try{
+    const r=await (typeof apiU==='function'?apiU:api)('GET','/api/convenios/'+id+'/firma');
+    const ov=document.createElement('div');
+    ov.style.cssText='position:fixed;inset:0;background:rgba(10,15,25,.72);z-index:9999;display:flex;align-items:center;justify-content:center;padding:18px';
+    ov.onclick=()=>ov.remove();
+    ov.innerHTML=`<div style="background:var(--surf);border-radius:14px;padding:16px;max-width:460px;width:100%" onclick="event.stopPropagation()">
+      <b>${r.cliente}</b><div class="sub" style="margin:0 0 10px">${r.folio} · firmado el ${r.fecha}</div>
+      ${r.firma?`<img src="${r.firma}" style="width:100%;background:#fff;border-radius:9px;border:1px solid var(--line)">`:'<div class="sub">Sin firma guardada</div>'}
+      <div style="text-align:right;margin-top:10px"><button class="btn" onclick="this.closest('div').parentNode.remove()">Cerrar</button></div></div>`;
+    document.body.appendChild(ov);
+  }catch(e){ toast(e.message); }
+}
+
+/* ===== Convenio de pago =====
+   Se pacta con el cliente enfrente y se firma ahí mismo. El cumplimiento no se captura:
+   lo calcula el server contra los abonos reales, así nadie marca cumplido lo que no se pagó. */
+let _cvCanvas=null, _cvVacia=true;
+async function cvAbrir(saleId,cliente,saldo,cuota){
+  let prev=[];
+  try{ prev=await api('GET','/api/sales/'+saleId+'/convenios'); }catch(e){}
+  const vivo=prev.find(c=>c.estado==='vigente'||c.estado==='incumplido');
+  const hist=prev.length?`<div class="sub" style="margin:10px 0 0">Convenios previos: ${prev.map(c=>c.fecha+' · '+c.estado).join(' · ')}</div>`:'';
+  const ov=document.createElement('div'); ov.className='entov';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(10,15,25,.72);z-index:9999;display:flex;align-items:center;justify-content:center;padding:14px;overflow:auto';
+  ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+  ov.innerHTML=`<div style="background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:18px;max-width:440px;width:100%">
+    <h3 style="margin:0 0 2px">🤝 Convenio de pago</h3>
+    <div class="sub" style="margin:0 0 14px">${cliente} · saldo ${fmt(saldo)}${cuota?' · cuota actual '+fmt(cuota):''}</div>
+    ${vivo?`<div style="padding:10px;border-radius:9px;background:rgba(200,72,58,.1);color:var(--red);font-size:.82rem;margin-bottom:12px">Ya tiene un convenio del ${vivo.fecha} (${vivo.estado}). Cancélalo antes de pactar otro.</div>`:''}
+    <div class="frow">
+      <div class="field"><label>Pagará cada</label><select id="cv-per">
+        <option value="semanal">Semana</option><option value="quincenal">Quincena</option><option value="diario">Día</option></select></div>
+      <div class="field"><label>Monto por pago</label><input id="cv-monto" type="number" min="1" inputmode="numeric" placeholder="Ej. 200"></div>
+      <div class="field"><label>Número de pagos</label><input id="cv-pagos" type="number" min="1" max="60" inputmode="numeric" placeholder="Ej. 10"></div>
+    </div>
+    <div id="cv-calc" class="sub" style="margin:2px 0 10px">—</div>
+    <div class="field"><label>Motivo (queda en el expediente)</label>
+      <input id="cv-motivo" placeholder="Ej. perdió el trabajo, enfermedad"></div>
+    <div style="margin-top:12px"><label class="sub" style="display:block;margin-bottom:5px">Firma del cliente</label>
+      <canvas id="cv-firma" style="width:100%;height:150px;border:1px solid var(--line);border-radius:10px;background:#fff;touch-action:none;display:block"></canvas>
+      <button class="bd-b" style="margin-top:6px" onclick="cvLimpiar()">Borrar firma</button></div>
+    <div id="cv-msg" style="margin-top:10px"></div>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="bd-b" style="flex:1" onclick="this.closest('.entov').remove()">Cancelar</button>
+      <button class="bd-b gold" style="flex:1" id="cv-ok" onclick="cvGuardar(${saleId},${saldo},this)" ${vivo?'disabled':''}>Pactar y firmar</button></div>
+    ${hist}</div>`;
+  document.body.appendChild(ov);
+  ['cv-monto','cv-pagos','cv-per'].forEach(id=>document.getElementById(id).oninput=()=>cvCalc(saldo));
+  document.getElementById('cv-per').onchange=()=>cvCalc(saldo);
+  cvInitFirma();
+}
+function cvCalc(saldo){
+  const m=+document.getElementById('cv-monto').value||0, n=+document.getElementById('cv-pagos').value||0;
+  const el=document.getElementById('cv-calc'); if(!el) return;
+  if(!m||!n){ el.textContent='—'; el.style.color='var(--faint)'; return; }
+  const tot=m*n;
+  if(tot>saldo){ el.innerHTML='Suma <b>'+fmt(tot)+'</b>, más que el saldo de '+fmt(saldo)+'. Bájalo.'; el.style.color='var(--red)'; }
+  else { el.innerHTML='Suma <b>'+fmt(tot)+'</b> de '+fmt(saldo)+(tot<saldo?(' · quedarían '+fmt(saldo-tot)+' pendientes'):' · cubre todo el saldo'); el.style.color='var(--dim)'; }
+}
+function cvInitFirma(){
+  const cv=document.getElementById('cv-firma'); if(!cv) return;
+  const r=cv.getBoundingClientRect(), dpr=window.devicePixelRatio||1;
+  cv.width=r.width*dpr; cv.height=r.height*dpr;
+  const g=cv.getContext('2d'); g.scale(dpr,dpr); g.lineWidth=2.4; g.lineCap='round'; g.strokeStyle='#111';
+  _cvCanvas=cv; _cvVacia=true;
+  let pinta=false;
+  const pos=e=>{const b=cv.getBoundingClientRect();const t=e.touches?e.touches[0]:e;return{x:t.clientX-b.left,y:t.clientY-b.top};};
+  const ini=e=>{e.preventDefault();pinta=true;_cvVacia=false;const p=pos(e);g.beginPath();g.moveTo(p.x,p.y);};
+  const mov=e=>{if(!pinta)return;e.preventDefault();const p=pos(e);g.lineTo(p.x,p.y);g.stroke();};
+  const fin=()=>{pinta=false;};
+  ['mousedown','touchstart'].forEach(ev=>cv.addEventListener(ev,ini,{passive:false}));
+  ['mousemove','touchmove'].forEach(ev=>cv.addEventListener(ev,mov,{passive:false}));
+  ['mouseup','mouseleave','touchend','touchcancel'].forEach(ev=>cv.addEventListener(ev,fin));
+}
+function cvLimpiar(){ if(_cvCanvas){ _cvCanvas.getContext('2d').clearRect(0,0,_cvCanvas.width,_cvCanvas.height); _cvVacia=true; } }
+async function cvGuardar(saleId,saldo,btn){
+  const m=+document.getElementById('cv-monto').value||0, n=+document.getElementById('cv-pagos').value||0;
+  const msg=document.getElementById('cv-msg');
+  const err=t=>{ msg.innerHTML='<div style="padding:9px;border-radius:8px;background:rgba(200,72,58,.1);color:var(--red);font-size:.82rem">'+t+'</div>'; };
+  if(!m||!n) return err('Falta el monto por pago y el número de pagos');
+  if(m*n>saldo) return err('El convenio no puede sumar más que el saldo');
+  if(_cvVacia) return err('Falta la firma del cliente');
+  btn.disabled=true; const _t=btn.textContent; btn.textContent='Guardando…';
+  try{
+    await api('POST','/api/sales/'+saleId+'/convenio',{
+      montoPago:m, pagos:n, periodicidad:document.getElementById('cv-per').value,
+      motivo:document.getElementById('cv-motivo').value, firma:_cvCanvas.toDataURL('image/png'), idempotencyKey:uuid()});
+    document.querySelector('.entov').remove();
+    toast('✓ Convenio pactado y firmado');
+    cargarContactos();
+  }catch(e){ err(e.message); btn.disabled=false; btn.textContent=_t; }
 }
 async function ctVerFoto(id){
   try{
