@@ -267,15 +267,15 @@
           <div class="field"><label>Ciudad / municipio <span class="req">*</span></label><input id="n-ciudad" placeholder="Ciudad o municipio"></div>
           <div class="field"><label>Estado <span class="req">*</span></label><input id="n-estado" placeholder="Estado"></div>
         </div>
-        <div class="sect-lbl">Aval / obligado solidario
-          <label style="float:right;font-weight:400;font-size:.78rem;display:flex;align-items:center;gap:7px;cursor:pointer">
-            <input type="checkbox" id="n-conaval" onchange="toggleAval()" style="width:17px;height:17px">
-            <span>Este crédito lleva aval</span></label></div>
+        <div class="sect-lbl">Aval / obligado solidario</div>
+        <!-- Nada de float: flotar el interruptor empujaba la fila siguiente y en el celular
+             los campos de nombre y teléfono salían enanos. Va como una fila propia. -->
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--surf-2);margin-bottom:13px">
+          <input type="checkbox" id="n-conaval" onchange="toggleAval()" style="width:19px;height:19px;flex:0 0 auto;accent-color:#7c5cd6">
+          <span style="font-size:.88rem;color:var(--txt);font-weight:600">Este crédito lleva aval</span></label>
         <div id="n-avalbox" style="display:none">
-          <div class="frow">
-            <div class="field"><label>Nombre del aval <span class="req">*</span></label><input id="n-av-nom" placeholder="Nombre completo"></div>
-            <div class="field"><label>Teléfono <span class="req">*</span></label><input id="n-av-tel" inputmode="numeric" placeholder="10 dígitos"></div>
-          </div>
+          <div class="field"><label>Nombre del aval <span class="req">*</span></label><input id="n-av-nom" placeholder="Nombre completo"></div>
+          <div class="field"><label>Teléfono <span class="req">*</span></label><input id="n-av-tel" type="tel" inputmode="numeric" maxlength="14" placeholder="10 dígitos"></div>
           <div class="frow">
             <div class="field"><label>Domicilio</label><input id="n-av-dom" placeholder="Calle, colonia"></div>
             <div class="field"><label>Parentesco</label><input id="n-av-par" placeholder="Ej. hermana, esposo"></div>
