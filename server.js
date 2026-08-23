@@ -408,7 +408,7 @@ function blankTenant(brandNombre, adminUser, adminPass, adminNombre) {
   };
 }
 function normalizeTenant(b) {
-  b.cortes = b.cortes || []; b.gestiones = b.gestiones || []; b.transferencias = b.transferencias || [];
+  b.cortes = b.cortes || []; b.gestiones = b.gestiones || []; b.transferencias = b.transferencias || []; b.convenios = b.convenios || [];
   b.recolecciones = b.recolecciones || []; b.caja = b.caja || {}; b.porEntregar = b.porEntregar || [];
   b.jcEntregas = b.jcEntregas || []; b.jcCierres = b.jcCierres || [];
   b.asignaciones = b.asignaciones || [];
@@ -644,6 +644,7 @@ const MODULOS = [
   { k: 'mapa', n: 'Mapa de clientes' }, { k: 'simulador', n: 'Simulador' },
   { k: 'pl', n: 'P&L mensual' }, { k: 'extras', n: 'Extras · Prestanombres' },
   { k: 'grupal', n: 'Créditos grupales' }, { k: 'usuarios', n: 'Usuarios y accesos' },
+  { k: 'convenios', n: 'Convenios de pago' },
 ];
 const MOD_KEYS = new Set(MODULOS.map(m => m.k));
 function modulosOffDe(blob) {
@@ -1770,7 +1771,7 @@ app.post('/api/buro/solicitud/:id/declinar', auth, rol('admin', 'supervisor'), (
 });
 
 app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
-  const { nombre, tel, calle, col, ciudad, estado, curp, sucursalId, prom, tipo, plazo, monto, dias, force, clienteExistenteId, articulos } = req.body;
+  const { nombre, tel, calle, col, ciudad, estado, curp, sucursalId, prom, tipo, plazo, monto, dias, force, clienteExistenteId, articulos, aval } = req.body;
 
   // === Candado de Buró: solo cliente NUEVO. ROJO bloquea y dispara solicitud de Vo.Bo al admin. ===
   if (!clienteExistenteId) {
@@ -1850,6 +1851,15 @@ app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) 
     ? _cobU.sucursalId
     : (req.user.rol === 'sucursal' ? (req.user.sucursalId || 1) : (clienteExistenteId ? client.sucursalId : (sucursalId || req.user.sucursalId || 1)));
   const sale = { id: nextId('sales'), folio, clientId: client.id, tipo, plazo: +plazo, monto: +monto, cuota: r.cuota, total: r.total, prom: promFinal, sucursalId: sucCred, entregado: false, createdAt: new Date().toISOString() };
+  /* Aval opcional. Va en el CRÉDITO y no en el cliente porque el mismo cliente puede traer aval en
+     uno y no en otro, y porque cuando se cae la cobranza lo que se busca es el aval de ESE crédito. */
+  const _av = aval && String(aval.nombre || '').trim();
+  if (_av) sale.aval = {
+    nombre: String(aval.nombre).trim().slice(0, 90),
+    tel: String(aval.tel || '').replace(/\D/g, '').slice(0, 15),
+    domicilio: String(aval.domicilio || '').trim().slice(0, 160),
+    parentesco: String(aval.parentesco || '').trim().slice(0, 40),
+  };
   const artLimpios = Array.isArray(articulos) ? articulos.map(x => String(x || '').trim()).filter(Boolean).slice(0, 30) : [];
   if (artLimpios.length) sale.articulos = artLimpios;
   if (r.descuentaPP) { sale.primerPago = r.primerPago; sale.descuentaPP = true; sale.entregaMonto = r.entregaCliente; }
@@ -2764,6 +2774,8 @@ function _listaContactos(iso){
     rows.push({ clientId, saleId:s.id, sucursalId:s.sucursalId, cobrador:s.prom||'—', folio:s.folio||'—', saldo:Math.round(saldoTot),
       nombre:c.nombre||'—', direccion:[c.calle,c.col,c.ciudad].filter(Boolean).join(', '), tel:c.tel||'',
       monto_atraso:Math.round(atraso), ultima_fecha_pago:_ultimaFechaPago(clientId), pago_semana:Math.round(pagado), tarifa_semana:Math.round(tarifa), parcial:pagado>0,
+      // El aval solo sirve si está a la mano justo cuando el cliente no paga
+      aval: s.aval || null,
       gestion: rec? { id:rec.id, resultado:rec.resultado||'', nota:rec.nota||'', tieneEvidencia:!!rec.evidencia, por:rec.por||null, fecha:rec.fecha||null, validado:!!rec.validado, validadoPor:rec.validadoPor||null, validadoFecha:rec.validadoFecha||null, llamado:!!(rec.llamadas&&rec.llamadas.length), ultimaLlamada:rec.ultimaLlamada||null } : null });
   });
   return rows;
@@ -4472,6 +4484,127 @@ function _inicioDatos(nSem) {
     embudo: cubetas, sucursales, colocacion: colocSem.slice(-8), detalle,
   };
 }
+/* ---------- CONVENIOS DE PAGO ----------
+   El punto medio que faltaba. REFIN liquida y presta de nuevo; reestructura alarga el mismo crédito.
+   El convenio es para el que YA no puede con su cuota: paga menos, por más tiempo, sin dinero nuevo.
+   Se pacta en la gestión, con el cliente enfrente, y se firma ahí mismo en el celular.
+   El cumplimiento NO se captura a mano: se calcula contra los abonos reales, para que nadie pueda
+   marcar como cumplido un convenio que el cliente no está pagando. */
+function _convEstado(cv) {
+  const s = db.sales.find(x => x.id === cv.saleId);
+  if (!s) return { estado: 'incumplido', pagado: 0, esperado: 0, cubiertos: 0 };
+  const ini = _parseFechaMx(cv.fechaISO ? _ddmmDe(cv.fechaISO) : cv.fecha) || 0;
+  const pagado = db.movimientos
+    .filter(m => m.saleId === cv.saleId && m.abono > 0 && m.forma !== 'descuento' && m.forma !== 'recomendacion' && _parseFechaMx(m.fecha) >= ini)
+    .reduce((a, m) => a + m.abono, 0);
+  const paso = cv.periodicidad === 'diario' ? 1 : (cv.periodicidad === 'quincenal' ? 15 : 7);
+  const hoy = new Date(fechaMxHoyISO() + 'T00:00:00').getTime();
+  const transcurridos = Math.floor((hoy - ini) / (paso * 86400000));
+  const vencidos = Math.max(0, Math.min(cv.pagos, transcurridos));
+  const esperado = vencidos * cv.montoPago;
+  const total = cv.pagos * cv.montoPago;
+  let estado;
+  if (cv.cancelado) estado = 'cancelado';
+  else if (pagado >= total - 0.5) estado = 'cumplido';
+  else if (pagado >= esperado - 0.5) estado = 'vigente';
+  else estado = 'incumplido';
+  return { estado, pagado: Math.round(pagado), esperado: Math.round(esperado), total: Math.round(total),
+    cubiertos: cv.montoPago > 0 ? Math.floor(pagado / cv.montoPago) : 0 };
+}
+function _ddmmDe(iso) { const [y, m, d] = String(iso).slice(0, 10).split('-'); return `${d}/${m}/${y}`; }
+
+// Pactar un convenio (se firma en el momento, con el cliente presente)
+app.post('/api/sales/:id/convenio', auth, rol('admin', 'supervisor', 'sucursal', 'cobrador'), idem, async (req, res) => {
+  const s = db.sales.find(x => x.id == req.params.id);
+  if (!s) return res.status(404).json({ error: 'Crédito no encontrado' });
+  const saldo = saldoDe(s.id);
+  if (saldo <= 0.5) return res.status(400).json({ error: 'Este crédito ya está liquidado' });
+  db.convenios = db.convenios || [];
+  const vivo = db.convenios.find(c => c.saleId === s.id && !c.cancelado && _convEstado(c).estado !== 'cumplido');
+  if (vivo) return res.status(409).json({ error: 'Este crédito ya tiene un convenio vigente del ' + vivo.fecha });
+
+  const montoPago = Math.round(+req.body.montoPago || 0);
+  const pagos = Math.round(+req.body.pagos || 0);
+  const periodicidad = ['diario', 'semanal', 'quincenal'].includes(req.body.periodicidad) ? req.body.periodicidad : 'semanal';
+  if (montoPago <= 0 || pagos <= 0) return res.status(400).json({ error: 'Falta el monto por pago y el número de pagos' });
+  if (pagos > 60) return res.status(400).json({ error: 'Máximo 60 pagos' });
+  // El convenio no puede pactar más de lo que se debe: eso sería otra cosa, no un convenio.
+  if (montoPago * pagos > saldo + 0.5) return res.status(400).json({ error: `El convenio suma ${Math.round(montoPago*pagos)} y el saldo es ${Math.round(saldo)}. No puede ser mayor.` });
+  if (!req.body.firma) return res.status(400).json({ error: 'Falta la firma del cliente' });
+
+  let firma = req.body.firma;
+  const id = nextId('convenios');
+  if (FOTOS) firma = await fotoGuardar(firma, 'convenio:' + id + ':firma');
+  const c = db.clients.find(x => x.id === s.clientId) || {};
+  const cv = {
+    id, saleId: s.id, clientId: s.clientId, folio: s.folio, cliente: c.nombre || '—',
+    sucursalId: s.sucursalId, cobrador: s.prom || '—',
+    fecha: fechaMxHoyDDMM(), fechaISO: fechaMxHoyISO(), hora: horaMxHHMM(),
+    saldoAlPactar: Math.round(saldo), cuotaOriginal: s.cuota || 0,
+    montoPago, pagos, periodicidad, motivo: String(req.body.motivo || '').trim().slice(0, 200),
+    por: req.user.nombre, firma, cancelado: false,
+  };
+  db.convenios.push(cv);
+  db.gestiones.push({ id: nextId('gestiones'), saleId: s.id, fecha: new Date().toISOString(),
+    tipo: 'convenio', detalle: `Convenio: ${pagos} pagos de ${montoPago} (${periodicidad})`, por: req.user.nombre });
+  saveDB();
+  res.json({ ok: true, convenio: Object.assign({}, cv, { firma: undefined }), estado: _convEstado(cv) });
+});
+
+// Cancelar un convenio (no se borra: queda el rastro de que se pactó y se rompió)
+app.post('/api/convenios/:id/cancelar', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
+  const cv = (db.convenios || []).find(x => x.id == req.params.id);
+  if (!cv) return res.status(404).json({ error: 'Convenio no encontrado' });
+  cv.cancelado = true; cv.canceladoPor = req.user.nombre; cv.canceladoEl = fechaMxHoyDDMM();
+  cv.motivoCancela = String(req.body.motivo || '').trim().slice(0, 200);
+  saveDB(); res.json({ ok: true });
+});
+
+// Convenios de un crédito (para verlos en el estado de cuenta)
+app.get('/api/sales/:id/convenios', auth, (req, res) => {
+  const l = (db.convenios || []).filter(c => c.saleId == req.params.id)
+    .map(c => Object.assign({}, c, { firma: undefined }, _convEstado(c)));
+  res.json(l);
+});
+app.get('/api/convenios/:id/firma', auth, rol('admin', 'supervisor', 'sucursal'), async (req, res) => {
+  const cv = (db.convenios || []).find(x => x.id == req.params.id);
+  if (!cv) return res.status(404).json({ error: 'Convenio no encontrado' });
+  const f = await fotoExpandir(cv, ['firma']);
+  res.json({ firma: f.firma || null, cliente: cv.cliente, folio: cv.folio, fecha: cv.fecha });
+});
+
+// Reporte: por sucursal, por cobrador, cumplidos / vigentes / incumplidos
+app.get('/api/reports/convenios', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
+  let l = (db.convenios || []).map(c => Object.assign({}, c, { firma: undefined }, _convEstado(c)));
+  if (req.user.rol === 'sucursal') l = l.filter(c => Number(c.sucursalId) === Number(req.user.sucursalId));
+  if (req.query.desde) l = l.filter(c => c.fechaISO >= req.query.desde);
+  if (req.query.hasta) l = l.filter(c => c.fechaISO <= req.query.hasta);
+  if (req.query.estado) l = l.filter(c => c.estado === req.query.estado);
+  const agrupa = (campo, nombreDe) => {
+    const m = new Map();
+    l.forEach(c => {
+      const k = c[campo];
+      let x = m.get(k);
+      if (!x) { x = { clave: k, nombre: nombreDe(k), n: 0, cumplidos: 0, vigentes: 0, incumplidos: 0, cancelados: 0, pactado: 0, recuperado: 0 }; m.set(k, x); }
+      x.n++; x[c.estado === 'cumplido' ? 'cumplidos' : c.estado === 'vigente' ? 'vigentes' : c.estado === 'cancelado' ? 'cancelados' : 'incumplidos']++;
+      x.pactado += c.total; x.recuperado += c.pagado;
+    });
+    return [...m.values()].map(x => Object.assign(x, { pct: x.n ? Math.round(x.cumplidos / x.n * 100) : 0 }))
+      .sort((a, b) => b.n - a.n);
+  };
+  const sucName = id => { const s = db.sucursales.find(x => x.id === id); return s ? s.nombre : '—'; };
+  res.json({
+    total: l.length,
+    resumen: ['cumplido', 'vigente', 'incumplido', 'cancelado'].map(e => ({
+      estado: e, n: l.filter(c => c.estado === e).length,
+      monto: l.filter(c => c.estado === e).reduce((a, c) => a + c.total, 0),
+    })),
+    porSucursal: agrupa('sucursalId', sucName),
+    porCobrador: agrupa('cobrador', k => k),
+    convenios: l.sort((a, b) => (b.fechaISO || '').localeCompare(a.fechaISO || '')),
+  });
+});
+
 app.get('/api/reports/inicio', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
   const d = _inicioDatos(req.query.semanas);
   if (req.user.rol === 'sucursal') {          // el gerente solo ve su sucursal
