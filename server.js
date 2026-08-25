@@ -4402,12 +4402,18 @@ function _inicioDatos(nSem) {
   const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
   const saldo = {};
   db.movimientos.forEach(m => { saldo[m.saleId] = (saldo[m.saleId] || 0) + (m.cargo || 0) - (m.abono || 0); });
-  const ventas = db.sales.filter(s => activos.has(s.clientId) && s.entregado !== false && (saldo[s.id] || 0) > 0.5);
+  /* Dos universos distintos, y confundirlos daba dos cifras de cobranza en la misma pantalla:
+     - vivas: créditos CON saldo. Sirven para el embudo, los clientes activos y lo esperado.
+       Un crédito liquidado no puede tener "semanas sin pagar" ni debe cuota.
+     - todas: incluye los liquidados. El dinero que terminó de pagar un crédito esta semana
+       también se cobró, y así la cifra cuadra con el Resumen operativo. */
+  const todas = db.sales.filter(s => activos.has(s.clientId) && s.entregado !== false);
+  const ventas = todas.filter(s => (saldo[s.id] || 0) > 0.5);
 
   // pagos por crédito y por ciclo (una sola pasada; el primer pago descontado no es cobranza)
   const pagos = new Map();
   let cobradoCiclo = 0; const cobradoSuc = {};
-  const sucDe = {}; ventas.forEach(s => { sucDe[s.id] = s.sucursalId; });
+  const sucDe = {}; todas.forEach(s => { sucDe[s.id] = s.sucursalId; });   // la cobranza cuenta todo lo cobrado
   db.movimientos.forEach(m => {
     if (!(m.abono > 0) || m.forma === 'descuento' || m.forma === 'recomendacion') return;
     if (sucDe[m.saleId] == null) return;
