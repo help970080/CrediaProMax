@@ -1910,7 +1910,14 @@ function _calcAtrasoCore(sale, corteTs, saldoActual){
   else if (sale.tipo === 'p17') cuotasDebidas = Math.min(17, Math.floor(dias / ((sale.plazo || 270)/17)));
   // saldo base: total original, o el saldo reprogramado si hubo reestructura
   const saldoBase = sale.saldoBaseReestructura != null ? sale.saldoBaseReestructura : (aperturaDe(sale.id) || sale.total || 0);
-  const expectedSaldo = Math.max(0, saldoBase - cuotasDebidas * cuota);
+  /* En s16/s17/s21/s31 la PRIMERA cuota vale más (lleva el cargo fijo del producto). Tratarlas
+     todas como iguales dejaba el esperado corto por ese fijo, y el atraso salía $100 o $200 menor
+     de lo real: al que debía $350 el sistema le pedía $250. Se cuenta el primer pago aparte. */
+  const pp = +sale.primerPago || 0;
+  const esperadoPagado = (pp > 0 && sale.descuentaPP)
+    ? (cuotasDebidas > 0 ? pp + Math.max(0, cuotasDebidas - 1) * cuota : 0)
+    : cuotasDebidas * cuota;
+  const expectedSaldo = Math.max(0, saldoBase - esperadoPagado);
   const montoAtraso = Math.max(0, saldoActual - expectedSaldo);
   const cuotasAtraso = cuota > 0 ? Math.round(montoAtraso / cuota) : 0;
   const cuotasPagadas = cuota > 0 ? Math.max(0, Math.round((saldoBase - saldoActual)/cuota)) : 0;
@@ -4434,6 +4441,13 @@ function _inicioDatos(nSem) {
        desde el fondo de la ventana, así que el crédito entregado la semana pasada acumulaba ceros
        de semanas en las que ni existía y aterrizaba en "7+ semanas". Se arranca en la semana de su
        PRIMERA cuota programada, y si esa cuota cae en el ciclo en curso todavía no entra al embudo. */
+    /* Cartera y clientes de la sucursal se cuentan SIEMPRE, aunque el crédito aún no entre al
+       embudo. Antes el `return` de abajo también los sacaba de aquí: el denominador quedaba corto
+       y los % Coll salían disparados contra los de Números diarios (122% donde eran 108%). */
+    const sid = s.sucursalId;
+    cliSuc[sid] = (cliSuc[sid] || 0) + 1;
+    if (s.tipo !== 'unico') espSuc[sid] = (espSuc[sid] || 0) + (s.cuota || 0);
+
     const prog = _fechasProgSrv(s);
     const t1 = prog.length ? prog[0] : ((s.createdAt ? _diaMxMs(s.createdAt) : 0) + 7 * 86400000);
     if (!t1 || t1 >= ciclos[N - 1]) return;             // su primera cuota es de esta semana o futura
@@ -4453,9 +4467,6 @@ function _inicioDatos(nSem) {
         // racha topada por la ventana: quien nunca pagó llega al máximo y hay que leerlo como "o más"
         semanas: racha, masDe: racha >= (N - 1 - k1) });
     }
-    const sid = s.sucursalId;
-    cliSuc[sid] = (cliSuc[sid] || 0) + 1;
-    if (s.tipo !== 'unico') espSuc[sid] = (espSuc[sid] || 0) + (s.cuota || 0);
   });
 
   // KPIs comparativos
