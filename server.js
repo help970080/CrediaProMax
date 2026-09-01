@@ -4433,7 +4433,11 @@ function _inicioDatos(nSem) {
 
   // embudo + esperado por sucursal
   const cubetas = _INICIO_LBL.map((lbl, i) => ({ i, lbl, n: 0, monto: 0 }));
-  const espSuc = {}, cliSuc = {};
+  /* La meta se mide contra la BASE CONGELADA al inicio del ciclo, igual que Números diarios:
+     el crédito colocado esta semana todavía no tiene cuota que cobrar, y meterlo al denominador
+     hundía el porcentaje. Y se cuentan CLIENTES, no créditos: un cliente con dos créditos es uno. */
+  const _sIniCiclo = _mapSaldoInicioSemana(ciclos[N - 1]);
+  const espSuc = {}, cliSet = {};
   const detalle = _INICIO_LBL.map(() => []);
   const fin = ciclos[N - 1] + 7 * 86400000;
   ventas.forEach(s => {
@@ -4445,8 +4449,10 @@ function _inicioDatos(nSem) {
        embudo. Antes el `return` de abajo también los sacaba de aquí: el denominador quedaba corto
        y los % Coll salían disparados contra los de Números diarios (122% donde eran 108%). */
     const sid = s.sucursalId;
-    cliSuc[sid] = (cliSuc[sid] || 0) + 1;
-    if (s.tipo !== 'unico') espSuc[sid] = (espSuc[sid] || 0) + (s.cuota || 0);
+    if ((_sIniCiclo[s.id] || 0) > 0.5) {
+      (cliSet[sid] = cliSet[sid] || new Set()).add(s.clientId);
+      if (s.tipo !== 'unico') espSuc[sid] = (espSuc[sid] || 0) + (s.cuota || 0);
+    }
 
     const prog = _fechasProgSrv(s);
     const t1 = prog.length ? prog[0] : ((s.createdAt ? _diaMxMs(s.createdAt) : 0) + 7 * 86400000);
@@ -4483,7 +4489,7 @@ function _inicioDatos(nSem) {
   const mora = cubetas.slice(1).reduce((a, c) => ({ n: a.n + c.n, monto: a.monto + c.monto }), { n: 0, monto: 0 });
 
   const sucursales = db.sucursales.map(su => ({
-    id: su.id, nombre: su.nombre, clientes: cliSuc[su.id] || 0,
+    id: su.id, nombre: su.nombre, clientes: cliSet[su.id] ? cliSet[su.id].size : 0,
     cobrado: Math.round(cobradoSuc[su.id] || 0), esperado: Math.round(espSuc[su.id] || 0),
     pct: espSuc[su.id] > 0 ? Math.round((cobradoSuc[su.id] || 0) / espSuc[su.id] * 100) : 0,
   })).filter(x => x.clientes > 0).sort((a, b) => b.clientes - a.clientes);
