@@ -2663,14 +2663,16 @@ function _bdCard(c, modo){
   const acc = modo==='cola'
     ? `<button class="btn gold" style="width:100%;margin-top:8px" onclick="tomarCredito(${c.saleId})">📥 Tomar para entregar</button>`
     : modo==='mias'
-    ? `<button class="btn gold" style="width:100%;margin-top:8px" onclick="abrirEntrega(${c.saleId},'${esc}',${c.entregaMonto})">📦 Entregar + evidencia</button><button class="btn" style="width:100%;margin-top:6px" onclick="soltarCredito(${c.saleId})">↩ Soltar</button>`
+    ? `<button class="btn gold" style="width:100%;margin-top:8px" onclick="abrirEntrega(${c.saleId},'${esc}',${c.entregaMonto},'${(c.producto||'').replace(/'/g,"\\'")}')">📦 Entregar + evidencia</button><button class="btn" style="width:100%;margin-top:6px" onclick="soltarCredito(${c.saleId})">↩ Soltar</button>`
     : `<div style="font-size:.74rem;color:var(--acc);margin-top:8px">🔒 Lo está entregando ${c.tomadoPor?c.tomadoPor.nombre:'—'}</div>`;
   const del = `<button class="btn" style="width:100%;margin-top:6px;border-color:#d6432d;color:#d6432d" onclick="eliminarEntrega(${c.saleId},'${esc}')">🗑 Eliminar venta</button>`;
   return `<div style="background:var(--surf-1);border:1px solid var(--line);border-radius:10px;padding:13px">
     <div style="font-weight:600">${c.cliente}</div>
     <div style="font-size:.72rem;color:var(--faint)">${c.folio} · ${c.sucursal} · ruta ${c.prom||'—'} · ${f}</div>
     <div style="font-size:.74rem;color:var(--dim);margin-top:4px">📍 ${c.dir||'—'}</div>
-    <div style="margin-top:6px;font-size:.82rem">Entrega al cliente: <b style="color:var(--grn)">${fmt(c.entregaMonto)}</b></div>${acc}${del}</div>`;
+    <div style="margin-top:6px;font-size:.82rem">${c.esVenta
+      ? `Entrega al cliente: <b style="color:var(--vio)">📱 ${_ve(c.producto||'equipo')}</b> <span style="font-size:.74rem;color:${c.stockSuc>0?'var(--grn)':'var(--red)'}">· ${c.stockSuc} en la sucursal</span>`
+      : `Entrega al cliente: <b style="color:var(--grn)">${fmt(c.entregaMonto)}</b>`}</div>${acc}${del}</div>`;
 }
 async function eliminarEntrega(id, nombre){
   if(!confirm('¿Eliminar esta venta por entregar de '+nombre+'?\nQuedará registrada como eliminada y NO se entregará al cliente.')) return;
@@ -2702,10 +2704,19 @@ function numeroALetras(num){
 let _ent={saleId:null,fotoCasa:null,fotoCliente:null,lat:null,lng:null,firma:null}, _firmaCanvas=null;
 function _entOv(html){ const ov=document.createElement('div'); ov.className='entov'; ov.style.cssText='position:fixed;inset:0;background:rgba(10,15,25,.6);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:14px;overflow:auto'; ov.onclick=e=>{if(e.target===ov)ov.remove();}; ov.innerHTML=`<div style="background:var(--surf-1);border:1px solid var(--line);border-radius:14px;padding:18px;width:min(460px,96vw)">${html}</div>`; document.body.appendChild(ov); return ov; }
 const _fbtn='display:flex;align-items:center;gap:10px;width:100%;padding:12px;margin-bottom:8px;background:var(--surf-2);border:1px dashed var(--line-2);border-radius:10px;color:var(--dim);font-family:Sora;font-size:.85rem;cursor:pointer;text-align:left';
-function abrirEntrega(saleId,cliente,monto){
-  _ent={saleId,fotoCasa:null,fotoCliente:null,lat:null,lng:null,firma:null};
-  const ov=_entOv(`<h3 style="margin:0 0 2px">Entregar crédito</h3>
-    <div style="font-size:.82rem;color:var(--dim);margin-bottom:12px">${cliente} · entrega ${fmt(monto)}</div>
+function abrirEntrega(saleId,cliente,monto,producto){
+  _ent={saleId,fotoCasa:null,fotoCliente:null,lat:null,lng:null,firma:null,producto:producto||''};
+  /* En una venta de equipo el IMEI se captura aquí, que es cuando el aparato sale de la sucursal.
+     Vacío = el servidor descuenta la unidad más antigua disponible de ese modelo. */
+  const _imeiBox = _ent.producto
+    ? `<div style="padding:11px;margin-bottom:9px;border:1px solid var(--vio);border-radius:10px;background:rgba(124,92,224,.07)">
+        <div style="font-size:.74rem;color:var(--vio);font-weight:700;margin-bottom:6px">📱 ${_ve(_ent.producto)}</div>
+        <input id="ent-imei" inputmode="numeric" placeholder="IMEI / serie del equipo que entregas" style="width:100%;padding:10px;background:var(--surf);border:1px solid var(--line);border-radius:8px;font-family:'IBM Plex Mono',monospace;font-size:.85rem;color:var(--txt)">
+        <div style="font-size:.7rem;color:var(--faint);margin-top:5px">Si lo dejas vacío se descuenta la unidad más antigua en existencia.</div></div>`
+    : '';
+  const ov=_entOv(`<h3 style="margin:0 0 2px">Entregar ${_ent.producto?'equipo':'crédito'}</h3>
+    <div style="font-size:.82rem;color:var(--dim);margin-bottom:12px">${cliente} · entrega ${_ent.producto?('📱 '+_ve(_ent.producto)):fmt(monto)}</div>
+    ${_imeiBox}
     <label id="fb-casa" style="${_fbtn}">🏠 <span id="fb-casa-t">Foto de la casa</span><input type="file" accept="image/*" capture="environment" style="display:none" onchange="leerFoto(this,'casa')"></label>
     <label id="fb-cli" style="${_fbtn}">🧍 <span id="fb-cli-t">Foto del cliente</span><input type="file" accept="image/*" capture="environment" style="display:none" onchange="leerFoto(this,'cliente')"></label>
     <button class="btn" style="width:100%;margin-bottom:8px" id="geo-btn" onclick="capturarGeo()">📍 Capturar ubicación GPS</button>
@@ -2799,7 +2810,8 @@ async function confirmarEntrega(btn){
   if(!_ent.fotoCasa||!_ent.fotoCliente){ alert('Faltan las fotos: casa y cliente'); return; }
   if(!_ent.firma){ alert('Falta la firma del pagaré del cliente'); return; }
   btn.disabled=true; btn.textContent='Enviando…';
-  try{ await apiU('POST','/api/sales/'+_ent.saleId+'/entregar',{lat:_ent.lat,lng:_ent.lng,fotoCasa:_ent.fotoCasa,fotoCliente:_ent.fotoCliente,firma:_ent.firma});
+  const _im=document.getElementById('ent-imei');
+  try{ await apiU('POST','/api/sales/'+_ent.saleId+'/entregar',{lat:_ent.lat,lng:_ent.lng,fotoCasa:_ent.fotoCasa,fotoCliente:_ent.fotoCliente,firma:_ent.firma,imei:(_im?_im.value.trim():'')});
     document.querySelectorAll('.entov').forEach(o=>o.remove()); await cargarBandeja();
   }catch(e){ alert(e.message); btn.disabled=false; btn.textContent='Confirmar entrega'; }
 }
