@@ -402,9 +402,10 @@ function blankTenant(brandNombre, adminUser, adminPass, adminNombre) {
   return {
     users: [{ id: 1, nombre: adminNombre || 'Administrador', usuario: (adminUser || 'admin').toLowerCase(), rol: 'admin', sucursalId: null, passwordHash: bcrypt.hashSync(adminPass || 'admin123', 8), activo: true, createdAt: new Date().toISOString() }],
     sucursales: [], clients: [], sales: [], movimientos: [], caja: {}, porEntregar: [],
+    productos: [], inventario: [],
     gestiones: [], cortes: [], transferencias: [], recolecciones: [], jcEntregas: [], jcCierres: [], asignaciones: [], contactos: [], cierresSemana: [],
     objetivos: { suc: {}, cob: {} },
-    config: { corteAutoHora: '19:00', corteAutoDias: [1, 2, 3, 4, 5, 6], semanaInicio: 4, brand: { nombre: brandNombre || 'CobraPro' }, tarifas: JSON.parse(JSON.stringify(DEFAULT_TARIFAS)) }, _idem: {}
+    config: { corteAutoHora: '19:00', corteAutoDias: [1, 2, 3, 4, 5, 6], semanaInicio: 4, brand: { nombre: brandNombre || 'CobraPro' }, tarifas: JSON.parse(JSON.stringify(DEFAULT_TARIFAS)), modulosOff: ['inventario'], _invSeed: 1 }, _idem: {}
   };
 }
 function normalizeTenant(b) {
@@ -425,6 +426,15 @@ function normalizeTenant(b) {
   if (!b.config.tarifas.s17) b.config.tarifas.s17 = JSON.parse(JSON.stringify(DEFAULT_TARIFAS.s17));
   if (!b.config.tarifas.s21) b.config.tarifas.s21 = JSON.parse(JSON.stringify(DEFAULT_TARIFAS.s21));
   if (!b.config.tarifas.s31) b.config.tarifas.s31 = JSON.parse(JSON.stringify(DEFAULT_TARIFAS.s31));
+  b.productos = b.productos || []; b.inventario = b.inventario || [];
+  /* El catálogo/inventario nace APAGADO en TODAS las agencias. La lista guarda los APAGADOS, así que
+     un módulo nuevo aparecería prendido para todos; aquí se siembra una sola vez (_invSeed) para que
+     nadie lo vea sin que el superadmin lo prenda, y para no volver a apagarlo si ya lo prendió. */
+  if (b.config._invSeed !== 1) {
+    b.config.modulosOff = Array.isArray(b.config.modulosOff) ? b.config.modulosOff : [];
+    if (!b.config.modulosOff.includes('inventario')) b.config.modulosOff.push('inventario');
+    b.config._invSeed = 1;
+  }
   b._idem = b._idem || {};
   if(b.config.creditosVoz == null) b.config.creditosVoz = 0;
   b.config.voz = b.config.voz || { despacho:'', acreedor:'', telContacto:'', whatsapp:'' };
@@ -645,12 +655,142 @@ const MODULOS = [
   { k: 'pl', n: 'P&L mensual' }, { k: 'extras', n: 'Extras · Prestanombres' },
   { k: 'grupal', n: 'Créditos grupales' }, { k: 'usuarios', n: 'Usuarios y accesos' },
   { k: 'convenios', n: 'Convenios de pago' },
+  { k: 'inventario', n: 'Catálogo e inventario' },
 ];
 const MOD_KEYS = new Set(MODULOS.map(m => m.k));
 function modulosOffDe(blob) {
   const l = blob && blob.config && blob.config.modulosOff;
   return Array.isArray(l) ? l.filter(k => MOD_KEYS.has(k)) : [];
 }
+
+/* ---------- CATÁLOGO E INVENTARIO (venta de equipo a crédito) ----------
+   Una venta de equipo se comporta IGUAL que un préstamo: mismo motor de tarifas, mismo enganche
+   (el primer pago descontado con forma 'descuento', que ya no cuenta como cobranza ni comisiona),
+   misma cobranza, mismos reportes. Lo único distinto es la moneda de la entrega: el préstamo
+   entrega efectivo y la venta entrega una unidad del inventario. Por eso el crédito de venta nace
+   con entregaMonto = 0 (no sale dinero de caja) y el candado de la bandeja pasa a ser "hay unidad
+   disponible en la sucursal del crédito" en lugar de "hay efectivo".
+   El costo del equipo sale de tesorería cuando se COMPRA el inventario, no cuando se entrega. */
+function invOn() { return !modulosOffDe(db).includes('inventario'); }
+function invGuard(req, res, next) { return invOn() ? next() : res.status(403).json({ error: 'El módulo de catálogo e inventario no está activo en esta agencia' }); }
+function prodDe(id) { return (db.productos || []).find(p => p.id === +id) || null; }
+function prodLbl(p) { return p ? ([p.marca, p.modelo].filter(Boolean).join(' ').trim() || p.sku || ('Producto #' + p.id)) : ''; }
+// Unidades disponibles de un producto. sucursalId null = en toda la agencia.
+function stockDisp(productoId, sucursalId) {
+  return (db.inventario || []).filter(u => u.productoId === +productoId && u.estado === 'disponible'
+    && (sucursalId == null || String(u.sucursalId) === String(sucursalId))).length;
+}
+function prodSaleLbl(s) { return s && s.productoId ? (s.producto || prodLbl(prodDe(s.productoId))) : ''; }
+
+app.get('/api/productos', auth, invGuard, (req, res) => {
+  const suc = (req.query.sucursalId != null && req.query.sucursalId !== '') ? +req.query.sucursalId
+            : (req.user.rol === 'sucursal' ? sucDeUser(req.user) : null);
+  res.json((db.productos || [])
+    .filter(p => req.query.todos === '1' || p.activo !== false)
+    .map(p => ({ id: p.id, sku: p.sku, marca: p.marca, modelo: p.modelo, costo: p.costo, activo: p.activo !== false,
+      etiqueta: prodLbl(p), disponibles: stockDisp(p.id, suc), disponiblesAgencia: stockDisp(p.id, null) })));
+});
+app.post('/api/productos', auth, rol('admin', 'supervisor'), invGuard, (req, res) => {
+  const { sku, marca, modelo, costo } = req.body;
+  if (!String(marca || '').trim() && !String(modelo || '').trim()) return res.status(400).json({ error: 'Captura al menos marca y modelo' });
+  if (!(+costo > 0)) return res.status(400).json({ error: 'El costo del equipo debe ser mayor a cero' });
+  const p = { id: nextId('productos'), sku: String(sku || '').trim().toUpperCase().slice(0, 40),
+    marca: String(marca || '').trim().slice(0, 40), modelo: String(modelo || '').trim().slice(0, 60),
+    costo: Math.round(+costo), activo: true, createdAt: new Date().toISOString() };
+  db.productos.push(p); saveDB();
+  res.status(201).json({ ...p, etiqueta: prodLbl(p), disponibles: 0, disponiblesAgencia: 0 });
+});
+app.patch('/api/productos/:id', auth, rol('admin', 'supervisor'), invGuard, (req, res) => {
+  const p = prodDe(req.params.id);
+  if (!p) return res.status(404).json({ error: 'Producto no encontrado' });
+  if (req.body.sku != null) p.sku = String(req.body.sku).trim().toUpperCase().slice(0, 40);
+  if (req.body.marca != null) p.marca = String(req.body.marca).trim().slice(0, 40);
+  if (req.body.modelo != null) p.modelo = String(req.body.modelo).trim().slice(0, 60);
+  if (req.body.costo != null && +req.body.costo > 0) p.costo = Math.round(+req.body.costo);
+  if (typeof req.body.activo === 'boolean') p.activo = req.body.activo;
+  saveDB();
+  res.json({ ...p, etiqueta: prodLbl(p), disponibles: stockDisp(p.id, null) });
+});
+
+app.get('/api/inventario', auth, invGuard, (req, res) => {
+  const scope = req.user.rol === 'sucursal' ? sucDeUser(req.user) : null;
+  const filtro = (req.query.sucursalId != null && req.query.sucursalId !== '') ? +req.query.sucursalId : scope;
+  const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
+  const unidades = (db.inventario || [])
+    .filter(u => (filtro == null || String(u.sucursalId) === String(filtro)) && (!req.query.estado || u.estado === req.query.estado))
+    .map(u => { const p = prodDe(u.productoId); const v = u.saleId ? db.sales.find(x => x.id === u.saleId) : null;
+      return { id: u.id, productoId: u.productoId, producto: prodLbl(p), imei: u.imei, estado: u.estado,
+        sucursalId: u.sucursalId, sucursal: sucMap[u.sucursalId] || '—', costo: u.costo != null ? u.costo : (p ? p.costo : 0),
+        altaAt: u.altaAt || null, folio: v ? v.folio : null }; })
+    .reverse();
+  const resumen = (db.productos || []).filter(p => p.activo !== false).map(p => ({
+    id: p.id, etiqueta: prodLbl(p), costo: p.costo,
+    disponibles: stockDisp(p.id, filtro),
+    vendidos: (db.inventario || []).filter(u => u.productoId === p.id && u.estado === 'vendido' && (filtro == null || String(u.sucursalId) === String(filtro))).length
+  }));
+  res.json({ unidades: unidades.slice(0, 800), total: unidades.length, resumen, scope,
+    sucursales: db.sucursales.map(s => ({ id: s.id, nombre: s.nombre })) });
+});
+// Entrada de mercancía. Aquí SÍ sale el dinero: el costo se registra en tesorería al comprar,
+// no al entregar; si no, el P&L nunca vería el costo del equipo.
+app.post('/api/inventario/entrada', auth, rol('admin', 'supervisor'), invGuard, (req, res) => {
+  const p = prodDe(req.body.productoId);
+  if (!p) return res.status(404).json({ error: 'Producto no encontrado' });
+  const suc = +req.body.sucursalId;
+  if (!db.sucursales.some(s => s.id === suc)) return res.status(400).json({ error: 'Selecciona la sucursal que recibe la mercancía' });
+  const lista = (Array.isArray(req.body.imeis) ? req.body.imeis : String(req.body.imeis || '').split(/[\s,;]+/))
+    .map(x => String(x || '').trim()).filter(Boolean);
+  if (!lista.length) return res.status(400).json({ error: 'Captura al menos un IMEI o número de serie' });
+  const dup = [], nuevas = [];
+  lista.forEach(im => {
+    const imei = im.slice(0, 32);
+    if ((db.inventario || []).some(u => u.imei === imei && u.estado !== 'baja')) { dup.push(imei); return; }
+    if (nuevas.some(u => u.imei === imei)) return;
+    nuevas.push({ id: 0, productoId: p.id, imei, sucursalId: suc, estado: 'disponible', costo: p.costo,
+      saleId: null, altaAt: new Date().toISOString(), altaBy: req.user.nombre });
+  });
+  if (!nuevas.length) return res.status(409).json({ error: 'Todos los IMEI capturados ya existen en el inventario', duplicados: dup });
+  nuevas.forEach(u => { u.id = nextId('inventario'); db.inventario.push(u); });
+  if (req.body.registrarSalida !== false)
+    flujoAgregar('salida', 'compra', `Compra de inventario · ${nuevas.length} × ${prodLbl(p)}`, p.costo * nuevas.length, null, req.user.nombre);
+  saveDB();
+  logOp('inv_entrada', p.id, { productoId: p.id, sucursalId: suc, altas: nuevas.length, by: req.user.nombre });
+  res.status(201).json({ ok: true, altas: nuevas.length, duplicados: dup, disponibles: stockDisp(p.id, suc) });
+});
+app.post('/api/inventario/traspaso', auth, rol('admin', 'supervisor'), invGuard, (req, res) => {
+  const suc = +req.body.sucursalId;
+  if (!db.sucursales.some(s => s.id === suc)) return res.status(400).json({ error: 'Sucursal destino inválida' });
+  const ids = Array.isArray(req.body.ids) ? req.body.ids.map(Number) : [];
+  let n = 0;
+  ids.forEach(id => { const u = (db.inventario || []).find(x => x.id === id);
+    if (u && u.estado === 'disponible') { u.sucursalId = suc; u.movAt = new Date().toISOString(); u.movBy = req.user.nombre; n++; } });
+  if (!n) return res.status(409).json({ error: 'No hay unidades disponibles para traspasar' });
+  saveDB();
+  logOp('inv_traspaso', suc, { ids, sucursalId: suc, movidas: n, by: req.user.nombre });
+  res.json({ ok: true, movidas: n });
+});
+// Baja (robo, daño, garantía) y reingreso. La devolución de un equipo ya entregado se resuelve a
+// mano: se cancela el crédito como hoy y se reingresa la unidad desde aquí.
+app.post('/api/inventario/baja', auth, rol('admin', 'supervisor'), invGuard, (req, res) => {
+  const u = (db.inventario || []).find(x => x.id === +req.body.id);
+  if (!u) return res.status(404).json({ error: 'Unidad no encontrada' });
+  if (u.estado === 'baja') return res.json({ ok: true });
+  u.estado = 'baja'; u.saleId = null;
+  u.motivoBaja = String(req.body.motivo || '').slice(0, 120);
+  u.bajaAt = new Date().toISOString(); u.bajaBy = req.user.nombre;
+  saveDB();
+  logOp('inv_baja', u.id, { id: u.id, imei: u.imei, motivo: u.motivoBaja, by: req.user.nombre });
+  res.json({ ok: true });
+});
+app.post('/api/inventario/reingresar', auth, rol('admin', 'supervisor'), invGuard, (req, res) => {
+  const u = (db.inventario || []).find(x => x.id === +req.body.id);
+  if (!u) return res.status(404).json({ error: 'Unidad no encontrada' });
+  if (u.estado === 'disponible') return res.json({ ok: true });
+  u.estado = 'disponible'; u.saleId = null; u.reingresoAt = new Date().toISOString(); u.reingresoBy = req.user.nombre;
+  saveDB();
+  logOp('inv_reingreso', u.id, { id: u.id, imei: u.imei, by: req.user.nombre });
+  res.json({ ok: true });
+});
 
 /* ---------- SUPERADMIN: gestión de agencias ---------- */
 // Catálogo de módulos para pintar los interruptores
@@ -1338,6 +1478,7 @@ function firmaDocumento(s) {
     freq: s.tipo === 'diario' ? 'diarios' : (s.tipo === 'unico' ? 'único' : 'semanales'),
     primerPago: s.primerPago || 0, entregaMonto: s.entregaMonto != null ? s.entregaMonto : s.monto,
     articulos: s.articulos || [],
+    producto: prodSaleLbl(s) || null, imei: s.imei || null,
   };
 }
 function firmaHash(doc) {
@@ -1482,7 +1623,20 @@ app.post('/api/sales/:id/entregar', auth, rol('admin', 'supervisor', 'sucursal',
   // efectivo disponible (liberando la reserva de ESTE crédito si ya lo tenías tomado)
   let disp = posicionCash(req.user) - reservadoPor(req.user);
   if (s.tomadoPor && s.tomadoPor.rol === req.user.rol && s.tomadoPor.id === req.user.id) disp += monto;
-  if (disp < monto - 0.5) return res.status(409).json({ error: `No tienes suficiente efectivo para entregar este crédito. Disponible $${Math.round(disp).toLocaleString('es-MX')}, este crédito entrega $${Math.round(monto).toLocaleString('es-MX')} al cliente. Pide que te doten o recibe efectivo de un promotor.` });
+  if (!s.productoId && disp < monto - 0.5) return res.status(409).json({ error: `No tienes suficiente efectivo para entregar este crédito. Disponible $${Math.round(disp).toLocaleString('es-MX')}, este crédito entrega $${Math.round(monto).toLocaleString('es-MX')} al cliente. Pide que te doten o recibe efectivo de un promotor.` });
+  /* Venta de equipo: en lugar de efectivo se valida y se descuenta una unidad del inventario.
+     El IMEI se asigna AQUÍ porque es cuando el aparato sale físicamente de la sucursal. Si el
+     front todavía no manda imei, toma la unidad más antigua disponible: nunca bloquea la entrega. */
+  let _unidad = null;
+  if (s.productoId) {
+    const _disp = (db.inventario || []).filter(u => u.productoId === s.productoId && u.estado === 'disponible' && String(u.sucursalId) === String(s.sucursalId));
+    if (!_disp.length) return res.status(409).json({ error: `No hay unidades disponibles de ${prodSaleLbl(s)} en la sucursal de este crédito. Haz un traspaso o registra la entrada en Inventario.` });
+    const _imei = String(req.body.imei || '').trim();
+    if (_imei) {
+      _unidad = _disp.find(u => u.imei === _imei);
+      if (!_unidad) return res.status(409).json({ error: `El IMEI ${_imei} no está disponible en esta sucursal para ${prodSaleLbl(s)}.` });
+    } else _unidad = _disp[0];
+  }
   const cli = db.clients.find(c => c.id === s.clientId) || {};
   // Las 3 evidencias salen del bloque y quedan como "foto:N". Si falla, se guardan
   // en el bloque como antes: la entrega no se pierde por esto.
@@ -1497,13 +1651,18 @@ app.post('/api/sales/:id/entregar', auth, rol('admin', 'supervisor', 'sucursal',
     jcId: req.user.rol === 'jc' ? req.user.id : null, jcNombre: req.user.nombre,
     fecha: new Date().toISOString(), lat: typeof lat === 'number' ? lat : null, lng: typeof lng === 'number' ? lng : null, fotoCasa, fotoCliente, firma
   };
+  if (_unidad) {
+    _unidad.estado = 'vendido'; _unidad.saleId = s.id; _unidad.vendidoAt = new Date().toISOString();
+    s.imei = _unidad.imei;
+    s.entrega.imei = _unidad.imei; s.entrega.producto = prodSaleLbl(s);
+  }
   delete s.tomadoPor;
   // descuento por posición del que entrega (el JC y el supervisor se descuentan solos vía jcCajaDe / supervisorCajaDe)
-  if (req.user.rol === 'sucursal') {
+  if (!s.productoId && req.user.rol === 'sucursal') {
     const sid = String(sucDeUser(req.user));
     db.caja[sid] = db.caja[sid] || { inicial: 0, efectivo: 0, banco: 0, entregas: 0, retiros: 0 };
     db.caja[sid].retiros = (db.caja[sid].retiros || 0) + monto;
-  } else if (req.user.rol === 'admin') {
+  } else if (!s.productoId && req.user.rol === 'admin') {
     flujoAgregar('salida', 'entrega', `Entrega de crédito ${s.folio} · ${cli.nombre || ''}`, monto, null, req.user.nombre);
   }
   if (cli && (typeof cli.lat !== 'number') && typeof lat === 'number') { cli.lat = lat; cli.lng = lng; cli.geoSrc = 'entrega'; }
@@ -1516,6 +1675,8 @@ app.get('/api/entregas/bandeja', auth, rol('admin', 'supervisor', 'sucursal', 'j
   const scope = scopeEntregas(req.user);
   const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
   const map = s => { const c = db.clients.find(x => x.id === s.clientId) || {}; return { saleId: s.id, folio: s.folio, cliente: c.nombre || '—', dir: [c.calle, c.col, c.ciudad].filter(Boolean).join(', '), tel: c.tel || '', prom: s.prom, sucursal: sucMap[s.sucursalId] || '—', tipo: s.tipo, monto: s.monto, entregaMonto: entregaMontoDe(s), createdAt: s.createdAt, tomadoPor: s.tomadoPor || null,
+    esVenta: !!s.productoId, producto: prodSaleLbl(s) || null,
+    stockSuc: s.productoId ? stockDisp(s.productoId, s.sucursalId) : null,
     firmado: !!s.firmaDigital, firmadoEl: s.firmaDigital ? s.firmaDigital.fecha : null,
     linkEnviado: !!s.firmaLink, linkFecha: s.firmaLink ? s.firmaLink.creado : null }; };
   const pend = db.sales.filter(s => s.entregado !== true && (scope == null || s.sucursalId === scope));
@@ -1537,7 +1698,12 @@ app.post('/api/entregas/:id/tomar', auth, rol('admin', 'supervisor', 'sucursal',
   const scope = scopeEntregas(req.user);
   if (scope != null && s.sucursalId !== scope) return res.status(403).json({ error: 'Ese crédito no es de tu sucursal' });
   const monto = entregaMontoDe(s);
-  if (disponibleEntrega(req.user) < monto - 0.5) return res.status(409).json({ error: `No tienes suficiente efectivo para tomar este crédito. Disponible $${Math.round(disponibleEntrega(req.user)).toLocaleString('es-MX')}, entrega $${Math.round(monto).toLocaleString('es-MX')}. Pide que te doten o recibe efectivo de un promotor.` });
+  /* En una VENTA el candado de efectivo no aplica: no sale dinero de caja (entrega 0). Si se
+     dejara, una posición de caja en negativo bloquearía la entrega de un equipo sin razón. */
+  if (!s.productoId && disponibleEntrega(req.user) < monto - 0.5) return res.status(409).json({ error: `No tienes suficiente efectivo para tomar este crédito. Disponible $${Math.round(disponibleEntrega(req.user)).toLocaleString('es-MX')}, entrega $${Math.round(monto).toLocaleString('es-MX')}. Pide que te doten o recibe efectivo de un promotor.` });
+  // El candado de la venta es que haya unidad disponible en la sucursal del crédito.
+  if (s.productoId && stockDisp(s.productoId, s.sucursalId) < 1)
+    return res.status(409).json({ error: `No hay unidades disponibles de ${prodSaleLbl(s)} en la sucursal de este crédito. Haz un traspaso o registra la entrada en Inventario.` });
   s.tomadoPor = { rol: req.user.rol, id: req.user.id, nombre: req.user.nombre, at: new Date().toISOString() };
   saveDB();
   res.json({ ok: true });
@@ -1652,6 +1818,7 @@ app.get('/api/sales/:id/pagare', auth, (req, res) => {
     monto: s.monto, total: s.total, cuota: s.cuota, pagos, freq, tipo: s.tipo,
     primerPago: s.primerPago || 0, descuentaPP: !!s.descuentaPP, entregaMonto: s.entregaMonto != null ? s.entregaMonto : s.monto,
     articulos: s.articulos || [],
+    producto: prodSaleLbl(s) || null, imei: s.imei || null,
     firma: !!(s.entrega && s.entrega.firma)
   });
 });
@@ -1771,7 +1938,19 @@ app.post('/api/buro/solicitud/:id/declinar', auth, rol('admin', 'supervisor'), (
 });
 
 app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
-  const { nombre, tel, calle, col, ciudad, estado, curp, sucursalId, prom, tipo, plazo, monto, dias, force, clienteExistenteId, articulos, aval } = req.body;
+  const { nombre, tel, calle, col, ciudad, estado, curp, sucursalId, prom, tipo, plazo, monto, dias, force, clienteExistenteId, articulos, aval, productoId } = req.body;
+
+  /* VENTA DE EQUIPO. Se valida ANTES de tocar nada (el cliente se crea más abajo) para no dejar
+     clientes huérfanos si la venta se rechaza. Aquí solo se exige que exista mercancía en la
+     agencia; el candado POR SUCURSAL vive en la bandeja de entregas, que es donde el aparato
+     sale físicamente y donde antes se validaba el efectivo. */
+  let _prodVenta = null;
+  if (productoId != null && productoId !== '') {
+    if (!invOn()) return res.status(403).json({ error: 'El módulo de catálogo e inventario no está activo en esta agencia' });
+    _prodVenta = prodDe(productoId);
+    if (!_prodVenta || _prodVenta.activo === false) return res.status(404).json({ error: 'Ese producto no existe o está dado de baja' });
+    if (stockDisp(_prodVenta.id, null) < 1) return res.status(409).json({ error: `No hay unidades disponibles de ${prodLbl(_prodVenta)}. Registra la entrada en Inventario antes de capturar la venta.` });
+  }
 
   // === Candado de Buró: solo cliente NUEVO. ROJO bloquea y dispara solicitud de Vo.Bo al admin. ===
   if (!clienteExistenteId) {
@@ -1863,6 +2042,10 @@ app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) 
   const artLimpios = Array.isArray(articulos) ? articulos.map(x => String(x || '').trim()).filter(Boolean).slice(0, 30) : [];
   if (artLimpios.length) sale.articulos = artLimpios;
   if (r.descuentaPP) { sale.primerPago = r.primerPago; sale.descuentaPP = true; sale.entregaMonto = r.entregaCliente; }
+  /* El crédito de venta es idéntico a un préstamo salvo que no entrega efectivo: entregaMonto = 0
+     hace que el candado de caja de la bandeja pase solo y deja pasar el de inventario. El IMEI NO
+     se aparta aquí; se asigna hasta la entrega, que es cuando el aparato sale de la vitrina. */
+  if (_prodVenta) { sale.productoId = _prodVenta.id; sale.producto = prodLbl(_prodVenta); sale.entregaMonto = 0; }
   db.sales.push(sale);
   movAdd({ id: nextId('movimientos'), saleId: sale.id, fecha: fechaMxHoyDDMM(), concepto: 'Disposición de crédito', origen: 'Sucursal', cargo: r.total, abono: 0 });
   // Productos que descuentan el primer pago: se registra de inmediato como abono (el cliente recibe monto − primer pago)
@@ -5090,7 +5273,7 @@ app.get('/api/admin/salud', auth, rol('admin'), async (req, res) => {
   res.json(out);
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v30', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, objetivoCartera: true, asignEnviadasFix: true, buro: true, numDiariosSuc: true, contactosParcial: true, resetFondo: true, soloEfectivo: true, reindexUsuarios: true, resetPassCobradores: true, limpiarCobradores: true, importLoginFix: true, loginAutoRepair: true, actualizarCuotas: true, cuotaPorFolio: true, metaSuc100: true, eliminarEntrega: true, cobradoSemana: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, mostrarMembrete: true, oplog: true, salud: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v30', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, objetivoCartera: true, asignEnviadasFix: true, buro: true, numDiariosSuc: true, contactosParcial: true, resetFondo: true, soloEfectivo: true, reindexUsuarios: true, resetPassCobradores: true, limpiarCobradores: true, importLoginFix: true, loginAutoRepair: true, actualizarCuotas: true, cuotaPorFolio: true, metaSuc100: true, eliminarEntrega: true, cobradoSemana: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, mostrarMembrete: true, oplog: true, salud: true, inventario: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
