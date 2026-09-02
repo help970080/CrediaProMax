@@ -220,6 +220,7 @@
     <button class="navitem" data-v="ranking"><span class="ic">🏆</span> Ranking</button>
     <button class="navitem" data-v="transferencias"><span class="ic">⇆</span> Transferencias</button>
     <button class="navitem" data-v="sucursales"><span class="ic">🏪</span> Sucursales</button>
+    <button class="navitem" data-v="inventario"><span class="ic">📱</span> Catálogo e inventario</button>
     <div class="nav-lbl">Finanzas</div>
     <button class="navitem" data-v="comisiones"><span class="ic">%</span> Comisiones</button>
     <button class="navitem" data-v="conciliacion"><span class="ic">⇄</span> Conciliación</button>
@@ -569,6 +570,52 @@
     <div class="panel"><div class="ph"><h3>Sucursales</h3><div style="display:flex;gap:6px;margin-left:auto"><button class="btn gold" onclick="nuevaSucursal()">＋ Nueva sucursal</button><button class="btn" onclick="exportCSV('suc')">⬇ CSV</button><button class="btn" onclick="descargarRespaldo()" title="Descarga todos los datos de la agencia como respaldo">🛟 Descargar respaldo</button></div></div>
       <table><thead><tr><th>Sucursal</th><th>Encargada</th><th class="n">Pagos recibidos</th><th class="n"># Pagos</th><th class="n">Créditos captados</th><th class="n">Cartera total</th><th class="n">Atraso</th><th class="n">Efectivo en caja</th><th>Conciliación</th><th></th></tr></thead><tbody id="tb-suc"></tbody></table>
       <div class="note">La encargada captura los créditos nuevos; ese movimiento aparece de inmediato en la cartera del cobrador asignado, sin listas ni esperas al día siguiente.</div>
+    </div>
+  </section>
+
+
+  <!-- CATÁLOGO E INVENTARIO -->
+  <section class="view" id="inventario">
+    <div class="kpis" id="inv-kpis" style="margin-bottom:14px"></div>
+
+    <div class="panel">
+      <div class="ph"><h3>Catálogo de productos</h3>
+        <span class="hint">el costo es el monto del crédito: la tarifa del plazo le pone el interés</span>
+        <button class="btn gold" style="margin-left:auto" onclick="invNuevoProd()">＋ Nuevo producto</button>
+      </div>
+      <table><thead><tr><th>SKU</th><th>Equipo</th><th class="n">Costo</th><th class="n">Disponibles</th><th class="n">Vendidos</th><th></th></tr></thead>
+        <tbody id="inv-tb-prod"></tbody></table>
+      <div class="note">El costo entra como monto del crédito. Con la tarifa de 16 semanas un equipo de $3,000 queda en $4,800 de venta con $480 de enganche; el enganche se descuenta al inicio y no cuenta como cobranza ni comisiona.</div>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><h3>Entrada de mercancía</h3>
+        <span class="hint">aquí sale el dinero de tesorería: el costo se registra al comprar, no al entregar</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;align-items:end">
+        <div><label style="font-size:.72rem;color:var(--dim);display:block;margin-bottom:4px">Producto</label>
+          <select id="inv-e-prod" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--surf-2);font-family:inherit"></select></div>
+        <div><label style="font-size:.72rem;color:var(--dim);display:block;margin-bottom:4px">Sucursal que recibe</label>
+          <select id="inv-e-suc" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--surf-2);font-family:inherit"></select></div>
+        <div style="grid-column:1/-1"><label style="font-size:.72rem;color:var(--dim);display:block;margin-bottom:4px">IMEI / números de serie — uno por línea o separados por espacio</label>
+          <textarea id="inv-e-imeis" rows="3" placeholder="350111111111111&#10;350222222222222" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--surf-2);font-family:'IBM Plex Mono',monospace;font-size:.85rem"></textarea></div>
+        <div style="grid-column:1/-1;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <label style="display:flex;align-items:center;gap:7px;font-size:.8rem;color:var(--dim)"><input type="checkbox" id="inv-e-flujo" checked style="width:16px;height:16px"> Registrar la salida de dinero en Tesorería</label>
+          <button class="btn gold" style="margin-left:auto" onclick="invEntrada()">📥 Registrar entrada</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="ph"><h3>Unidades</h3>
+        <select id="inv-f-suc" onchange="invCargar()" style="padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--surf-2);font-family:inherit;font-size:.84rem"></select>
+        <select id="inv-f-est" onchange="invCargar()" style="padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--surf-2);font-family:inherit;font-size:.84rem">
+          <option value="">Todos los estados</option><option value="disponible">Disponible</option><option value="vendido">Vendido</option><option value="baja">Baja</option></select>
+        <button class="btn" style="margin-left:auto" onclick="invTraspaso()">⇆ Traspasar seleccionadas</button>
+      </div>
+      <table><thead><tr><th style="width:34px"></th><th>IMEI / serie</th><th>Equipo</th><th>Sucursal</th><th>Estado</th><th>Crédito</th><th></th></tr></thead>
+        <tbody id="inv-tb-uni"></tbody></table>
+      <div class="note">Una unidad vendida queda ligada a su folio. Si el cliente devuelve el equipo, cancela el crédito como siempre y usa “Reingresar” para regresar el IMEI a disponible.</div>
     </div>
   </section>
 
@@ -2857,7 +2904,7 @@ function sim(){const t=$('s-tipo').value,monto=+$('s-monto').value||0,plazo=+$('
 
 /* NAV + EVENTOS */
 const titles={inicio:['Inicio','Panorama de la semana · cobranza, colocación y mora'],
-  convenios:['Convenios de pago','Pactados con el cliente · cumplimiento calculado contra los abonos reales'],resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],numdiarios:['Números diarios','Cobranza por gerencia · del día y acumulado de la semana'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],bandeja:['Bandeja de entregas','Créditos por entregar · toma y entrega con evidencia'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],ranking:['Ranking de cobradores','Semana · unidades, % cobranza, clientes y cobrados con semáforo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],flujo:['Flujo / Tesorería','Efectivo del admin · dotación a la operación, nómina y capital'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo'],mapa:['Mapa de clientes','Ubicación geográfica de la cartera'],rastreo:['Rastreo de equipo','Dónde está tu gente en campo · seguridad y operación'],pl:['P&L mensual','Estado de resultados del mes · ingreso, costos, gastos y utilidad por sucursal'],extras:['Extras · Detector de prestanombres','Coincidencias por teléfono, domicilio y apellidos'],grupal:['Créditos grupales','Grupos solidarios · junta semanal, garantía y pago solidario'],asignar:['Asignar efectivo','Mueve efectivo entre puestos · el que recibe confirma'],vobo:['Vo.Bo · Buró interno','Autoriza o declina ventas que botaron alerta roja']};
+  convenios:['Convenios de pago','Pactados con el cliente · cumplimiento calculado contra los abonos reales'],resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],numdiarios:['Números diarios','Cobranza por gerencia · del día y acumulado de la semana'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],bandeja:['Bandeja de entregas','Créditos por entregar · toma y entrega con evidencia'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],ranking:['Ranking de cobradores','Semana · unidades, % cobranza, clientes y cobrados con semáforo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],flujo:['Flujo / Tesorería','Efectivo del admin · dotación a la operación, nómina y capital'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo'],mapa:['Mapa de clientes','Ubicación geográfica de la cartera'],rastreo:['Rastreo de equipo','Dónde está tu gente en campo · seguridad y operación'],pl:['P&L mensual','Estado de resultados del mes · ingreso, costos, gastos y utilidad por sucursal'],extras:['Extras · Detector de prestanombres','Coincidencias por teléfono, domicilio y apellidos'],grupal:['Créditos grupales','Grupos solidarios · junta semanal, garantía y pago solidario'],asignar:['Asignar efectivo','Mueve efectivo entre puestos · el que recibe confirma'],vobo:['Vo.Bo · Buró interno','Autoriza o declina ventas que botaron alerta roja'],inventario:['Catálogo e inventario','Equipos a crédito · el stock es el candado de la entrega']};
 function _ve(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 async function cargarVoBo(){
   try{
@@ -2895,6 +2942,138 @@ async function declinarVoBo(id){
 }
 setTimeout(()=>{ try{ cargarVoBo(); }catch(e){} }, 1800);
 
+
+/* ===== CATÁLOGO E INVENTARIO =====
+   La venta de equipo usa el MISMO motor de crédito que un préstamo. Lo único distinto es que la
+   entrega no saca efectivo de caja, saca una unidad del inventario: por eso el crédito nace con
+   entregaMonto 0 y el candado de la bandeja es el stock de la sucursal. El IMEI se asigna hasta
+   la entrega, que es cuando el aparato sale de la vitrina. */
+let _invProd = [], _invUni = [], _invSuc = [], _invSel = new Set();
+function invMsg(m){
+  const t=document.createElement('div');
+  t.style.cssText='position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#1b2330;color:#fff;padding:12px 20px;border-radius:10px;font-size:.85rem;z-index:9999;box-shadow:0 6px 24px rgba(0,0,0,.25);max-width:90vw';
+  t.textContent=m; document.body.appendChild(t); setTimeout(()=>t.remove(),4600);
+}
+async function invInit(){ await invCargarProd(); await invCargar(); }
+async function invCargarProd(){
+  try{
+    _invProd = await apiU('GET','/api/productos?todos=1');
+  }catch(e){ invMsg(e.message); _invProd=[]; return; }
+  invRenderProd();
+}
+function invRenderProd(){
+  $('inv-tb-prod').innerHTML = _invProd.length ? _invProd.map(p=>`<tr${p.activo?'':' style="opacity:.5"'}>
+    <td class="mono">${_ve(p.sku||'—')}</td>
+    <td><b>${_ve(p.etiqueta)}</b>${p.activo?'':' <span style="font-size:.7rem;color:var(--red)">baja</span>'}</td>
+    <td class="n mono">${fmt(p.costo)}</td>
+    <td class="n"><b style="color:${p.disponiblesAgencia>0?'var(--grn)':'var(--faint)'}">${p.disponiblesAgencia}</b></td>
+    <td class="n">${p.vendidos!=null?p.vendidos:'—'}</td>
+    <td style="text-align:right;white-space:nowrap">
+      <button class="btn" onclick="invEditarProd(${p.id})">✎ Editar</button>
+      <button class="btn" onclick="invBajaProd(${p.id},${p.activo?0:1})">${p.activo?'Dar de baja':'Reactivar'}</button>
+    </td></tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--faint);padding:16px">Sin productos. Da de alta el primer equipo con su costo de compra.</td></tr>';
+  const act=_invProd.filter(p=>p.activo);
+  $('inv-e-prod').innerHTML = act.length ? act.map(p=>`<option value="${p.id}">${_ve(p.etiqueta)} · ${fmt(p.costo)}</option>`).join('') : '<option value="">— da de alta un producto —</option>';
+}
+async function invCargar(){
+  const fs=$('inv-f-suc').value, fe=$('inv-f-est').value;
+  let d;
+  try{ d = await apiU('GET','/api/inventario?'+(fs?('sucursalId='+fs+'&'):'')+(fe?('estado='+fe):'')); }
+  catch(e){ invMsg(e.message); return; }
+  _invUni=d.unidades||[]; _invSuc=d.sucursales||[]; _invSel.clear();
+  const opts='<option value="">Todas las sucursales</option>'+_invSuc.map(s=>`<option value="${s.id}"${String(s.id)===String(fs)?' selected':''}>${_ve(s.nombre)}</option>`).join('');
+  if($('inv-f-suc').innerHTML!==opts) $('inv-f-suc').innerHTML=opts;
+  $('inv-e-suc').innerHTML=_invSuc.map(s=>`<option value="${s.id}">${_ve(s.nombre)}</option>`).join('');
+
+  const disp=(d.resumen||[]).reduce((a,r)=>a+r.disponibles,0);
+  const vend=(d.resumen||[]).reduce((a,r)=>a+r.vendidos,0);
+  const valor=(d.resumen||[]).reduce((a,r)=>a+r.disponibles*r.costo,0);
+  $('inv-kpis').innerHTML=`
+    <div class="kpi g"><div class="l">Disponibles</div><div class="v">${disp}</div><div class="s">listos para entregar</div></div>
+    <div class="kpi b"><div class="l">Valor del inventario</div><div class="v">${fmt(valor)}</div><div class="s">a costo de compra</div></div>
+    <div class="kpi"><div class="l">Entregados</div><div class="v">${vend}</div><div class="s">ligados a un crédito</div></div>
+    <div class="kpi"><div class="l">Modelos activos</div><div class="v">${(d.resumen||[]).length}</div><div class="s">en catálogo</div></div>`;
+
+  const est={disponible:['var(--grn)','Disponible'],vendido:['var(--blu)','Vendido'],baja:['var(--red)','Baja']};
+  $('inv-tb-uni').innerHTML = _invUni.length ? _invUni.map(u=>{
+    const e=est[u.estado]||['var(--faint)',u.estado];
+    return `<tr>
+      <td>${u.estado==='disponible'?`<input type="checkbox" class="inv-chk" data-id="${u.id}" onchange="invSel(${u.id},this.checked)" style="width:16px;height:16px">`:''}</td>
+      <td class="mono">${_ve(u.imei)}</td><td>${_ve(u.producto)}</td><td>${_ve(u.sucursal)}</td>
+      <td><span style="color:${e[0]};font-weight:600;font-size:.8rem">${e[1]}</span></td>
+      <td class="mono">${u.folio?_ve(u.folio):'—'}</td>
+      <td style="text-align:right;white-space:nowrap">${u.estado==='vendido'?'' :
+        (u.estado==='baja'
+          ? `<button class="btn" onclick="invReingresar(${u.id})">↩ Reingresar</button>`
+          : `<button class="btn" onclick="invBaja(${u.id})">✕ Dar de baja</button>`)}</td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--faint);padding:16px">Sin unidades con ese filtro.</td></tr>';
+  // el resumen del catálogo depende del inventario, así que se refresca junto
+  _invProd.forEach(p=>{ const r=(d.resumen||[]).find(x=>x.id===p.id); if(r){ p.vendidos=r.vendidos; p.disponiblesAgencia=r.disponibles; } });
+  if(_invProd.length) invRenderProd();
+}
+function invSel(id,on){ on?_invSel.add(id):_invSel.delete(id); }
+
+async function invNuevoProd(){
+  const marca=prompt('Marca del equipo (ej. Motorola)'); if(marca==null) return;
+  const modelo=prompt('Modelo (ej. G24 128GB)'); if(modelo==null) return;
+  const costo=prompt('Costo de compra del equipo (solo el número)'); if(costo==null) return;
+  const sku=prompt('SKU o clave interna (opcional)')||'';
+  try{ await apiU('POST','/api/productos',{marca,modelo,costo:+costo,sku});
+    invMsg('✓ Producto dado de alta'); await invCargarProd(); await invCargar();
+  }catch(e){ invMsg(e.message); }
+}
+async function invEditarProd(id){
+  const p=_invProd.find(x=>x.id===id); if(!p) return;
+  const marca=prompt('Marca',p.marca||''); if(marca==null) return;
+  const modelo=prompt('Modelo',p.modelo||''); if(modelo==null) return;
+  const costo=prompt('Costo de compra',p.costo); if(costo==null) return;
+  try{ await apiU('PATCH','/api/productos/'+id,{marca,modelo,costo:+costo});
+    invMsg('✓ Guardado'); await invCargarProd(); await invCargar();
+  }catch(e){ invMsg(e.message); }
+}
+async function invBajaProd(id,reactivar){
+  try{ await apiU('PATCH','/api/productos/'+id,{activo:!!reactivar});
+    await invCargarProd(); await invCargar();
+  }catch(e){ invMsg(e.message); }
+}
+async function invEntrada(){
+  const productoId=$('inv-e-prod').value, sucursalId=$('inv-e-suc').value;
+  const imeis=$('inv-e-imeis').value.trim();
+  if(!productoId){ invMsg('Da de alta un producto primero'); return; }
+  if(!sucursalId){ invMsg('Elige la sucursal que recibe'); return; }
+  if(!imeis){ invMsg('Captura al menos un IMEI'); return; }
+  const p=_invProd.find(x=>x.id===+productoId);
+  const n=imeis.split(/[\s,;]+/).filter(Boolean).length;
+  const flujo=$('inv-e-flujo').checked;
+  const _aviso = flujo ? `\n\nSe registrará una salida de ${fmt((p?p.costo:0)*n)} en Tesorería.` : '\n\nSIN registrar la salida en Tesorería.';
+  if(!confirm(`Registrar ${n} equipo(s) de ${p?p.etiqueta:''}.` + _aviso)) return;
+  try{
+    const d=await apiU('POST','/api/inventario/entrada',{productoId:+productoId,sucursalId:+sucursalId,imeis,registrarSalida:flujo});
+    $('inv-e-imeis').value='';
+    invMsg(`✓ ${d.altas} alta(s)`+(d.duplicados&&d.duplicados.length?` · ${d.duplicados.length} IMEI ya existían y se omitieron`:''));
+    await invCargarProd(); await invCargar();
+  }catch(e){ invMsg(e.message); }
+}
+async function invTraspaso(){
+  if(!_invSel.size){ invMsg('Selecciona al menos una unidad disponible'); return; }
+  const destino=prompt('Sucursal destino:\n'+_invSuc.map(s=>s.id+' = '+s.nombre).join('\n'));
+  if(destino==null) return;
+  try{ const d=await apiU('POST','/api/inventario/traspaso',{ids:[..._invSel],sucursalId:+destino});
+    invMsg(`✓ ${d.movidas} unidad(es) traspasada(s)`); await invCargar();
+  }catch(e){ invMsg(e.message); }
+}
+async function invBaja(id){
+  const motivo=prompt('Motivo de la baja (robo, daño, garantía…)'); if(motivo==null) return;
+  try{ await apiU('POST','/api/inventario/baja',{id,motivo}); invMsg('✓ Unidad dada de baja'); await invCargarProd(); await invCargar(); }
+  catch(e){ invMsg(e.message); }
+}
+async function invReingresar(id){
+  if(!confirm('¿Regresar esta unidad a disponible?')) return;
+  try{ await apiU('POST','/api/inventario/reingresar',{id}); invMsg('✓ Unidad disponible'); await invCargarProd(); await invCargar(); }
+  catch(e){ invMsg(e.message); }
+}
+
 document.querySelectorAll('.navitem').forEach(n=>{ if(!n.dataset.v) return; n.onclick=()=>{
   document.querySelectorAll('.navitem').forEach(x=>x.classList.remove('on'));
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
@@ -2923,6 +3102,7 @@ document.querySelectorAll('.navitem').forEach(n=>{ if(!n.dataset.v) return; n.on
   if(n.dataset.v==='asignar') initAsignar();
   if(n.dataset.v==='extras') initExtras();
   if(n.dataset.v==='grupal') initGrupal();
+  if(n.dataset.v==='inventario') invInit();
   if(n.dataset.v==='pl') cargarPL();
 }; });
 document.querySelectorAll('#period button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#period button').forEach(x=>x.classList.remove('on'));b.classList.add('on');period=b.dataset.p;render();});
