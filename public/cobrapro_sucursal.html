@@ -287,6 +287,9 @@
           <div class="field"><label>Modalidad</label><select id="n-tipo" onchange="fillPlazos();calc()"><option value="diario">Diario</option><option value="s16">Semanal 16 (primer pago)</option><option value="s17" selected>Semanal 17 (primer pago)</option><option value="s21">21 semanas (primer pago)</option><option value="s31">31 semanas (primer pago)</option><option value="unico">Pago único</option><option value="p17">Celulares 17 pagos</option></select></div>
           <div class="field" id="plazoWrap"><label>Plazo</label><select id="n-plazo" onchange="calc()"></select></div>
         </div>
+        <div class="field" id="n-eq-wrap" style="display:none"><label>Equipo a crédito <span class="req">*</span></label>
+          <select id="n-equipo" onchange="eqElegir()"></select>
+          <div id="n-eq-info" style="font-size:.76rem;color:var(--dim);margin-top:6px;line-height:1.5"></div></div>
         <div class="field"><label>Monto del crédito</label><input id="n-monto" type="number" value="5000" step="500" oninput="calc()"></div>
         <div class="field"><label>Artículo(s) que se vende(n) <span style="color:var(--faint);font-weight:400;font-size:.8rem">— opcional · celular, marca, modelo, IMEI…</span></label>
           <div id="art-list"></div>
@@ -784,15 +787,15 @@ async function agregarCreditoExistente(clienteId){
   const t=document.getElementById('n-tipo').value; const monto=+document.getElementById('n-monto').value||0;
   const plazo=+(document.getElementById('n-plazo')?.value||0);
   const prom=document.getElementById('n-prom').value;
-  if(!prom){toast('Selecciona el cobrador para este crédito');return;}
+  if(!prom && !EQ_ON){toast('Selecciona el cobrador para este crédito');return;}
   try{
     const _av=leerAval(); if(_av==='ERR') return;
-    const d=await api('POST','/api/sales',{clienteExistenteId:clienteId,prom,tipo:t,plazo,monto,dias:plazo,articulos:leerArticulos(),aval:_av});
+    const d=await api('POST','/api/sales',{clienteExistenteId:clienteId,prom:(prom||EQ_PROM),tipo:t,plazo,monto,dias:plazo,articulos:leerArticulos(),aval:_av,productoId:eqSel()});
     caja.ncred++; caja.coloc+=monto;
     const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
     movs.unshift({hora,txt:`Crédito ${d.folio} — ${d.cliente} (${prom}) · 2º crédito`,monto:0});
     ['n-cli','n-tel','n-calle','n-col','n-ref','n-curp','n-ciudad','n-estado'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-    resetArticulos(); limpiarAval();
+    resetArticulos(); limpiarAval(); eqReset(); if(EQ_ON) eqCargar();
     render(); _buscar();
     toast(`✓ ${d.folio} agregado a ${d.cliente} · ahora tiene ${d.totalCreditosCliente} créditos · cuota ${fmt(d.cuota)}`);
   }catch(e){ toast(e.message); }
@@ -897,6 +900,58 @@ function limpiarNuevoCredito(){
   try{ calc(); }catch(e){}
 }
 
+
+/* ===== VENTA DE EQUIPO A CRÉDITO =====
+   El crédito es el MISMO que un préstamo: el costo del equipo entra como monto y la tarifa del
+   plazo le pone el interés. Lo único distinto es que la entrega no saca efectivo de caja, saca una
+   unidad del inventario. Si el módulo está apagado en esta agencia, nada de esto se muestra y la
+   pantalla se comporta exactamente como siempre. */
+let EQ_ON = false, EQ_PROD = [], EQ_PROM = '';
+async function eqInit(){
+  try{
+    const b = await api('GET','/api/brand');
+    EQ_ON = !(Array.isArray(b.modulosOff) && b.modulosOff.includes('inventario'));
+  }catch(e){ EQ_ON = false; }
+  if(!EQ_ON) return;
+  document.getElementById('n-eq-wrap').style.display='';
+  /* La sucursal hace todo el proceso: no hay ruta de cobrador que elegir. Se esconde el selector y
+     el crédito se registra a nombre de la sucursal, que así queda como su propio cobrador y todos
+     los reportes que agrupan por cobrador siguen cuadrando sin tocarlos. */
+  try{
+    const sucs = await api('GET','/api/sucursales');
+    const mia = sucs.find(s => String(s.id) === String(ME && ME.sucursalId));
+    EQ_PROM = (mia && mia.nombre) || (ME && ME.nombre) || 'Sucursal';
+  }catch(e){ EQ_PROM = (ME && ME.nombre) || 'Sucursal'; }
+  const w = document.getElementById('n-prom');
+  if(w){
+    const campo = w.closest('.field');
+    if(campo) campo.style.display='none';
+    w.innerHTML = '<option>'+EQ_PROM+'</option>';
+  }
+  await eqCargar();
+}
+async function eqCargar(){
+  try{ EQ_PROD = (await api('GET','/api/productos')).filter(p=>p.disponiblesAgencia>0); }
+  catch(e){ EQ_PROD=[]; }
+  const s = document.getElementById('n-equipo');
+  s.innerHTML = '<option value="">— préstamo en efectivo (sin equipo) —</option>' +
+    EQ_PROD.map(p=>`<option value="${p.id}">${p.etiqueta} · ${p.disponiblesAgencia} disp.</option>`).join('');
+  eqElegir();
+}
+function eqElegir(){
+  const id = document.getElementById('n-equipo').value;
+  const m = document.getElementById('n-monto');
+  const info = document.getElementById('n-eq-info');
+  const p = EQ_PROD.find(x=>String(x.id)===String(id));
+  if(!p){ m.readOnly=false; m.style.opacity=''; info.textContent=''; calc(); return; }
+  m.value = p.costo; m.readOnly = true; m.style.opacity='.7';
+  info.innerHTML = `Costo del equipo <b>${fmt(p.costo)}</b> · el interés del plazo lo pone la tarifa. `+
+    `El IMEI se captura al entregar el aparato, no aquí.`;
+  calc();
+}
+function eqSel(){ const e=document.getElementById('n-equipo'); return (EQ_ON && e && e.value) ? +e.value : undefined; }
+function eqReset(){ const e=document.getElementById('n-equipo'); if(e){ e.value=''; eqElegir(); } }
+
 async function crearCredito(){
   const nombre=document.getElementById('n-cli').value.trim();
   const calle=document.getElementById('n-calle').value.trim();
@@ -912,11 +967,13 @@ async function crearCredito(){
   const t=document.getElementById('n-tipo').value; const monto=+document.getElementById('n-monto').value||0;
   const plazo=+(document.getElementById('n-plazo')?.value||0);
   const tel=document.getElementById('n-tel').value||''; const prom=document.getElementById('n-prom').value;
-  if(!prom){toast('Esta sucursal no tiene cobradores dados de alta. Pídele al admin que cree el usuario cobrador y lo asigne a tu sucursal.');return;}
+  if(!prom && !EQ_ON){toast('Esta sucursal no tiene cobradores dados de alta. Pídele al admin que cree el usuario cobrador y lo asigne a tu sucursal.');return;}
+  const _eq = eqSel();
+  if(EQ_ON && !_eq && !confirm('No elegiste equipo. ¿Capturar este crédito como préstamo en efectivo?')) return;
   const _avalPend=leerAval(); if(_avalPend==='ERR') return;
   // fetch directo para poder leer el 409 estructurado de validación
   try{
-    const r=await fetch('/api/sales',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+TOKEN},body:JSON.stringify({nombre,tel,calle,col,ciudad,estado,curp,prom,tipo:t,plazo,monto,dias:plazo,articulos:leerArticulos(),aval:_avalPend})});
+    const r=await fetch('/api/sales',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+TOKEN},body:JSON.stringify({nombre,tel,calle,col,ciudad,estado,curp,prom:(prom||EQ_PROM),tipo:t,plazo,monto,dias:plazo,articulos:leerArticulos(),aval:_avalPend,productoId:_eq})});
     const d=await r.json().catch(()=>({}));
     if(r.status===202 && d.voBo){
       document.getElementById('overlay').innerHTML=`<div class="modal">
@@ -954,9 +1011,9 @@ async function crearCredito(){
     movs.unshift({hora,txt:`Crédito ${d.folio} — ${nombre} (${prom})`,monto:0});
     ['n-cli','n-tel','n-calle','n-col','n-ref','n-curp','n-ciudad','n-estado'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
     {const _bs=document.getElementById('buro-sem'); if(_bs)_bs.style.display='none'; _buroLast='';}
-    resetArticulos();
+    resetArticulos(); eqReset(); if(EQ_ON) eqCargar();
     render(); _buscar();
-    toast(`✓ ${d.folio} capturado · cuota ${fmt(d.cuota)} · en ruta de ${prom.split(' ')[0]}`);
+    toast(`✓ ${d.folio} capturado · cuota ${fmt(d.cuota)}`+(d.producto?` · ${d.producto} por entregar`:` · en ruta de ${String(prom||EQ_PROM).split(' ')[0]}`));
     mostrarPagareCapturado(d.id, d.folio);
   }catch(e){ toast(e.message); }
 }
@@ -1011,12 +1068,14 @@ async function abrirBandeja(){
     const acc = modo==='cola'
       ? `<button class="bd-b gold" onclick="bdTomar(${c.saleId})">📥 Tomar</button>`
       : modo==='mias'
-      ? `<button class="bd-b gold" onclick="abrirEntrega(${c.saleId},'${esc(c.cliente)}',${c.entregaMonto},${c.firmado?1:0})">📦 Entregar + evidencia</button><button class="bd-b" onclick="bdSoltar(${c.saleId})">↩ Soltar</button>`
+      ? `<button class="bd-b gold" onclick="abrirEntrega(${c.saleId},'${esc(c.cliente)}',${c.entregaMonto},${c.firmado?1:0},'${esc(c.producto||'')}')">📦 Entregar + evidencia</button><button class="bd-b" onclick="bdSoltar(${c.saleId})">↩ Soltar</button>`
       : `<div style="font-size:.72rem;color:var(--acc)">🔒 Lo entrega ${c.tomadoPor?c.tomadoPor.nombre:'—'}</div>`;
     return `<div class="bd-card"><div style="font-weight:600">${c.cliente}</div>
       <div style="font-size:.7rem;color:var(--faint)">${c.folio} · ruta ${c.prom||'—'} · ${f}</div>
       <div style="font-size:.72rem;color:var(--dim);margin-top:3px">📍 ${c.dir||'—'}</div>
-      <div style="margin-top:5px;font-size:.8rem">Entrega: <b style="color:var(--grn)">${fmt(c.entregaMonto)}</b></div>${acc}${fir}</div>`;
+      <div style="margin-top:5px;font-size:.8rem">${c.esVenta
+        ? `Entrega: <b style="color:var(--vio)">📱 ${esc(c.producto||'equipo')}</b> <span style="color:${c.stockSuc>0?'var(--grn)':'var(--red)'};font-size:.76rem">· ${c.stockSuc} en tu inventario</span>`
+        : `Entrega: <b style="color:var(--grn)">${fmt(c.entregaMonto)}</b>`}</div>${acc}${fir}</div>`;
   };
   const dias=iso=>{ if(!iso) return 0; return Math.floor((Date.now()-new Date(iso).getTime())/86400000); };
   const sec=(t,arr,modo,vacio)=>`<div style="font-size:.76rem;color:var(--dim);font-weight:600;margin:12px 0 6px">${t}</div><div class="bd-grid">${arr.length?arr.slice().sort((a,b)=>(b.firmado?1:0)-(a.firmado?1:0)).map(c=>card(c,modo)).join(''):'<div style="color:var(--faint);font-size:.82rem;padding:6px">'+vacio+'</div>'}</div>`;
@@ -1067,12 +1126,13 @@ async function bdSoltar(id){ try{ await api('POST','/api/entregas/'+id+'/soltar'
 let _ent={saleId:null,fotoCasa:null,fotoCliente:null,lat:null,lng:null,firma:null}, _firmaCanvas=null;
 function _entOv(html){ const ov=document.createElement('div'); ov.className='entov'; ov.style.cssText='position:fixed;inset:0;background:rgba(10,15,25,.6);z-index:10000;display:flex;align-items:flex-start;justify-content:center;padding:14px;overflow:auto'; ov.onclick=e=>{if(e.target===ov)ov.remove();}; ov.innerHTML=`<div style="background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:18px;width:min(460px,96vw)">${html}</div>`; document.body.appendChild(ov); return ov; }
 const _fbtn="display:flex;align-items:center;gap:10px;width:100%;padding:12px;margin-bottom:8px;background:var(--surf-2);border:1px dashed var(--line-2);border-radius:10px;color:var(--dim);font-family:Sora;font-size:.85rem;cursor:pointer;text-align:left";
-function abrirEntrega(saleId,cliente,monto,yaFirmo){
-  _ent={saleId,fotoCasa:null,fotoCliente:null,lat:null,lng:null,firma:null,yaFirmo:!!yaFirmo};
+function abrirEntrega(saleId,cliente,monto,yaFirmo,producto){
+  _ent={saleId,fotoCasa:null,fotoCliente:null,lat:null,lng:null,firma:null,yaFirmo:!!yaFirmo,producto:producto||''};
   /* Si el cliente ya firmó por link, su expediente ya está completo: solo se revisa lo que mandó
      y se confirma. No se le pide al gerente ir a tomar foto de la casa ni del cliente. */
-  if(yaFirmo) return _entregaFirmada(saleId,cliente,monto);
-  _entOv(`<h3 style="margin:0 0 2px">Entregar crédito</h3><div style="font-size:.82rem;color:var(--dim);margin-bottom:12px">${cliente} · entrega ${fmt(monto)}</div>
+  if(yaFirmo) return _entregaFirmada(saleId,cliente,monto,producto);
+  _entOv(`<h3 style="margin:0 0 2px">Entregar ${_ent.producto?'equipo':'crédito'}</h3><div style="font-size:.82rem;color:var(--dim);margin-bottom:12px">${cliente} · entrega ${_ent.producto?('📱 '+_ent.producto):fmt(monto)}</div>
+    ${_entImeiBox()}
     <label id="fb-casa" style="${_fbtn}">🏠 <span id="fb-casa-t">Foto de la casa</span><input type="file" accept="image/*" capture="environment" style="display:none" onchange="leerFotoE(this,'casa')"></label>
     <label id="fb-cli" style="${_fbtn}">🧍 <span id="fb-cli-t">Foto del cliente</span><input type="file" accept="image/*" capture="environment" style="display:none" onchange="leerFotoE(this,'cliente')"></label>
     <button class="btn" style="width:100%;margin-bottom:8px;background:var(--surf-2);border:1px solid var(--line);color:var(--dim);padding:11px;border-radius:9px;font-family:Sora;cursor:pointer" id="geo-btn" onclick="capturarGeoE()">📍 Capturar ubicación GPS</button>
@@ -1083,9 +1143,20 @@ function abrirEntrega(saleId,cliente,monto,yaFirmo){
     <button id="ent-ok" onclick="confirmarEntregaE(this)" style="width:100%;margin-top:4px;background:var(--acc);color:#1b2330;border:none;padding:12px;border-radius:9px;font-family:Sora;font-weight:700;cursor:pointer">Confirmar entrega</button>
     <button onclick="this.closest('.entov').remove()" style="width:100%;margin-top:8px;background:var(--surf-2);border:1px solid var(--line);color:var(--dim);padding:10px;border-radius:9px;font-family:Sora;cursor:pointer">Cancelar</button>`);
 }
-async function _entregaFirmada(saleId,cliente,monto){
-  _entOv(`<h3 style="margin:0 0 2px">Entregar crédito</h3>
-    <div style="font-size:.82rem;color:var(--dim);margin-bottom:12px">${cliente} · entrega ${fmt(monto)}</div>
+function _entImeiBox(){
+  /* El IMEI se captura AQUÍ, no en la venta: es cuando el aparato sale de la vitrina. Si se deja
+     vacío, el servidor toma la unidad más antigua disponible de ese modelo en la sucursal. */
+  if(!_ent.producto) return '';
+  return `<div style="padding:11px;margin-bottom:9px;border:1px solid var(--vio);border-radius:10px;background:rgba(124,92,224,.07)">
+      <div style="font-size:.74rem;color:var(--vio);font-weight:700;margin-bottom:6px">📱 ${_ent.producto}</div>
+      <input id="ent-imei" inputmode="numeric" placeholder="IMEI / serie del equipo que entregas" style="width:100%;padding:10px;background:var(--surf);border:1px solid var(--line);border-radius:8px;font-family:'IBM Plex Mono',monospace;font-size:.85rem;color:var(--txt)">
+      <div style="font-size:.7rem;color:var(--faint);margin-top:5px">Si lo dejas vacío se descuenta la unidad más antigua en existencia.</div>
+    </div>`;
+}
+async function _entregaFirmada(saleId,cliente,monto,producto){
+  _entOv(`<h3 style="margin:0 0 2px">Entregar ${_ent.producto?'equipo':'crédito'}</h3>
+    <div style="font-size:.82rem;color:var(--dim);margin-bottom:12px">${cliente} · entrega ${_ent.producto?('📱 '+_ent.producto):fmt(monto)}</div>
+    ${_entImeiBox()}
     <div id="ef-box" style="color:var(--faint);font-size:.85rem;padding:16px 0">Cargando lo que mandó el cliente…</div>`);
   let e;
   try{ e=await api('GET','/api/sales/'+saleId+'/firma-evidencia'); }
@@ -1104,7 +1175,7 @@ async function _entregaFirmada(saleId,cliente,monto){
     <div style="font-size:.68rem;color:var(--faint);margin-bottom:12px">Comprobante ${e.hashDoc||''}</div>
     <button class="btn" style="width:100%;margin-bottom:8px;background:var(--surf-2);border:1px solid var(--line);color:var(--dim);padding:11px;border-radius:9px;font-family:Sora;cursor:pointer" id="geo-btn" onclick="capturarGeoE()">📍 Capturar ubicación (opcional)</button>
     <div id="geo-txt" style="font-size:.76rem;color:var(--faint);margin-bottom:10px">Ubicación: sin capturar</div>
-    <button id="ent-ok" onclick="confirmarEntregaE(this)" style="width:100%;background:var(--acc);color:#1b2330;border:none;padding:12px;border-radius:9px;font-family:Sora;font-weight:700;cursor:pointer">Confirmar entrega de ${fmt(monto)}</button>
+    <button id="ent-ok" onclick="confirmarEntregaE(this)" style="width:100%;background:var(--acc);color:#1b2330;border:none;padding:12px;border-radius:9px;font-family:Sora;font-weight:700;cursor:pointer">Confirmar entrega${_ent.producto?'':' de '+fmt(monto)}</button>
     <button onclick="this.closest('.entov').remove()" style="width:100%;margin-top:8px;background:var(--surf-2);border:1px solid var(--line);color:var(--dim);padding:10px;border-radius:9px;font-family:Sora;cursor:pointer">Cancelar</button>`;
 }
 function _zoomFoto(src){
@@ -1170,7 +1241,8 @@ async function confirmarEntregaE(btn){
     if(!_ent.firma){ toast('Falta la firma del pagaré'); return; }
   }
   btn.disabled=true; btn.textContent='Enviando…';
-  try{ await api('POST','/api/sales/'+_ent.saleId+'/entregar',{lat:_ent.lat,lng:_ent.lng,fotoCasa:_ent.fotoCasa,fotoCliente:_ent.fotoCliente,firma:_ent.firma});
+  const _im = document.getElementById('ent-imei');
+  try{ await api('POST','/api/sales/'+_ent.saleId+'/entregar',{lat:_ent.lat,lng:_ent.lng,fotoCasa:_ent.fotoCasa,fotoCliente:_ent.fotoCliente,firma:_ent.firma,imei:(_im?_im.value.trim():'')});
     document.querySelectorAll('.entov').forEach(o=>o.remove()); toast('Crédito entregado · pagaré firmado'); cargarCaja(); abrirBandeja();
   }catch(e){ toast(e.message); btn.disabled=false; btn.textContent='Confirmar entrega'; }
 }
@@ -1849,7 +1921,7 @@ async function _init(){
       ? cob.map(c=>`<option>${c.nombre}</option>`).join('')
       : '<option value="">— sin cobradores en esta sucursal —</option>';
   }catch(e){}
-  fillPlazos(); calc(); _buscar(); cargarCaja(); cargarJCSuc(); addArticulo();
+  fillPlazos(); calc(); _buscar(); cargarCaja(); cargarJCSuc(); addArticulo(); eqInit();
 // Ping de ubicación para el rastreo del admin/supervisor (mientras la app está abierta)
 function _pingUbic(){ if(!navigator.geolocation) return; navigator.geolocation.getCurrentPosition(function(p){ try{ api('POST','/api/ubicacion/ping',{lat:p.coords.latitude,lng:p.coords.longitude}); }catch(e){} }, function(){}, {enableHighAccuracy:false,timeout:8000,maximumAge:120000}); }
 _pingUbic(); setInterval(_pingUbic, 180000);
