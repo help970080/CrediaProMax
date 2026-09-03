@@ -931,11 +931,23 @@ async function eqInit(){
   await eqCargar();
 }
 async function eqCargar(){
-  try{ EQ_PROD = (await api('GET','/api/productos')).filter(p=>p.disponiblesAgencia>0); }
+  /* Se listan TODOS los equipos del catálogo, no solo los que tienen existencia. Filtrar dejaba el
+     selector vacío cuando no había IMEI cargados y parecía que el módulo estaba roto. Los que no
+     tienen existencia salen marcados y sin poder elegirse: el crédito se rechazaría de todos modos
+     porque no habría aparato que entregar. */
+  try{ EQ_PROD = (await api('GET','/api/productos')) || []; }
   catch(e){ EQ_PROD=[]; }
   const s = document.getElementById('n-equipo');
-  s.innerHTML = '<option value="">— préstamo en efectivo (sin equipo) —</option>' +
-    EQ_PROD.map(p=>`<option value="${p.id}">${p.etiqueta} · ${p.disponiblesAgencia} disp.</option>`).join('');
+  const conStock = EQ_PROD.filter(p=>p.disponiblesAgencia>0);
+  const sinStock = EQ_PROD.filter(p=>!(p.disponiblesAgencia>0));
+  s.innerHTML = '<option value="">— préstamo en efectivo (sin equipo) —</option>'
+    + conStock.map(p=>`<option value="${p.id}">${p.etiqueta} · ${p.disponiblesAgencia} disponible${p.disponiblesAgencia===1?'':'s'}</option>`).join('')
+    + (sinStock.length ? '<optgroup label="Sin existencia — carga la entrada en Inventario">'
+        + sinStock.map(p=>`<option value="${p.id}" disabled>${p.etiqueta} · sin existencia</option>`).join('')
+        + '</optgroup>' : '');
+  const info = document.getElementById('n-eq-info');
+  if(!EQ_PROD.length) info.innerHTML = '<span style="color:var(--adv,#b8860b)">El catálogo está vacío. Pídele al administrador que dé de alta los equipos.</span>';
+  else if(!conStock.length) info.innerHTML = '<span style="color:var(--adv,#b8860b)">Hay '+EQ_PROD.length+' equipo(s) en catálogo pero ninguno con existencia. Registra la entrada con sus IMEI en Inventario.</span>';
   eqElegir();
 }
 function eqElegir(){
@@ -943,7 +955,7 @@ function eqElegir(){
   const m = document.getElementById('n-monto');
   const info = document.getElementById('n-eq-info');
   const p = EQ_PROD.find(x=>String(x.id)===String(id));
-  if(!p){ m.readOnly=false; m.style.opacity=''; info.textContent=''; calc(); return; }
+  if(!p){ m.readOnly=false; m.style.opacity=''; if(EQ_PROD.filter(x=>x.disponiblesAgencia>0).length) info.textContent=''; calc(); return; }
   m.value = p.costo; m.readOnly = true; m.style.opacity='.7';
   info.innerHTML = `Costo del equipo <b>${fmt(p.costo)}</b> · el interés del plazo lo pone la tarifa. `+
     `El IMEI se captura al entregar el aparato, no aquí.`;
