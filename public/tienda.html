@@ -1,0 +1,199 @@
+<!doctype html><html lang="es"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Catálogo</title>
+<meta name="theme-color" content="#141b26">
+<meta name="description" content="Llévate tu equipo hoy y págalo por semana.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --noche:#141b26; --noche-2:#1d2735; --linea:#2c384a;
+  --oro:#e0a922; --papel:#fff; --tinta:#141b26; --tinta-2:#5d6b7e; --tenue:#93a1b3;
+  --borde:#e6eaf0; --wa:#1faa53;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{font-family:Sora,system-ui,sans-serif;background:var(--noche);color:var(--papel);line-height:1.5;min-height:100vh}
+button{font-family:inherit}
+:focus-visible{outline:2px solid var(--oro);outline-offset:2px}
+
+header{padding:32px 20px 22px;max-width:1120px;margin:0 auto}
+.marca{font-size:1.05rem;font-weight:700;color:var(--oro)}
+h1{font-size:clamp(1.85rem,5.6vw,2.8rem);font-weight:700;line-height:1.13;margin:13px 0 9px;max-width:16ch}
+.bajada{color:#b6c2d2;font-size:.97rem;max-width:44ch}
+.plazos{display:inline-flex;gap:3px;margin-top:20px;padding:4px;background:var(--noche-2);border:1px solid var(--linea);border-radius:12px;flex-wrap:wrap}
+.plazos button{font-size:.87rem;font-weight:600;color:#9fb0c4;background:none;border:0;padding:9px 16px;border-radius:9px;cursor:pointer;transition:background .18s,color .18s}
+.plazos button[aria-pressed="true"]{background:var(--oro);color:var(--noche)}
+
+.cats{display:flex;gap:7px;overflow-x:auto;padding:18px 20px 4px;max-width:1120px;margin:0 auto;scrollbar-width:none}
+.cats::-webkit-scrollbar{display:none}
+.cats button{white-space:nowrap;font-size:.83rem;font-weight:600;padding:7px 14px;border-radius:20px;border:1px solid var(--linea);background:transparent;color:#9fb0c4;cursor:pointer}
+.cats button[aria-pressed="true"]{background:var(--papel);color:var(--noche);border-color:var(--papel)}
+
+main{max-width:1120px;margin:0 auto;padding:14px 20px 70px}
+.rejilla{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
+.equipo{background:var(--papel);color:var(--tinta);border-radius:16px;overflow:hidden;display:flex;flex-direction:column;text-align:left;border:0;padding:0;cursor:pointer;width:100%}
+.retrato{aspect-ratio:1;background:#eef1f6;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+.retrato img{width:100%;height:100%;object-fit:contain;padding:12px}
+.sin-foto{font-size:2.4rem;opacity:.2}
+.sello{position:absolute;top:9px;right:9px;background:rgba(20,27,38,.82);color:#fff;font-size:.66rem;font-weight:600;padding:3px 9px;border-radius:20px}
+.cuerpo{padding:14px 15px 16px;display:flex;flex-direction:column;flex:1}
+.nombre{font-weight:600;font-size:.98rem;line-height:1.3}
+.sub{font-size:.75rem;color:var(--tenue);margin-bottom:11px}
+.pago{display:flex;align-items:baseline;gap:6px;margin-top:auto}
+.pago .cifra{font-family:'IBM Plex Mono',monospace;font-size:1.95rem;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.pago .cada{font-size:.8rem;color:var(--tinta-2)}
+.pie-tarjeta{font-size:.76rem;color:var(--tinta-2);margin-top:5px}
+.pedido{display:inline-block;font-size:.7rem;font-weight:600;color:#8a5a1f;background:#fdf0d8;padding:3px 9px;border-radius:20px;margin-bottom:8px;align-self:flex-start}
+
+.aviso{padding:44px 4px;color:#93a1b3;font-size:.95rem;max-width:46ch}
+footer{max-width:1120px;margin:0 auto;padding:0 20px 46px;color:#6d7d92;font-size:.78rem;line-height:1.6}
+
+.velo{position:fixed;inset:0;background:rgba(10,15,25,.72);z-index:60;display:none;align-items:flex-end;justify-content:center}
+.velo.abierto{display:flex}
+.ficha{background:var(--papel);color:var(--tinta);width:100%;max-width:560px;max-height:93vh;overflow-y:auto;border-radius:20px 20px 0 0}
+@media(min-width:640px){.velo{align-items:center}.ficha{border-radius:20px}}
+.ficha-foto{aspect-ratio:4/3;background:#eef1f6;display:flex;align-items:center;justify-content:center;position:relative}
+.ficha-foto img{width:100%;height:100%;object-fit:contain;padding:16px}
+.cerrar{position:absolute;top:12px;right:12px;width:34px;height:34px;border-radius:50%;border:0;background:rgba(255,255,255,.94);font-size:1rem;cursor:pointer;box-shadow:0 1px 6px rgba(0,0,0,.14)}
+.tiras{display:flex;gap:7px;padding:11px 18px 0;overflow-x:auto}
+.tiras img{width:54px;height:54px;object-fit:contain;background:#eef1f6;border-radius:9px;border:2px solid transparent;cursor:pointer;flex:0 0 auto;padding:3px}
+.tiras img[aria-current="true"]{border-color:var(--oro)}
+.ficha-cuerpo{padding:16px 18px 22px}
+.ficha-cuerpo h2{font-size:1.24rem;font-weight:700;line-height:1.25}
+.ficha-cat{font-size:.75rem;color:var(--tinta-2);margin-bottom:10px}
+.ficha-desc{font-size:.9rem;color:var(--tinta-2);line-height:1.55;margin:11px 0}
+.video{position:relative;padding-bottom:56.25%;height:0;border-radius:12px;overflow:hidden;margin:13px 0;background:#000}
+.video iframe,.video video{position:absolute;inset:0;width:100%;height:100%;border:0}
+.precios{background:#f5f7fa;border-radius:14px;padding:16px;margin:14px 0}
+.precios .grande{font-family:'IBM Plex Mono',monospace;font-size:1.85rem;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.precios .grande span{font-family:Sora,sans-serif;font-size:.82rem;font-weight:400;color:var(--tinta-2)}
+.renglon{display:flex;justify-content:space-between;font-size:.87rem;color:var(--tinta-2);padding:7px 0 0;border-top:1px solid var(--borde);margin-top:9px}
+.renglon b{color:var(--tinta);font-family:'IBM Plex Mono',monospace}
+.wa{display:block;background:var(--wa);color:#fff;text-align:center;text-decoration:none;font-weight:600;font-size:.97rem;padding:14px;border-radius:12px;margin-top:6px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style></head>
+<body>
+<header>
+  <div class="marca" id="marca">Catálogo</div>
+  <h1>Llévatelo hoy y págalo por semana</h1>
+  <p class="bajada">Elige tu plazo y mira cuánto pagarías cada semana.</p>
+  <div class="plazos" id="plazos" role="group" aria-label="Plazo"></div>
+</header>
+<nav class="cats" id="cats" aria-label="Categorías"></nav>
+<main><div class="rejilla" id="rejilla"></div><div class="aviso" id="aviso">Cargando el catálogo…</div></main>
+<footer id="pie"></footer>
+
+<div class="velo" id="velo" role="dialog" aria-modal="true"><div class="ficha" id="ficha"></div></div>
+
+<script>
+const AG = new URLSearchParams(location.search).get('a');
+const $ = i => document.getElementById(i);
+const pesos = n => '$' + Math.round(n || 0).toLocaleString('es-MX');
+const esc = s => String(s == null ? '' : s).replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
+let D = null, PLAN = null, CAT = '';
+
+const fotoUrl = (p, n) => '/api/publico/foto/' + encodeURIComponent(AG) + '/' + p.id + '?v=' + (p.fotoV || 0) + (n ? '&n=' + n : '');
+
+function video(u){
+  if(!u) return '';
+  let m = u.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|shorts\/|embed\/))([\w-]{11})/);
+  if(m) return '<div class="video"><iframe src="https://www.youtube.com/embed/' + m[1] + '" allow="accelerometer;clipboard-write;encrypted-media;gyroscope;picture-in-picture" allowfullscreen title="Video del equipo"></iframe></div>';
+  m = u.match(/vimeo\.com\/(\d+)/);
+  if(m) return '<div class="video"><iframe src="https://player.vimeo.com/video/' + m[1] + '" allowfullscreen title="Video del equipo"></iframe></div>';
+  if(/\.(mp4|webm|mov)(\?|$)/i.test(u)) return '<div class="video"><video src="' + esc(u) + '" controls playsinline></video></div>';
+  return '';
+}
+
+async function cargar(){
+  if(!AG){ $('aviso').textContent = 'Falta el identificador de la agencia en la dirección.'; return; }
+  try{
+    const r = await fetch('/api/publico/catalogo/' + encodeURIComponent(AG));
+    if(!r.ok) throw 0;
+    D = await r.json();
+  }catch(e){
+    $('aviso').textContent = 'El catálogo no está disponible en este momento. Vuelve a intentarlo más tarde.';
+    return;
+  }
+  document.title = D.agencia;
+  $('marca').textContent = D.agencia;
+  PLAN = (D.planes[0] || {}).tipo;
+  $('plazos').innerHTML = D.planes.map(p => '<button type="button" data-t="' + p.tipo + '" aria-pressed="' + (p.tipo===PLAN) + '">' + esc(p.label) + '</button>').join('');
+  $('plazos').onclick = e => { const b = e.target.closest('button'); if(!b) return;
+    PLAN = b.dataset.t;
+    [...$('plazos').children].forEach(x => x.setAttribute('aria-pressed', x.dataset.t === PLAN));
+    pintar(); };
+  if((D.categorias || []).length > 1){
+    $('cats').innerHTML = ['<button type="button" data-c="" aria-pressed="true">Todo</button>']
+      .concat(D.categorias.map(c => '<button type="button" data-c="' + esc(c) + '" aria-pressed="false">' + esc(c) + '</button>')).join('');
+    $('cats').onclick = e => { const b = e.target.closest('button'); if(!b) return;
+      CAT = b.dataset.c;
+      [...$('cats').children].forEach(x => x.setAttribute('aria-pressed', x.dataset.c === CAT));
+      pintar(); };
+  }
+  const tel = String(D.whatsapp || D.telefono || '').replace(/\D/g,'');
+  $('pie').textContent = tel
+    ? 'Precios sujetos a disponibilidad. Para apartar tu equipo comunícate al ' + tel + '.'
+    : 'Precios sujetos a disponibilidad y a cambio sin previo aviso.';
+  pintar();
+}
+
+function pintar(){
+  const lista = D.productos.filter(p => !CAT || p.categoria === CAT);
+  const orden = lista.filter(p => p.disponible).concat(lista.filter(p => !p.disponible));
+  if(!orden.length){ $('aviso').style.display=''; $('aviso').textContent = 'Todavía no hay equipos en esta categoría.'; $('rejilla').innerHTML=''; return; }
+  $('aviso').style.display = 'none';
+  $('rejilla').innerHTML = orden.map(p => {
+    const c = p.precios[PLAN]; if(!c) return '';
+    return '<button type="button" class="equipo" onclick="abrir(' + p.id + ')">'
+      + '<div class="retrato">'
+      + (p.tieneFoto ? '<img src="' + fotoUrl(p,0) + '" alt="' + esc(p.etiqueta) + '" loading="lazy">' : '<span class="sin-foto" aria-hidden="true">📦</span>')
+      + (p.videoUrl ? '<span class="sello">Con video</span>' : '')
+      + '</div><div class="cuerpo">'
+      + (p.disponible ? '' : '<span class="pedido">Sobre pedido</span>')
+      + '<div class="nombre">' + esc(p.modelo || p.etiqueta) + '</div>'
+      + '<div class="sub">' + esc(p.marca || p.categoria) + '</div>'
+      + '<div class="pago"><span class="cifra">' + pesos(c.pago) + '</span><span class="cada">a la semana</span></div>'
+      + '<div class="pie-tarjeta">' + c.pagos + ' pagos · enganche ' + pesos(c.enganche) + '</div>'
+      + '</div></button>';
+  }).join('');
+}
+
+function abrir(id){
+  const p = D.productos.find(x => x.id === id); if(!p) return;
+  const c = p.precios[PLAN]; if(!c) return;
+  const wa = String(D.whatsapp || '').replace(/\D/g,'');
+  const msg = encodeURIComponent('Hola, me interesa el ' + p.etiqueta + ' que vi en el catálogo.');
+  const tiras = p.nFotos > 1
+    ? '<div class="tiras" id="tiras">' + Array.from({length:p.nFotos},(_,i) =>
+        '<img src="' + fotoUrl(p,i) + '" alt="" aria-current="' + (i===0) + '" onclick="cambiar(' + p.id + ',' + i + ',this)">').join('') + '</div>'
+    : '';
+  $('ficha').innerHTML = '<div class="ficha-foto">'
+    + '<button class="cerrar" type="button" onclick="cerrar()" aria-label="Cerrar">✕</button>'
+    + (p.tieneFoto ? '<img id="ficha-img" src="' + fotoUrl(p,0) + '" alt="' + esc(p.etiqueta) + '">' : '<span class="sin-foto" aria-hidden="true">📦</span>')
+    + '</div>' + tiras
+    + '<div class="ficha-cuerpo"><h2>' + esc(p.modelo || p.etiqueta) + '</h2>'
+    + '<div class="ficha-cat">' + esc(p.marca ? p.marca + ' · ' + p.categoria : p.categoria) + '</div>'
+    + (p.descripcion ? '<p class="ficha-desc">' + esc(p.descripcion) + '</p>' : '')
+    + video(p.videoUrl)
+    + '<div class="precios"><div class="grande">' + pesos(c.pago) + ' <span>a la semana · ' + c.pagos + ' pagos</span></div>'
+    + '<div class="renglon"><span>Enganche</span><b>' + pesos(c.enganche) + '</b></div>'
+    + '<div class="renglon"><span>Precio a crédito</span><b>' + pesos(c.precio) + '</b></div></div>'
+    + (p.disponible ? '' : '<p class="ficha-desc">Este equipo está sobre pedido. Pregunta por el tiempo de entrega.</p>')
+    + '<a class="wa" target="_blank" rel="noopener" href="' + (wa ? 'https://wa.me/52' + wa + '?text=' + msg : 'https://wa.me/?text=' + msg) + '">Preguntar por este equipo</a></div>';
+  $('velo').classList.add('abierto');
+  document.body.style.overflow = 'hidden';
+}
+function cambiar(id, i, el){
+  const p = D.productos.find(x => x.id === id);
+  $('ficha-img').src = fotoUrl(p, i);
+  [...$('tiras').children].forEach(x => x.setAttribute('aria-current', x === el));
+}
+function cerrar(){ $('velo').classList.remove('abierto'); document.body.style.overflow=''; }
+$('velo').addEventListener('click', e => { if(e.target.id === 'velo') cerrar(); });
+document.addEventListener('keydown', e => { if(e.key === 'Escape') cerrar(); });
+cargar();
+</script>
+</body></html>
