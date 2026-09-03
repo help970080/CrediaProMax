@@ -2,7 +2,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Catálogo</title>
-<!-- tienda v6 · búsqueda, orden y filtro de disponibles -->
+<!-- tienda v7 · solo 16 y 17 semanas + celular más compacto -->
 <meta name="theme-color" content="#141b26">
 <meta name="description" content="Llévate tu equipo hoy y págalo por semana.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -35,7 +35,8 @@ h1{font-size:clamp(1.85rem,5.6vw,2.8rem);font-weight:700;line-height:1.13;margin
 
 /* Barra de búsqueda y orden */
 .barra{max-width:1120px;margin:0 auto;padding:14px 20px 0;display:flex;gap:9px;align-items:center;flex-wrap:wrap}
-.buscar{flex:1 1 230px;display:flex;align-items:center;gap:8px;background:var(--noche-2);border:1px solid var(--linea);border-radius:11px;padding:0 12px}
+.buscar{flex:1 1 230px;max-width:400px;display:flex;align-items:center;gap:8px;background:var(--noche-2);border:1px solid var(--linea);border-radius:11px;padding:0 12px}
+.barra .solo{margin-left:auto}
 .buscar span{opacity:.55;font-size:.9rem}
 .buscar input{flex:1;min-width:0;background:none;border:0;color:var(--papel);font-family:inherit;font-size:.92rem;padding:11px 0;outline:none}
 .buscar input::placeholder{color:#7f8fa4}
@@ -103,18 +104,20 @@ footer{max-width:1120px;margin:0 auto;padding:0 20px 46px;color:#6d7d92;font-siz
 .wa{display:block;background:var(--wa);color:#fff;text-align:center;text-decoration:none;font-weight:600;font-size:.97rem;padding:14px;border-radius:12px;margin-top:6px}
 /* ---- Celular: la mayoría entra desde el teléfono ---- */
 @media(max-width:560px){
-  header{padding:20px 15px 14px}
-  h1{font-size:1.5rem;margin:9px 0 6px}
-  .bajada{font-size:.88rem}
-  .plazos{margin-top:14px;display:flex;width:100%;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none;border-radius:12px}
-  .plazos::-webkit-scrollbar{display:none}
-  .plazos button{flex:0 0 auto;padding:9px 14px;font-size:.84rem}
-  .cats{padding:14px 15px 2px}
-  .barra{padding:11px 15px 0;gap:8px}
-  .buscar{flex:1 1 100%}
-  .barra select{flex:1;min-width:0;font-size:.82rem;padding:10px}
-  .solo{font-size:.8rem}
-  .conteo{padding:10px 15px 0;font-size:.76rem}
+  header{padding:16px 14px 10px}
+  .marca{font-size:.95rem}
+  h1{font-size:1.32rem;margin:6px 0 4px;max-width:none}
+  .bajada{font-size:.83rem}
+  /* Con dos plazos caben repartidos a la mitad: nada de barra deslizable */
+  .plazos{margin-top:11px;display:flex;width:100%;padding:3px}
+  .plazos button{flex:1;padding:9px 6px;font-size:.84rem;text-align:center}
+  .cats{padding:11px 14px 2px}
+  .barra{padding:10px 14px 0;gap:7px}
+  .buscar{flex:1 1 100%;max-width:none;padding:0 11px}
+  .buscar input{font-size:.88rem;padding:10px 0}
+  .barra select{flex:1;min-width:0;font-size:.81rem;padding:9px 8px}
+  .barra .solo{margin-left:0;font-size:.79rem}
+  .conteo{padding:9px 14px 0;font-size:.75rem}
   main{padding:10px 15px 54px}
   .rejilla{grid-template-columns:repeat(2,1fr);gap:11px}
   .cuerpo{padding:11px 11px 13px}
@@ -166,6 +169,9 @@ const AG = new URLSearchParams(location.search).get('a');
 const $ = i => document.getElementById(i);
 const pesos = n => '$' + Math.round(n || 0).toLocaleString('es-MX');
 const esc = s => String(s == null ? '' : s).replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
+/* Plazos que se le muestran al cliente. El servidor cotiza los cuatro que tiene configurada la
+   agencia; aquí se acota a los dos que se venden. Para volver a mostrar 21 o 31, agrégalos aquí. */
+const PLAZOS_VISIBLES = ['s16', 's17'];
 let D = null, PLAN = null, CAT = '', Q = '', ORDEN = 'rec', SOLO = false;
 /* Sin acentos y en minúsculas: quien busca "camara" debe encontrar "cámara". */
 const plano = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -215,6 +221,8 @@ async function cargar(){
   }
   document.title = D.agencia;
   $('marca').textContent = D.agencia;
+  const vis = D.planes.filter(p => PLAZOS_VISIBLES.includes(p.tipo));
+  D.planes = vis.length ? vis : D.planes;
   PLAN = (D.planes[0] || {}).tipo;
   $('plazos').innerHTML = D.planes.map(p => '<button type="button" data-t="' + p.tipo + '" aria-pressed="' + (p.tipo===PLAN) + '">' + esc(p.label) + '</button>').join('');
   $('plazos').onclick = e => { const b = e.target.closest('button'); if(!b) return;
