@@ -2,6 +2,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Catálogo</title>
+<!-- tienda v3 · miniatura de video + respaldo de foto caída -->
 <meta name="theme-color" content="#141b26">
 <meta name="description" content="Llévate tu equipo hoy y págalo por semana.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -39,6 +40,9 @@ main{max-width:1120px;margin:0 auto;padding:14px 20px 70px}
 .retrato img{width:100%;height:100%;object-fit:contain;padding:12px}
 .sin-foto{font-size:2.4rem;opacity:.2}
 .sello{position:absolute;top:9px;right:9px;background:rgba(20,27,38,.82);color:#fff;font-size:.66rem;font-weight:600;padding:3px 9px;border-radius:20px}
+/* La miniatura de YouTube trae franjas negras: se recorta para que llene la tarjeta */
+.retrato img.del-video,.ficha-foto img.del-video{object-fit:cover;padding:0}
+.jugar{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:46px;height:46px;border-radius:50%;background:rgba(20,27,38,.78);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.05rem;padding-left:3px;pointer-events:none}
 .cuerpo{padding:14px 15px 16px;display:flex;flex-direction:column;flex:1}
 .nombre{font-weight:600;font-size:.98rem;line-height:1.3}
 .sub{font-size:.75rem;color:var(--tenue);margin-bottom:11px}
@@ -97,6 +101,27 @@ let D = null, PLAN = null, CAT = '';
 
 const fotoUrl = (p, n) => '/api/publico/foto/' + encodeURIComponent(AG) + '/' + p.id + '?v=' + (p.fotoV || 0) + (n ? '&n=' + n : '');
 
+/* YouTube regala una miniatura por cada video. Si el equipo no tiene foto pero sí video, esa
+   miniatura sirve de portada: mejor eso que un cuadro vacío. Vimeo no la da por dirección fija. */
+function idYT(u){
+  const m = String(u||'').match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|shorts\/|embed\/))([\w-]{11})/);
+  return m ? m[1] : '';
+}
+function miniVideo(u){ const id = idYT(u); return id ? 'https://img.youtube.com/vi/' + id + '/hqdefault.jpg' : ''; }
+
+/* Si una foto no carga (liga rota o borrada) se intenta primero la miniatura del video y solo
+   entonces se cae al ícono. Sin este escalón, un equipo con foto rota y video se quedaba con el
+   ícono de paquete aunque hubiera una miniatura perfectamente buena que mostrar. */
+function fotoCaida(el){
+  const c = el.parentElement; if(!c) return;
+  const mini = el.dataset.mini || '';
+  if(mini && el.src.indexOf('img.youtube.com') < 0){
+    el.classList.add('del-video'); el.dataset.mini = ''; el.src = mini; return;
+  }
+  el.remove();
+  if(!c.querySelector('.sin-foto')) c.insertAdjacentHTML('afterbegin','<span class="sin-foto" aria-hidden="true">📦</span>');
+}
+
 function video(u){
   if(!u) return '';
   let m = u.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|shorts\/|embed\/))([\w-]{11})/);
@@ -140,6 +165,12 @@ async function cargar(){
   pintar();
 }
 
+function portada(p){
+  const mv = miniVideo(p.videoUrl);
+  if(p.tieneFoto) return '<img src="' + fotoUrl(p,0) + '" alt="' + esc(p.etiqueta) + '" loading="lazy" data-mini="' + mv + '" onerror="fotoCaida(this)">';
+  if(mv) return '<img class="del-video" src="' + mv + '" alt="' + esc(p.etiqueta) + '" loading="lazy" onerror="fotoCaida(this)">';
+  return '<span class="sin-foto" aria-hidden="true">📦</span>';
+}
 function pintar(){
   const lista = D.productos.filter(p => !CAT || p.categoria === CAT);
   const orden = lista.filter(p => p.disponible).concat(lista.filter(p => !p.disponible));
@@ -148,9 +179,8 @@ function pintar(){
   $('rejilla').innerHTML = orden.map(p => {
     const c = p.precios[PLAN]; if(!c) return '';
     return '<button type="button" class="equipo" onclick="abrir(' + p.id + ')">'
-      + '<div class="retrato">'
-      + (p.tieneFoto ? '<img src="' + fotoUrl(p,0) + '" alt="' + esc(p.etiqueta) + '" loading="lazy">' : '<span class="sin-foto" aria-hidden="true">📦</span>')
-      + (p.videoUrl ? '<span class="sello">Con video</span>' : '')
+      + '<div class="retrato">' + portada(p)
+      + (p.videoUrl ? '<span class="jugar" aria-hidden="true">▶</span>' : '')
       + '</div><div class="cuerpo">'
       + (p.disponible ? '' : '<span class="pedido">Sobre pedido</span>')
       + '<div class="nombre">' + esc(p.modelo || p.etiqueta) + '</div>'
@@ -172,7 +202,9 @@ function abrir(id){
     : '';
   $('ficha').innerHTML = '<div class="ficha-foto">'
     + '<button class="cerrar" type="button" onclick="cerrar()" aria-label="Cerrar">✕</button>'
-    + (p.tieneFoto ? '<img id="ficha-img" src="' + fotoUrl(p,0) + '" alt="' + esc(p.etiqueta) + '">' : '<span class="sin-foto" aria-hidden="true">📦</span>')
+    + (p.tieneFoto ? '<img id="ficha-img" src="' + fotoUrl(p,0) + '" alt="' + esc(p.etiqueta) + '" data-mini="' + miniVideo(p.videoUrl) + '" onerror="fotoCaida(this)">'
+       : (miniVideo(p.videoUrl) ? '<img class="del-video" src="' + miniVideo(p.videoUrl) + '" alt="' + esc(p.etiqueta) + '" onerror="fotoCaida(this)">'
+       : '<span class="sin-foto" aria-hidden="true">📦</span>'))
     + '</div>' + tiras
     + '<div class="ficha-cuerpo"><h2>' + esc(p.modelo || p.etiqueta) + '</h2>'
     + '<div class="ficha-cat">' + esc(p.marca ? p.marca + ' · ' + p.categoria : p.categoria) + '</div>'
