@@ -2,7 +2,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Catálogo</title>
-<!-- tienda v3 · miniatura de video + respaldo de foto caída -->
+<!-- tienda v4 · video como encabezado de la ficha, sin portada duplicada -->
 <meta name="theme-color" content="#141b26">
 <meta name="description" content="Llévate tu equipo hoy y págalo por semana.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -70,6 +70,11 @@ footer{max-width:1120px;margin:0 auto;padding:0 20px 46px;color:#6d7d92;font-siz
 .ficha-cat{font-size:.75rem;color:var(--tinta-2);margin-bottom:10px}
 .ficha-desc{font-size:.9rem;color:var(--tinta-2);line-height:1.55;margin:11px 0}
 .video{position:relative;padding-bottom:56.25%;height:0;border-radius:12px;overflow:hidden;margin:13px 0;background:#000}
+/* Video como encabezado de la ficha: pegado al borde, sin margen ni esquinas redondas abajo */
+.ficha-video{position:relative;background:#000}
+.ficha-video .video{margin:0;border-radius:20px 20px 0 0}
+@media(min-width:640px){.ficha-video .video{border-radius:20px 20px 0 0}}
+.ficha-video .cerrar{z-index:3}
 .video iframe,.video video{position:absolute;inset:0;width:100%;height:100%;border:0}
 .precios{background:#f5f7fa;border-radius:14px;padding:16px;margin:14px 0}
 .precios .grande{font-family:'IBM Plex Mono',monospace;font-size:1.85rem;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
@@ -196,20 +201,22 @@ function abrir(id){
   const c = p.precios[PLAN]; if(!c) return;
   const wa = String(D.whatsapp || '').replace(/\D/g,'');
   const msg = encodeURIComponent('Hola, me interesa el ' + p.etiqueta + ' que vi en el catálogo.');
-  const tiras = p.nFotos > 1
+  /* Con video, el video ES el encabezado. Antes se pintaba la portada arriba y el video abajo, y
+     como sin foto la portada es la miniatura del mismo video, se veía dos veces lo mismo. */
+  const emb = video(p.videoUrl);
+  const tiras = (!emb && p.nFotos > 1)
     ? '<div class="tiras" id="tiras">' + Array.from({length:p.nFotos},(_,i) =>
         '<img src="' + fotoUrl(p,i) + '" alt="" aria-current="' + (i===0) + '" onclick="cambiar(' + p.id + ',' + i + ',this)">').join('') + '</div>'
     : '';
-  $('ficha').innerHTML = '<div class="ficha-foto">'
-    + '<button class="cerrar" type="button" onclick="cerrar()" aria-label="Cerrar">✕</button>'
-    + (p.tieneFoto ? '<img id="ficha-img" src="' + fotoUrl(p,0) + '" alt="' + esc(p.etiqueta) + '" data-mini="' + miniVideo(p.videoUrl) + '" onerror="fotoCaida(this)">'
-       : (miniVideo(p.videoUrl) ? '<img class="del-video" src="' + miniVideo(p.videoUrl) + '" alt="' + esc(p.etiqueta) + '" onerror="fotoCaida(this)">'
-       : '<span class="sin-foto" aria-hidden="true">📦</span>'))
-    + '</div>' + tiras
+  const cabecera = emb
+    ? '<div class="ficha-video">' + emb + '<button class="cerrar" type="button" onclick="cerrar()" aria-label="Cerrar">✕</button></div>'
+    : '<div class="ficha-foto"><button class="cerrar" type="button" onclick="cerrar()" aria-label="Cerrar">✕</button>'
+      + (p.tieneFoto ? '<img id="ficha-img" src="' + fotoUrl(p,0) + '" alt="' + esc(p.etiqueta) + '" onerror="fotoCaida(this)">'
+         : '<span class="sin-foto" aria-hidden="true">📦</span>') + '</div>';
+  $('ficha').innerHTML = cabecera + tiras
     + '<div class="ficha-cuerpo"><h2>' + esc(p.modelo || p.etiqueta) + '</h2>'
     + '<div class="ficha-cat">' + esc(p.marca ? p.marca + ' · ' + p.categoria : p.categoria) + '</div>'
     + (p.descripcion ? '<p class="ficha-desc">' + esc(p.descripcion) + '</p>' : '')
-    + video(p.videoUrl)
     + '<div class="precios"><div class="grande">' + pesos(c.pago) + ' <span>a la semana · ' + c.pagos + ' pagos</span></div>'
     + '<div class="renglon"><span>Enganche</span><b>' + pesos(c.enganche) + '</b></div>'
     + '<div class="renglon"><span>Precio a crédito</span><b>' + pesos(c.precio) + '</b></div></div>'
