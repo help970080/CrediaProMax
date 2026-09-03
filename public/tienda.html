@@ -2,7 +2,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Catálogo</title>
-<!-- tienda v5 · video en la propia tarjeta + ajuste a celular -->
+<!-- tienda v6 · búsqueda, orden y filtro de disponibles -->
 <meta name="theme-color" content="#141b26">
 <meta name="description" content="Llévate tu equipo hoy y págalo por semana.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -32,6 +32,20 @@ h1{font-size:clamp(1.85rem,5.6vw,2.8rem);font-weight:700;line-height:1.13;margin
 .cats::-webkit-scrollbar{display:none}
 .cats button{white-space:nowrap;font-size:.83rem;font-weight:600;padding:7px 14px;border-radius:20px;border:1px solid var(--linea);background:transparent;color:#9fb0c4;cursor:pointer}
 .cats button[aria-pressed="true"]{background:var(--papel);color:var(--noche);border-color:var(--papel)}
+
+/* Barra de búsqueda y orden */
+.barra{max-width:1120px;margin:0 auto;padding:14px 20px 0;display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.buscar{flex:1 1 230px;display:flex;align-items:center;gap:8px;background:var(--noche-2);border:1px solid var(--linea);border-radius:11px;padding:0 12px}
+.buscar span{opacity:.55;font-size:.9rem}
+.buscar input{flex:1;min-width:0;background:none;border:0;color:var(--papel);font-family:inherit;font-size:.92rem;padding:11px 0;outline:none}
+.buscar input::placeholder{color:#7f8fa4}
+.buscar input::-webkit-search-cancel-button{display:none}
+.buscar button{background:none;border:0;color:#8ea0b6;font-size:.85rem;cursor:pointer;padding:4px 2px}
+.barra select{background:var(--noche-2);border:1px solid var(--linea);color:#cdd8e6;font-family:inherit;font-size:.86rem;padding:11px 12px;border-radius:11px;cursor:pointer}
+.solo{display:flex;align-items:center;gap:7px;font-size:.85rem;color:#a9b8ca;cursor:pointer;white-space:nowrap}
+.solo input{width:17px;height:17px;accent-color:var(--oro)}
+.conteo{max-width:1120px;margin:0 auto;padding:12px 20px 0;font-size:.8rem;color:#7f8fa4}
+.limpiar{background:none;border:1px solid var(--linea);color:#b6c2d2;font-family:inherit;font-size:.85rem;padding:9px 15px;border-radius:10px;cursor:pointer;margin-top:14px}
 
 main{max-width:1120px;margin:0 auto;padding:14px 20px 70px}
 .rejilla{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
@@ -96,6 +110,11 @@ footer{max-width:1120px;margin:0 auto;padding:0 20px 46px;color:#6d7d92;font-siz
   .plazos::-webkit-scrollbar{display:none}
   .plazos button{flex:0 0 auto;padding:9px 14px;font-size:.84rem}
   .cats{padding:14px 15px 2px}
+  .barra{padding:11px 15px 0;gap:8px}
+  .buscar{flex:1 1 100%}
+  .barra select{flex:1;min-width:0;font-size:.82rem;padding:10px}
+  .solo{font-size:.8rem}
+  .conteo{padding:10px 15px 0;font-size:.76rem}
   main{padding:10px 15px 54px}
   .rejilla{grid-template-columns:repeat(2,1fr);gap:11px}
   .cuerpo{padding:11px 11px 13px}
@@ -121,6 +140,22 @@ footer{max-width:1120px;margin:0 auto;padding:0 20px 46px;color:#6d7d92;font-siz
   <div class="plazos" id="plazos" role="group" aria-label="Plazo"></div>
 </header>
 <nav class="cats" id="cats" aria-label="Categorías"></nav>
+<div class="barra">
+  <div class="buscar">
+    <span aria-hidden="true">🔎</span>
+    <input id="q" type="search" placeholder="Buscar marca o modelo…" autocomplete="off" aria-label="Buscar en el catálogo">
+    <button type="button" id="q-x" aria-label="Limpiar búsqueda" hidden>✕</button>
+  </div>
+  <select id="orden" aria-label="Ordenar">
+    <option value="rec">Recomendados</option>
+    <option value="barato">Pago semanal: menor a mayor</option>
+    <option value="caro">Pago semanal: mayor a menor</option>
+    <option value="nuevo">Lo más nuevo</option>
+    <option value="az">Nombre A–Z</option>
+  </select>
+  <label class="solo"><input type="checkbox" id="solo-disp"> Solo disponibles</label>
+</div>
+<div class="conteo" id="conteo"></div>
 <main><div class="rejilla" id="rejilla"></div><div class="aviso" id="aviso">Cargando el catálogo…</div></main>
 <footer id="pie"></footer>
 
@@ -131,7 +166,9 @@ const AG = new URLSearchParams(location.search).get('a');
 const $ = i => document.getElementById(i);
 const pesos = n => '$' + Math.round(n || 0).toLocaleString('es-MX');
 const esc = s => String(s == null ? '' : s).replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
-let D = null, PLAN = null, CAT = '';
+let D = null, PLAN = null, CAT = '', Q = '', ORDEN = 'rec', SOLO = false;
+/* Sin acentos y en minúsculas: quien busca "camara" debe encontrar "cámara". */
+const plano = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
 const fotoUrl = (p, n) => '/api/publico/foto/' + encodeURIComponent(AG) + '/' + p.id + '?v=' + (p.fotoV || 0) + (n ? '&n=' + n : '');
 
@@ -192,6 +229,11 @@ async function cargar(){
       [...$('cats').children].forEach(x => x.setAttribute('aria-pressed', x.dataset.c === CAT));
       pintar(); };
   }
+  D.productos.forEach((p, i) => { p._orden = i; });
+  $('q').oninput = e => { Q = e.target.value.trim(); $('q-x').hidden = !Q; pintar(); };
+  $('q-x').onclick = () => { Q = ''; $('q').value = ''; $('q-x').hidden = true; $('q').focus(); pintar(); };
+  $('orden').onchange = e => { ORDEN = e.target.value; pintar(); };
+  $('solo-disp').onchange = e => { SOLO = e.target.checked; pintar(); };
   const tel = String(D.whatsapp || D.telefono || '').replace(/\D/g,'');
   $('pie').textContent = tel
     ? 'Precios sujetos a disponibilidad. Para apartar tu equipo comunícate al ' + tel + '.'
@@ -205,10 +247,35 @@ function portada(p){
   if(mv) return '<img class="del-video" src="' + mv + '" alt="' + esc(p.etiqueta) + '" loading="lazy" onerror="fotoCaida(this)">';
   return '<span class="sin-foto" aria-hidden="true">📦</span>';
 }
+function limpiarTodo(){
+  Q = ''; CAT = ''; SOLO = false; ORDEN = 'rec';
+  $('q').value = ''; $('q-x').hidden = true; $('solo-disp').checked = false; $('orden').value = 'rec';
+  [...$('cats').children].forEach(x => x.setAttribute('aria-pressed', x.dataset.c === ''));
+  pintar();
+}
 function pintar(){
-  const lista = D.productos.filter(p => !CAT || p.categoria === CAT);
-  const orden = lista.filter(p => p.disponible).concat(lista.filter(p => !p.disponible));
-  if(!orden.length){ $('aviso').style.display=''; $('aviso').textContent = 'Todavía no hay equipos en esta categoría.'; $('rejilla').innerHTML=''; return; }
+  const q = plano(Q);
+  let lista = D.productos.filter(p =>
+    (!CAT || p.categoria === CAT) &&
+    (!SOLO || p.disponible) &&
+    (!q || plano([p.marca, p.modelo, p.categoria, p.descripcion].join(' ')).includes(q)));
+  const pago = p => (p.precios[PLAN] || {}).pago || 0;
+  if(ORDEN === 'barato') lista.sort((a,b) => pago(a) - pago(b));
+  else if(ORDEN === 'caro') lista.sort((a,b) => pago(b) - pago(a));
+  else if(ORDEN === 'nuevo') lista.sort((a,b) => b._orden - a._orden);
+  else if(ORDEN === 'az') lista.sort((a,b) => (a.modelo || a.etiqueta).localeCompare(b.modelo || b.etiqueta, 'es'));
+  /* Recomendados: lo que se puede llevar hoy va primero, y dentro de eso lo más barato por semana. */
+  else lista.sort((a,b) => (b.disponible - a.disponible) || (pago(a) - pago(b)));
+  const orden = ORDEN === 'rec' ? lista : lista.filter(p => p.disponible).concat(lista.filter(p => !p.disponible));
+  const n = orden.length;
+  $('conteo').textContent = n ? (n === 1 ? '1 equipo' : n + ' equipos') : '';
+  if(!n){
+    $('rejilla').innerHTML = '';
+    $('aviso').style.display = '';
+    $('aviso').innerHTML = (Q ? 'No encontramos nada con “' + esc(Q) + '”.' : 'Todavía no hay equipos aquí.')
+      + '<br><button type="button" class="limpiar" onclick="limpiarTodo()">Ver todo el catálogo</button>';
+    return;
+  }
   $('aviso').style.display = 'none';
   $('rejilla').innerHTML = orden.map(p => {
     const c = p.precios[PLAN]; if(!c) return '';
