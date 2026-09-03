@@ -681,14 +681,98 @@ function stockDisp(productoId, sucursalId) {
     && (sucursalId == null || String(u.sucursalId) === String(sucursalId))).length;
 }
 function prodSaleLbl(s) { return s && s.productoId ? (s.producto || prodLbl(prodDe(s.productoId))) : ''; }
+/* Foto del producto: acepta una URL (https://…) o una imagen pegada en base64. El tope evita que
+   el blob de la agencia se infle: 260 KB por foto es de sobra para un catálogo. */
+function _fotoProd(v) {
+  const s = String(v == null ? '' : v).trim();
+  if (!s) return '';
+  if (!/^(https?:\/\/|data:image\/)/i.test(s)) return '';
+  return s.slice(0, 260000);
+}
+function _fotosProd(v) { return (Array.isArray(v) ? v : []).map(_fotoProd).filter(Boolean).slice(0, 5); }
+function _vidProd(v) {
+  const s = String(v == null ? '' : v).trim();
+  return /^https?:\/\//i.test(s) ? s.slice(0, 400) : '';
+}
+function _txt(v, n) { return String(v == null ? '' : v).trim().slice(0, n); }
+/* Las fotos NO viajan dentro del JSON: cada una se sirve por su propia dirección para que el
+   navegador la guarde en caché y las cargue conforme el cliente baja. Un catálogo de 40 equipos
+   con las fotos incrustadas serían ~2 MB en cada visita. fotoV rompe la caché al cambiarlas. */
+function _prodMeta(p) {
+  return { tieneFoto: !!p.foto, nFotos: (p.foto ? 1 : 0) + ((p.fotos || []).length), fotoV: p.fotoV || 0 };
+}
+/* Planes que la agencia realmente tiene configurados. Sin esto, la página pública podría ofrecer
+   un plazo que la agencia no maneja y cotizar con la tarifa por omisión. */
+function _planesPublicos() {
+  const T = (db.config && db.config.tarifas) || {};
+  return [['s16', 16], ['s17', 17], ['s21', 21], ['s31', 31]]
+    .filter(([t]) => T[t] || DEFAULT_TARIFAS[t])
+    .map(([tipo, pagos]) => ({ tipo, pagos }));
+}
+
+/* ---------- CATÁLOGO PÚBLICO (sin token) ----------
+   Escaparate para el cliente final. NUNCA sale el costo, el margen ni el inventario por sucursal:
+   solo lo que el cliente necesita para decidir — modelo, foto, precio, enganche y pago semanal.
+   Los precios NO se guardan: se calculan con calcCredito usando las tarifas vigentes de la agencia,
+   así que si mueves una tarifa, la página cambia sola. */
+async function _publico(req, res, fn) {
+  const blob = await getTenant(+req.params.tenantId);
+  if (!blob) return res.status(404).json({ error: 'Agencia no encontrada' });
+  if (blob.activo === false) return res.status(404).json({ error: 'Agencia no disponible' });
+  als.run({ tenantId: +req.params.tenantId, db: blob }, () => {
+    if (!invOn()) return res.status(404).json({ error: 'Catálogo no disponible' });
+    fn();
+  });
+}
+app.get('/api/publico/catalogo/:tenantId', (req, res) => _publico(req, res, () => {
+  const planes = _planesPublicos();
+  const productos = (db.productos || []).filter(p => p.activo !== false && p.publico !== false).map(p => {
+    const precios = {};
+    planes.forEach(pl => {
+      const r = calcCredito(pl.tipo, pl.pagos, p.costo, pl.pagos);
+      if (!r) return;
+      precios[pl.tipo] = { precio: Math.round(r.total), enganche: Math.round(r.primerPago || 0),
+        pago: Math.round(r.cuota), pagos: (r.pagos || pl.pagos) - (r.descuentaPP ? 1 : 0) };
+    });
+    return Object.assign({ id: p.id, marca: p.marca, modelo: p.modelo, etiqueta: prodLbl(p),
+      categoria: p.categoria || 'Celulares', descripcion: p.descripcion || '', videoUrl: p.videoUrl || '',
+      disponible: stockDisp(p.id, null) > 0, precios }, _prodMeta(p));
+  });
+  const brand = (db.config && db.config.brand) || {};
+  const voz = (db.config && db.config.voz) || {};
+  const cats = []; productos.forEach(p => { if (!cats.includes(p.categoria)) cats.push(p.categoria); });
+  res.json({
+    agencia: brand.nombre || 'Catálogo', whatsapp: voz.whatsapp || '', telefono: voz.telContacto || '',
+    planes: planes.map(pl => ({ tipo: pl.tipo, semanas: pl.pagos, label: pl.pagos + ' semanas' })),
+    categorias: cats, productos
+  });
+}));
+/* Cada foto por su propia dirección. Se sirve sin token: una foto de catálogo no es dato sensible
+   y meter el token en la URL lo dejaría escrito en el historial y en los logs del servidor. */
+app.get('/api/publico/foto/:tenantId/:productoId', (req, res) => _publico(req, res, () => {
+  const p = prodDe(req.params.productoId);
+  if (!p || p.activo === false) return res.status(404).end();
+  const n = +req.query.n || 0;
+  const src = n > 0 ? (p.fotos || [])[n - 1] : p.foto;
+  if (!src) return res.status(404).end();
+  if (/^https?:\/\//i.test(src)) return res.redirect(302, src);
+  const m = /^data:([\w/+.-]+);base64,(.+)$/i.exec(src);
+  if (!m) return res.status(404).end();
+  res.set('Content-Type', m[1]);
+  res.set('Cache-Control', 'public, max-age=604800');
+  res.set('ETag', '"' + (p.fotoV || 0) + '-' + n + '"');
+  res.send(Buffer.from(m[2], 'base64'));
+}));
 
 app.get('/api/productos', auth, invGuard, (req, res) => {
   const suc = (req.query.sucursalId != null && req.query.sucursalId !== '') ? +req.query.sucursalId
             : (req.user.rol === 'sucursal' ? sucDeUser(req.user) : null);
   res.json((db.productos || [])
     .filter(p => req.query.todos === '1' || p.activo !== false)
-    .map(p => ({ id: p.id, sku: p.sku, marca: p.marca, modelo: p.modelo, costo: p.costo, activo: p.activo !== false,
-      etiqueta: prodLbl(p), disponibles: stockDisp(p.id, suc), disponiblesAgencia: stockDisp(p.id, null) })));
+    .map(p => Object.assign({ id: p.id, sku: p.sku, marca: p.marca, modelo: p.modelo, costo: p.costo,
+      categoria: p.categoria || 'Celulares', descripcion: p.descripcion || '', videoUrl: p.videoUrl || '',
+      publico: p.publico !== false, activo: p.activo !== false, etiqueta: prodLbl(p),
+      disponibles: stockDisp(p.id, suc), disponiblesAgencia: stockDisp(p.id, null) }, _prodMeta(p))));
 });
 app.post('/api/productos', auth, rol('admin', 'supervisor'), invGuard, (req, res) => {
   const { sku, marca, modelo, costo } = req.body;
@@ -696,9 +780,13 @@ app.post('/api/productos', auth, rol('admin', 'supervisor'), invGuard, (req, res
   if (!(+costo > 0)) return res.status(400).json({ error: 'El costo del equipo debe ser mayor a cero' });
   const p = { id: nextId('productos'), sku: String(sku || '').trim().toUpperCase().slice(0, 40),
     marca: String(marca || '').trim().slice(0, 40), modelo: String(modelo || '').trim().slice(0, 60),
-    costo: Math.round(+costo), activo: true, createdAt: new Date().toISOString() };
+    costo: Math.round(+costo), foto: _fotoProd(req.body.foto), fotos: _fotosProd(req.body.fotos), fotoV: 1,
+    categoria: _txt(req.body.categoria, 40) || 'Celulares', descripcion: _txt(req.body.descripcion, 600),
+    videoUrl: _vidProd(req.body.videoUrl), publico: req.body.publico !== false,
+    activo: true, createdAt: new Date().toISOString() };
   db.productos.push(p); saveDB();
-  res.status(201).json({ ...p, etiqueta: prodLbl(p), disponibles: 0, disponiblesAgencia: 0 });
+  res.status(201).json(Object.assign({}, p, { foto: undefined, fotos: undefined }, _prodMeta(p),
+    { etiqueta: prodLbl(p), disponibles: 0, disponiblesAgencia: 0 }));
 });
 app.patch('/api/productos/:id', auth, rol('admin', 'supervisor'), invGuard, (req, res) => {
   const p = prodDe(req.params.id);
@@ -708,8 +796,15 @@ app.patch('/api/productos/:id', auth, rol('admin', 'supervisor'), invGuard, (req
   if (req.body.modelo != null) p.modelo = String(req.body.modelo).trim().slice(0, 60);
   if (req.body.costo != null && +req.body.costo > 0) p.costo = Math.round(+req.body.costo);
   if (typeof req.body.activo === 'boolean') p.activo = req.body.activo;
+  if (typeof req.body.publico === 'boolean') p.publico = req.body.publico;
+  if (req.body.categoria != null) p.categoria = _txt(req.body.categoria, 40) || 'Celulares';
+  if (req.body.descripcion != null) p.descripcion = _txt(req.body.descripcion, 600);
+  if (req.body.videoUrl != null) p.videoUrl = _vidProd(req.body.videoUrl);
+  if (req.body.foto != null) { p.foto = _fotoProd(req.body.foto); p.fotoV = (p.fotoV || 0) + 1; }
+  if (req.body.fotos != null) { p.fotos = _fotosProd(req.body.fotos); p.fotoV = (p.fotoV || 0) + 1; }
   saveDB();
-  res.json({ ...p, etiqueta: prodLbl(p), disponibles: stockDisp(p.id, null) });
+  res.json(Object.assign({}, p, { foto: undefined, fotos: undefined }, _prodMeta(p),
+    { etiqueta: prodLbl(p), disponibles: stockDisp(p.id, null) }));
 });
 
 app.get('/api/inventario', auth, invGuard, (req, res) => {
