@@ -583,8 +583,9 @@
         <span class="hint">el costo es el monto del crédito: la tarifa del plazo le pone el interés</span>
         <button class="btn gold" style="margin-left:auto" onclick="invNuevoProd()">＋ Nuevo producto</button>
       </div>
-      <table><thead><tr><th>SKU</th><th>Equipo</th><th class="n">Costo</th><th class="n">Disponibles</th><th class="n">Vendidos</th><th></th></tr></thead>
+      <table><thead><tr><th style="width:52px">Foto</th><th>SKU</th><th>Equipo</th><th class="n">Costo</th><th class="n">Disponibles</th><th class="n">Vendidos</th><th></th></tr></thead>
         <tbody id="inv-tb-prod"></tbody></table>
+      <div class="note" id="inv-liga" style="margin-bottom:8px"></div>
       <div class="note">El costo entra como monto del crédito. Con la tarifa de 16 semanas un equipo de $3,000 queda en $4,800 de venta con $480 de enganche; el enganche se descuenta al inicio y no cuenta como cobranza ni comisiona.</div>
     </div>
 
@@ -2966,7 +2967,17 @@ function invMsg(m){
   t.style.cssText='position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#1b2330;color:#fff;padding:12px 20px;border-radius:10px;font-size:.85rem;z-index:9999;box-shadow:0 6px 24px rgba(0,0,0,.25);max-width:90vw';
   t.textContent=m; document.body.appendChild(t); setTimeout(()=>t.remove(),4600);
 }
-async function invInit(){ await invCargarProd(); await invCargar(); }
+async function invInit(){
+  /* El id de la agencia va PRIMERO: las miniaturas del catálogo se piden al endpoint público y sin
+     el id saldrían rotas en el primer pintado. */
+  try{ _invTid = (await apiU('GET','/api/auth/me')).tenantId; }catch(e){}
+  await invCargarProd(); await invCargar();
+  try{
+    const me = { tenantId: _invTid };
+    const liga = location.origin + '/tienda.html?a=' + me.tenantId;
+    $('inv-liga').innerHTML = `Catálogo público para tus clientes: <a href="${liga}" target="_blank" rel="noopener" style="color:var(--acc)">${liga}</a> — muestra modelo, foto, precio, enganche y pago semanal. Nunca el costo.`;
+  }catch(e){}
+}
 async function invCargarProd(){
   try{
     _invProd = await apiU('GET','/api/productos?todos=1');
@@ -2975,15 +2986,16 @@ async function invCargarProd(){
 }
 function invRenderProd(){
   $('inv-tb-prod').innerHTML = _invProd.length ? _invProd.map(p=>`<tr${p.activo?'':' style="opacity:.5"'}>
+    <td>${p.tieneFoto?`<img src="${invFotoSrc(p,0)}" style="width:38px;height:38px;object-fit:contain;background:#fff;border:1px solid var(--line);border-radius:7px">`:'<span style="opacity:.3">📦</span>'}</td>
     <td class="mono">${_ve(p.sku||'—')}</td>
-    <td><b>${_ve(p.etiqueta)}</b>${p.activo?'':' <span style="font-size:.7rem;color:var(--red)">baja</span>'}</td>
+    <td><b>${_ve(p.etiqueta)}</b>${p.activo?'':' <span style="font-size:.7rem;color:var(--red)">baja</span>'}${p.publico===false?' <span style="font-size:.7rem;color:var(--acc)">no publicado</span>':''}<div class="muted" style="font-size:.7rem">${_ve(p.categoria||'')}${p.videoUrl?' · con video':''}</div></td>
     <td class="n mono">${fmt(p.costo)}</td>
     <td class="n"><b style="color:${p.disponiblesAgencia>0?'var(--grn)':'var(--faint)'}">${p.disponiblesAgencia}</b></td>
     <td class="n">${p.vendidos!=null?p.vendidos:'—'}</td>
     <td style="text-align:right;white-space:nowrap">
       <button class="btn" onclick="invEditarProd(${p.id})">✎ Editar</button>
       <button class="btn" onclick="invBajaProd(${p.id},${p.activo?0:1})">${p.activo?'Dar de baja':'Reactivar'}</button>
-    </td></tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--faint);padding:16px">Sin productos. Da de alta el primer equipo con su costo de compra.</td></tr>';
+    </td></tr>`).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--faint);padding:16px">Sin productos. Da de alta el primer equipo con su costo de compra.</td></tr>';
   const act=_invProd.filter(p=>p.activo);
   $('inv-e-prod').innerHTML = act.length ? act.map(p=>`<option value="${p.id}">${_ve(p.etiqueta)} · ${fmt(p.costo)}</option>`).join('') : '<option value="">— da de alta un producto —</option>';
 }
@@ -3026,24 +3038,108 @@ async function invCargar(){
 }
 function invSel(id,on){ on?_invSel.add(id):_invSel.delete(id); }
 
-async function invNuevoProd(){
-  const marca=prompt('Marca del equipo (ej. Motorola)'); if(marca==null) return;
-  const modelo=prompt('Modelo (ej. G24 128GB)'); if(modelo==null) return;
-  const costo=prompt('Costo de compra del equipo (solo el número)'); if(costo==null) return;
-  const sku=prompt('SKU o clave interna (opcional)')||'';
-  try{ await apiU('POST','/api/productos',{marca,modelo,costo:+costo,sku});
-    invMsg('✓ Producto dado de alta'); await invCargarProd(); await invCargar();
+/* La foto sale en la página pública del catálogo. Se acepta una liga de internet o una imagen del
+   equipo, que se comprime antes de guardarla para no inflar el expediente de la agencia. */
+let _invFotos=[], _invTid=null;
+function invFotoSrc(p,n){ return '/api/publico/foto/'+_invTid+'/'+p.id+'?v='+(p.fotoV||0)+(n?'&n='+n:''); }
+function invForm(p){
+  /* Las fotos ya no llegan en el JSON del listado: se leen del endpoint público. Al editar se
+     cargan las que ya tiene para poder reordenarlas o quitarlas; la primera es la portada. */
+  _invFotos = p ? Array.from({length:p.nFotos||0},(_,i)=>invFotoSrc(p,i)) : [];
+  const v=s=>_ve(s==null?'':s);
+  const ov=document.createElement('div'); ov.id='ip-ov';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(10,15,25,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:18px';
+  ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+  ov.innerHTML=`<div style="background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:20px;max-width:440px;width:100%;max-height:90vh;overflow:auto">
+    <h3 style="font-size:1rem;margin-bottom:14px">${p?'Editar equipo':'Nuevo equipo'}</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">
+      <div><label style="font-size:.72rem;color:var(--dim);display:block;margin-bottom:4px">Marca</label>
+        <input id="ip-marca" value="${p?v(p.marca):''}" placeholder="Motorola" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--surf-2);font-family:inherit;color:var(--txt)"></div>
+      <div><label style="font-size:.72rem;color:var(--dim);display:block;margin-bottom:4px">Modelo</label>
+        <input id="ip-modelo" value="${p?v(p.modelo):''}" placeholder="G24 128GB" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--surf-2);font-family:inherit;color:var(--txt)"></div>
+      <div><label style="font-size:.72rem;color:var(--dim);display:block;margin-bottom:4px">Costo de compra</label>
+        <input id="ip-costo" type="number" value="${p?p.costo:''}" placeholder="3000" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--surf-2);font-family:inherit;color:var(--txt)"></div>
+      <div><label style="font-size:.72rem;color:var(--dim);display:block;margin-bottom:4px">SKU (opcional)</label>
+        <input id="ip-sku" value="${p?v(p.sku):''}" placeholder="MOTO-G24" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--surf-2);font-family:inherit;color:var(--txt)"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:11px">
+      <div><label style="font-size:.72rem;color:var(--dim);display:block;margin-bottom:4px">Categoría</label>
+        <input id="ip-cat" list="ip-cats" value="${p?v(p.categoria||'Celulares'):'Celulares'}" placeholder="Celulares" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--surf-2);font-family:inherit;color:var(--txt)">
+        <datalist id="ip-cats">${[...new Set(_invProd.map(x=>x.categoria).filter(Boolean))].map(c=>`<option value="${_ve(c)}">`).join('')}</datalist></div>
+      <div><label style="font-size:.72rem;color:var(--dim);display:block;margin-bottom:4px">Video (YouTube, Vimeo o .mp4)</label>
+        <input id="ip-vid" value="${p?v(p.videoUrl):''}" placeholder="https://youtu.be/…" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--surf-2);font-family:inherit;font-size:.82rem;color:var(--txt)"></div>
+    </div>
+    <div style="margin-top:11px"><label style="font-size:.72rem;color:var(--dim);display:block;margin-bottom:4px">Descripción para el cliente</label>
+      <textarea id="ip-desc" rows="3" placeholder="Pantalla de 6.6\", 128 GB, cámara de 50 MP…" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--surf-2);font-family:inherit;font-size:.85rem;color:var(--txt)">${p?v(p.descripcion):''}</textarea></div>
+    <label style="display:flex;align-items:center;gap:9px;margin-top:11px;cursor:pointer;font-size:.85rem">
+      <input type="checkbox" id="ip-pub" ${!p||p.publico!==false?'checked':''} style="width:17px;height:17px"> Mostrar en el catálogo público</label>
+    <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">
+      <label style="font-size:.72rem;color:var(--dim);display:block;margin-bottom:7px">Fotos — la primera es la portada. Hasta 6.</label>
+      <div id="ip-tiras" style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:9px"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <label class="btn" style="cursor:pointer">📷 Subir fotos<input type="file" accept="image/*" multiple style="display:none" onchange="invFotoArchivo(this)"></label>
+        <input id="ip-url" placeholder="…o pega una liga https:// y presiona Enter" onkeydown="if(event.key==='Enter'){invFotoUrl(this.value);this.value='';}" style="flex:1;min-width:150px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--surf-2);font-family:inherit;font-size:.82rem;color:var(--txt)">
+      </div>
+    </div>
+    <div style="display:flex;gap:9px;margin-top:17px">
+      <button class="btn" style="flex:0 0 auto" onclick="document.getElementById('ip-ov').remove()">Cancelar</button>
+      <button class="btn gold" style="flex:1" onclick="invGuardarProd(${p?p.id:0})">Guardar equipo</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+  _invPrev();
+}
+function _invPrev(){
+  const b=$('ip-tiras'); if(!b) return;
+  b.innerHTML = _invFotos.length ? _invFotos.map((f,i)=>`<div style="position:relative">
+      <img src="${_ve(f)}" style="width:62px;height:62px;object-fit:contain;background:#fff;border:2px solid ${i===0?'var(--acc)':'var(--line)'};border-radius:9px;padding:2px">
+      ${i?`<button class="btn" style="position:absolute;bottom:-6px;left:-4px;padding:1px 5px;font-size:.62rem" onclick="invFotoPortada(${i})" title="Hacer portada">★</button>`:''}
+      <button class="btn" style="position:absolute;top:-6px;right:-6px;padding:1px 6px;font-size:.68rem;border-color:#d6432d;color:#d6432d" onclick="invFotoQuitar(${i})">✕</button>
+    </div>`).join('') : '<span class="muted" style="font-size:.78rem">Sin fotos. El catálogo mostrará un ícono.</span>';
+}
+function invFotoUrl(u){ u=String(u||'').trim(); if(!/^https?:\/\//i.test(u)) return invMsg('La liga debe empezar con https://');
+  if(_invFotos.length>=6) return invMsg('Máximo 6 fotos'); _invFotos.push(u); _invPrev(); }
+function invFotoQuitar(i){ _invFotos.splice(i,1); _invPrev(); }
+function invFotoPortada(i){ const f=_invFotos.splice(i,1)[0]; _invFotos.unshift(f); _invPrev(); }
+function invFotoArchivo(input){
+  const files=[...(input.files||[])]; if(!files.length) return;
+  let pend=files.length;
+  files.forEach(f=>{
+    if(_invFotos.length>=6){ if(!--pend) _invPrev(); return; }
+    const url=URL.createObjectURL(f); const img=new Image();
+    img.onload=()=>{ const M=700; let w=img.width,h=img.height;
+      if(w>M||h>M){ if(w>h){ h=Math.round(h*M/w); w=M; } else { w=Math.round(w*M/h); h=M; } }
+      const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+      cv.getContext('2d').drawImage(img,0,0,w,h);
+      if(_invFotos.length<6) _invFotos.push(cv.toDataURL('image/jpeg',0.72));
+      URL.revokeObjectURL(url); cv.width=cv.height=0; if(!--pend) _invPrev();
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(url); invMsg('No se pudo leer una de las imágenes'); if(!--pend) _invPrev(); };
+    img.src=url;
+  });
+  try{ input.value=''; }catch(e){}
+}
+async function invGuardarProd(id){
+  const marca=$('ip-marca').value.trim(), modelo=$('ip-modelo').value.trim();
+  const costo=+$('ip-costo').value, sku=$('ip-sku').value.trim();
+  if(!marca&&!modelo){ invMsg('Captura al menos marca y modelo'); return; }
+  if(!(costo>0)){ invMsg('El costo debe ser mayor a cero'); return; }
+  /* Las fotos que siguen apuntando al endpoint no se reenvían: ya están guardadas. Solo viajan las
+     nuevas (base64 o liga externa). Si el usuario borró alguna, se manda la lista completa. */
+  const _f=_invFotos.filter(f=>!f.startsWith('/api/publico/foto/'));
+  const _mismas = _invFotos.length===((_invProd.find(x=>x.id===id)||{}).nFotos||0) && !_f.length;
+  const body={marca,modelo,costo,sku,
+    categoria:$('ip-cat').value.trim(), descripcion:$('ip-desc').value.trim(),
+    videoUrl:$('ip-vid').value.trim(), publico:$('ip-pub').checked};
+  if(!id || !_mismas){ body.foto=_invFotos[0]||''; body.fotos=_invFotos.slice(1); }
+  try{
+    if(id) await apiU('PATCH','/api/productos/'+id,body);
+    else   await apiU('POST','/api/productos',body);
+    const ov=$('ip-ov'); if(ov) ov.remove();
+    invMsg('✓ Equipo guardado'); await invCargarProd(); await invCargar();
   }catch(e){ invMsg(e.message); }
 }
-async function invEditarProd(id){
-  const p=_invProd.find(x=>x.id===id); if(!p) return;
-  const marca=prompt('Marca',p.marca||''); if(marca==null) return;
-  const modelo=prompt('Modelo',p.modelo||''); if(modelo==null) return;
-  const costo=prompt('Costo de compra',p.costo); if(costo==null) return;
-  try{ await apiU('PATCH','/api/productos/'+id,{marca,modelo,costo:+costo});
-    invMsg('✓ Guardado'); await invCargarProd(); await invCargar();
-  }catch(e){ invMsg(e.message); }
-}
+function invNuevoProd(){ invForm(null); }
+function invEditarProd(id){ const p=_invProd.find(x=>x.id===id); if(p) invForm(p); }
 async function invBajaProd(id,reactivar){
   try{ await apiU('PATCH','/api/productos/'+id,{activo:!!reactivar});
     await invCargarProd(); await invCargar();
