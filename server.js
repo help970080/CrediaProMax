@@ -33,7 +33,13 @@ async function _apagarLimpio(sig) {
 process.on('SIGTERM', () => _apagarLimpio('SIGTERM'));
 process.on('SIGINT',  () => _apagarLimpio('SIGINT'));
 const PORT = process.env.PORT || 5000;
-const JWT_SECRET = process.env.JWT_SECRET || 'cobrapro_dev_secret_cambiame';
+// La llave de firma NO tiene valor por omisión: con una llave conocida cualquiera
+// puede fabricarse un token de superadmin. Si falta, el server no arranca.
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET || JWT_SECRET === 'cobrapro_dev_secret_cambiame' || JWT_SECRET.length < 24) {
+  console.error('❌ JWT_SECRET ausente, de ejemplo o demasiado corta. Defínela en el entorno (mínimo 24 caracteres) y vuelve a arrancar.');
+  process.exit(1);
+}
 const DB_FILE = path.join(__dirname, 'db.json');
 
 app.use(cors({ origin: true, credentials: true }));
@@ -599,12 +605,47 @@ function idem(req, res, next) {
 }
 function markIdem(req) { if (req._idemKey) { db._idem[req._idemKey] = true; } }
 
-app.post('/api/auth/login', async (req, res) => {
+/* ---------- Freno de fuerza bruta en el login ----------
+   Sin dependencias: contador en memoria por IP + usuario. Cada bcrypt cuesta CPU,
+   así que esto protege la contraseña y de paso evita que agoten la instancia.
+   Solo cuentan los intentos FALLIDOS; al entrar bien se limpia el contador. */
+const LOGIN_MAX = 8;               // intentos fallidos permitidos
+const LOGIN_VENTANA = 15 * 60000;  // ventana de 15 minutos
+const _loginTries = new Map();
+function _loginKey(req) {
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || 'sin-ip';
+  return ip + '|' + String((req.body && req.body.usuario) || '').toLowerCase().trim();
+}
+function loginLimit(req, res, next) {
+  const k = _loginKey(req), ahora = Date.now();
+  const r = _loginTries.get(k);
+  if (r && ahora - r.desde > LOGIN_VENTANA) { _loginTries.delete(k); return next(); }
+  if (r && r.n >= LOGIN_MAX) {
+    const faltan = Math.ceil((LOGIN_VENTANA - (ahora - r.desde)) / 60000);
+    return res.status(429).json({ error: 'Demasiados intentos. Espera ' + faltan + ' minuto(s) e inténtalo de nuevo.' });
+  }
+  next();
+}
+function loginFallo(req) {
+  const k = _loginKey(req), ahora = Date.now();
+  const r = _loginTries.get(k);
+  if (!r || ahora - r.desde > LOGIN_VENTANA) _loginTries.set(k, { n: 1, desde: ahora });
+  else r.n++;
+}
+function loginOk(req) { _loginTries.delete(_loginKey(req)); }
+// Limpieza periódica para que el mapa no crezca sin fin.
+setInterval(() => {
+  const ahora = Date.now();
+  for (const [k, r] of _loginTries) if (ahora - r.desde > LOGIN_VENTANA) _loginTries.delete(k);
+}, 10 * 60000).unref();
+
+app.post('/api/auth/login', loginLimit, async (req, res) => {
   const usuario = (req.body.usuario || '').toLowerCase().trim();
   const password = req.body.password || '';
   // ¿superadmin?
   const su = (SYS.superUsers || []).find(x => x.usuario === usuario);
   if (su && bcrypt.compareSync(password, su.passwordHash)) {
+    loginOk(req);
     const token = jwt.sign({ super: true, nombre: su.nombre, usuario: su.usuario }, JWT_SECRET, { expiresIn: '12h' });
     return res.json({ token, super: true, user: { nombre: su.nombre, usuario: su.usuario, rol: 'super' }, brand: { nombre: 'CobraPro · Panel maestro' } });
   }
@@ -620,12 +661,13 @@ app.post('/api/auth/login', async (req, res) => {
       } catch (e) {}
     }
   }
-  if (tid == null) return res.status(401).json({ error: 'Usuario o contraseña inválidos' });
+  if (tid == null) { loginFallo(req); return res.status(401).json({ error: 'Usuario o contraseña inválidos' }); }
   const tnt = (SYS.tenants || []).find(t => t.id === +tid);
   if (tnt && tnt.activo === false) return res.status(403).json({ error: 'Esta agencia está suspendida. Contacta a soporte.' });
   const blob = await getTenant(tid);
   const u = blob && blob.users.find(x => x.usuario === usuario && x.activo);
-  if (!u || !bcrypt.compareSync(password, u.passwordHash)) return res.status(401).json({ error: 'Usuario o contraseña inválidos' });
+  if (!u || !bcrypt.compareSync(password, u.passwordHash)) { loginFallo(req); return res.status(401).json({ error: 'Usuario o contraseña inválidos' }); }
+  loginOk(req);
   const brand = (blob.config && blob.config.brand) || { nombre: 'CobraPro' };
   const token = jwt.sign({ id: u.id, rol: u.rol, nombre: u.nombre, sucursalId: u.sucursalId, tenantId: +tid }, JWT_SECRET, { expiresIn: '12h' });
   res.json({ token, user: { id: u.id, nombre: u.nombre, rol: u.rol, sucursalId: u.sucursalId, usuario: u.usuario },
@@ -949,12 +991,15 @@ app.post('/api/super/enter/:id', auth, superOnly, async (req, res) => {
 });
 
 /* ---------- Usuarios (panel de alta de usuarios y contraseñas) ---------- */
+const ROLES_VALIDOS = ['admin', 'supervisor', 'sucursal', 'cobrador', 'jc', 'promotor_grupal'];
 app.get('/api/users', auth, rol('admin', 'supervisor'), (req, res) => {
   res.json(db.users.map(u => ({ id: u.id, nombre: u.nombre, usuario: u.usuario, rol: u.rol, sucursalId: u.sucursalId, activo: u.activo, createdAt: u.createdAt })));
 });
 app.post('/api/users', auth, rol('admin'), (req, res) => {
   const { nombre, usuario, rol: r, sucursalId, password } = req.body;
   if (!nombre || !usuario || !r) return res.status(400).json({ error: 'nombre, usuario y rol son obligatorios' });
+  // El rol venía crudo del body: se aceptaba cualquier texto. El PATCH ya validaba, el alta no.
+  if (!ROLES_VALIDOS.includes(r)) return res.status(400).json({ error: 'Rol no válido' });
   const uname = usuario.toLowerCase().trim();
   if (db.users.some(u => u.usuario === uname)) return res.status(409).json({ error: 'Ese usuario ya existe' });
   if (SYS.userIndex && SYS.userIndex[uname] != null) return res.status(409).json({ error: 'Ese usuario ya está en uso (debe ser único en todo el sistema)' });
@@ -5618,7 +5663,11 @@ try {
   if (!SYS) {
     // Primer arranque del modelo multitenant: crear el sistema y migrar datos existentes.
     SYS = { tenants: [], superUsers: [], userIndex: {}, seqTenant: 0 };
-    SYS.superUsers.push({ nombre: 'Super Admin', usuario: 'super', passwordHash: bcrypt.hashSync(process.env.SUPER_PASS || 'super123', 8) });
+    if (!process.env.SUPER_PASS) {
+      console.error('❌ Instalación nueva sin SUPER_PASS. Defínela en el entorno antes de arrancar: es la contraseña del superadmin y ya no hay valor por omisión.');
+      process.exit(1);
+    }
+    SYS.superUsers.push({ nombre: 'Super Admin', usuario: 'super', passwordHash: bcrypt.hashSync(process.env.SUPER_PASS, 8) });
 
     const existing = await loadRow(1); // datos previos del sistema mono-tenant (si los hay)
     if (existing && existing.users) {
@@ -5641,11 +5690,28 @@ try {
       console.log('🌱 Agencia DEMO creada (admin / admin123).');
     }
     saveSystem();
-    console.log('🛡  Superadmin creado (super / ' + (process.env.SUPER_PASS || 'super123') + ').');
+    console.log('🛡  Superadmin creado (usuario: super). La contraseña es la de SUPER_PASS; no se registra en el log.');
   } else {
     // precarga las agencias en memoria (para login rápido y cron)
     SYS.userIndex = SYS.userIndex || {};
     for (const t of (SYS.tenants || [])) { try { await getTenant(t.id); } catch (e) {} }
+    /* ---------- SUPER_PASS manda ----------
+       Antes esta variable solo se leía en el primerísimo arranque, así que la contraseña
+       maestra quedaba congelada para siempre y solo se podía cambiar por SQL directo.
+       Ahora, si SUPER_PASS está definida y no coincide con lo guardado, se re-hashea aquí:
+       rotar la contraseña es cambiarla en el entorno y reiniciar.
+       Si NO está definida, el hash existente se respeta y solo se avisa. Nunca hay valor por omisión. */
+    const sp = process.env.SUPER_PASS;
+    const su0 = (SYS.superUsers || [])[0];
+    if (!su0) {
+      console.warn('⚠ No hay superadmin registrado en el sistema.');
+    } else if (!sp) {
+      console.warn('⚠ SUPER_PASS no definida: se conserva la contraseña actual del superadmin (no se podrá rotar desde el entorno).');
+    } else if (!bcrypt.compareSync(sp, su0.passwordHash)) {
+      su0.passwordHash = bcrypt.hashSync(sp, 8);
+      saveSystem();
+      console.log('🔑 Contraseña del superadmin sincronizada desde SUPER_PASS.');
+    }
   }
   app.listen(PORT, () => console.log('🚀 CobraPro multitenant en puerto ' + PORT + (USE_PG ? ' (PostgreSQL)' : ' (archivo local)')));
 })().catch(e => { console.error('❌ Error fatal al iniciar:', e); process.exit(1); });
