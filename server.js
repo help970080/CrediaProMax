@@ -409,9 +409,10 @@ function blankTenant(brandNombre, adminUser, adminPass, adminNombre) {
     users: [{ id: 1, nombre: adminNombre || 'Administrador', usuario: (adminUser || 'admin').toLowerCase(), rol: 'admin', sucursalId: null, passwordHash: bcrypt.hashSync(adminPass || 'admin123', 8), activo: true, createdAt: new Date().toISOString() }],
     sucursales: [], clients: [], sales: [], movimientos: [], caja: {}, porEntregar: [],
     productos: [], inventario: [],
+    encuestas: [], encuestasEnvios: [], encuestasResp: [],
     gestiones: [], cortes: [], transferencias: [], recolecciones: [], jcEntregas: [], jcCierres: [], asignaciones: [], contactos: [], cierresSemana: [],
     objetivos: { suc: {}, cob: {} },
-    config: { corteAutoHora: '19:00', corteAutoDias: [1, 2, 3, 4, 5, 6], semanaInicio: 4, brand: { nombre: brandNombre || 'CobraPro' }, tarifas: JSON.parse(JSON.stringify(DEFAULT_TARIFAS)), modulosOff: ['inventario'], _invSeed: 1 }, _idem: {}
+    config: { corteAutoHora: '19:00', corteAutoDias: [1, 2, 3, 4, 5, 6], semanaInicio: 4, brand: { nombre: brandNombre || 'CobraPro' }, tarifas: JSON.parse(JSON.stringify(DEFAULT_TARIFAS)), modulosOff: ['inventario', 'encuestas'], _invSeed: 1, _encSeed: 1 }, _idem: {}
   };
 }
 function normalizeTenant(b) {
@@ -440,6 +441,14 @@ function normalizeTenant(b) {
     b.config.modulosOff = Array.isArray(b.config.modulosOff) ? b.config.modulosOff : [];
     if (!b.config.modulosOff.includes('inventario')) b.config.modulosOff.push('inventario');
     b.config._invSeed = 1;
+  }
+  /* Encuestas: mismo criterio que inventario. Nace APAGADO en todas las agencias y solo el
+     superadmin lo prende; la siembra corre una sola vez para no volver a apagarlo después. */
+  b.encuestas = b.encuestas || []; b.encuestasEnvios = b.encuestasEnvios || []; b.encuestasResp = b.encuestasResp || [];
+  if (b.config._encSeed !== 1) {
+    b.config.modulosOff = Array.isArray(b.config.modulosOff) ? b.config.modulosOff : [];
+    if (!b.config.modulosOff.includes('encuestas')) b.config.modulosOff.push('encuestas');
+    b.config._encSeed = 1;
   }
   b._idem = b._idem || {};
   if(b.config.creditosVoz == null) b.config.creditosVoz = 0;
@@ -698,6 +707,7 @@ const MODULOS = [
   { k: 'grupal', n: 'Créditos grupales' }, { k: 'usuarios', n: 'Usuarios y accesos' },
   { k: 'convenios', n: 'Convenios de pago' },
   { k: 'inventario', n: 'Catálogo e inventario' },
+  { k: 'encuestas', n: 'Encuestas' },
 ];
 const MOD_KEYS = new Set(MODULOS.map(m => m.k));
 function modulosOffDe(blob) {
@@ -5652,6 +5662,13 @@ try {
     hoyMXDDMM: fechaMxHoyDDMM
   });
 } catch (e) { console.error('⚠ módulo grupal no se pudo montar:', e.message); }
+
+// ===== ANEXO ENCUESTAS (gateado por el interruptor 'encuestas' del panel maestro) =====
+try {
+  require('./encuestas').montar(app, {
+    als, db, saveDB, nextId, auth, rol, logOp, getTenant
+  });
+} catch (e) { console.error('⚠ módulo de encuestas no se pudo montar:', e.message); }
 
 /* ---------- Arranque (multitenant) ---------- */
 (async () => {
