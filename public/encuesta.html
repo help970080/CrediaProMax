@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<meta name="theme-color" content="#caa23a">
+<title>Encuesta</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#eef1f7; --surf:#ffffff; --surf-2:#f1f4f9; --line:#dde3ec; --line-2:#c9d2de;
+    --txt:#1b2330; --dim:#5b6675; --faint:#97a2b2;
+    --acc:#d99a0f; --acc-d:#a87a10; --grn:#178a55; --red:#d6432d;
+    --r:12px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font-family:"Sora",sans-serif;line-height:1.5;font-size:15px;-webkit-text-size-adjust:100%}
+  .wrap{max-width:620px;margin:0 auto;padding:0 14px 90px}
+
+  header{background:linear-gradient(150deg,#1b2330,#2a3546);color:#fff;padding:22px 16px 20px;margin-bottom:16px}
+  header .in{max-width:620px;margin:0 auto}
+  header .mk{display:inline-flex;align-items:center;gap:9px;font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;color:#c9d2de;margin-bottom:10px}
+  header .mk i{width:9px;height:9px;border-radius:3px;background:linear-gradient(140deg,var(--acc),var(--acc-d));display:block}
+  header h1{font-size:1.22rem;font-weight:700;line-height:1.25}
+  header p{font-size:.85rem;color:#c9d2de;margin-top:7px}
+  .saludo{background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:10px 12px;margin-top:14px;font-size:.84rem}
+  .saludo b{color:#fff}
+
+  .aviso{background:#fff8e6;border:1px solid #f0dca8;border-radius:var(--r);padding:12px 14px;font-size:.8rem;color:#6b5518;margin-bottom:16px;line-height:1.5}
+  .aviso b{display:block;margin-bottom:3px;color:#4d3d0f}
+
+  .sec{background:var(--surf);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:14px}
+  .sec > h2{font-size:.72rem;text-transform:uppercase;letter-spacing:.09em;color:var(--acc-d);font-weight:700;margin-bottom:14px;padding-bottom:9px;border-bottom:1px solid var(--line)}
+
+  .q{padding:14px 0;border-bottom:1px dashed var(--line)}
+  .q:first-of-type{padding-top:0}
+  .q:last-child{border-bottom:none;padding-bottom:0}
+  .q > label.t{display:block;font-size:.94rem;font-weight:500;margin-bottom:11px;line-height:1.4}
+  .q .req{color:var(--red);font-weight:700}
+  .q.err{background:#fdf1ef;border-radius:9px;padding:12px;margin:8px -6px}
+
+  .ops{display:flex;flex-direction:column;gap:7px}
+  .op{display:flex;align-items:center;gap:11px;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--surf-2);cursor:pointer;font-size:.9rem;transition:.12s;-webkit-tap-highlight-color:transparent}
+  .op:active{transform:scale(.99)}
+  .op input{width:19px;height:19px;flex-shrink:0;accent-color:var(--acc-d)}
+  .op.on{border-color:var(--acc);background:#fdf6e6;font-weight:500}
+
+  .esc{display:grid;grid-template-columns:repeat(5,1fr);gap:7px}
+  .esc.n11{grid-template-columns:repeat(6,1fr)}
+  .esc button{padding:13px 0;border:1px solid var(--line);border-radius:10px;background:var(--surf-2);font-family:inherit;font-size:1rem;font-weight:600;color:var(--dim);cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .esc button.on{background:linear-gradient(140deg,var(--acc),var(--acc-d));border-color:var(--acc-d);color:#1a1408}
+  .escl{display:flex;justify-content:space-between;font-size:.7rem;color:var(--faint);margin-top:7px}
+
+  textarea,input[type=text]{width:100%;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surf-2);font-family:inherit;font-size:.92rem;color:var(--txt);resize:vertical}
+  textarea:focus,input[type=text]:focus{outline:none;border-color:var(--acc);background:#fff}
+  .cnt{font-size:.7rem;color:var(--faint);text-align:right;margin-top:4px}
+
+  .barra{position:fixed;left:0;right:0;bottom:0;background:var(--surf);border-top:1px solid var(--line);padding:11px 14px;box-shadow:0 -4px 20px rgba(27,35,48,.1)}
+  .barra .in{max-width:620px;margin:0 auto;display:flex;align-items:center;gap:12px}
+  .prog{flex:1}
+  .prog .bar{height:6px;background:var(--surf-2);border-radius:4px;overflow:hidden}
+  .prog .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--acc),var(--grn));width:0;transition:width .25s}
+  .prog .lbl{font-size:.72rem;color:var(--dim);margin-top:4px}
+  .btn{padding:13px 22px;border:none;border-radius:10px;background:linear-gradient(140deg,var(--acc),var(--acc-d));color:#1a1408;font-family:inherit;font-weight:700;font-size:.92rem;cursor:pointer;white-space:nowrap}
+  .btn:disabled{opacity:.5;cursor:default}
+
+  .estado{max-width:620px;margin:60px auto;padding:34px 22px;background:var(--surf);border:1px solid var(--line);border-radius:var(--r);text-align:center}
+  .estado .ico{font-size:2.6rem;margin-bottom:14px}
+  .estado h2{font-size:1.1rem;margin-bottom:9px}
+  .estado p{color:var(--dim);font-size:.9rem}
+  .oculto{display:none}
+</style>
+</head>
+<body>
+
+<div id="cargando" class="estado"><div class="ico">⏳</div><h2>Abriendo la encuesta…</h2></div>
+
+<div id="fin" class="estado oculto"><div class="ico">✅</div><h2>Listo, gracias</h2>
+  <p>Tus respuestas se guardaron. No necesitas hacer nada más — puedes cerrar esta página.</p></div>
+
+<div id="error" class="estado oculto"><div class="ico">🔒</div><h2 id="error-t">No se pudo abrir</h2>
+  <p id="error-p"></p></div>
+
+<div id="app" class="oculto">
+  <header><div class="in">
+    <div class="mk"><i></i><span id="marca">CobraPro</span></div>
+    <h1 id="titulo"></h1>
+    <p id="desc"></p>
+    <div class="saludo" id="saludo"></div>
+  </div></header>
+
+  <div class="wrap">
+    <div class="aviso">
+      <b>Antes de empezar</b>
+      Tus respuestas van con tu nombre y las revisa la Dirección, para poder atender lo que reportes.
+      Las preguntas sobre tu jefe o líder <b style="display:inline">solo las ve la Dirección</b>: tu sucursal
+      únicamente ve el promedio del equipo, nunca quién contestó qué. Contesta con confianza y con la verdad:
+      de eso depende que esto sirva de algo.
+    </div>
+    <form id="form" autocomplete="off"></form>
+  </div>
+
+  <div class="barra"><div class="in">
+    <div class="prog"><div class="bar"><i id="prog-i"></i></div><div class="lbl" id="prog-l"></div></div>
+    <button type="button" class="btn" id="btn-env" onclick="enviar()">Enviar</button>
+  </div></div>
+</div>
+
+<script>
+var TOKEN = new URLSearchParams(location.search).get('t') || '';
+var DATA = null, PREGS = [], VAL = {}, ENVIANDO = false;
+
+function $(id){ return document.getElementById(id); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+function mostrar(id){ ['cargando','app','fin','error'].forEach(function(x){ $(x).classList.add('oculto'); }); $(id).classList.remove('oculto'); }
+function falla(t,p){ $('error-t').textContent = t; $('error-p').textContent = p||''; mostrar('error'); }
+
+async function abrir(){
+  if(!TOKEN){ return falla('Liga incompleta','Abre la liga completa que te enviaron, sin recortarla.'); }
+  var r, d;
+  try{ r = await fetch('/api/enc/'+encodeURIComponent(TOKEN)); d = await r.json().catch(function(){ return {}; }); }
+  catch(e){ return falla('Sin conexión','Revisa tu internet y vuelve a abrir la liga.'); }
+  if(r.status === 409){ return mostrar('fin'); }
+  if(!r.ok){ return falla('No se pudo abrir', d.error || 'La liga no es válida.'); }
+  DATA = d;
+  $('marca').textContent = d.marca || 'CobraPro';
+  $('titulo').textContent = d.encuesta.nombre;
+  $('desc').textContent = d.encuesta.descripcion || '';
+  if(!d.encuesta.descripcion) $('desc').style.display = 'none';
+  $('saludo').innerHTML = 'Hola <b>' + esc(d.nombre) + '</b> — esta encuesta es solo para ti y se contesta una vez.';
+  pintar(d.encuesta.secciones || []);
+  mostrar('app');
+  progreso();
+}
+
+function pintar(secs){
+  PREGS = [];
+  var html = '';
+  secs.forEach(function(sec, si){
+    html += '<div class="sec"><h2>' + esc(sec.titulo || ('Sección ' + (si+1))) + '</h2>';
+    (sec.preguntas || []).forEach(function(q){
+      PREGS.push(q);
+      html += '<div class="q" id="q-' + q.id + '"><label class="t">' + esc(q.texto) +
+              (q.requerida ? ' <span class="req">*</span>' : '') + '</label>';
+      if(q.tipo === 'opcion'){
+        html += '<div class="ops">';
+        (q.opciones || []).forEach(function(op, oi){
+          html += '<label class="op" id="op-' + q.id + '-' + oi + '" onclick="setOp(\'' + q.id + '\',' + oi + ')">' +
+                  '<input type="radio" name="' + q.id + '" ' + (q.requerida?'':'') + '><span>' + esc(op) + '</span></label>';
+        });
+        html += '</div>';
+      } else if(q.tipo === 'escala' || q.tipo === 'nps'){
+        var min = q.tipo === 'nps' ? 0 : 1;
+        html += '<div class="esc' + (q.tipo === 'nps' ? ' n11' : '') + '">';
+        for(var v = min; v <= 10; v++){
+          html += '<button type="button" id="es-' + q.id + '-' + v + '" onclick="setEsc(\'' + q.id + '\',' + v + ')">' + v + '</button>';
+        }
+        html += '</div><div class="escl"><span>' + (q.tipo === 'nps' ? '0 · nada probable' : '1 · muy mal') +
+                '</span><span>' + (q.tipo === 'nps' ? '10 · muy probable' : '10 · excelente') + '</span></div>';
+      } else if(q.tipo === 'texto'){
+        html += '<input type="text" maxlength="300" oninput="setTxt(\'' + q.id + '\',this.value)">';
+      } else {
+        html += '<textarea rows="3" maxlength="1200" placeholder="Escribe aquí…" ' +
+                'oninput="setTxt(\'' + q.id + '\',this.value); document.getElementById(\'c-' + q.id + '\').textContent=this.value.length+\'/1200\'"></textarea>' +
+                '<div class="cnt" id="c-' + q.id + '">0/1200</div>';
+      }
+      html += '</div>';
+    });
+    html += '</div>';
+  });
+  $('form').innerHTML = html;
+}
+
+function setOp(qid, oi){
+  var q = PREGS.find(function(x){ return x.id === qid; });
+  VAL[qid] = q.opciones[oi];
+  (q.opciones || []).forEach(function(_, i){
+    var el = $('op-' + qid + '-' + i);
+    el.classList.toggle('on', i === oi);
+    el.querySelector('input').checked = (i === oi);
+  });
+  limpiarErr(qid); progreso();
+}
+function setEsc(qid, v){
+  var q = PREGS.find(function(x){ return x.id === qid; });
+  VAL[qid] = v;
+  var min = q.tipo === 'nps' ? 0 : 1;
+  for(var i = min; i <= 10; i++){ $('es-' + qid + '-' + i).classList.toggle('on', i === v); }
+  limpiarErr(qid); progreso();
+}
+function setTxt(qid, v){
+  if(String(v).trim()) VAL[qid] = v; else delete VAL[qid];
+  limpiarErr(qid); progreso();
+}
+function limpiarErr(qid){ var e = $('q-' + qid); if(e) e.classList.remove('err'); }
+
+function progreso(){
+  var req = PREGS.filter(function(q){ return q.requerida; });
+  var hechas = req.filter(function(q){ return VAL[q.id] !== undefined && VAL[q.id] !== ''; }).length;
+  var tot = PREGS.length;
+  var todas = PREGS.filter(function(q){ return VAL[q.id] !== undefined && VAL[q.id] !== ''; }).length;
+  $('prog-i').style.width = (tot ? Math.round(todas / tot * 100) : 0) + '%';
+  $('prog-l').textContent = todas + ' de ' + tot + ' contestadas' + (req.length ? ' · faltan ' + (req.length - hechas) + ' obligatorias' : '');
+}
+
+async function enviar(){
+  if(ENVIANDO) return;
+  var faltan = PREGS.filter(function(q){ return q.requerida && (VAL[q.id] === undefined || VAL[q.id] === ''); });
+  if(faltan.length){
+    faltan.forEach(function(q){ var e = $('q-' + q.id); if(e) e.classList.add('err'); });
+    var p = $('q-' + faltan[0].id);
+    if(p) p.scrollIntoView({ behavior:'smooth', block:'center' });
+    alert('Te faltan ' + faltan.length + ' pregunta(s) obligatoria(s), marcadas en rojo.');
+    return;
+  }
+  ENVIANDO = true;
+  $('btn-env').disabled = true; $('btn-env').textContent = 'Enviando…';
+  try{
+    var r = await fetch('/api/enc/' + encodeURIComponent(TOKEN), {
+      method:'POST', headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ respuestas: VAL })
+    });
+    var d = await r.json().catch(function(){ return {}; });
+    if(r.status === 409){ return mostrar('fin'); }
+    if(!r.ok) throw new Error(d.error || 'No se pudo enviar');
+    mostrar('fin');
+  }catch(e){
+    alert(e.message || 'No se pudo enviar. Revisa tu conexión e inténtalo otra vez.');
+    ENVIANDO = false; $('btn-env').disabled = false; $('btn-env').textContent = 'Enviar';
+  }
+}
+
+window.addEventListener('beforeunload', function(e){
+  if(DATA && !ENVIANDO && Object.keys(VAL).length){ e.preventDefault(); e.returnValue = ''; }
+});
+abrir();
+</script>
+</body>
+</html>
