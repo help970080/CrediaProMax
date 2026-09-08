@@ -221,6 +221,7 @@
     <button class="navitem" data-v="transferencias"><span class="ic">⇆</span> Transferencias</button>
     <button class="navitem" data-v="sucursales"><span class="ic">🏪</span> Sucursales</button>
     <button class="navitem" data-v="inventario"><span class="ic">📱</span> Catálogo e inventario</button>
+    <button class="navitem" data-v="encuestas"><span class="ic">📝</span> Encuestas</button>
     <div class="nav-lbl">Finanzas</div>
     <button class="navitem" data-v="comisiones"><span class="ic">%</span> Comisiones</button>
     <button class="navitem" data-v="conciliacion"><span class="ic">⇄</span> Conciliación</button>
@@ -617,6 +618,87 @@
       <table><thead><tr><th style="width:34px"></th><th>IMEI / serie</th><th>Equipo</th><th>Sucursal</th><th>Estado</th><th>Crédito</th><th></th></tr></thead>
         <tbody id="inv-tb-uni"></tbody></table>
       <div class="note">Una unidad vendida queda ligada a su folio. Si el cliente devuelve el equipo, cancela el crédito como siempre y usa “Reingresar” para regresar el IMEI a disponible.</div>
+    </div>
+  </section>
+
+  <!-- ENCUESTAS -->
+  <section class="view" id="encuestas">
+    <div class="panel">
+      <div class="ph"><h3>Mis encuestas</h3>
+        <span class="hint">las armas tú: secciones, preguntas y opciones — sin depender de nadie</span>
+        <button class="btn" style="margin-left:auto" onclick="encEjemplo()">📄 Cargar ejemplo</button>
+        <button class="btn gold" onclick="encNueva()">＋ Nueva encuesta</button>
+      </div>
+      <table><thead><tr><th>Encuesta</th><th class="n">Preguntas</th><th class="n">Enviadas</th><th class="n">Contestadas</th><th>Estado</th><th></th></tr></thead>
+        <tbody id="enc-tb-pl"></tbody></table>
+      <div class="note">Marca como <b>privada</b> cualquier pregunta que califique al jefe o al líder: el detalle por persona lo verá solo el rol Administrador; Supervisor y sucursal ven nada más el promedio del equipo.</div>
+    </div>
+
+    <!-- CONSTRUCTOR -->
+    <div class="panel" id="enc-editor" style="display:none">
+      <div class="ph"><h3 id="enc-ed-tit">Nueva encuesta</h3>
+        <span class="hint" id="enc-ed-hint">arma las secciones y sus preguntas</span>
+        <button class="btn" style="margin-left:auto" onclick="encCerrarEditor()">Cancelar</button>
+        <button class="btn gold" onclick="encGuardar()">💾 Guardar encuesta</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-bottom:14px">
+        <div><label style="font-size:.72rem;color:var(--dim);display:block;margin-bottom:4px">Nombre de la encuesta</label>
+          <input id="enc-ed-nombre" type="text" maxlength="120" placeholder="Ej. Experiencia de nuevo ingreso" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--surf-2);font-family:inherit"></div>
+        <div><label style="font-size:.72rem;color:var(--dim);display:block;margin-bottom:4px">Descripción / objetivo (opcional)</label>
+          <input id="enc-ed-desc" type="text" maxlength="400" placeholder="Qué buscas conocer con esta encuesta" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--surf-2);font-family:inherit"></div>
+      </div>
+      <div id="enc-ed-secs"></div>
+      <button class="btn" onclick="encAddSec()">＋ Agregar sección</button>
+      <div class="note">Tipos de pregunta: <b>Opción</b> (una sola respuesta de una lista), <b>Escala 1-10</b>, <b>NPS 0-10</b> (recomendación, calcula promotores y detractores), <b>Texto corto</b> y <b>Respuesta abierta</b>.</div>
+    </div>
+
+    <!-- EMITIR -->
+    <div class="panel" id="enc-emitir" style="display:none">
+      <div class="ph"><h3>Enviar encuesta</h3>
+        <span class="hint" id="enc-em-hint"></span>
+        <button class="btn" style="margin-left:auto" onclick="document.getElementById('enc-emitir').style.display='none'">Cerrar</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;align-items:end;margin-bottom:12px">
+        <div><label style="font-size:.72rem;color:var(--dim);display:block;margin-bottom:4px">Antigüedad</label>
+          <select id="enc-em-dias" onchange="encCandidatos()" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--surf-2);font-family:inherit">
+            <option value="0">Todo el personal</option><option value="15">Alta en los últimos 15 días</option>
+            <option value="30" selected>Alta en los últimos 30 días</option><option value="60">Alta en los últimos 60 días</option>
+            <option value="90">Alta en los últimos 90 días</option></select></div>
+        <div><label style="font-size:.72rem;color:var(--dim);display:block;margin-bottom:4px">Puesto</label>
+          <select id="enc-em-rol" onchange="encCandidatos()" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--surf-2);font-family:inherit">
+            <option value="">Todos</option><option value="cobrador">Cobrador / promotor</option><option value="sucursal">Sucursal</option>
+            <option value="jc">JC</option><option value="supervisor">Supervisor</option><option value="promotor_grupal">Promotor grupal</option></select></div>
+        <div><label style="font-size:.72rem;color:var(--dim);display:block;margin-bottom:4px">Sucursal</label>
+          <select id="enc-em-suc" onchange="encCandidatos()" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--surf-2);font-family:inherit"></select></div>
+        <div><label style="font-size:.72rem;color:var(--dim);display:block;margin-bottom:4px">La liga vence en</label>
+          <select id="enc-em-vig" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--surf-2);font-family:inherit">
+            <option value="3">3 días</option><option value="7" selected>7 días</option><option value="15">15 días</option><option value="30">30 días</option></select></div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+        <button class="btn" onclick="encSelTodos(true)">Marcar todos</button>
+        <button class="btn" onclick="encSelTodos(false)">Desmarcar</button>
+        <span id="enc-em-cont" style="font-size:.78rem;color:var(--dim)"></span>
+        <button class="btn gold" style="margin-left:auto" onclick="encEmitir()">🔗 Generar ligas</button>
+      </div>
+      <div id="enc-em-rows" style="overflow-x:auto"></div>
+      <div id="enc-em-ligas"></div>
+    </div>
+
+    <!-- SEGUIMIENTO Y RESULTADOS -->
+    <div class="panel" id="enc-panel-res" style="display:none">
+      <div class="ph"><h3 id="enc-res-tit">Resultados</h3>
+        <span class="hint" id="enc-res-hint"></span>
+        <button class="btn" style="margin-left:auto" onclick="encVer(_encPlSel)">↻ Actualizar</button>
+        <button class="btn gold" onclick="encExcel()">⬇️ Excel</button>
+        <button class="btn" onclick="document.getElementById('enc-panel-res').style.display='none'">Cerrar</button>
+      </div>
+      <div class="kpis" id="enc-res-kpis" style="margin-bottom:14px"></div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+        <button class="btn gold" id="enc-tab-r" onclick="encTab('r')">Resultados</button>
+        <button class="btn" id="enc-tab-s" onclick="encTab('s')">Seguimiento</button>
+        <button class="btn" id="enc-tab-d" onclick="encTab('d')">Respuesta por persona</button>
+      </div>
+      <div id="enc-res-body"></div>
     </div>
   </section>
 
@@ -2915,9 +2997,319 @@ function sim(){const t=$('s-tipo').value,monto=+$('s-monto').value||0,plazo=+$('
     <div class="sim-row" style="border:none"><span class="k">Plazo</span><span class="v">${plazo} ${t==='semanal'?'semanas':t==='p17'?'pagos':'días'}</span></div>`;
 }
 
+/* ===== ENCUESTAS =====================================================
+   El admin arma sus propias plantillas aquí. No hay nada cableado: lo único
+   que trae el sistema es una plantilla de EJEMPLO que se carga al editor y
+   se puede cambiar entera antes de guardar. */
+let _encPl=[], _encPlSel=null, _encEd=null, _encCand=[], _encSel=new Set(), _encRes=null, _encTab='r', _encEnv=[];
+const ENC_TIPOS={opcion:'Opción',escala:'Escala 1-10',nps:'NPS 0-10',texto:'Texto corto',abierta:'Respuesta abierta'};
+
+const ENC_EJEMPLO={nombre:'Experiencia de nuevo ingreso — promotores',descripcion:'Conocer la experiencia del promotor en sus primeras semanas: capacitación, acompañamiento, herramientas y motivación.',secciones:[
+ {titulo:'Datos generales',preguntas:[
+  {tipo:'opcion',texto:'¿Cuánto tiempo llevas trabajando como promotor?',requerida:true,opciones:['Menos de 1 semana','1 a 2 semanas','3 a 4 semanas','Más de 1 mes']}]},
+ {titulo:'Reclutamiento e ingreso',preguntas:[
+  {tipo:'opcion',texto:'¿Qué tan clara fue la información que recibiste sobre el puesto antes de ingresar?',requerida:true,opciones:['Muy clara','Clara','Poco clara','Nada clara']},
+  {tipo:'opcion',texto:'¿El puesto y las actividades corresponden a lo que te explicaron durante el reclutamiento?',requerida:true,opciones:['Sí, totalmente','En su mayoría','Poco','No']},
+  {tipo:'abierta',texto:'¿Qué fue lo que más te llamó la atención del puesto antes de ingresar?'}]},
+ {titulo:'Capacitación inicial',preguntas:[
+  {tipo:'opcion',texto:'¿Qué tan preparado(a) te sentiste después de la capacitación inicial?',requerida:true,opciones:['Muy preparado(a)','Preparado(a)','Poco preparado(a)','Nada preparado(a)']},
+  {tipo:'opcion',texto:'¿Qué tan clara fue la explicación sobre los productos financieros que debes ofrecer?',requerida:true,opciones:['Muy clara','Clara','Poco clara','Nada clara']},
+  {tipo:'opcion',texto:'¿Qué tan clara fue la explicación sobre el proceso para realizar una venta?',requerida:true,opciones:['Muy clara','Clara','Poco clara','Nada clara']},
+  {tipo:'opcion',texto:'¿En qué tema consideras que necesitas mayor capacitación?',requerida:true,opciones:['Productos','Proceso de colocación','Uso de sistemas/app','Prospección de clientes','Técnicas de venta','Cobranza/seguimiento','Políticas y requisitos','Otro']}]},
+ {titulo:'Acompañamiento',preguntas:[
+  {tipo:'opcion',texto:'¿Has recibido suficiente apoyo de tu jefe o líder?',requerida:true,privada:true,opciones:['Sí, mucho','Sí, suficiente','Poco','Nada']},
+  {tipo:'opcion',texto:'Cuando tienes una duda o problema, ¿sabes con quién acudir?',requerida:true,privada:true,opciones:['Siempre','Casi siempre','A veces','No']},
+  {tipo:'escala',texto:'¿Cómo calificarías el acompañamiento que has recibido durante tu ingreso?',requerida:true,privada:true},
+  {tipo:'abierta',texto:'¿Qué podríamos hacer diferente para ayudarte durante tus primeras semanas?',privada:true}]},
+ {titulo:'Herramientas y operación',preguntas:[
+  {tipo:'opcion',texto:'¿Cuentas con las herramientas necesarias para realizar tu trabajo?',requerida:true,opciones:['Sí, con todas','Con la mayoría','Me hacen falta varias','No']},
+  {tipo:'opcion',texto:'¿Has tenido problemas con alguna herramienta, sistema o aplicación?',requerida:true,opciones:['No','Sí']},
+  {tipo:'abierta',texto:'Si respondiste que sí: ¿cuál ha sido el principal problema?'},
+  {tipo:'opcion',texto:'¿Qué tan fácil te ha resultado realizar una solicitud de principio a fin?',requerida:true,opciones:['Muy fácil','Fácil','Difícil','Muy difícil']}]},
+ {titulo:'Experiencia y motivación',preguntas:[
+  {tipo:'opcion',texto:'En general, ¿cómo ha sido tu experiencia durante estas primeras semanas?',requerida:true,opciones:['Excelente','Buena','Regular','Mala','Muy mala']},
+  {tipo:'abierta',texto:'¿Qué es lo que más te ha gustado de trabajar como promotor hasta ahora?'},
+  {tipo:'abierta',texto:'¿Qué es lo que más se te ha dificultado?'},
+  {tipo:'escala',texto:'Del 1 al 10, ¿qué calificación le das a tu experiencia de ingreso?',requerida:true},
+  {tipo:'nps',texto:'¿Qué tan probable es que recomiendes trabajar como promotor en nuestra financiera?',requerida:true}]},
+ {titulo:'Pregunta clave',preguntas:[
+  {tipo:'abierta',texto:'Si pudieras cambiar UNA sola cosa del proceso de ingreso y tus primeras semanas, ¿qué cambiarías?',requerida:true}]}
+]};
+
+function encMsg(t,err){ alert((err?'⚠ ':'')+t); }
+function encFecha(s){ if(!s) return '—'; const d=new Date(s); return d.toLocaleDateString('es-MX',{day:'2-digit',month:'short'})+' '+d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}); }
+
+async function encInit(){ await encCargarPl(); encLlenarSuc(); }
+
+async function encCargarPl(){
+  try{ _encPl = await apiU('GET','/api/encuestas/plantillas'); }
+  catch(e){ document.getElementById('enc-tb-pl').innerHTML='<tr><td colspan="6" style="color:var(--red)">'+_ve(e.message)+'</td></tr>'; return; }
+  const tb=document.getElementById('enc-tb-pl');
+  if(!_encPl.length){ tb.innerHTML='<tr><td colspan="6" style="color:var(--faint);padding:14px">Aún no hay encuestas. Usa “Cargar ejemplo” para partir de una ya armada, o “Nueva encuesta” para hacerla desde cero.</td></tr>'; return; }
+  tb.innerHTML=_encPl.map(p=>{
+    const tasa=p.emitidos?Math.round(p.contestados/p.emitidos*100):0;
+    return '<tr><td><b>'+_ve(p.nombre)+'</b>'+(p.descripcion?'<div style="font-size:.75rem;color:var(--dim)">'+_ve(p.descripcion)+'</div>':'')+'</td>'+
+    '<td class="n">'+p.preguntas+'</td><td class="n">'+p.emitidos+'</td>'+
+    '<td class="n">'+p.contestados+(p.emitidos?' <span style="color:var(--dim);font-size:.78rem">('+tasa+'%)</span>':'')+'</td>'+
+    '<td>'+(p.activa?'<span style="color:var(--grn);font-weight:600">Activa</span>':'<span style="color:var(--faint)">Desactivada</span>')+'</td>'+
+    '<td style="white-space:nowrap"><button class="btn" onclick="encAbrirEmitir('+p.id+')">📤 Enviar</button> '+
+    '<button class="btn" onclick="encVer('+p.id+')">📊 Ver</button> '+
+    '<button class="btn" onclick="encEditar('+p.id+')">✎</button> '+
+    '<button class="btn" onclick="encToggle('+p.id+','+(p.activa?'false':'true')+')">'+(p.activa?'⏸':'▶')+'</button> '+
+    (p.emitidos?'':'<button class="btn" onclick="encBorrar('+p.id+')">🗑</button>')+'</td></tr>';
+  }).join('');
+}
+
+async function encLlenarSuc(){
+  const s=document.getElementById('enc-em-suc');
+  let sucs=[];
+  try{ sucs=await apiU('GET','/api/sucursales'); }catch(e){ sucs=(typeof _sucursales!=='undefined'&&Array.isArray(_sucursales))?_sucursales:[]; }
+  s.innerHTML='<option value="">Todas las sucursales</option>'+(sucs||[]).map(x=>'<option value="'+x.id+'">'+_ve(x.nombre||('Sucursal '+x.id))+'</option>').join('');
+}
+
+/* ---------- constructor ---------- */
+function encNueva(){ _encEd={id:null,nombre:'',descripcion:'',secciones:[{titulo:'',preguntas:[{tipo:'opcion',texto:'',requerida:true,privada:false,opciones:['','']}]}]}; encPintarEd('Nueva encuesta'); }
+function encEjemplo(){ _encEd=JSON.parse(JSON.stringify(ENC_EJEMPLO)); _encEd.id=null; encPintarEd('Nueva encuesta (desde el ejemplo)'); }
+function encEditar(id){
+  const p=_encPl.find(x=>x.id===id); if(!p) return;
+  _encEd=JSON.parse(JSON.stringify({id:p.id,nombre:p.nombre,descripcion:p.descripcion,secciones:p.secciones||[]}));
+  encPintarEd('Editar: '+p.nombre);
+  if(p.emitidos) document.getElementById('enc-ed-hint').textContent='ojo: esta encuesta ya se envió — si borras preguntas, sus respuestas dejan de mostrarse';
+}
+function encCerrarEditor(){ _encEd=null; document.getElementById('enc-editor').style.display='none'; }
+function encPintarEd(titulo){
+  document.getElementById('enc-ed-tit').textContent=titulo;
+  document.getElementById('enc-ed-hint').textContent='arma las secciones y sus preguntas';
+  document.getElementById('enc-ed-nombre').value=_encEd.nombre||'';
+  document.getElementById('enc-ed-desc').value=_encEd.descripcion||'';
+  document.getElementById('enc-editor').style.display='';
+  encRenderSecs();
+  document.getElementById('enc-editor').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function encRenderSecs(){
+  document.getElementById('enc-ed-secs').innerHTML=(_encEd.secciones||[]).map((sec,si)=>
+    '<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px;background:var(--surf-2)">'+
+    '<div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">'+
+      '<input type="text" maxlength="120" value="'+_ve(sec.titulo||'')+'" placeholder="Título de la sección — ej. Capacitación inicial" oninput="_encEd.secciones['+si+'].titulo=this.value" style="flex:1;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--surf);font-family:inherit;font-weight:600">'+
+      '<button class="btn" onclick="encDelSec('+si+')">🗑 Sección</button></div>'+
+    (sec.preguntas||[]).map((q,qi)=>encRenderQ(si,qi,q)).join('')+
+    '<button class="btn" onclick="encAddQ('+si+')">＋ Pregunta</button></div>').join('');
+}
+function encRenderQ(si,qi,q){
+  return '<div style="background:var(--surf);border:1px solid var(--line);border-radius:9px;padding:11px;margin-bottom:9px">'+
+   '<div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:8px">'+
+     '<span style="font-size:.72rem;color:var(--faint);padding-top:9px;min-width:20px">'+(qi+1)+'.</span>'+
+     '<textarea rows="2" maxlength="300" placeholder="Escribe la pregunta" oninput="_encEd.secciones['+si+'].preguntas['+qi+'].texto=this.value" style="flex:1;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--surf-2);font-family:inherit;font-size:.88rem">'+_ve(q.texto||'')+'</textarea>'+
+     '<button class="btn" onclick="encDelQ('+si+','+qi+')">🗑</button></div>'+
+   '<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding-left:28px">'+
+     '<select onchange="encTipoQ('+si+','+qi+',this.value)" style="padding:7px;border:1px solid var(--line);border-radius:8px;background:var(--surf-2);font-family:inherit;font-size:.82rem">'+
+       Object.keys(ENC_TIPOS).map(t=>'<option value="'+t+'"'+(q.tipo===t?' selected':'')+'>'+ENC_TIPOS[t]+'</option>').join('')+'</select>'+
+     '<label style="display:flex;align-items:center;gap:6px;font-size:.8rem;color:var(--dim)"><input type="checkbox"'+(q.requerida?' checked':'')+' onchange="_encEd.secciones['+si+'].preguntas['+qi+'].requerida=this.checked" style="width:15px;height:15px"> Obligatoria</label>'+
+     '<label style="display:flex;align-items:center;gap:6px;font-size:.8rem;color:var(--acc-d);font-weight:600" title="El detalle por persona solo lo verá el rol Administrador"><input type="checkbox"'+(q.privada?' checked':'')+' onchange="_encEd.secciones['+si+'].preguntas['+qi+'].privada=this.checked" style="width:15px;height:15px"> 🔒 Privada (solo Dirección)</label>'+
+   '</div>'+
+   (q.tipo==='opcion'?'<div style="padding-left:28px;margin-top:8px"><label style="font-size:.72rem;color:var(--dim);display:block;margin-bottom:4px">Opciones — una por línea</label>'+
+     '<textarea rows="3" oninput="_encEd.secciones['+si+'].preguntas['+qi+'].opciones=this.value.split(String.fromCharCode(10))" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--surf-2);font-family:inherit;font-size:.85rem">'+_ve((q.opciones||[]).join('\n'))+'</textarea></div>':'')+
+   '</div>';
+}
+function encTipoQ(si,qi,t){
+  const q=_encEd.secciones[si].preguntas[qi]; q.tipo=t;
+  if(t==='opcion'&&!(q.opciones||[]).length) q.opciones=['',''];
+  encRenderSecs();
+}
+function encAddSec(){ _encEd.secciones.push({titulo:'',preguntas:[{tipo:'opcion',texto:'',requerida:true,privada:false,opciones:['','']}]}); encRenderSecs(); }
+function encDelSec(si){ if(!confirm('¿Quitar la sección completa?')) return; _encEd.secciones.splice(si,1); encRenderSecs(); }
+function encAddQ(si){ _encEd.secciones[si].preguntas.push({tipo:'opcion',texto:'',requerida:false,privada:false,opciones:['','']}); encRenderSecs(); }
+function encDelQ(si,qi){ _encEd.secciones[si].preguntas.splice(qi,1); encRenderSecs(); }
+
+async function encGuardar(){
+  _encEd.nombre=document.getElementById('enc-ed-nombre').value.trim();
+  _encEd.descripcion=document.getElementById('enc-ed-desc').value.trim();
+  if(!_encEd.nombre) return encMsg('Ponle nombre a la encuesta',true);
+  const body=JSON.parse(JSON.stringify(_encEd));
+  body.secciones=(body.secciones||[]).map(s=>({titulo:s.titulo,preguntas:(s.preguntas||[]).map(q=>{
+    const o={id:q.id,tipo:q.tipo,texto:q.texto,requerida:!!q.requerida,privada:!!q.privada};
+    if(q.tipo==='opcion') o.opciones=(q.opciones||[]).map(x=>String(x).trim()).filter(Boolean);
+    return o;
+  })}));
+  try{ await apiU('POST','/api/encuestas/plantillas',body); encCerrarEditor(); await encCargarPl(); encMsg('✓ Encuesta guardada'); }
+  catch(e){ encMsg(e.message,true); }
+}
+async function encToggle(id,activa){ try{ await apiU('PATCH','/api/encuestas/plantillas/'+id,{activa:activa}); await encCargarPl(); }catch(e){ encMsg(e.message,true); } }
+async function encBorrar(id){ if(!confirm('¿Borrar esta encuesta?')) return; try{ await apiU('DELETE','/api/encuestas/plantillas/'+id); await encCargarPl(); }catch(e){ encMsg(e.message,true); } }
+
+/* ---------- emisión ---------- */
+function encAbrirEmitir(id){
+  _encPlSel=id; _encSel.clear();
+  const p=_encPl.find(x=>x.id===id);
+  document.getElementById('enc-em-hint').textContent=p?p.nombre:'';
+  document.getElementById('enc-em-ligas').innerHTML='';
+  document.getElementById('enc-emitir').style.display='';
+  encCandidatos();
+  document.getElementById('enc-emitir').scrollIntoView({behavior:'smooth',block:'start'});
+}
+async function encCandidatos(){
+  const qs='plantillaId='+_encPlSel+'&dias='+document.getElementById('enc-em-dias').value+
+    '&rol='+encodeURIComponent(document.getElementById('enc-em-rol').value)+
+    (document.getElementById('enc-em-suc').value?'&sucursalId='+document.getElementById('enc-em-suc').value:'');
+  try{ _encCand=await apiU('GET','/api/encuestas/candidatos?'+qs); }catch(e){ return encMsg(e.message,true); }
+  const c=document.getElementById('enc-em-rows');
+  if(!_encCand.length){ c.innerHTML='<div style="color:var(--faint);padding:12px;font-size:.85rem">Nadie cumple ese filtro. Prueba con “Todo el personal”.</div>'; encCont(); return; }
+  c.innerHTML='<table><thead><tr><th style="width:34px"></th><th>Persona</th><th>Puesto</th><th>Sucursal</th><th class="n">Antigüedad</th><th>Estado</th></tr></thead><tbody>'+
+    _encCand.map(u=>'<tr><td>'+(u.yaContesto?'✅':'<input type="checkbox" id="enc-c-'+u.id+'" onchange="encSel('+u.id+',this.checked)"'+(_encSel.has(u.id)?' checked':'')+' style="width:16px;height:16px">')+'</td>'+
+      '<td><b>'+_ve(u.nombre)+'</b> <span style="color:var(--faint);font-size:.78rem">'+_ve(u.usuario||'')+'</span></td>'+
+      '<td>'+_ve(u.rol)+'</td><td>'+_ve(u.sucursal)+'</td>'+
+      '<td class="n">'+(u.antiguedadDias==null?'—':u.antiguedadDias+' d')+'</td>'+
+      '<td>'+(u.yaContesto?'<span style="color:var(--grn)">Contestó</span>':(u.yaEmitido?'<span style="color:var(--acc-d)">Liga enviada</span>':'<span style="color:var(--faint)">—</span>'))+'</td></tr>').join('')+'</tbody></table>';
+  encCont();
+}
+function encSel(id,on){ if(on) _encSel.add(id); else _encSel.delete(id); encCont(); }
+function encSelTodos(on){
+  _encCand.forEach(u=>{ if(u.yaContesto) return; if(on) _encSel.add(u.id); else _encSel.delete(u.id);
+    const el=document.getElementById('enc-c-'+u.id); if(el) el.checked=on; });
+  encCont();
+}
+function encCont(){ document.getElementById('enc-em-cont').textContent=_encSel.size+' seleccionado(s) de '+_encCand.filter(u=>!u.yaContesto).length+' disponibles'; }
+
+async function encEmitir(){
+  if(!_encSel.size) return encMsg('Selecciona al menos a una persona',true);
+  const yaCon=_encCand.filter(u=>_encSel.has(u.id)&&u.yaEmitido&&!u.yaContesto);
+  let reemitir=false;
+  if(yaCon.length) reemitir=confirm(yaCon.length+' persona(s) ya tienen liga sin contestar.\n\nAceptar = generarles una liga NUEVA (la anterior deja de servir).\nCancelar = omitirlas y solo generar las que faltan.');
+  let d;
+  try{ d=await apiU('POST','/api/encuestas/emitir',{plantillaId:_encPlSel,userIds:[..._encSel],diasVigencia:+document.getElementById('enc-em-vig').value,reemitir:reemitir}); }
+  catch(e){ return encMsg(e.message,true); }
+  const cont=document.getElementById('enc-em-ligas');
+  if(!d.ligas.length){ cont.innerHTML='<div class="note" style="color:var(--red)">No se generó ninguna liga. '+_ve((d.omitidos||[]).join(' · '))+'</div>'; return; }
+  cont.innerHTML='<div class="ph" style="margin-top:16px"><h3>Ligas generadas ('+d.ligas.length+')</h3>'+
+    '<span class="hint">mándalas por WhatsApp — una por persona, no se comparten</span>'+
+    '<button class="btn gold" style="margin-left:auto" onclick="encCopiarTodas()">📋 Copiar todas</button></div>'+
+    '<table><thead><tr><th>Persona</th><th>Sucursal</th><th>Vence</th><th></th></tr></thead><tbody>'+
+    d.ligas.map((l,i)=>'<tr><td><b>'+_ve(l.nombre)+'</b></td><td>'+_ve(l.sucursal)+'</td><td>'+encFecha(l.caducaAt)+'</td>'+
+      '<td style="white-space:nowrap"><button class="btn" onclick="encCopiar('+i+')">📋 Copiar</button> '+
+      '<button class="btn gold" onclick="encWA('+i+')">💬 WhatsApp</button></td></tr>').join('')+'</tbody></table>'+
+    ((d.omitidos||[]).length?'<div class="note">Omitidos: '+_ve(d.omitidos.join(' · '))+'</div>':'');
+  window._encLigas=d.ligas;
+  await encCargarPl();
+}
+function encTextoWA(l){
+  const p=_encPl.find(x=>x.id===_encPlSel);
+  return 'Hola '+l.nombre+', te comparto la encuesta "'+(p?p.nombre:'')+'". Te toma 5 minutos y es solo para ti:\n'+l.url+'\n\nContesta con la verdad, es lo que nos sirve. Vence el '+new Date(l.caducaAt).toLocaleDateString('es-MX')+'.';
+}
+function encCopiar(i){ const l=window._encLigas[i]; navigator.clipboard.writeText(encTextoWA(l)).then(()=>encMsg('✓ Copiado — pégalo en WhatsApp')); }
+function encCopiarTodas(){ navigator.clipboard.writeText((window._encLigas||[]).map(l=>l.nombre+': '+l.url).join('\n')).then(()=>encMsg('✓ Todas las ligas copiadas')); }
+function encWA(i){ const l=window._encLigas[i]; window.open('https://wa.me/?text='+encodeURIComponent(encTextoWA(l)),'_blank'); }
+
+/* ---------- resultados y seguimiento ---------- */
+async function encVer(id){
+  _encPlSel=id; _encTab='r';
+  const p=_encPl.find(x=>x.id===id);
+  document.getElementById('enc-res-tit').textContent='Resultados — '+(p?p.nombre:'');
+  document.getElementById('enc-panel-res').style.display='';
+  try{
+    _encRes=await apiU('GET','/api/encuestas/resultados?plantillaId='+id);
+    _encEnv=await apiU('GET','/api/encuestas/envios?plantillaId='+id);
+  }catch(e){ document.getElementById('enc-res-body').innerHTML='<div style="color:var(--red);padding:12px">'+_ve(e.message)+'</div>'; return; }
+  document.getElementById('enc-res-hint').textContent=_encRes.verPrivadas?'ves el detalle completo, incluidas las preguntas privadas':'las preguntas privadas se muestran solo como promedio';
+  const r=_encRes.resumen;
+  document.getElementById('enc-res-kpis').innerHTML=
+    '<div class="kpi"><div class="l">Enviadas</div><div class="v">'+r.emitidos+'</div><div class="s">ligas generadas</div></div>'+
+    '<div class="kpi b"><div class="l">Contestadas</div><div class="v">'+r.contestados+'</div><div class="s">'+r.tasa+'% de participación</div></div>'+
+    '<div class="kpi"><div class="l">Pendientes</div><div class="v">'+r.pendientes+'</div><div class="s">aún sin contestar</div></div>'+
+    (function(){ const n=(_encRes.agregados||[]).find(a=>a.tipo==='nps'&&a.n);
+      return n?'<div class="kpi"><div class="l">NPS del equipo</div><div class="v">'+n.nps+'</div><div class="s">'+n.promotores+' promotores · '+n.detractores+' detractores</div></div>':''; })();
+  encTab('r');
+  document.getElementById('enc-panel-res').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function encTab(t){
+  _encTab=t;
+  ['r','s','d'].forEach(x=>{ const b=document.getElementById('enc-tab-'+x); if(b) b.className='btn'+(x===t?' gold':''); });
+  if(t==='r') encPintarRes(); else if(t==='s') encPintarSeg(); else encPintarDet();
+}
+function encBarra(pct,color){ return '<div style="height:8px;background:var(--surf-3);border-radius:4px;overflow:hidden;flex:1"><i style="display:block;height:100%;width:'+pct+'%;background:'+(color||'var(--acc)')+'"></i></div>'; }
+function encPintarRes(){
+  if(!_encRes||!_encRes.detalle.length){ document.getElementById('enc-res-body').innerHTML='<div style="color:var(--faint);padding:14px">Todavía nadie contesta. En cuanto entren respuestas aparecen aquí.</div>'; return; }
+  let sec='';
+  document.getElementById('enc-res-body').innerHTML=(_encRes.agregados||[]).map(a=>{
+    let h='';
+    if(a.seccion!==sec){ sec=a.seccion; h+='<div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.09em;color:var(--acc-d);font-weight:700;margin:18px 0 10px">'+_ve(sec)+'</div>'; }
+    h+='<div style="border:1px solid var(--line);border-radius:10px;padding:13px;margin-bottom:10px;background:var(--surf-2)">'+
+       '<div style="font-size:.9rem;font-weight:500;margin-bottom:10px">'+_ve(a.texto)+
+       (a.privada?' <span style="font-size:.7rem;color:var(--acc-d)">🔒 privada</span>':'')+
+       ' <span style="font-size:.74rem;color:var(--faint)">· '+a.n+' respuestas</span></div>';
+    if(a.tipo==='opcion'){
+      const tot=Object.values(a.conteo||{}).reduce((s,x)=>s+x,0)||1;
+      h+=Object.keys(a.conteo||{}).map(op=>{ const v=a.conteo[op], pct=Math.round(v/tot*100);
+        return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;font-size:.84rem">'+
+          '<span style="min-width:190px">'+_ve(op)+'</span>'+encBarra(pct)+
+          '<span class="mono" style="min-width:64px;text-align:right;color:var(--dim)">'+v+' · '+pct+'%</span></div>'; }).join('');
+    } else if(a.tipo==='escala'||a.tipo==='nps'){
+      const col=a.promedio>=8?'var(--grn)':(a.promedio>=6?'var(--acc)':'var(--red)');
+      h+='<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">'+
+         '<div style="font-size:1.9rem;font-weight:700;color:'+col+'" class="mono">'+(a.promedio==null?'—':a.promedio)+'</div>'+
+         '<div style="font-size:.8rem;color:var(--dim)">promedio'+(a.tipo==='nps'?' · NPS '+a.nps:'')+'</div>'+
+         (a.bajos?'<div style="margin-left:auto;font-size:.82rem;color:var(--red);font-weight:600">⚠ '+a.bajos+' calificaron 5 o menos</div>':'')+'</div>';
+    } else {
+      if(a.oculto){ h+='<div style="font-size:.82rem;color:var(--faint)">Pregunta privada: el texto de las respuestas solo lo ve la Dirección. Hay '+a.n+' respuesta(s).</div>'; }
+      else if(!(a.textos||[]).length){ h+='<div style="font-size:.82rem;color:var(--faint)">Sin respuestas.</div>'; }
+      else h+=(a.textos||[]).map(t=>'<div style="background:var(--surf);border-left:3px solid var(--acc);border-radius:0 8px 8px 0;padding:9px 12px;margin-bottom:7px;font-size:.86rem">'+
+        _ve(t.texto)+'<div style="font-size:.72rem;color:var(--faint);margin-top:4px">— '+_ve(t.nombre)+' · '+_ve(t.sucursal)+'</div></div>').join('');
+    }
+    return h+'</div>';
+  }).join('');
+}
+function encPintarSeg(){
+  if(!_encEnv.length){ document.getElementById('enc-res-body').innerHTML='<div style="color:var(--faint);padding:14px">Esta encuesta no se ha enviado a nadie.</div>'; return; }
+  const est={contestada:['✅ Contestada','var(--grn)'],abierta:['👀 La abrió, no la envió','var(--acc-d)'],pendiente:['⏳ Sin abrir','var(--dim)'],vencida:['⌛ Liga vencida','var(--red)']};
+  document.getElementById('enc-res-body').innerHTML='<table><thead><tr><th>Persona</th><th>Sucursal</th><th>Enviada</th><th>Contestada</th><th>Estado</th><th></th></tr></thead><tbody>'+
+    _encEnv.map(e=>'<tr><td><b>'+_ve(e.nombre)+'</b></td><td>'+_ve(e.sucursal)+'</td><td>'+encFecha(e.emitidoAt)+'</td>'+
+      '<td>'+encFecha(e.contestadoAt)+'</td>'+
+      '<td style="color:'+est[e.estado][1]+';font-weight:600">'+est[e.estado][0]+'</td>'+
+      '<td style="white-space:nowrap">'+(e.contestadoAt?'':
+        '<button class="btn" onclick="encRecordar('+e.id+')">💬 Recordar</button> <button class="btn" onclick="encRenovar('+e.id+')">↻ Nueva liga</button>')+'</td></tr>').join('')+'</tbody></table>'+
+    '<div class="note">“Sin abrir” a los 3 días es el momento de recordar. Si ya venció, genera liga nueva.</div>';
+}
+function encRecordar(id){
+  const e=_encEnv.find(x=>x.id===id); if(!e||!e.url) return;
+  const p=_encPl.find(x=>x.id===_encPlSel);
+  window.open('https://wa.me/?text='+encodeURIComponent('Hola '+e.nombre+', te recuerdo la encuesta "'+(p?p.nombre:'')+'". Son 5 minutos:\n'+e.url),'_blank');
+}
+async function encRenovar(id){
+  try{ const d=await apiU('POST','/api/encuestas/envios/'+id+'/renovar',{diasVigencia:7});
+    await navigator.clipboard.writeText(d.url).catch(()=>{});
+    encMsg('✓ Liga nueva generada y copiada'); await encVer(_encPlSel); encTab('s');
+  }catch(e){ encMsg(e.message,true); }
+}
+function encPintarDet(){
+  if(!_encRes||!_encRes.detalle.length){ document.getElementById('enc-res-body').innerHTML='<div style="color:var(--faint);padding:14px">Sin respuestas todavía.</div>'; return; }
+  const pr=[]; (_encRes.plantilla.secciones||[]).forEach(s=>(s.preguntas||[]).forEach(q=>pr.push(q)));
+  document.getElementById('enc-res-body').innerHTML=_encRes.detalle.map(d=>
+    '<div style="border:1px solid var(--line);border-radius:10px;padding:13px;margin-bottom:10px">'+
+    '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;padding-bottom:9px;border-bottom:1px solid var(--line)">'+
+      '<b>'+_ve(d.nombre)+'</b><span style="font-size:.78rem;color:var(--dim)">'+_ve(d.sucursal)+' · '+_ve(d.rolUsuario||'')+
+      (d.antiguedadDias!=null?' · '+d.antiguedadDias+' días de antigüedad':'')+'</span>'+
+      '<span style="margin-left:auto;font-size:.75rem;color:var(--faint)">'+encFecha(d.fecha)+'</span></div>'+
+    pr.filter(q=>d.r[q.id]!==undefined).map(q=>'<div style="margin-bottom:7px;font-size:.85rem">'+
+      '<div style="color:var(--dim);font-size:.78rem">'+_ve(q.texto)+(q.privada?' 🔒':'')+'</div>'+
+      '<div style="font-weight:500">'+_ve(String(d.r[q.id]))+'</div></div>').join('')+
+    '</div>').join('');
+}
+function encExcel(){
+  if(!_encRes||!_encRes.detalle.length) return encMsg('No hay respuestas que exportar',true);
+  const pr=[]; (_encRes.plantilla.secciones||[]).forEach(s=>(s.preguntas||[]).forEach(q=>pr.push(q)));
+  const cols=pr.filter(q=>_encRes.detalle.some(d=>d.r[q.id]!==undefined));
+  const cab=['Persona','Sucursal','Puesto','Antigüedad (días)','Fecha'].concat(cols.map(q=>q.texto+(q.privada?' [privada]':'')));
+  const filas=_encRes.detalle.map(d=>[d.nombre,d.sucursal,d.rolUsuario||'',d.antiguedadDias==null?'':d.antiguedadDias,encFecha(d.fecha)]
+    .concat(cols.map(q=>d.r[q.id]===undefined?'':String(d.r[q.id]))));
+  const csv=[cab].concat(filas).map(f=>f.map(c=>'"'+String(c).replace(/"/g,'""').replace(/\n/g,' ')+'"').join(',')).join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}));
+  a.download='encuesta_'+(_encRes.plantilla.nombre||'').replace(/[^a-z0-9]+/gi,'_').toLowerCase()+'.csv';
+  a.click();
+}
+
 /* NAV + EVENTOS */
 const titles={inicio:['Inicio','Panorama de la semana · cobranza, colocación y mora'],
-  convenios:['Convenios de pago','Pactados con el cliente · cumplimiento calculado contra los abonos reales'],resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],numdiarios:['Números diarios','Cobranza por gerencia · del día y acumulado de la semana'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],bandeja:['Bandeja de entregas','Créditos por entregar · toma y entrega con evidencia'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],ranking:['Ranking de cobradores','Semana · unidades, % cobranza, clientes y cobrados con semáforo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],flujo:['Flujo / Tesorería','Efectivo del admin · dotación a la operación, nómina y capital'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo'],mapa:['Mapa de clientes','Ubicación geográfica de la cartera'],rastreo:['Rastreo de equipo','Dónde está tu gente en campo · seguridad y operación'],pl:['P&L mensual','Estado de resultados del mes · ingreso, costos, gastos y utilidad por sucursal'],extras:['Extras · Detector de prestanombres','Coincidencias por teléfono, domicilio y apellidos'],grupal:['Créditos grupales','Grupos solidarios · junta semanal, garantía y pago solidario'],asignar:['Asignar efectivo','Mueve efectivo entre puestos · el que recibe confirma'],vobo:['Vo.Bo · Buró interno','Autoriza o declina ventas que botaron alerta roja'],inventario:['Catálogo e inventario','Equipos a crédito · el stock es el candado de la entrega']};
+  convenios:['Convenios de pago','Pactados con el cliente · cumplimiento calculado contra los abonos reales'],resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],numdiarios:['Números diarios','Cobranza por gerencia · del día y acumulado de la semana'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],bandeja:['Bandeja de entregas','Créditos por entregar · toma y entrega con evidencia'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],ranking:['Ranking de cobradores','Semana · unidades, % cobranza, clientes y cobrados con semáforo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],flujo:['Flujo / Tesorería','Efectivo del admin · dotación a la operación, nómina y capital'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo'],mapa:['Mapa de clientes','Ubicación geográfica de la cartera'],rastreo:['Rastreo de equipo','Dónde está tu gente en campo · seguridad y operación'],pl:['P&L mensual','Estado de resultados del mes · ingreso, costos, gastos y utilidad por sucursal'],extras:['Extras · Detector de prestanombres','Coincidencias por teléfono, domicilio y apellidos'],grupal:['Créditos grupales','Grupos solidarios · junta semanal, garantía y pago solidario'],asignar:['Asignar efectivo','Mueve efectivo entre puestos · el que recibe confirma'],vobo:['Vo.Bo · Buró interno','Autoriza o declina ventas que botaron alerta roja'],inventario:['Catálogo e inventario','Equipos a crédito · el stock es el candado de la entrega'],encuestas:['Encuestas','Arma tus propias encuestas · emite la liga por persona y da seguimiento']};
 function _ve(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 async function cargarVoBo(){
   try{
@@ -3211,6 +3603,7 @@ document.querySelectorAll('.navitem').forEach(n=>{ if(!n.dataset.v) return; n.on
   if(n.dataset.v==='extras') initExtras();
   if(n.dataset.v==='grupal') initGrupal();
   if(n.dataset.v==='inventario') invInit();
+  if(n.dataset.v==='encuestas') encInit();
   if(n.dataset.v==='pl') cargarPL();
 }; });
 document.querySelectorAll('#period button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#period button').forEach(x=>x.classList.remove('on'));b.classList.add('on');period=b.dataset.p;render();});
