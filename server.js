@@ -412,7 +412,7 @@ function blankTenant(brandNombre, adminUser, adminPass, adminNombre) {
     encuestas: [], encuestasEnvios: [], encuestasResp: [],
     gestiones: [], cortes: [], transferencias: [], recolecciones: [], jcEntregas: [], jcCierres: [], asignaciones: [], contactos: [], cierresSemana: [],
     objetivos: { suc: {}, cob: {} },
-    config: { corteAutoHora: '19:00', corteAutoDias: [1, 2, 3, 4, 5, 6], semanaInicio: 4, brand: { nombre: brandNombre || 'CobraPro' }, tarifas: JSON.parse(JSON.stringify(DEFAULT_TARIFAS)), modulosOff: ['inventario', 'encuestas'], _invSeed: 1, _encSeed: 1 }, _idem: {}
+    config: { corteAutoHora: '19:00', corteAutoDias: [1, 2, 3, 4, 5, 6], semanaInicio: 4, brand: { nombre: brandNombre || 'CobraPro' }, tarifas: JSON.parse(JSON.stringify(DEFAULT_TARIFAS)), modulosOff: ['inventario', 'encuestas', 'credito14'], _invSeed: 1, _encSeed: 1, _s14Seed: 1 }, _idem: {}
   };
 }
 function normalizeTenant(b) {
@@ -429,6 +429,7 @@ function normalizeTenant(b) {
   if (b.config.semanaInicio == null) b.config.semanaInicio = 4;
   b.config.brand = b.config.brand || { nombre: 'CobraPro' };
   b.config.tarifas = b.config.tarifas || JSON.parse(JSON.stringify(DEFAULT_TARIFAS));
+  if (!b.config.tarifas.s14) b.config.tarifas.s14 = JSON.parse(JSON.stringify(DEFAULT_TARIFAS.s14));
   if (!b.config.tarifas.s16) b.config.tarifas.s16 = JSON.parse(JSON.stringify(DEFAULT_TARIFAS.s16));
   if (!b.config.tarifas.s17) b.config.tarifas.s17 = JSON.parse(JSON.stringify(DEFAULT_TARIFAS.s17));
   if (!b.config.tarifas.s21) b.config.tarifas.s21 = JSON.parse(JSON.stringify(DEFAULT_TARIFAS.s21));
@@ -449,6 +450,14 @@ function normalizeTenant(b) {
     b.config.modulosOff = Array.isArray(b.config.modulosOff) ? b.config.modulosOff : [];
     if (!b.config.modulosOff.includes('encuestas')) b.config.modulosOff.push('encuestas');
     b.config._encSeed = 1;
+  }
+  /* Crédito a 14 semanas: mismo criterio que inventario y encuestas. No todas las agencias manejan
+     esta modalidad, así que nace APAGADA en todas y solo el superadmin la prende. La siembra corre
+     una sola vez (_s14Seed) para no volver a apagarla si ya la activaron. */
+  if (b.config._s14Seed !== 1) {
+    b.config.modulosOff = Array.isArray(b.config.modulosOff) ? b.config.modulosOff : [];
+    if (!b.config.modulosOff.includes('credito14')) b.config.modulosOff.push('credito14');
+    b.config._s14Seed = 1;
   }
   b._idem = b._idem || {};
   if(b.config.creditosVoz == null) b.config.creditosVoz = 0;
@@ -481,6 +490,7 @@ const DEFAULT_TARIFAS = {
   diario:  [{ p: 10, f: 1.17, fijo: 30 }, { p: 20, f: 1.23, fijo: 60 }, { p: 30, f: 1.33, fijo: 90 }],
   semanal: [{ p: 4, f: 1.35, fijo: 60 }, { p: 8, f: 1.43, fijo: 120 }, { p: 12, f: 1.53, fijo: 180 }, { p: 16, f: 1.63, fijo: 240 }, { p: 20, f: 1.83, fijo: 300 }],
   p17:     [{ p: 17, f: 1.73, fijo: 270 }],
+  s14:     { factor: 1.75, fijo: 0, ppFactor: 0, ppFijo: 0, pagos: 14 },
   s16:     { factor: 1.6, fijo: 100, ppFactor: 0.1, ppFijo: 100, pagos: 16 },
   s17:     { factor: 1.7, fijo: 200, ppFactor: 0.1, ppFijo: 200, pagos: 17 },
   s21:     { factor: 1.785, fijo: 200, ppFactor: 0.085, ppFijo: 200, pagos: 21 },
@@ -490,12 +500,16 @@ const DEFAULT_TARIFAS = {
 function tarifasActuales() { return (db && db.config && db.config.tarifas) ? db.config.tarifas : DEFAULT_TARIFAS; }
 function calcCredito(tipo, plazo, monto, dias) {
   const T = tarifasActuales();
-  if (tipo === 's16' || tipo === 's17' || tipo === 's21' || tipo === 's31') {
+  if (tipo === 's14' || tipo === 's16' || tipo === 's17' || tipo === 's21' || tipo === 's31') {
     const c = T[tipo] || DEFAULT_TARIFAS[tipo];
     const r2 = x => Math.round(x * 100) / 100;
     const total = r2(monto * c.factor + c.fijo);
     const pagos = c.pagos;
-    const primerPago = r2(monto * c.ppFactor + c.ppFijo);
+    const primerPago = r2(monto * (c.ppFactor || 0) + (c.ppFijo || 0));
+    /* Tarifas SIN primer pago descontado (s14: 14 semanas, 14 cuotas iguales = total / 14).
+       Si se dividiera entre pagos-1 como en s16/s17 la cuota saldria inflada y el credito
+       quedaria con una cuota de mas. */
+    if (!(primerPago > 0)) return { total, pagos, cuota: r2(total / pagos), primerPago: 0, descuentaPP: false, entregaCliente: monto };
     const cuota = r2((total - primerPago) / (pagos - 1)); // pagos 2..N (Tarifa 2)
     return { total, pagos, cuota, primerPago, descuentaPP: true, entregaCliente: r2(monto - primerPago) };
   }
@@ -708,6 +722,7 @@ const MODULOS = [
   { k: 'convenios', n: 'Convenios de pago' },
   { k: 'inventario', n: 'Catálogo e inventario' },
   { k: 'encuestas', n: 'Encuestas' },
+  { k: 'credito14', n: 'Crédito 14 semanas' },
 ];
 const MOD_KEYS = new Set(MODULOS.map(m => m.k));
 function modulosOffDe(blob) {
@@ -724,6 +739,13 @@ function modulosOffDe(blob) {
    disponible en la sucursal del crédito" en lugar de "hay efectivo".
    El costo del equipo sale de tesorería cuando se COMPRA el inventario, no cuando se entrega. */
 function invOn() { return !modulosOffDe(db).includes('inventario'); }
+/* Modalidad a 14 semanas (tarifa s14). No es una pestaña: es un producto de crédito, así que el
+   candado va donde se ORIGINA un crédito (alta y REFIN). Si está apagada, el tipo s14 se rechaza
+   aunque alguien lo mande a mano por la API. Los créditos s14 ya existentes siguen cobrándose
+   normal: apagar el módulo deja de venderlo, no toca la cartera viva. */
+function s14On() { return !modulosOffDe(db).includes('credito14'); }
+function s14Bloqueado(tipo) { return String(tipo || '') === 's14' && !s14On(); }
+const S14_OFF_MSG = 'La modalidad de crédito a 14 semanas no está activa en esta agencia';
 function invGuard(req, res, next) { return invOn() ? next() : res.status(403).json({ error: 'El módulo de catálogo e inventario no está activo en esta agencia' }); }
 function prodDe(id) { return (db.productos || []).find(p => p.id === +id) || null; }
 function prodLbl(p) { return p ? ([p.marca, p.modelo].filter(Boolean).join(' ').trim() || p.sku || ('Producto #' + p.id)) : ''; }
@@ -2094,6 +2116,8 @@ app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) 
      clientes huérfanos si la venta se rechaza. Aquí solo se exige que exista mercancía en la
      agencia; el candado POR SUCURSAL vive en la bandeja de entregas, que es donde el aparato
      sale físicamente y donde antes se validaba el efectivo. */
+  if (s14Bloqueado(tipo)) return res.status(403).json({ error: S14_OFF_MSG });
+
   let _prodVenta = null;
   if (productoId != null && productoId !== '') {
     if (!invOn()) return res.status(403).json({ error: 'El módulo de catálogo e inventario no está activo en esta agencia' });
@@ -2398,6 +2422,7 @@ app.post('/api/sales/:id/refin', auth, rol('admin','supervisor','sucursal'), ide
   // genérico, lo que hacía que el REFIN calculara con la tarifa equivocada (12 pagos → cuota inflada).
   // Salvo que se elija otro tipo explícito en el modal, forzamos s16 para esta agencia.
   if (_esCreditYa() && tipo === 'semanal') { tipo = 's16'; plazo = 16; }
+  if (s14Bloqueado(tipo)) return res.status(403).json({ error: S14_OFF_MSG });
   const prom = nuevoProm || old.prom;
   const r = calcCredito(tipo, plazo, monto, +nuevoDias || plazo);
 
@@ -3747,6 +3772,7 @@ app.put('/api/tarifas', auth, rol('admin'), (req, res) => {
   const okPP = s => s && typeof s.factor === 'number' && typeof s.fijo === 'number' && typeof s.ppFactor === 'number' && typeof s.ppFijo === 'number' && typeof s.pagos === 'number';
   db.config = db.config || {};
   db.config.tarifas = { diario: t.diario, semanal: t.semanal, p17: t.p17, unico: { base: t.unico.base, factor: t.unico.factor },
+    s14: okPP(t.s14) ? t.s14 : ((db.config.tarifas && db.config.tarifas.s14) || DEFAULT_TARIFAS.s14),
     s16: okPP(t.s16) ? t.s16 : DEFAULT_TARIFAS.s16, s17: okPP(t.s17) ? t.s17 : DEFAULT_TARIFAS.s17,
     s21: okPP(t.s21) ? t.s21 : DEFAULT_TARIFAS.s21, s31: okPP(t.s31) ? t.s31 : DEFAULT_TARIFAS.s31 };
   saveDB();
@@ -5423,7 +5449,7 @@ app.get('/api/admin/salud', auth, rol('admin'), async (req, res) => {
   res.json(out);
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v30', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, objetivoCartera: true, asignEnviadasFix: true, buro: true, numDiariosSuc: true, contactosParcial: true, resetFondo: true, soloEfectivo: true, reindexUsuarios: true, resetPassCobradores: true, limpiarCobradores: true, importLoginFix: true, loginAutoRepair: true, actualizarCuotas: true, cuotaPorFolio: true, metaSuc100: true, eliminarEntrega: true, cobradoSemana: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, mostrarMembrete: true, oplog: true, salud: true, inventario: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v30', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, objetivoCartera: true, asignEnviadasFix: true, buro: true, numDiariosSuc: true, contactosParcial: true, resetFondo: true, soloEfectivo: true, reindexUsuarios: true, resetPassCobradores: true, limpiarCobradores: true, importLoginFix: true, loginAutoRepair: true, actualizarCuotas: true, cuotaPorFolio: true, metaSuc100: true, eliminarEntrega: true, cobradoSemana: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, s14: true, s14Modulo: true, mostrarMembrete: true, oplog: true, salud: true, inventario: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
