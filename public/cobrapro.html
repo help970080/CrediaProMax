@@ -962,7 +962,7 @@
     <div class="panel"><div class="ph"><h3>Simulador de crédito</h3><span class="hint">maneja las tres modalidades</span></div>
       <div class="sim-grid">
         <div>
-          <div class="sim-field"><label>Modalidad</label><select id="s-tipo"><option value="diario">Diario</option><option value="s16">Semanal 16 (primer pago)</option><option value="s17" selected>Semanal 17 (primer pago)</option><option value="s21">21 semanas (primer pago)</option><option value="s31">31 semanas (primer pago)</option><option value="unico">Pago único</option><option value="p17">Celulares 17 pagos</option></select></div>
+          <div class="sim-field"><label>Modalidad</label><select id="s-tipo"><option value="diario">Diario</option><option value="s14" id="opt-s14">14 semanas (cuotas iguales)</option><option value="s16">Semanal 16 (primer pago)</option><option value="s17" selected>Semanal 17 (primer pago)</option><option value="s21">21 semanas (primer pago)</option><option value="s31">31 semanas (primer pago)</option><option value="unico">Pago único</option><option value="p17">Celulares 17 pagos</option></select></div>
           <div class="sim-field"><label>Monto del crédito</label><input type="number" id="s-monto" value="5000" step="500"></div>
           <div class="sim-field"><label>Plazo</label><select id="s-plazo"></select></div>
         </div>
@@ -1198,8 +1198,24 @@ try{ if(BRAND.nombre){ const bn=document.getElementById('brandName'); if(bn) bn.
 /* Módulos apagados por el superadmin. Se esconde el botón del menú, no se borra la sección:
    si mañana lo vuelven a encender, aparece sin desplegar nada. Si el usuario estaba parado en
    un módulo que acaban de apagar, se le regresa al primero disponible en vez de dejarlo en blanco. */
+let MODOFF = [];
+/* Módulos que no son pestaña (una modalidad de crédito, por ejemplo) no se apagan ocultando un
+   navitem: hay que quitar su opción del simulador y su renglón del editor de tarifas. */
+function aplicarModulosExtra(){
+  const off = MODOFF.includes('credito14');
+  const o = document.getElementById('opt-s14');
+  if(o){
+    o.style.display = off ? 'none' : ''; o.disabled = off;
+    const sel = document.getElementById('s-tipo');
+    if(off && sel && sel.value==='s14'){ sel.value='s17'; try{ fillPlazos(); sim(); }catch(e){} }
+  }
+  const ed = document.getElementById('tarifas-editor');
+  if(ed && ed.innerHTML){ try{ renderTarifasEditor(); }catch(e){} }
+}
 function aplicarModulos(off){
   const lista = Array.isArray(off) ? off : [];
+  MODOFF = lista;
+  try{ aplicarModulosExtra(); }catch(e){}
   document.querySelectorAll('.navitem[data-v]').forEach(b=>{
     b.style.display = lista.includes(b.dataset.v) ? 'none' : '';
   });
@@ -2537,7 +2553,7 @@ function ecReestructura(){
     <h3 style="margin:0 0 4px">🗓 Reestructurar crédito ${ecActual.folio}</h3>
     <div style="font-size:.76rem;color:var(--dim);margin-bottom:16px;line-height:1.5">Cambia el modelo de pago y aplica un cargo sobre el saldo insoluto. <b>No liquida el crédito</b> — conserva su historia y no genera ingreso ficticio. El calendario se reinicia desde hoy.</div>
     <div style="background:var(--surf-2);border-radius:8px;padding:10px;margin-bottom:14px;font-size:.82rem">
-      <div style="display:flex;justify-content:space-between"><span style="color:var(--dim)">Modelo actual</span><b>${({diario:'Diario',semanal:'Semanal',unico:'Pago único',p17:'Celulares 17'})[ecActual.tipo]||ecActual.tipo} · plazo ${ecActual.plazo} · cuota ${fmt(ecActual.cuota)}</b></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:var(--dim)">Modelo actual</span><b>${({diario:'Diario',semanal:'Semanal',unico:'Pago único',p17:'Celulares 17'})[ecActual.tipo]||(/^s\d+$/.test(String(ecActual.tipo||''))?('Semanal '+String(ecActual.tipo).slice(1)):ecActual.tipo)} · plazo ${ecActual.plazo} · cuota ${fmt(ecActual.cuota)}</b></div>
       <div style="display:flex;justify-content:space-between;margin-top:4px"><span style="color:var(--dim)">Saldo insoluto</span><b style="color:var(--red)">${fmt(saldo)}</b></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -2959,6 +2975,7 @@ let PROD={diario:[{p:10,f:1.17,fijo:30},{p:20,f:1.23,fijo:60},{p:30,f:1.33,fijo:
 const plazosUnico=[10,15,20,30];
 function fillPlazos(){const t=$('s-tipo').value;
   if(t==='unico'){$('s-plazo').innerHTML=plazosUnico.map(p=>`<option value="${p}">${p} días</option>`).join('');$('s-plazo').value=15;return;}
+  if(t==='s14'){$('s-plazo').innerHTML='<option value="14">14 semanas</option>';return;}
   if(t==='s16'){$('s-plazo').innerHTML='<option value="16">16 semanas</option>';return;}
   if(t==='s17'){$('s-plazo').innerHTML='<option value="17">17 semanas</option>';return;}
   if(t==='s21'){$('s-plazo').innerHTML='<option value="21">21 semanas</option>';return;}
@@ -2966,8 +2983,10 @@ function fillPlazos(){const t=$('s-tipo').value;
   $('s-plazo').innerHTML=PROD[t].map(x=>`<option value="${x.p}">${x.p} ${t==='semanal'?'semanas':t==='p17'?'pagos':'días'}</option>`).join('');
   if(t==='semanal')$('s-plazo').value=12;}
 function calcReal(t,plazo,monto){
-  if(t==='s16'||t==='s17'||t==='s21'||t==='s31'){const DEF={s16:{factor:1.6,fijo:100,ppFactor:0.1,ppFijo:100,pagos:16},s17:{factor:1.7,fijo:200,ppFactor:0.1,ppFijo:200,pagos:17},s21:{factor:1.785,fijo:200,ppFactor:0.085,ppFijo:200,pagos:21},s31:{factor:1.86,fijo:200,ppFactor:0.06,ppFijo:200,pagos:31}};const c=PROD[t]||DEF[t];
-    const total=monto*c.factor+c.fijo;const primerPago=monto*c.ppFactor+c.ppFijo;const cuota=(total-primerPago)/(c.pagos-1);
+  if(t==='s14'||t==='s16'||t==='s17'||t==='s21'||t==='s31'){const DEF={s14:{factor:1.75,fijo:0,ppFactor:0,ppFijo:0,pagos:14},s16:{factor:1.6,fijo:100,ppFactor:0.1,ppFijo:100,pagos:16},s17:{factor:1.7,fijo:200,ppFactor:0.1,ppFijo:200,pagos:17},s21:{factor:1.785,fijo:200,ppFactor:0.085,ppFijo:200,pagos:21},s31:{factor:1.86,fijo:200,ppFactor:0.06,ppFijo:200,pagos:31}};const c=PROD[t]||DEF[t];
+    const total=monto*c.factor+c.fijo;const primerPago=monto*(c.ppFactor||0)+(c.ppFijo||0);
+    if(!(primerPago>0))return {total,pagos:c.pagos,cuota:total/c.pagos,primerPago:0,descuentaPP:false,entregaCliente:monto,com:0};
+    const cuota=(total-primerPago)/(c.pagos-1);
     return {total,pagos:c.pagos,cuota,primerPago,descuentaPP:true,entregaCliente:monto-primerPago};}
   if(t==='unico'){const tap=monto+plazo*(2+monto*0.0183);const mor=4+tap*0.0183;return {total:tap,pagos:1,cuota:tap,mor};}
   const it=PROD[t].find(x=>x.p===plazo)||PROD[t][0];const total=monto*it.f+it.fijo;return {total,pagos:it.p,cuota:total/it.p,com:(total-monto)/it.p};}
@@ -2984,8 +3003,9 @@ function sim(){const t=$('s-tipo').value,monto=+$('s-monto').value||0,plazo=+$('
       <div class="sim-row" style="border:none"><span class="k">Pagos</span><span class="v">${r.pagos} (1 descontado + ${r.pagos-1} de ${fmt(r.cuota)})</span></div>`;
     return;
   }
-  const freq=t==='diario'?'diaria':t==='semanal'?'semanal':t==='p17'?'(17 pagos)':'única';
+  const freq=t==='diario'?'diaria':(t==='semanal'||/^s\d+$/.test(t))?'semanal':t==='p17'?'(17 pagos)':'única';
   const extra= t==='unico'? `<div class="sim-row"><span class="k">Moratorio por día</span><span class="v" style="color:var(--red)">${fmt(r.mor)}</span></div>`
+             : /^s\d+$/.test(t) ? ''
              : `<div class="sim-row"><span class="k">Comisión por no pago</span><span class="v">${fmt(r.com)}</span></div>`;
   document.getElementById('sim-out').innerHTML=`
     <div class="sim-big"><div class="l">Cuota ${freq}</div><div class="v">${fmt(r.cuota)}</div></div>
@@ -2994,7 +3014,7 @@ function sim(){const t=$('s-tipo').value,monto=+$('s-monto').value||0,plazo=+$('
     <div class="sim-row"><span class="k">Total a pagar</span><span class="v">${fmt(r.total)}</span></div>
     ${extra}
     <div class="sim-row"><span class="k">Número de pagos</span><span class="v">${r.pagos} ${t==='unico'?'(al término)':''}</span></div>
-    <div class="sim-row" style="border:none"><span class="k">Plazo</span><span class="v">${plazo} ${t==='semanal'?'semanas':t==='p17'?'pagos':'días'}</span></div>`;
+    <div class="sim-row" style="border:none"><span class="k">Plazo</span><span class="v">${plazo} ${(t==='semanal'||/^s\d+$/.test(t))?'semanas':t==='p17'?'pagos':'días'}</span></div>`;
 }
 
 /* ===== ENCUESTAS =====================================================
@@ -3739,6 +3759,7 @@ async function mapaGeocodificar(){
 const _tLbl={diario:'Diario',semanal:'Semanal',p17:'Celulares 17 pagos'};
 async function initTarifas(){
   try{ const t=await apiU('GET','/api/tarifas'); if(t&&t.semanal){ PROD=t; fillPlazos(); sim(); } }catch(e){}
+  try{ aplicarModulosExtra(); }catch(e){}
   const panel=document.getElementById('tarifas-panel');
   if(ME && ME.rol==='admin'){ panel.style.display='block'; renderTarifasEditor(); }
   else panel.style.display='none';
@@ -3756,11 +3777,11 @@ function renderTarifasEditor(){
     html+='</tbody></table></div>';
   });
   const u=PROD.unico||{base:2,factor:0.0183};
-  const PPDEF={s16:{factor:1.6,fijo:100,ppFactor:0.1,ppFijo:100,pagos:16,lbl:'Semanal 16 (primer pago)'},s17:{factor:1.7,fijo:200,ppFactor:0.1,ppFijo:200,pagos:17,lbl:'Semanal 17 (primer pago)'},s21:{factor:1.785,fijo:200,ppFactor:0.085,ppFijo:200,pagos:21,lbl:'21 semanas (primer pago)'},s31:{factor:1.86,fijo:200,ppFactor:0.06,ppFijo:200,pagos:31,lbl:'31 semanas (primer pago)'}};
-  ['s16','s17','s21','s31'].forEach(tipo=>{
+  const PPDEF={s14:{factor:1.75,fijo:0,ppFactor:0,ppFijo:0,pagos:14,lbl:'14 semanas (cuotas iguales)'},s16:{factor:1.6,fijo:100,ppFactor:0.1,ppFijo:100,pagos:16,lbl:'Semanal 16 (primer pago)'},s17:{factor:1.7,fijo:200,ppFactor:0.1,ppFijo:200,pagos:17,lbl:'Semanal 17 (primer pago)'},s21:{factor:1.785,fijo:200,ppFactor:0.085,ppFijo:200,pagos:21,lbl:'21 semanas (primer pago)'},s31:{factor:1.86,fijo:200,ppFactor:0.06,ppFijo:200,pagos:31,lbl:'31 semanas (primer pago)'}};
+  ['s14','s16','s17','s21','s31'].filter(x=>x!=='s14'||!MODOFF.includes('credito14')).forEach(tipo=>{
     const c=PROD[tipo]||PPDEF[tipo];
     html+=`<div style="margin-bottom:14px"><div style="font-weight:600;font-size:.85rem;margin-bottom:4px">${PPDEF[tipo].lbl}</div>
-      <div style="font-size:.74rem;color:var(--dim);margin-bottom:6px">Total = monto × factor + fijo · 1er pago = monto × ppFactor + ppFijo (se descuenta) · ${c.pagos} pagos</div>
+      <div style="font-size:.74rem;color:var(--dim);margin-bottom:6px">Total = monto × factor + fijo · ${(+c.ppFactor||+c.ppFijo)?'1er pago = monto × ppFactor + ppFijo (se descuenta)':'ppFactor y ppFijo en 0 = <b>cuotas iguales</b> (cuota = total ÷ pagos)'} · ${c.pagos} pagos</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <label style="font-size:.74rem;color:var(--dim)">Factor <input type="number" step="0.01" data-pp="${tipo}" data-k="factor" value="${c.factor}" style="width:80px;padding:6px;background:var(--surf-2);border:1px solid var(--line);border-radius:6px;color:var(--ink)"></label>
         <label style="font-size:.74rem;color:var(--dim)">Fijo $ <input type="number" data-pp="${tipo}" data-k="fijo" value="${c.fijo}" style="width:80px;padding:6px;background:var(--surf-2);border:1px solid var(--line);border-radius:6px;color:var(--ink)"></label>
@@ -3777,6 +3798,7 @@ function renderTarifasEditor(){
     </div></div>`;
   document.getElementById('tarifas-editor').innerHTML=html;
 }
+
 function leerTarifasEditor(){
   const t={diario:[],semanal:[],p17:[]};
   document.querySelectorAll('#tarifas-editor input[data-t]').forEach(inp=>{
@@ -3785,6 +3807,7 @@ function leerTarifasEditor(){
   });
   t.unico={base:+document.getElementById('u-base').value||0,factor:+document.getElementById('u-factor').value||0};
   t.s16={}; t.s17={}; t.s21={}; t.s31={};
+  if(!MODOFF.includes('credito14')) t.s14={};
   document.querySelectorAll('#tarifas-editor input[data-pp]').forEach(inp=>{ t[inp.dataset.pp][inp.dataset.k]=+inp.value; });
   return t;
 }
