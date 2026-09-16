@@ -412,7 +412,7 @@ function blankTenant(brandNombre, adminUser, adminPass, adminNombre) {
     encuestas: [], encuestasEnvios: [], encuestasResp: [],
     gestiones: [], cortes: [], transferencias: [], recolecciones: [], jcEntregas: [], jcCierres: [], asignaciones: [], contactos: [], cierresSemana: [],
     objetivos: { suc: {}, cob: {} },
-    config: { corteAutoHora: '19:00', corteAutoDias: [1, 2, 3, 4, 5, 6], semanaInicio: 4, brand: { nombre: brandNombre || 'CobraPro' }, tarifas: JSON.parse(JSON.stringify(DEFAULT_TARIFAS)), modulosOff: ['inventario', 'encuestas', 'credito14'], _invSeed: 1, _encSeed: 1, _s14Seed: 1 }, _idem: {}
+    config: { corteAutoHora: '19:00', corteAutoDias: [1, 2, 3, 4, 5, 6], semanaInicio: 4, brand: { nombre: brandNombre || 'CobraPro' }, tarifas: JSON.parse(JSON.stringify(DEFAULT_TARIFAS)), modulosOff: ['inventario', 'encuestas', 'credito14', 'solicitud'], _invSeed: 1, _encSeed: 1, _s14Seed: 1, _solSeed: 1 }, _idem: {}
   };
 }
 function normalizeTenant(b) {
@@ -458,6 +458,13 @@ function normalizeTenant(b) {
     b.config.modulosOff = Array.isArray(b.config.modulosOff) ? b.config.modulosOff : [];
     if (!b.config.modulosOff.includes('credito14')) b.config.modulosOff.push('credito14');
     b.config._s14Seed = 1;
+  }
+  /* Solicitud de crédito: mismo criterio. Nace APAGADA en todas las agencias; al prenderla, la venta
+     exige la solicitud (campos clave). Siembra única (_solSeed) para no volver a apagarla. */
+  if (b.config._solSeed !== 1) {
+    b.config.modulosOff = Array.isArray(b.config.modulosOff) ? b.config.modulosOff : [];
+    if (!b.config.modulosOff.includes('solicitud')) b.config.modulosOff.push('solicitud');
+    b.config._solSeed = 1;
   }
   b._idem = b._idem || {};
   if(b.config.creditosVoz == null) b.config.creditosVoz = 0;
@@ -723,6 +730,7 @@ const MODULOS = [
   { k: 'inventario', n: 'Catálogo e inventario' },
   { k: 'encuestas', n: 'Encuestas' },
   { k: 'credito14', n: 'Crédito 14 semanas' },
+  { k: 'solicitud', n: 'Solicitud de crédito' },
 ];
 const MOD_KEYS = new Set(MODULOS.map(m => m.k));
 function modulosOffDe(blob) {
@@ -746,6 +754,79 @@ function invOn() { return !modulosOffDe(db).includes('inventario'); }
 function s14On() { return !modulosOffDe(db).includes('credito14'); }
 function s14Bloqueado(tipo) { return String(tipo || '') === 's14' && !s14On(); }
 const S14_OFF_MSG = 'La modalidad de crédito a 14 semanas no está activa en esta agencia';
+
+/* ---------- SOLICITUD DE CRÉDITO (gateada por el interruptor 'solicitud') ----------
+   Digitaliza el formato en papel SIN datos del cónyuge. Lo que ya captura la venta (nombre, CURP,
+   teléfono, domicilio, aval) NO se repite: la solicitud solo guarda lo que faltaba. Fecha de
+   nacimiento y sexo salen de la CURP; el número de crédito, del historial del cliente.
+   Va en el CRÉDITO (sale.solicitud) porque ingreso y referencias cambian por ciclo, y se copia al
+   cliente (client.solicitud) para PRELLENAR la renovación sin volver a capturar. */
+function solOn() { return !modulosOffDe(db).includes('solicitud'); }
+const SOL_VIV = ['propia', 'rentada', 'familiar'];
+const SOL_DOCS = ['ineFrente', 'ineReverso', 'comprobante'];
+const SOL_DOC_LBL = { ineFrente: 'INE (frente)', ineReverso: 'INE (reverso)', comprobante: 'comprobante de domicilio' };
+const SOL_CIVIL = ['soltero', 'casado', 'union libre'];
+const _solT = (v, n) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n);
+const _solN = v => { const x = Math.round(+String(v == null ? '' : v).replace(/[^\d.]/g, '')); return isFinite(x) && x > 0 ? x : 0; };
+const _solTel = v => String(v || '').replace(/\D/g, '').slice(0, 15);
+function solDeCurp(curp) {
+  const c = String(curp || '').trim().toUpperCase();
+  const m = /^[A-Z]{4}(\d{2})(\d{2})(\d{2})([HMX])[A-Z]{5}([A-Z0-9])\d$/.exec(c);
+  if (!m) return { fechaNac: '', sexo: '' };
+  const yy = +m[1]; const siglo = /\d/.test(m[5]) ? 1900 : 2000;   // posición 17: dígito = nacido antes de 2000
+  return { fechaNac: `${m[3]}/${m[2]}/${siglo + yy}`, sexo: m[4] === 'H' ? 'M' : (m[4] === 'M' ? 'F' : '') };
+}
+/* Limpia y valida. Devuelve { sol } o { error }. Campos clave obligatorios; el resto opcional. */
+function solLimpiar(b) {
+  b = b || {};
+  const refs = (Array.isArray(b.referencias) ? b.referencias : []).slice(0, 2).map(r => ({
+    nombre: _solT(r && r.nombre, 90), cel: _solTel(r && r.cel), direccion: _solT(r && r.direccion, 160),
+    parentesco: _solT(r && r.parentesco, 40),
+    verificacion: ['positiva', 'negativa'].includes(r && r.verificacion) ? r.verificacion : '',
+  }));
+  const sol = {
+    solicitado: _solN(b.solicitado), plazoSolicitado: _solT(b.plazoSolicitado, 20),
+    oferta1: _solN(b.oferta1), plazoOferta1: _solT(b.plazoOferta1, 20),
+    oferta2: _solN(b.oferta2), plazoOferta2: _solT(b.plazoOferta2, 20),
+    apPaterno: _solT(b.apPaterno, 40).toUpperCase(), apMaterno: _solT(b.apMaterno, 40).toUpperCase(),
+    numExt: _solT(b.numExt, 12), numInt: _solT(b.numInt, 12), poblacion: _solT(b.poblacion, 60),
+    cp: String(b.cp || '').replace(/\D/g, '').slice(0, 5),
+    vivienda: SOL_VIV.includes(String(b.vivienda || '').toLowerCase()) ? String(b.vivienda).toLowerCase() : '',
+    tiempoDomicilio: _solT(b.tiempoDomicilio, 30),
+    estadoCivil: SOL_CIVIL.includes(String(b.estadoCivil || '').toLowerCase()) ? String(b.estadoCivil).toLowerCase() : '',
+    hijos: Math.min(30, Math.max(0, parseInt(b.hijos, 10) || 0)), escuelaHijos: _solT(b.escuelaHijos, 120),
+    actividad: _solT(b.actividad, 100), dirTrabajo: _solT(b.dirTrabajo, 160),
+    ingresoSemanal: _solN(b.ingresoSemanal), gastoSemanal: _solN(b.gastoSemanal),
+    referencias: refs, consentimiento: b.consentimiento === true,
+    /* Documentos: SOLO marcas "foto:N" ya guardadas en cobrapro_fotos (POST /api/solicitud/foto).
+       Nunca base64 aquí: la solicitud vive en el bloque y lo inflaría. */
+    fotos: SOL_DOCS.reduce((o, k) => { const v = b.fotos && b.fotos[k]; if (_esRefFoto(v)) o[k] = v; return o; }, {}),
+  };
+  const falta = [];
+  if (!sol.solicitado) falta.push('monto solicitado');
+  if (!sol.plazoSolicitado) falta.push('plazo solicitado');
+  if (!sol.apPaterno) falta.push('apellido paterno');
+  if (!sol.vivienda) falta.push('tipo de vivienda');
+  if (!sol.tiempoDomicilio) falta.push('tiempo en el domicilio');
+  if (!sol.estadoCivil) falta.push('estado civil');
+  if (!sol.actividad) falta.push('actividad principal');
+  if (!sol.ingresoSemanal) falta.push('ingreso semanal');
+  if (!sol.gastoSemanal) falta.push('gasto semanal');
+  if (refs.length < 2 || refs.some(r => !r.nombre || r.cel.length < 10 || !r.parentesco)) falta.push('2 referencias (nombre, celular de 10 dígitos y parentesco)');
+  if (!sol.consentimiento) falta.push('consentimiento del solicitante');
+  SOL_DOCS.forEach(k => { if (!sol.fotos[k]) falta.push('foto de ' + SOL_DOC_LBL[k]); });
+  if (falta.length) return { error: 'Faltan datos de la solicitud: ' + falta.join(', ') };
+  return { sol };
+}
+/* Quién puede ver/verificar la solicitud de un crédito. */
+function solAcceso(req, s) {
+  const u = req.user;
+  if (u.rol === 'admin' || u.rol === 'supervisor') return true;
+  if (u.rol === 'sucursal' || u.rol === 'jc') return Number(s.sucursalId) === Number(u.sucursalId || 0);
+  if (u.rol === 'cobrador') return s.prom === u.nombre;
+  return false;
+}
+function solGuard(req, res, next) { return solOn() ? next() : res.status(403).json({ error: 'El módulo de solicitud de crédito no está activo en esta agencia' }); }
 function invGuard(req, res, next) { return invOn() ? next() : res.status(403).json({ error: 'El módulo de catálogo e inventario no está activo en esta agencia' }); }
 function prodDe(id) { return (db.productos || []).find(p => p.id === +id) || null; }
 function prodLbl(p) { return p ? ([p.marca, p.modelo].filter(Boolean).join(' ').trim() || p.sku || ('Producto #' + p.id)) : ''; }
@@ -1099,7 +1180,7 @@ app.get('/api/clients', auth, (req, res) => {
   const out = db.clients.filter(c => c.activo !== false)
     .filter(c => !prom || c.prom === prom)
     .filter(c => !q || [c.nombre, c.tel, c.calle, c.col, c.prom].join(' ').toLowerCase().includes(q))
-    .map(c => ({ ...c, creditos: db.sales.filter(s => s.clientId === c.id).map(s => ({ ...s, saldo: saldoDe(s.id) })) }));
+    .map(c => { const { solicitud: _cs, ...cc } = c; return { ...cc, creditos: db.sales.filter(s => s.clientId === c.id).map(s => { const { solicitud: _ss, ...ss } = s; return { ...ss, saldo: saldoDe(s.id), tieneSolicitud: !!_ss }; }) }; });
   res.json(out);
 });
 app.get('/api/sales', auth, (req, res) => {
@@ -1107,8 +1188,8 @@ app.get('/api/sales', auth, (req, res) => {
   const miSuc = (req.user.rol === 'sucursal') ? Number(req.user.sucursalId || 0) : null;
   res.json(db.sales.filter(s => activos.has(s.clientId) && (miSuc == null || s.sucursalId === miSuc)).map(s => {
     const c = db.clients.find(x => x.id === s.clientId) || {};
-    const { entrega, ...rest } = s;
-    return { ...rest, saldo: saldoDe(s.id), cliente: c.nombre, tel: c.tel || '', calle: c.calle || '', col: c.col || '', tieneEvidencia: !!entrega };
+    const { entrega, solicitud, ...rest } = s;
+    return { ...rest, saldo: saldoDe(s.id), cliente: c.nombre, tel: c.tel || '', calle: c.calle || '', col: c.col || '', tieneEvidencia: !!entrega, tieneSolicitud: !!solicitud };
   }));
 });
 /* ---------- Oportunidades: listado de candidatos a REFIN / PARALELO ---------- */
@@ -2110,13 +2191,21 @@ app.post('/api/buro/solicitud/:id/declinar', auth, rol('admin', 'supervisor'), (
 });
 
 app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
-  const { nombre, tel, calle, col, ciudad, estado, curp, sucursalId, prom, tipo, plazo, monto, dias, force, clienteExistenteId, articulos, aval, productoId } = req.body;
+  const { nombre, tel, calle, col, ciudad, estado, curp, sucursalId, prom, tipo, plazo, monto, dias, force, clienteExistenteId, articulos, aval, productoId, ref } = req.body;
 
   /* VENTA DE EQUIPO. Se valida ANTES de tocar nada (el cliente se crea más abajo) para no dejar
      clientes huérfanos si la venta se rechaza. Aquí solo se exige que exista mercancía en la
      agencia; el candado POR SUCURSAL vive en la bandeja de entregas, que es donde el aparato
      sale físicamente y donde antes se validaba el efectivo. */
   if (s14Bloqueado(tipo)) return res.status(403).json({ error: S14_OFF_MSG });
+  /* Solicitud obligatoria con el módulo prendido. Se valida ANTES del buró y de crear el cliente
+     para no dejar clientes huérfanos ni solicitudes de Vo.Bo sin expediente. */
+  let _solVenta = null;
+  if (solOn()) {
+    const _sv = solLimpiar(req.body.solicitud);
+    if (_sv.error) return res.status(400).json({ error: 'solicitud_incompleta', detalle: _sv.error });
+    _solVenta = _sv.sol;
+  }
 
   let _prodVenta = null;
   if (productoId != null && productoId !== '') {
@@ -2191,6 +2280,8 @@ app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) 
     }
     const sucFinal = req.user.rol === 'sucursal' ? (req.user.sucursalId || 1) : (sucursalId || req.user.sucursalId || 1);
     client = { id: nextId('clients'), nombre, tel: tel || '', calle, col, ciudad: ciudad || '', estado: estado || '', curp: String(curp || '').trim().toUpperCase(), sucursalId: sucFinal, prom: prom || '' };
+    const _refDom = String(ref || '').trim().slice(0, 160);
+    if (_refDom) client.ref = _refDom;   // "Referencias" del domicilio (entre calles, seña): antes se capturaba y se perdía
     db.clients.push(client);
   }
 
@@ -2220,6 +2311,18 @@ app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) 
      hace que el candado de caja de la bandeja pase solo y deja pasar el de inventario. El IMEI NO
      se aparta aquí; se asigna hasta la entrega, que es cuando el aparato sale de la vitrina. */
   if (_prodVenta) { sale.productoId = _prodVenta.id; sale.producto = prodLbl(_prodVenta); sale.entregaMonto = 0; }
+  if (_solVenta) {
+    const _cd = solDeCurp(client.curp);
+    const ahora = new Date().toISOString();
+    _solVenta.referencias.forEach(r => { if (r.verificacion) { r.verificadoPor = req.user.nombre; r.verificadoRol = req.user.rol; r.verificadoAt = ahora; } });
+    sale.solicitud = Object.assign(_solVenta, {
+      numCredito: db.sales.filter(s => s.clientId === client.id).length + 1,
+      fechaNac: _cd.fechaNac, sexo: _cd.sexo, capturadoPor: req.user.nombre, fecha: ahora,
+    });
+    // Copia estable para prellenar la renovación (sin verificaciones: esas se hacen cada ciclo)
+    client.solicitud = JSON.parse(JSON.stringify(sale.solicitud));
+    client.solicitud.referencias.forEach(r => { r.verificacion = ''; delete r.verificadoPor; delete r.verificadoRol; delete r.verificadoAt; });
+  }
   db.sales.push(sale);
   movAdd({ id: nextId('movimientos'), saleId: sale.id, fecha: fechaMxHoyDDMM(), concepto: 'Disposición de crédito', origen: 'Sucursal', cargo: r.total, abono: 0 });
   // Productos que descuentan el primer pago: se registra de inmediato como abono (el cliente recibe monto − primer pago)
@@ -2229,6 +2332,129 @@ app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) 
   saveDB();
   const nCreditos = db.sales.filter(s => s.clientId === client.id).length;
   res.status(201).json({ ...sale, saldo: saldoDe(sale.id), cliente: client.nombre, agregadoAExistente: !!clienteExistenteId, totalCreditosCliente: nCreditos });
+});
+
+/* ---------- Solicitud de crédito: prellenado, consulta y verificación de referencias ---------- */
+// Prellenado por CURP para renovaciones: devuelve la última solicitud del cliente (sin verificaciones).
+app.get('/api/solicitud/previa', auth, rol('admin', 'supervisor', 'sucursal'), solGuard, (req, res) => {
+  const curp = String(req.query.curp || '').trim().toUpperCase();
+  if (!/^[A-Z]{4}\d{6}[A-Z0-9]{8}$/.test(curp)) return res.json({ solicitud: null });
+  const c = db.clients.find(x => x.activo !== false && (x.curp || '').toUpperCase() === curp && x.solicitud);
+  if (!c) return res.json({ solicitud: null });
+  if (req.user.rol === 'sucursal' && Number(c.sucursalId) !== Number(req.user.sucursalId || 0)) return res.json({ solicitud: null });
+  /* El INE del crédito anterior se reutiliza (no cambia); el comprobante se pide nuevo porque debe estar vigente. */
+  const { fotos: _pf, ...prev } = c.solicitud;
+  const fotosPrevias = {}; ['ineFrente', 'ineReverso'].forEach(k => { if (_pf && _esRefFoto(_pf[k])) fotosPrevias[k] = _pf[k]; });
+  res.json({ solicitud: prev, fotosPrevias, cliente: c.nombre, ...solDeCurp(curp) });
+});
+app.get('/api/sales/:id/solicitud', auth, (req, res) => {
+  const s = db.sales.find(x => x.id === +req.params.id);
+  if (!s) return res.status(404).json({ error: 'Crédito no encontrado' });
+  if (!solAcceso(req, s)) return res.status(403).json({ error: 'Permiso insuficiente' });
+  if (!s.solicitud) return res.status(404).json({ error: 'Este crédito no tiene solicitud capturada' });
+  const c = db.clients.find(x => x.id === s.clientId) || {};
+  const suc = db.sucursales.find(x => x.id === s.sucursalId);
+  res.json({ solicitud: s.solicitud, folio: s.folio, tipo: s.tipo, plazo: s.plazo, monto: s.monto, cuota: s.cuota, prom: s.prom,
+    sucursal: suc ? suc.nombre : '', brand: (db.config && db.config.brand && db.config.brand.nombre) || 'CobraPro',
+    cliente: { nombre: c.nombre || '', tel: c.tel || '', calle: c.calle || '', col: c.col || '', ciudad: c.ciudad || '', estado: c.estado || '', curp: c.curp || '', ref: c.ref || '' },
+    aval: s.aval || null, puedeVerificar: solOn() && ['admin', 'supervisor', 'sucursal', 'jc', 'cobrador'].includes(req.user.rol),
+    puedeDocs: solOn() && ['admin', 'supervisor', 'sucursal'].includes(req.user.rol), docs: SOL_DOCS.map(k => ({ tipo: k, lbl: SOL_DOC_LBL[k] })) });
+});
+app.post('/api/sales/:id/solicitud/verificar', auth, rol('admin', 'supervisor', 'sucursal', 'jc', 'cobrador'), solGuard, (req, res) => {
+  const s = db.sales.find(x => x.id === +req.params.id);
+  if (!s || !s.solicitud) return res.status(404).json({ error: 'Solicitud no encontrada' });
+  if (!solAcceso(req, s)) return res.status(403).json({ error: 'Permiso insuficiente' });
+  const i = +req.body.idx; const r = (s.solicitud.referencias || [])[i];
+  if (!r) return res.status(400).json({ error: 'Referencia inválida' });
+  const v = String(req.body.resultado || '');
+  if (!['positiva', 'negativa'].includes(v)) return res.status(400).json({ error: 'Resultado inválido' });
+  Object.assign(r, { verificacion: v, verificadoPor: req.user.nombre, verificadoRol: req.user.rol, verificadoAt: new Date().toISOString(), nota: _solT(req.body.nota, 200) });
+  saveDB();
+  res.json({ ok: true, referencia: r });
+});
+// Pendientes de verificar para campo: cobrador = sus créditos; jc/sucursal = su sucursal.
+app.get('/api/solicitudes/verificar', auth, rol('admin', 'supervisor', 'sucursal', 'jc', 'cobrador'), (req, res) => {
+  if (!solOn()) return res.json([]);
+  const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
+  res.json(db.sales.filter(s => s.solicitud && activos.has(s.clientId) && solAcceso(req, s)
+      && (s.solicitud.referencias || []).some(r => !r.verificacion))
+    .map(s => { const c = db.clients.find(x => x.id === s.clientId) || {};
+      return { saleId: s.id, folio: s.folio, cliente: c.nombre || '—', prom: s.prom, fecha: s.solicitud.fecha,
+        pendientes: s.solicitud.referencias.filter(r => !r.verificacion).length }; })
+    .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha))).slice(0, 100));
+});
+
+/* ---------- Documentos del expediente (INE frente/reverso y comprobante) ----------
+   La foto se sube SOLA, en cuanto se toma, y regresa la marca "foto:N". La venta solo lleva marcas:
+   si hay 409 por duplicado o Vo.Bo, el reintento no vuelve a subir nada y el payload del Vo.Bo no
+   mete imágenes al bloque. Sin FLAG_FOTOS+PostgreSQL se rechaza en vez de inflar el bloque. */
+app.post('/api/solicitud/foto', auth, rol('admin', 'supervisor', 'sucursal'), solGuard, async (req, res) => {
+  const tipo = String(req.body.tipo || '');
+  if (!SOL_DOCS.includes(tipo)) return res.status(400).json({ error: 'Tipo de documento inválido' });
+  const img = String(req.body.imagen || '');
+  if (!/^data:image\/(jpeg|png|webp);base64,/.test(img)) return res.status(400).json({ error: 'Envía la foto en JPEG o PNG' });
+  if (img.length > 2000000) return res.status(413).json({ error: 'La foto pesa demasiado. Vuelve a tomarla.' });
+  if (!FOTOS || !USE_PG) return res.status(409).json({ error: 'Falta FLAG_FOTOS=1 con PostgreSQL: los documentos no se pueden guardar fuera del bloque.' });
+  const ref = await fotoGuardar(img, 'solicitud:' + tipo + ':' + (req.user.nombre || ''));
+  if (!_esRefFoto(ref)) return res.status(503).json({ error: 'No se pudo guardar la foto. Intenta de nuevo.' });
+  res.json({ ok: true, tipo, ref });
+});
+// Agregar o reemplazar un documento en un expediente ya capturado (ej. comprobante ilegible).
+app.post('/api/sales/:id/solicitud/foto', auth, rol('admin', 'supervisor', 'sucursal'), solGuard, (req, res) => {
+  const s = db.sales.find(x => x.id === +req.params.id);
+  if (!s || !s.solicitud) return res.status(404).json({ error: 'Solicitud no encontrada' });
+  if (!solAcceso(req, s)) return res.status(403).json({ error: 'Permiso insuficiente' });
+  const tipo = String(req.body.tipo || ''), ref = String(req.body.ref || '');
+  if (!SOL_DOCS.includes(tipo) || !_esRefFoto(ref)) return res.status(400).json({ error: 'Documento inválido' });
+  s.solicitud.fotos = s.solicitud.fotos || {};
+  s.solicitud.fotosHist = (s.solicitud.fotosHist || []).slice(-20);
+  if (s.solicitud.fotos[tipo]) s.solicitud.fotosHist.push({ tipo, ref: s.solicitud.fotos[tipo], reemplazadoPor: req.user.nombre, fecha: new Date().toISOString() });
+  s.solicitud.fotos[tipo] = ref;
+  saveDB();
+  res.json({ ok: true, fotos: s.solicitud.fotos });
+});
+/* Expedientes: buscador y exportación. Filas planas SIN imágenes (solo cuántos documentos tiene). */
+app.get('/api/expedientes', auth, rol('admin', 'supervisor', 'sucursal'), solGuard, (req, res) => {
+  const q = String(req.query.q || '').trim().toLowerCase();
+  const qd = q.replace(/\D/g, '');
+  const suc = req.user.rol === 'sucursal' ? Number(req.user.sucursalId || 0) : (req.query.sucursalId ? Number(req.query.sucursalId) : null);
+  const verif = String(req.query.verif || '');
+  const desde = String(req.query.desde || ''), hasta = String(req.query.hasta || '');
+  const sucMap = {}; db.sucursales.forEach(x => sucMap[x.id] = x.nombre);
+  const cliMap = new Map(db.clients.map(c => [c.id, c]));
+  const out = [];
+  for (const s of db.sales) {
+    const so = s.solicitud; if (!so) continue;
+    const c = cliMap.get(s.clientId); if (!c || c.activo === false) continue;
+    if (suc != null && Number(s.sucursalId) !== suc) continue;
+    const dia = String(so.fecha || s.createdAt || '').slice(0, 10);
+    if (desde && dia < desde) continue;
+    if (hasta && dia > hasta) continue;
+    const refs = so.referencias || [];
+    const pos = refs.filter(r => r.verificacion === 'positiva').length, neg = refs.filter(r => r.verificacion === 'negativa').length, pend = refs.length - pos - neg;
+    if (verif === 'pendientes' && !pend) continue;
+    if (verif === 'negativas' && !neg) continue;
+    if (verif === 'completas' && (pend || neg)) continue;
+    const docs = SOL_DOCS.filter(k => so.fotos && so.fotos[k]).length;
+    if (verif === 'sindocs' && docs === SOL_DOCS.length) continue;
+    if (q) {
+      const hay = [c.nombre, c.curp, s.folio, c.tel, c.calle, c.col, s.prom, so.apPaterno, so.apMaterno].join(' ').toLowerCase();
+      if (!hay.includes(q) && !(qd.length >= 4 && String(c.tel || '').replace(/\D/g, '').includes(qd))) continue;
+    }
+    const saldo = saldoDe(s.id);
+    out.push({ saleId: s.id, folio: s.folio, fecha: dia, cliente: c.nombre || '', curp: c.curp || '', tel: c.tel || '',
+      domicilio: [c.calle, so.numExt && ('No. ' + so.numExt), so.numInt && ('Int. ' + so.numInt), c.col, so.poblacion, c.ciudad, c.estado, so.cp && ('CP ' + so.cp)].filter(Boolean).join(', '),
+      sucursal: sucMap[s.sucursalId] || '', prom: s.prom || '', numCredito: so.numCredito || 1, tipo: s.tipo, plazo: s.plazo, monto: s.monto, cuota: s.cuota,
+      saldo: Math.round(saldo), estado: saldo > 0 ? 'Activo' : 'Liquidado',
+      solicitado: so.solicitado, plazoSolicitado: so.plazoSolicitado, oferta1: so.oferta1, oferta2: so.oferta2,
+      fechaNac: so.fechaNac, sexo: so.sexo, vivienda: so.vivienda, tiempoDomicilio: so.tiempoDomicilio, estadoCivil: so.estadoCivil, hijos: so.hijos,
+      actividad: so.actividad, dirTrabajo: so.dirTrabajo, ingresoSemanal: so.ingresoSemanal, gastoSemanal: so.gastoSemanal,
+      ref1: refs[0] ? `${refs[0].nombre} (${refs[0].parentesco}) ${refs[0].cel} · ${refs[0].verificacion || 'pendiente'}` : '',
+      ref2: refs[1] ? `${refs[1].nombre} (${refs[1].parentesco}) ${refs[1].cel} · ${refs[1].verificacion || 'pendiente'}` : '',
+      refPos: pos, refNeg: neg, refPend: pend, docs, docsTotal: SOL_DOCS.length, capturadoPor: so.capturadoPor || '' });
+  }
+  out.sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)) || b.saleId - a.saleId);
+  res.json({ total: out.length, rows: out.slice(0, 2000) });
 });
 
 /* ---------- Estado de cuenta (libro de cargos y abonos) ---------- */
@@ -5449,7 +5675,7 @@ app.get('/api/admin/salud', auth, rol('admin'), async (req, res) => {
   res.json(out);
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v30', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, objetivoCartera: true, asignEnviadasFix: true, buro: true, numDiariosSuc: true, contactosParcial: true, resetFondo: true, soloEfectivo: true, reindexUsuarios: true, resetPassCobradores: true, limpiarCobradores: true, importLoginFix: true, loginAutoRepair: true, actualizarCuotas: true, cuotaPorFolio: true, metaSuc100: true, eliminarEntrega: true, cobradoSemana: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, s14: true, s14Modulo: true, mostrarMembrete: true, oplog: true, salud: true, inventario: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v30', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, objetivoCartera: true, asignEnviadasFix: true, buro: true, numDiariosSuc: true, contactosParcial: true, resetFondo: true, soloEfectivo: true, reindexUsuarios: true, resetPassCobradores: true, limpiarCobradores: true, importLoginFix: true, loginAutoRepair: true, actualizarCuotas: true, cuotaPorFolio: true, metaSuc100: true, eliminarEntrega: true, cobradoSemana: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, s14: true, s14Modulo: true, mostrarMembrete: true, oplog: true, salud: true, inventario: true, solicitud: true, expedientes: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
