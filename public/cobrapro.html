@@ -222,6 +222,7 @@
     <button class="navitem" data-v="sucursales"><span class="ic">🏪</span> Sucursales</button>
     <button class="navitem" data-v="inventario"><span class="ic">📱</span> Catálogo e inventario</button>
     <button class="navitem" data-v="encuestas"><span class="ic">📝</span> Encuestas</button>
+    <button class="navitem" data-v="solicitud"><span class="ic">🗂</span> Expedientes</button>
     <div class="nav-lbl">Finanzas</div>
     <button class="navitem" data-v="comisiones"><span class="ic">%</span> Comisiones</button>
     <button class="navitem" data-v="conciliacion"><span class="ic">⇄</span> Conciliación</button>
@@ -464,6 +465,7 @@
           <button class="btn" id="ec-btn-retro" style="display:none;border-color:#e0a000;color:#e0a000" onclick="ecPagoRetro()">📅 Registrar pago de semana pasada</button>
           <button class="btn" id="ec-btn-recom" style="display:none;border-color:#22a06b;color:#22a06b" onclick="ecRecomendacion()">🎁 Recomendación</button>
           <button class="btn" id="ec-btn-cuota" style="display:none;border-color:#8b5cf6;color:#8b5cf6" onclick="ecCorregirCuota()">✏️ Corregir cuota</button>
+          <button class="btn" id="ec-btn-sol" style="display:none;border-color:#0e9f9a;color:#0e9f9a" onclick="ecActual&&solAbrir(ecActual.id)">📋 Solicitud de crédito</button>
         </div>
       </div>
     </div>
@@ -622,6 +624,20 @@
   </section>
 
   <!-- ENCUESTAS -->
+  <section class="view" id="solicitud">
+    <div class="panel">
+      <div class="ph"><h3>Expedientes</h3><span class="hint">solicitud de crédito · referencias · INE y comprobante</span>
+        <button class="btn gold" style="margin-left:auto" onclick="expExcel()">⬇ Exportar Excel</button></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0">
+        <input id="exp-q" placeholder="🔍 Nombre, CURP, folio o teléfono" oninput="expBuscar()" style="flex:1 1 260px">
+        <select id="exp-suc" onchange="expCargar()"><option value="">Todas las sucursales</option></select>
+        <select id="exp-verif" onchange="expCargar()"><option value="">Todos</option><option value="pendientes">Referencias pendientes</option><option value="negativas">Con referencia negativa</option><option value="completas">Verificados positivos</option><option value="sindocs">Documentos incompletos</option></select>
+        <input id="exp-desde" type="date" onchange="expCargar()" title="Desde"><input id="exp-hasta" type="date" onchange="expCargar()" title="Hasta">
+      </div>
+      <div id="exp-total" class="hint" style="margin-bottom:6px"></div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Fecha</th><th>Folio</th><th>Cliente</th><th>Sucursal</th><th class="n">Monto</th><th class="n">Ingreso</th><th>Refs</th><th>Docs</th><th></th></tr></thead><tbody id="exp-body"></tbody></table></div>
+    </div>
+  </section>
   <section class="view" id="encuestas">
     <div class="panel">
       <div class="ph"><h3>Mis encuestas</h3>
@@ -2298,6 +2314,7 @@ function ecPinta(d){
   { const _rb=document.getElementById('ec-btn-retro'); if(_rb) _rb.style.display=(ME&&(ME.rol==='admin'||ME.rol==='supervisor'))?'inline-flex':'none'; }
   { const _rc=document.getElementById('ec-btn-recom'); if(_rc) _rc.style.display=(ME&&(ME.rol==='admin'||ME.rol==='supervisor'))?'inline-flex':'none'; }
   { const _rq=document.getElementById('ec-btn-cuota'); if(_rq) _rq.style.display=(ME&&(ME.rol==='admin'||ME.rol==='supervisor'))?'inline-flex':'none'; }
+  { const _sb=document.getElementById('ec-btn-sol'); if(_sb) _sb.style.display=(ecActual&&ecActual.tieneSolicitud)?'inline-flex':'none'; }
   document.getElementById('ec-empty').style.display='none';
   const c=ecActual;
   document.getElementById('ec-nom').textContent=c.cliente||'—';
@@ -3328,7 +3345,7 @@ function encExcel(){
 }
 
 /* NAV + EVENTOS */
-const titles={inicio:['Inicio','Panorama de la semana · cobranza, colocación y mora'],
+const titles={solicitud:['Expedientes','Solicitudes de crédito con documentos · buscar, verificar y exportar'],inicio:['Inicio','Panorama de la semana · cobranza, colocación y mora'],
   convenios:['Convenios de pago','Pactados con el cliente · cumplimiento calculado contra los abonos reales'],resumen:['Resumen operativo','6 sucursales · cobranza diaria, semanal y pago único'],numdiarios:['Números diarios','Cobranza por gerencia · del día y acumulado de la semana'],cartera:['Cartera de crédito','Saldos y semáforo en tiempo real'],estado:['Estado de cuenta','Libro de cargos y abonos · moratorios automáticos'],bandeja:['Bandeja de entregas','Créditos por entregar · toma y entrega con evidencia'],promotores:['Cobradores en ruta','Desempeño y comisiones del periodo'],ranking:['Ranking de cobradores','Semana · unidades, % cobranza, clientes y cobrados con semáforo'],sucursales:['Sucursales','Pagos, colocación y conciliación de caja'],transferencias:['Transferencias','Reasigna clientes entre cobradores · conserva historial'],comisiones:['Motor de comisiones','Configurable · recalcula al instante'],conciliacion:['Conciliación de efectivo','Corte automático esperado vs entregado'],flujo:['Flujo / Tesorería','Efectivo del admin · dotación a la operación, nómina y capital'],reportes:['Reportes','Quién pagó, forma de pago y efectivo en tránsito'],usuarios:['Usuarios y accesos','Alta de usuarios y contraseñas'],simulador:['Simulador de crédito','Cuota por modalidad y plazo'],mapa:['Mapa de clientes','Ubicación geográfica de la cartera'],rastreo:['Rastreo de equipo','Dónde está tu gente en campo · seguridad y operación'],pl:['P&L mensual','Estado de resultados del mes · ingreso, costos, gastos y utilidad por sucursal'],extras:['Extras · Detector de prestanombres','Coincidencias por teléfono, domicilio y apellidos'],grupal:['Créditos grupales','Grupos solidarios · junta semanal, garantía y pago solidario'],asignar:['Asignar efectivo','Mueve efectivo entre puestos · el que recibe confirma'],vobo:['Vo.Bo · Buró interno','Autoriza o declina ventas que botaron alerta roja'],inventario:['Catálogo e inventario','Equipos a crédito · el stock es el candado de la entrega'],encuestas:['Encuestas','Arma tus propias encuestas · emite la liga por persona y da seguimiento']};
 function _ve(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 async function cargarVoBo(){
@@ -3613,6 +3630,7 @@ document.querySelectorAll('.navitem').forEach(n=>{ if(!n.dataset.v) return; n.on
   if(n.dataset.v==='bandeja') cargarBandeja();
   if(n.dataset.v==='inicio') cargarInicio();
   if(n.dataset.v==='convenios') cargarConvenios();
+  if(n.dataset.v==='solicitud') expInit();
   if(n.dataset.v==='vobo') cargarVoBo();
   if(n.dataset.v==='rastreo') initRastreo();
   if(n.dataset.v==='transferencias'){ _trSel.clear(); trInit(); $('tr-resultados').innerHTML='<div style="color:var(--faint);padding:12px;font-size:.85rem">Elige un cobrador o busca un cliente para empezar.</div>'; $('tr-toolbar').style.display='none'; $('tr-batchbar').style.display='none'; trCargarLog(); }
@@ -5116,5 +5134,152 @@ fillPlazos();sim();render();
 })();
 </script>
 
+<script>
+/* ===== SOLICITUD DE CRÉDITO · visor, verificación de referencias e impresión =====
+   Bloque idéntico en admin, sucursal y campo. Usa su propio overlay para no chocar con los modales
+   de cada pantalla. El servidor decide permisos (puedeVerificar). */
+function _solTok(){ try{ return localStorage.getItem('cobrapro_token')||''; }catch(e){ return ''; } }
+async function _solApi(m,p,b){
+  const r=await fetch(p,{method:m,headers:{'Content-Type':'application/json',Authorization:'Bearer '+_solTok()},body:b?JSON.stringify(b):undefined});
+  const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.detalle||d.error||('Error '+r.status)); return d;
+}
+const _solE=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const _solM=n=>n?('$'+Math.round(n).toLocaleString('es-MX')):'—';
+let _solD=null,_solId=null,_solFT='',_solFTt=0;
+async function _solFotoTok(){ if(_solFT && Date.now()-_solFTt<6*3600e3) return _solFT; try{ const d=await _solApi('GET','/api/foto-token'); _solFT=d.token; _solFTt=Date.now(); }catch(e){} return _solFT; }
+const _solSrc=(ref,t)=>{ const m=/^foto:(\d+)$/.exec(ref||''); return m?('/api/foto/'+m[1]+'?t='+encodeURIComponent(t)):''; };
+/* 1000px calidad 0.6: el INE y el comprobante se leen bien y cada foto queda en ~100 KB. */
+function _solComprimir(f,MAX=1000,Q=0.6){
+  return new Promise((ok,ko)=>{ const url=URL.createObjectURL(f); const img=new Image();
+    img.onload=()=>{ let w=img.width,h=img.height; if(w>MAX||h>MAX){ if(w>h){h=Math.round(h*MAX/w);w=MAX;}else{w=Math.round(w*MAX/h);h=MAX;} }
+      const cv=document.createElement('canvas'); cv.width=w; cv.height=h; cv.getContext('2d').drawImage(img,0,0,w,h); URL.revokeObjectURL(url); ok(cv.toDataURL('image/jpeg',Q)); };
+    img.onerror=()=>{ URL.revokeObjectURL(url); ko(new Error('No se pudo leer la imagen')); }; img.src=url; });
+}
+async function solSubirFoto(file,tipo){ const img=await _solComprimir(file); const d=await _solApi('POST','/api/solicitud/foto',{tipo,imagen:img}); return d.ref; }
+function _solOv(){
+  let o=document.getElementById('sol-ov');
+  if(!o){ o=document.createElement('div'); o.id='sol-ov';
+    o.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:none;align-items:flex-start;justify-content:center;overflow:auto;padding:18px 10px';
+    o.onclick=e=>{ if(e.target===o) solCerrar(); }; document.body.appendChild(o); }
+  return o;
+}
+function solCerrar(){ const o=document.getElementById('sol-ov'); if(o) o.style.display='none'; }
+async function solAbrir(saleId){
+  _solId=saleId; const o=_solOv();
+  o.innerHTML='<div style="background:var(--surf,#fff);color:var(--txt,#1b2330);border-radius:12px;padding:18px;max-width:560px;width:100%">⏳ Cargando solicitud…</div>';
+  o.style.display='flex';
+  try{ _solD=await _solApi('GET','/api/sales/'+saleId+'/solicitud'); _solD._ft=await _solFotoTok(); _solPinta(); }
+  catch(e){ o.innerHTML='<div style="background:var(--surf,#fff);color:var(--txt,#1b2330);border-radius:12px;padding:18px;max-width:560px;width:100%">'+_solE(e.message)+'<div style="margin-top:12px;text-align:right"><button onclick="solCerrar()" style="padding:8px 14px;border-radius:8px;border:1px solid #999;background:transparent;color:inherit;cursor:pointer">Cerrar</button></div></div>'; }
+}
+function _solPinta(){
+  const d=_solD, s=d.solicitud, c=d.cliente, o=_solOv();
+  const fila=(k,v)=>`<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid rgba(128,128,128,.15);font-size:.84rem"><span style="flex:0 0 42%;opacity:.7">${k}</span><span style="flex:1;font-weight:600">${v||'—'}</span></div>`;
+  const sec=t=>`<div style="font-weight:700;font-size:.78rem;letter-spacing:.04em;text-transform:uppercase;opacity:.75;margin:14px 0 4px">${t}</div>`;
+  const refs=(s.referencias||[]).map((r,i)=>{
+    const col=r.verificacion==='positiva'?'#178a55':(r.verificacion==='negativa'?'#d6432d':'#caa23a');
+    const est=r.verificacion?(r.verificacion==='positiva'?'✓ POSITIVA':'✗ NEGATIVA')+` · ${_solE(r.verificadoPor||'')} ${r.verificadoAt?new Date(r.verificadoAt).toLocaleDateString('es-MX'):''}`:'⏳ Pendiente de verificar';
+    const btns=d.puedeVerificar?`<div style="display:flex;gap:6px;margin-top:8px"><button onclick="solVerificar(${i},'positiva')" style="flex:1;padding:8px;border-radius:8px;border:1px solid #178a55;background:transparent;color:#178a55;font-weight:700;cursor:pointer">✓ Positiva</button><button onclick="solVerificar(${i},'negativa')" style="flex:1;padding:8px;border-radius:8px;border:1px solid #d6432d;background:transparent;color:#d6432d;font-weight:700;cursor:pointer">✗ Negativa</button></div>`:'';
+    return `<div style="border:1px solid rgba(128,128,128,.3);border-radius:9px;padding:10px;margin-top:8px">
+      <div style="font-weight:700">${i+1}. ${_solE(r.nombre)} <span style="opacity:.7;font-weight:400">(${_solE(r.parentesco)})</span></div>
+      <div style="font-size:.82rem;margin-top:3px">📞 <a href="tel:${_solE(r.cel)}" style="color:inherit">${_solE(r.cel)}</a>${r.direccion?' · 📍 '+_solE(r.direccion):''}</div>
+      <div style="font-size:.78rem;margin-top:5px;color:${col};font-weight:700">${est}</div>${r.nota?`<div style="font-size:.76rem;opacity:.75">Nota: ${_solE(r.nota)}</div>`:''}${btns}</div>`;
+  }).join('');
+  o.innerHTML=`<div style="background:var(--surf,#fff);color:var(--txt,#1b2330);border-radius:12px;padding:18px;max-width:560px;width:100%">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0;font-size:1.05rem">📋 Solicitud · ${_solE(d.folio)}</h3><button onclick="solCerrar()" style="border:none;background:transparent;color:inherit;font-size:1.3rem;cursor:pointer">✕</button></div>
+    <div style="font-size:.8rem;opacity:.75;margin-top:2px">Crédito número ${s.numCredito||1} · capturó ${_solE(s.capturadoPor)} · ${s.fecha?new Date(s.fecha).toLocaleDateString('es-MX'):''}</div>
+    ${sec('Datos del crédito')}${fila('Solicitado',_solM(s.solicitado)+' · '+_solE(s.plazoSolicitado))}${s.oferta1?fila('Oferta 1',_solM(s.oferta1)+' · '+_solE(s.plazoOferta1)):''}${s.oferta2?fila('Oferta 2',_solM(s.oferta2)+' · '+_solE(s.plazoOferta2)):''}${fila('Otorgado',_solM(d.monto)+' · cuota '+_solM(d.cuota))}
+    ${sec('Solicitante')}${fila('Nombre',_solE(c.nombre))}${fila('Apellidos',_solE([s.apPaterno,s.apMaterno].filter(Boolean).join(' / ')))}${fila('CURP',_solE(c.curp))}${fila('Nacimiento · sexo',_solE(s.fechaNac)+' · '+_solE(s.sexo))}${fila('Celular',_solE(c.tel))}
+    ${fila('Domicilio',_solE([c.calle,s.numExt&&('No. '+s.numExt),s.numInt&&('Int. '+s.numInt),c.col,s.poblacion,c.ciudad,c.estado,s.cp&&('CP '+s.cp)].filter(Boolean).join(', ')))}${c.ref?fila('Referencias domicilio',_solE(c.ref)):''}
+    ${fila('Vivienda',_solE(s.vivienda)+' · '+_solE(s.tiempoDomicilio))}${fila('Estado civil · hijos',_solE(s.estadoCivil)+' · '+(s.hijos||0))}${s.escuelaHijos?fila('Escuela de los hijos',_solE(s.escuelaHijos)):''}
+    ${sec('Datos laborales')}${fila('Actividad',_solE(s.actividad))}${s.dirTrabajo?fila('Dirección trabajo',_solE(s.dirTrabajo)):''}${fila('Ingreso semanal',_solM(s.ingresoSemanal))}${fila('Gasto semanal',_solM(s.gastoSemanal))}${fila('Disponible',_solM((s.ingresoSemanal||0)-(s.gastoSemanal||0)))}
+    ${sec('Documentos')}<div style="display:flex;gap:8px;flex-wrap:wrap">${(d.docs||[]).map(x=>{ const ref=(s.fotos||{})[x.tipo]; const src=_solSrc(ref,d._ft);
+      return `<div style="flex:1 1 150px;border:1px solid rgba(128,128,128,.3);border-radius:9px;padding:6px;text-align:center;font-size:.74rem">
+        <div style="font-weight:700;margin-bottom:4px">${x.lbl}</div>
+        ${src?`<a href="${src}" target="_blank"><img src="${src}" style="width:100%;height:110px;object-fit:cover;border-radius:6px;background:#eee"></a>`:'<div style="height:110px;display:flex;align-items:center;justify-content:center;color:#d6432d;font-weight:700">Falta</div>'}
+        ${d.puedeDocs?`<label style="display:block;margin-top:5px;cursor:pointer;color:#0e9f9a;font-weight:700">${src?'↻ Reemplazar':'＋ Subir'}<input type="file" accept="image/*" capture="environment" style="display:none" onchange="solDocCambiar(this,'${x.tipo}')"></label>`:''}</div>`; }).join('')}</div>
+    ${sec('Referencias personales')}${refs}
+    <div style="display:flex;gap:8px;margin-top:16px"><button onclick="solImprimir()" style="flex:1;padding:10px;border-radius:9px;border:none;background:#d99a0f;color:#1b2330;font-weight:700;cursor:pointer">🖨 Imprimir</button><button onclick="solCerrar()" style="flex:1;padding:10px;border-radius:9px;border:1px solid rgba(128,128,128,.5);background:transparent;color:inherit;font-weight:600;cursor:pointer">Cerrar</button></div>
+  </div>`;
+}
+async function solVerificar(idx,resultado){
+  const nota=prompt(`Referencia ${resultado.toUpperCase()}. Nota opcional (qué dijo, quién contestó):`,'');
+  if(nota===null) return;
+  try{ await _solApi('POST','/api/sales/'+_solId+'/solicitud/verificar',{idx,resultado,nota});
+    _solD=await _solApi('GET','/api/sales/'+_solId+'/solicitud'); _solD._ft=await _solFotoTok(); _solPinta();
+    try{ if(typeof expCargar==='function' && document.getElementById('exp-body')) expCargar(true); }catch(e){}
+    try{ if(typeof solCargarPend==='function') solCargarPend(); }catch(e){}
+  }catch(e){ alert(e.message); }
+}
+async function solDocCambiar(input,tipo){
+  const f=input.files&&input.files[0]; if(!f) return;
+  try{ const ref=await solSubirFoto(f,tipo); await _solApi('POST','/api/sales/'+_solId+'/solicitud/foto',{tipo,ref});
+    _solD=await _solApi('GET','/api/sales/'+_solId+'/solicitud'); _solD._ft=await _solFotoTok(); _solPinta();
+    try{ if(typeof expCargar==='function' && document.getElementById('exp-body')) expCargar(true); }catch(e){}
+  }catch(e){ alert(e.message); }
+}
+function solImprimir(){
+  const d=_solD; if(!d) return; const s=d.solicitud, c=d.cliente;
+  const L=(k,v)=>`<td class="k">${k}</td><td class="v">${_solE(v)||'&nbsp;'}</td>`;
+  const refs=(s.referencias||[]).map((r,i)=>`<table><tr>${L('NOMBRE',r.nombre)}${L('CEL',r.cel)}</tr><tr>${L('DIRECCIÓN',r.direccion)}${L('PARENTESCO',r.parentesco)}</tr><tr>${L('VERIFICACIÓN',r.verificacion?r.verificacion.toUpperCase()+' · '+(r.verificadoPor||''):'PENDIENTE')}${L('NOTA',r.nota||'')}</tr></table>`).join('');
+  const w=window.open('','_blank'); if(!w){ alert('Permite ventanas emergentes para imprimir'); return; }
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Solicitud ${_solE(d.folio)}</title><style>
+    body{font-family:Arial,sans-serif;font-size:11px;margin:18px;color:#000}h1{font-size:15px;margin:0}h2{font-size:11px;background:#222;color:#fff;padding:3px 6px;margin:10px 0 3px}
+    table{width:100%;border-collapse:collapse;margin-bottom:3px}td{border:1px solid #999;padding:3px 5px;vertical-align:top}td.k{width:17%;font-weight:bold;background:#f1f1f1;font-size:9.5px}td.v{width:33%}
+    .leg{font-size:9.5px;line-height:1.4;margin-top:10px;text-align:justify}.firma{margin-top:36px;text-align:center}.firma div{border-top:1px solid #000;width:60%;margin:0 auto;padding-top:3px}@media print{button{display:none}}</style></head><body>
+    <div style="display:flex;justify-content:space-between"><div><h1>SOLICITUD DE CRÉDITO</h1><div>${_solE(d.brand)} · Sucursal ${_solE(d.sucursal)}</div></div><div style="text-align:right">Folio <b>${_solE(d.folio)}</b><br>Crédito número <b>${s.numCredito||1}</b><br>${s.fecha?new Date(s.fecha).toLocaleDateString('es-MX'):''}</div></div>
+    <h2>DATOS DEL CRÉDITO</h2><table><tr>${L('SOLICITADO',_solM(s.solicitado))}${L('PLAZO',s.plazoSolicitado)}</tr><tr>${L('OFERTA 1',s.oferta1?_solM(s.oferta1):'')}${L('PLAZO',s.plazoOferta1)}</tr><tr>${L('OFERTA 2',s.oferta2?_solM(s.oferta2):'')}${L('PLAZO',s.plazoOferta2)}</tr><tr>${L('OTORGADO',_solM(d.monto))}${L('CUOTA',_solM(d.cuota))}</tr></table>
+    <h2>DATOS DEL SOLICITANTE</h2><table><tr>${L('NOMBRE',c.nombre)}${L('CURP',c.curp)}</tr><tr>${L('APELLIDO PATERNO',s.apPaterno)}${L('APELLIDO MATERNO',s.apMaterno)}</tr>
+    <tr>${L('CALLE',c.calle)}${L('No. / INTERIOR',[s.numExt,s.numInt].filter(Boolean).join(' / '))}</tr><tr>${L('COLONIA',c.col)}${L('POBLACIÓN',s.poblacion)}</tr><tr>${L('CIUDAD',[c.ciudad,c.estado].filter(Boolean).join(', '))}${L('C.P.',s.cp)}</tr>
+    <tr>${L('CELULAR',c.tel)}${L('REF. DOMICILIO',c.ref)}</tr><tr>${L('FECHA NACIMIENTO',s.fechaNac)}${L('SEXO',s.sexo)}</tr><tr>${L('TIPO VIVIENDA',String(s.vivienda||'').toUpperCase())}${L('TIEMPO EN DOMICILIO',s.tiempoDomicilio)}</tr>
+    <tr>${L('ESTADO CIVIL',String(s.estadoCivil||'').toUpperCase())}${L('NÚMERO DE HIJOS',String(s.hijos||0))}</tr><tr>${L('ESCUELA DE HIJOS',s.escuelaHijos)}${L('COBRADOR',d.prom)}</tr></table>
+    <h2>DATOS LABORALES</h2><table><tr>${L('ACTIVIDAD PRINCIPAL',s.actividad)}${L('DIRECCIÓN TRABAJO',s.dirTrabajo)}</tr><tr>${L('INGRESO SEMANAL',_solM(s.ingresoSemanal))}${L('GASTO SEMANAL',_solM(s.gastoSemanal))}</tr></table>
+    ${d.aval?`<h2>AVAL</h2><table><tr>${L('NOMBRE',d.aval.nombre)}${L('TEL',d.aval.tel)}</tr><tr>${L('DOMICILIO',d.aval.domicilio)}${L('PARENTESCO',d.aval.parentesco)}</tr></table>`:''}
+    <h2>REFERENCIAS PERSONALES</h2>${refs}
+    <div class="leg">El solicitante manifiesta que tiene el consentimiento de proporcionar los datos de sus referidos para efectos de verificación y promoción. Asimismo otorga el consentimiento para que sean contactados por cualquier medio impreso, electrónico o presencial para gestiones de cobranza si es necesario.</div>
+    <div class="firma"><div>Nombre y firma del solicitante<br><b>${_solE(c.nombre)}</b></div></div>
+    ${(d.docs||[]).some(x=>(s.fotos||{})[x.tipo])?`<div style="page-break-before:always"><h2>DOCUMENTOS · ${_solE(d.folio)} · ${_solE(c.nombre)}</h2>${(d.docs||[]).map(x=>{const src=_solSrc((s.fotos||{})[x.tipo],d._ft); return src?`<div style="margin:6px 0 10px;text-align:center"><div style="font-weight:bold;margin-bottom:3px">${x.lbl.toUpperCase()}</div><img src="${location.origin}${src}" style="max-width:100%;max-height:${x.tipo==='comprobante'?'520':'300'}px;border:1px solid #999"></div>`:'';}).join('')}</div>`:''}
+    <div style="text-align:center;margin-top:14px"><button onclick="window.print()">🖨 Imprimir / Guardar PDF</button></div></body></html>`);
+  w.document.close();
+}
+/* ===== EXPEDIENTES: buscador y exportación (admin y sucursal) ===== */
+let _expRows=[],_expT=null;
+async function expInit(){
+  const ss=document.getElementById('exp-suc');
+  if(ss && !ss._ok){ ss._ok=1; try{ const l=await _solApi('GET','/api/sucursales'); ss.innerHTML='<option value="">Todas las sucursales</option>'+l.map(x=>`<option value="${x.id}">${_solE(x.nombre)}</option>`).join(''); }catch(e){ ss.style.display='none'; } }
+  expCargar();
+}
+function expBuscar(){ clearTimeout(_expT); _expT=setTimeout(()=>expCargar(),300); }
+async function expCargar(silencioso){
+  const b=document.getElementById('exp-body'); if(!b) return;
+  const g=id=>(document.getElementById(id)?.value||'').trim();
+  const qs=new URLSearchParams({q:g('exp-q'),sucursalId:g('exp-suc'),verif:g('exp-verif'),desde:g('exp-desde'),hasta:g('exp-hasta')});
+  if(!silencioso) b.innerHTML='<tr><td colspan="9" style="padding:14px;opacity:.7">⏳ Buscando…</td></tr>';
+  try{ const d=await _solApi('GET','/api/expedientes?'+qs.toString()); _expRows=d.rows||[];
+    const t=document.getElementById('exp-total'); if(t) t.textContent=d.total+' expediente'+(d.total===1?'':'s')+(d.total>_expRows.length?` (mostrando ${_expRows.length})`:'');
+    b.innerHTML=_expRows.map(r=>`<tr style="cursor:pointer" onclick="solAbrir(${r.saleId})">
+      <td style="white-space:nowrap">${_solE(r.fecha)}</td><td><b>${_solE(r.folio)}</b><div style="font-size:.72rem;opacity:.7">crédito #${r.numCredito} · ${_solE(r.estado)}</div></td>
+      <td><b>${_solE(r.cliente)}</b><div style="font-size:.72rem;opacity:.7">${_solE(r.curp)} · ${_solE(r.tel)}</div></td>
+      <td>${_solE(r.sucursal)}<div style="font-size:.72rem;opacity:.7">${_solE(r.prom)}</div></td>
+      <td style="text-align:right">${_solM(r.monto)}<div style="font-size:.72rem;opacity:.7">pidió ${_solM(r.solicitado)}</div></td>
+      <td style="text-align:right">${_solM(r.ingresoSemanal)}<div style="font-size:.72rem;opacity:.7">gasto ${_solM(r.gastoSemanal)}</div></td>
+      <td style="white-space:nowrap"><span style="color:#178a55">✓${r.refPos}</span> <span style="color:#d6432d">✗${r.refNeg}</span> <span style="color:#caa23a">⏳${r.refPend}</span></td>
+      <td style="white-space:nowrap;color:${r.docs===r.docsTotal?'#178a55':'#d6432d'};font-weight:700">📎 ${r.docs}/${r.docsTotal}</td>
+      <td style="text-align:right"><span style="color:#0e9f9a;font-weight:700">Abrir ›</span></td></tr>`).join('')||'<tr><td colspan="9" style="padding:14px;opacity:.7">Sin expedientes con esos filtros.</td></tr>';
+  }catch(e){ b.innerHTML='<tr><td colspan="9" style="padding:14px;color:#d6432d">'+_solE(e.message)+'</td></tr>'; }
+}
+function expExcel(){
+  if(!_expRows.length){ alert('No hay expedientes para exportar con esos filtros'); return; }
+  const H=[['Fecha','fecha'],['Folio','folio'],['Crédito #','numCredito'],['Estado','estado'],['Cliente','cliente'],['CURP','curp'],['Teléfono','tel'],['Fecha nac.','fechaNac'],['Sexo','sexo'],
+    ['Domicilio','domicilio'],['Vivienda','vivienda'],['Tiempo domicilio','tiempoDomicilio'],['Estado civil','estadoCivil'],['Hijos','hijos'],['Actividad','actividad'],['Dirección trabajo','dirTrabajo'],
+    ['Ingreso semanal','ingresoSemanal'],['Gasto semanal','gastoSemanal'],['Solicitado','solicitado'],['Plazo solicitado','plazoSolicitado'],['Oferta 1','oferta1'],['Oferta 2','oferta2'],
+    ['Modalidad','tipo'],['Plazo','plazo'],['Monto','monto'],['Cuota','cuota'],['Saldo','saldo'],['Sucursal','sucursal'],['Cobrador','prom'],
+    ['Referencia 1','ref1'],['Referencia 2','ref2'],['Ref. positivas','refPos'],['Ref. negativas','refNeg'],['Ref. pendientes','refPend'],['Documentos','docs'],['Capturó','capturadoPor']];
+  const aoa=[H.map(h=>h[0])].concat(_expRows.map(r=>H.map(h=>r[h[1]]==null?'':r[h[1]])));
+  const fn='expedientes_'+new Date().toISOString().slice(0,10);
+  try{ if(window.XLSX){ const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),'Expedientes'); XLSX.writeFile(wb,fn+'.xlsx'); return; } }catch(e){}
+  const csv='\ufeff'+aoa.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})); a.download=fn+'.csv'; a.click();
+}
+</script>
 </body>
 </html>
