@@ -2462,7 +2462,8 @@ app.get('/api/solicitudes-campo', auth, rol('admin', 'supervisor', 'sucursal', '
   if (!solOn()) return res.json({ rows: [], pendientes: 0 });
   const estado = String(req.query.estado || '');
   const sucMap = {}; db.sucursales.forEach(x => sucMap[x.id] = x.nombre);
-  const mias = (db.solicitudesCampo || []).filter(x => scAcceso(req, x));
+  const fsuc = req.query.sucursalId ? Number(req.query.sucursalId) : null;   // admin/supervisor: filtro opcional
+  const mias = (db.solicitudesCampo || []).filter(x => scAcceso(req, x) && (fsuc == null || Number(x.sucursalId) === fsuc));
   const rows = mias.filter(x => !estado || x.estado === estado)
     .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)))
     .slice(0, 300)
@@ -2475,7 +2476,9 @@ app.get('/api/solicitudes-campo', auth, rol('admin', 'supervisor', 'sucursal', '
       lat: x.lat, lng: x.lng, folio: x.folio || null, saleId: x.saleId || null,
       resueltoPor: x.resueltoPor || '', fechaResuelta: x.fechaResuelta || '', motivo: x.motivo || '',
       reincidente: !!x.reincidente, rechazosPrevios: x.rechazosPrevios || [] }));
-  res.json({ rows, pendientes: mias.filter(x => x.estado === 'pendiente').length });
+  const cuenta = e => mias.filter(x => x.estado === e).length;
+  res.json({ rows, pendientes: cuenta('pendiente'),
+    totales: { pendiente: cuenta('pendiente'), convertida: cuenta('convertida'), rechazada: cuenta('rechazada'), total: mias.length } });
 });
 // Detalle completo (incluye fotos como marcas "foto:N") para precargar la captura en sucursal.
 app.get('/api/solicitudes-campo/:id', auth, rol('admin', 'supervisor', 'sucursal', 'jc', 'cobrador'), solGuard, (req, res) => {
