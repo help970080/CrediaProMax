@@ -2207,6 +2207,9 @@ app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) 
     _scOrigen = (db.solicitudesCampo || []).find(y => y.id === +req.body.solicitudCampoId);
     if (!_scOrigen) return res.status(404).json({ error: 'La solicitud de campo no existe' });
     if (_scOrigen.estado !== 'pendiente') return res.status(409).json({ error: 'Esa solicitud ya fue ' + _scOrigen.estado });
+    /* Aprobar a alguien con rechazos previos se permite, pero queda asentado en el expediente. */
+    if (_scOrigen.reincidente && !req.body.confirmarReincidente)
+      return res.status(409).json({ error: 'solicitud_reincidente', detalle: 'A esta persona ya se le rechazó una solicitud antes.', rechazosPrevios: _scOrigen.rechazosPrevios || [] });
     if (req.user.rol === 'sucursal' && Number(_scOrigen.sucursalId) !== Number(req.user.sucursalId || 0))
       return res.status(403).json({ error: 'Esa solicitud es de otra sucursal' });
   }
@@ -2323,7 +2326,8 @@ app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) 
      se aparta aquí; se asigna hasta la entrega, que es cuando el aparato sale de la vitrina. */
   if (_prodVenta) { sale.productoId = _prodVenta.id; sale.producto = prodLbl(_prodVenta); sale.entregaMonto = 0; }
   if (_solVenta) {
-    if (_scOrigen) { _solVenta.origen = 'campo'; _solVenta.levantadaPor = _scOrigen.cobrador; _solVenta.fechaCampo = _scOrigen.fecha; }
+    if (_scOrigen) { _solVenta.origen = 'campo'; _solVenta.levantadaPor = _scOrigen.cobrador; _solVenta.fechaCampo = _scOrigen.fecha;
+      if (_scOrigen.reincidente) { _solVenta.reincidente = true; _solVenta.rechazosPrevios = _scOrigen.rechazosPrevios || []; } }
     const _cd = solDeCurp(client.curp);
     const ahora = new Date().toISOString();
     _solVenta.referencias.forEach(r => { if (r.verificacion) { r.verificadoPor = req.user.nombre; r.verificadoRol = req.user.rol; r.verificadoAt = ahora; } });
@@ -2425,6 +2429,9 @@ app.post('/api/solicitudes-campo', auth, rol('admin', 'supervisor', 'sucursal', 
   if (falta.length) return res.status(400).json({ error: 'solicitud_incompleta', detalle: 'Faltan datos del cliente: ' + falta.join(', ') });
   const v = solLimpiar(req.body.solicitud);
   if (v.error) return res.status(400).json({ error: 'solicitud_incompleta', detalle: v.error });
+  /* La verificación de referencias NO se captura en campo: el gerente de sucursal está obligado a
+     marcarla él mismo al revisar el expediente. Si viniera algo en el body, se ignora. */
+  (v.sol.referencias || []).forEach(r => { r.verificacion = ''; delete r.verificadoPor; delete r.verificadoRol; delete r.verificadoAt; });
   const suc = req.user.sucursalId || (req.body.sucursalId ? +req.body.sucursalId : null);
   if (!suc) return res.status(400).json({ error: 'Tu usuario no tiene sucursal asignada. Pídele al administrador que te la asigne.' });
   const cd = solDeCurp(curp);
@@ -2437,6 +2444,17 @@ app.post('/api/solicitudes-campo', auth, rol('admin', 'supervisor', 'sucursal', 
     lat: (req.body.lat != null && isFinite(+req.body.lat)) ? +req.body.lat : null,
     lng: (req.body.lng != null && isFinite(+req.body.lng)) ? +req.body.lng : null,
   };
+  /* Rastro de reincidencia: una solicitud rechazada NUNCA se borra, así que si vuelven a meter a la
+     misma persona (aunque sea otro cobrador u otra sucursal) queda marcada y la sucursal lo ve. */
+  const previas = (db.solicitudesCampo || []).filter(y => y.cliente.curp === curp && y.id !== x.id);
+  const rech = previas.filter(y => y.estado === 'rechazada');
+  if (rech.length) {
+    const u = rech[rech.length - 1];
+    x.reincidente = true;
+    x.rechazosPrevios = rech.map(y => ({ id: y.id, fecha: y.fechaResuelta || y.fecha, cobrador: y.cobrador, motivo: y.motivo || '', por: y.resueltoPor || '' }));
+    db.solicitudesCampo.push(x); saveDB();
+    return res.status(201).json({ ok: true, id: x.id, aviso: `Ojo: a esta persona ya se le rechazó una solicitud el ${String(u.fechaResuelta || u.fecha).slice(0, 10)} (${u.motivo || 'sin motivo'}). Se envía marcada para que tu sucursal lo revise.` });
+  }
   db.solicitudesCampo.push(x); saveDB();
   res.status(201).json({ ok: true, id: x.id });
 });
@@ -2455,7 +2473,8 @@ app.get('/api/solicitudes-campo', auth, rol('admin', 'supervisor', 'sucursal', '
       solicitado: x.solicitud.solicitado, plazoSolicitado: x.solicitud.plazoSolicitado,
       ingresoSemanal: x.solicitud.ingresoSemanal, gastoSemanal: x.solicitud.gastoSemanal,
       lat: x.lat, lng: x.lng, folio: x.folio || null, saleId: x.saleId || null,
-      resueltoPor: x.resueltoPor || '', fechaResuelta: x.fechaResuelta || '', motivo: x.motivo || '' }));
+      resueltoPor: x.resueltoPor || '', fechaResuelta: x.fechaResuelta || '', motivo: x.motivo || '',
+      reincidente: !!x.reincidente, rechazosPrevios: x.rechazosPrevios || [] }));
   res.json({ rows, pendientes: mias.filter(x => x.estado === 'pendiente').length });
 });
 // Detalle completo (incluye fotos como marcas "foto:N") para precargar la captura en sucursal.
@@ -2544,7 +2563,8 @@ app.get('/api/expedientes', auth, rol('admin', 'supervisor', 'sucursal'), solGua
       ref1: refs[0] ? `${refs[0].nombre} (${refs[0].parentesco}) ${refs[0].cel} · ${refs[0].verificacion || 'pendiente'}` : '',
       ref2: refs[1] ? `${refs[1].nombre} (${refs[1].parentesco}) ${refs[1].cel} · ${refs[1].verificacion || 'pendiente'}` : '',
       refPos: pos, refNeg: neg, refPend: pend, docs, docsTotal: SOL_DOCS.length, capturadoPor: so.capturadoPor || '',
-      origen: so.origen === 'campo' ? 'Campo' : 'Sucursal', levantadaPor: so.levantadaPor || '' });
+      origen: so.origen === 'campo' ? 'Campo' : 'Sucursal', levantadaPor: so.levantadaPor || '',
+      rechazosPrevios: (so.rechazosPrevios || []).length });
   }
   out.sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)) || b.saleId - a.saleId);
   res.json({ total: out.length, rows: out.slice(0, 2000) });
