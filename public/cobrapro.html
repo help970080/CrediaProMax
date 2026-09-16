@@ -625,7 +625,25 @@
 
   <!-- ENCUESTAS -->
   <section class="view" id="solicitud">
-    <div class="panel">
+    <div class="panel" style="padding-bottom:6px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn gold" id="sv-t-exp" onclick="svVista('exp')">🗂 Expedientes (créditos)</button>
+        <button class="btn" id="sv-t-tra" onclick="svVista('tra')">🕓 Solicitudes en trámite <span id="sv-badge" style="display:none;background:#d6432d;color:#fff;border-radius:9px;padding:1px 6px;font-size:.7rem;margin-left:3px"></span></button>
+      </div>
+    </div>
+    <div class="panel" id="sv-tra" style="display:none">
+      <div class="ph"><h3>Solicitudes en trámite</h3><span class="hint">levantadas por los cobradores · seguimiento hasta que se autorizan o se rechazan</span></div>
+      <div id="sv-kpi" style="display:flex;gap:10px;flex-wrap:wrap;margin:12px 0"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <input id="sv-q" placeholder="🔍 Cliente, CURP o cobrador" oninput="svBuscar()" style="flex:1 1 240px">
+        <select id="sv-estado" onchange="svCargar()"><option value="">Todos los estados</option><option value="pendiente">Pendientes</option><option value="convertida">Autorizadas</option><option value="rechazada">Rechazadas</option></select>
+        <select id="sv-suc" onchange="svCargar()"><option value="">Todas las sucursales</option></select>
+        <button class="btn" onclick="svCargar()">↻ Actualizar</button>
+        <button class="btn gold" onclick="svExcel()">⬇ Excel</button>
+      </div>
+      <div style="overflow-x:auto"><table><thead><tr><th>Fecha</th><th>Cliente</th><th>Cobrador</th><th>Sucursal</th><th class="n">Pide</th><th class="n">Disponible</th><th>Estado</th><th></th></tr></thead><tbody id="sv-body"></tbody></table></div>
+    </div>
+    <div class="panel" id="sv-exp">
       <div class="ph"><h3>Expedientes</h3><span class="hint">solicitud de crédito · referencias · INE y comprobante</span>
         <button class="btn gold" style="margin-left:auto" onclick="expExcel()">⬇ Exportar Excel</button></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0">
@@ -3630,7 +3648,7 @@ document.querySelectorAll('.navitem').forEach(n=>{ if(!n.dataset.v) return; n.on
   if(n.dataset.v==='bandeja') cargarBandeja();
   if(n.dataset.v==='inicio') cargarInicio();
   if(n.dataset.v==='convenios') cargarConvenios();
-  if(n.dataset.v==='solicitud') expInit();
+  if(n.dataset.v==='solicitud'){ expInit(); svCargar(); }
   if(n.dataset.v==='vobo') cargarVoBo();
   if(n.dataset.v==='rastreo') initRastreo();
   if(n.dataset.v==='transferencias'){ _trSel.clear(); trInit(); $('tr-resultados').innerHTML='<div style="color:var(--faint);padding:12px;font-size:.85rem">Elige un cobrador o busca un cliente para empezar.</div>'; $('tr-toolbar').style.display='none'; $('tr-batchbar').style.display='none'; trCargarLog(); }
@@ -5241,6 +5259,105 @@ function solImprimir(){
     <div style="text-align:center;margin-top:14px"><button onclick="window.print()">🖨 Imprimir / Guardar PDF</button></div></body></html>`);
   w.document.close();
 }
+/* ===== SEGUIMIENTO DE SOLICITUDES EN TRÁMITE (admin / supervisor) =====
+   Expedientes solo lista créditos YA creados. Esto muestra las solicitudes desde que el cobrador
+   las levanta: pendientes, autorizadas y rechazadas, de todas las sucursales. */
+let _svRows=[], _svT=null;
+function svVista(v){
+  const tra=v==='tra';
+  document.getElementById('sv-tra').style.display=tra?'':'none';
+  document.getElementById('sv-exp').style.display=tra?'none':'';
+  document.getElementById('sv-t-tra').className=tra?'btn gold':'btn';
+  document.getElementById('sv-t-exp').className=tra?'btn':'btn gold';
+  if(tra) svCargar();
+}
+function svBuscar(){ clearTimeout(_svT); _svT=setTimeout(()=>svPintar(),250); }
+async function svCargar(){
+  const b=document.getElementById('sv-body'); if(!b) return;
+  const ss=document.getElementById('sv-suc');
+  if(ss && !ss._ok){ ss._ok=1; try{ const l=await _solApi('GET','/api/sucursales'); ss.innerHTML='<option value="">Todas las sucursales</option>'+l.map(x=>`<option value="${x.id}">${_solE(x.nombre)}</option>`).join(''); }catch(e){} }
+  const qs=new URLSearchParams(); const e=(document.getElementById('sv-estado')||{}).value||''; const su=(document.getElementById('sv-suc')||{}).value||'';
+  if(e) qs.set('estado',e); if(su) qs.set('sucursalId',su);
+  b.innerHTML='<tr><td colspan="8" style="padding:14px;opacity:.7">⏳ Cargando…</td></tr>';
+  try{
+    const d=await _solApi('GET','/api/solicitudes-campo'+(qs.toString()?('?'+qs.toString()):''));
+    _svRows=d.rows||[];
+    const t=d.totales||{};
+    const kpi=(lbl,val,col)=>`<div style="flex:1 1 130px;background:var(--surf-2,rgba(128,128,128,.07));border:1px solid var(--line,rgba(128,128,128,.25));border-radius:10px;padding:10px 12px">
+      <div style="font-size:.72rem;opacity:.7;text-transform:uppercase;letter-spacing:.04em">${lbl}</div><div style="font-size:1.5rem;font-weight:700;color:${col}">${val||0}</div></div>`;
+    document.getElementById('sv-kpi').innerHTML=kpi('Pendientes',t.pendiente,'#caa23a')+kpi('Autorizadas',t.convertida,'var(--grn,#178a55)')+kpi('Rechazadas',t.rechazada,'var(--red,#d6432d)')+kpi('Total',t.total,'inherit');
+    const bg=document.getElementById('sv-badge'); if(bg){ bg.style.display=t.pendiente?'':'none'; bg.textContent=t.pendiente||''; }
+    svPintar();
+  }catch(err){ b.innerHTML='<tr><td colspan="8" style="padding:14px;color:#d6432d">'+_solE(err.message)+'</td></tr>'; }
+}
+function svFiltradas(){
+  const q=((document.getElementById('sv-q')||{}).value||'').trim().toLowerCase();
+  return !q?_svRows:_svRows.filter(r=>[r.cliente,r.curp,r.cobrador,r.tel,r.domicilio].join(' ').toLowerCase().includes(q));
+}
+function svPintar(){
+  const b=document.getElementById('sv-body'); if(!b) return;
+  const C={pendiente:['#caa23a','⏳ Pendiente'],convertida:['var(--grn,#178a55)','✓ Autorizada'],rechazada:['var(--red,#d6432d)','✗ Rechazada']};
+  b.innerHTML=svFiltradas().map(r=>{ const [col,lbl]=C[r.estado]||C.pendiente; const disp=(r.ingresoSemanal||0)-(r.gastoSemanal||0);
+    const dias=Math.floor((Date.now()-new Date(r.fecha).getTime())/86400000);
+    return `<tr style="cursor:pointer" onclick="svVer(${r.id})">
+      <td style="white-space:nowrap">${String(r.fecha).slice(0,10).split('-').reverse().join('/')}${r.estado==='pendiente'&&dias>2?`<div style="font-size:.7rem;color:#d6432d">${dias} días sin resolver</div>`:''}</td>
+      <td><b>${_solE(r.cliente)}</b><div style="font-size:.72rem;opacity:.7">${_solE(r.curp)}</div>${r.reincidente?'<div style="font-size:.7rem;color:#d6432d;font-weight:700">⚠ con rechazo previo</div>':''}</td>
+      <td>${_solE(r.cobrador)}</td><td>${_solE(r.sucursal)}</td>
+      <td class="n">${_solM(r.solicitado)}<div style="font-size:.72rem;opacity:.7">${_solE(r.plazoSolicitado)}</div></td>
+      <td class="n" style="color:${disp>0?'var(--grn,#178a55)':'var(--red,#d6432d)'}">${_solM(disp)}</td>
+      <td style="white-space:nowrap;color:${col};font-weight:700">${lbl}${r.folio?`<div style="font-size:.72rem;opacity:.8">${_solE(r.folio)}</div>`:''}${r.motivo?`<div style="font-size:.7rem;opacity:.8">${_solE(r.motivo)}</div>`:''}</td>
+      <td class="n"><span style="color:#0e9f9a;font-weight:700">Ver ›</span></td></tr>`;
+  }).join('')||'<tr><td colspan="8" style="padding:14px;opacity:.7">Sin solicitudes con esos filtros.</td></tr>';
+}
+async function svVer(id){
+  const o=_solOv(); o.innerHTML='<div style="background:var(--surf,#fff);color:var(--txt,#1b2330);border-radius:12px;padding:18px;max-width:560px;width:100%">⏳ Cargando…</div>'; o.style.display='flex';
+  try{
+    const d=await _solApi('GET','/api/solicitudes-campo/'+id); const x=d.solicitudCampo, c=x.cliente, s=x.solicitud;
+    const ft=await _solFotoTok();
+    const fila=(k,v)=>`<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid rgba(128,128,128,.15);font-size:.84rem"><span style="flex:0 0 42%;opacity:.7">${k}</span><span style="flex:1;font-weight:600">${v||'—'}</span></div>`;
+    const sec=t=>`<div style="font-weight:700;font-size:.78rem;letter-spacing:.04em;text-transform:uppercase;opacity:.75;margin:14px 0 4px">${t}</div>`;
+    const C={pendiente:['#caa23a','⏳ Pendiente de que la sucursal la resuelva'],convertida:['#178a55','✓ Autorizada'],rechazada:['#d6432d','✗ Rechazada']};
+    const [col,lbl]=C[x.estado]||C.pendiente;
+    o.innerHTML=`<div style="background:var(--surf,#fff);color:var(--txt,#1b2330);border-radius:12px;padding:18px;max-width:560px;width:100%">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0;font-size:1.05rem">📋 ${_solE(c.nombre)}</h3><button onclick="solCerrar()" style="border:none;background:transparent;color:inherit;font-size:1.3rem;cursor:pointer">✕</button></div>
+      <div style="font-size:.8rem;opacity:.75;margin-top:2px">Levantó ${_solE(x.cobrador)} · ${new Date(x.fecha).toLocaleDateString('es-MX')} · ${_solE(d.sucursal)}</div>
+      <div style="margin-top:8px;font-weight:700;color:${col};font-size:.86rem">${lbl}${x.folio?' · '+_solE(x.folio):''}${x.resueltoPor?` · ${_solE(x.resueltoPor)}`:''}</div>
+      ${x.motivo?`<div style="font-size:.82rem;color:#d6432d;margin-top:4px">Motivo: ${_solE(x.motivo)}</div>`:''}
+      ${x.reincidente?`<div style="background:rgba(214,67,45,.09);border:1px solid #d6432d;border-radius:8px;padding:9px 11px;margin-top:9px;font-size:.8rem;color:#d6432d;line-height:1.5">
+        <b>⚠ A esta persona ya se le rechazó una solicitud.</b>${(x.rechazosPrevios||[]).map(y=>`<div style="margin-top:3px">• ${String(y.fecha).slice(0,10)} · ${_solE(y.cobrador)} · ${_solE(y.motivo||'sin motivo')}</div>`).join('')}</div>`:''}
+      ${sec('Cliente')}${fila('CURP',_solE(c.curp))}${fila('Nacimiento · sexo',_solE(s.fechaNac)+' · '+_solE(s.sexo))}${fila('Celular',_solE(c.tel))}
+      ${fila('Domicilio',_solE([c.calle,s.numExt&&('No. '+s.numExt),s.numInt&&('Int. '+s.numInt),c.col,s.poblacion,c.ciudad,c.estado,s.cp&&('CP '+s.cp)].filter(Boolean).join(', ')))}
+      ${fila('Vivienda',_solE(s.vivienda)+' · '+_solE(s.tiempoDomicilio))}${fila('Estado civil · hijos',_solE(s.estadoCivil)+' · '+(s.hijos||0))}
+      ${sec('Pide')}${fila('Monto y plazo',_solM(s.solicitado)+' · '+_solE(s.plazoSolicitado))}
+      ${sec('Trabajo')}${fila('Actividad',_solE(s.actividad))}${fila('Ingreso semanal',_solM(s.ingresoSemanal))}${fila('Gasto semanal',_solM(s.gastoSemanal))}${fila('Disponible',_solM((s.ingresoSemanal||0)-(s.gastoSemanal||0)))}
+      ${sec('Documentos')}<div style="display:flex;gap:8px;flex-wrap:wrap">${[['ineFrente','INE frente'],['ineReverso','INE reverso'],['comprobante','Comprobante']].map(([k,l])=>{const src=_solSrc((s.fotos||{})[k],ft);
+        return `<div style="flex:1 1 140px;border:1px solid rgba(128,128,128,.3);border-radius:9px;padding:6px;text-align:center;font-size:.74rem"><div style="font-weight:700;margin-bottom:4px">${l}</div>
+          ${src?`<a href="${src}" target="_blank"><img src="${src}" style="width:100%;height:100px;object-fit:cover;border-radius:6px"></a>`:'<div style="height:100px;display:flex;align-items:center;justify-content:center;color:#d6432d">Falta</div>'}</div>`;}).join('')}</div>
+      ${sec('Referencias')}${(s.referencias||[]).map((r,i)=>`<div style="border:1px solid rgba(128,128,128,.3);border-radius:9px;padding:9px;margin-top:7px;font-size:.82rem">
+        <b>${i+1}. ${_solE(r.nombre)}</b> <span style="opacity:.7">(${_solE(r.parentesco)})</span><br>📞 ${_solE(r.cel)}${r.direccion?' · '+_solE(r.direccion):''}
+        <div style="margin-top:3px;font-weight:700;color:${r.verificacion==='positiva'?'#178a55':(r.verificacion==='negativa'?'#d6432d':'#caa23a')}">${r.verificacion?r.verificacion.toUpperCase():'Pendiente de verificar'}</div></div>`).join('')}
+      <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
+        ${x.lat!=null?`<a class="btn" style="flex:1;text-decoration:none;text-align:center" href="https://maps.google.com/?q=${x.lat},${x.lng}" target="_blank">📍 Domicilio</a>`:''}
+        ${x.estado==='pendiente'&&d.puedeResolver?`<button class="btn" style="flex:1;border-color:#d6432d;color:#d6432d" onclick="svRechazar(${x.id})">✗ Rechazar</button>`:''}
+        <button class="btn" style="flex:1" onclick="solCerrar()">Cerrar</button></div>
+      ${x.estado==='pendiente'?'<div style="font-size:.76rem;opacity:.7;margin-top:10px;line-height:1.45">El crédito lo captura la sucursal desde su bandeja, con el monto que autorice.</div>':''}</div>`;
+  }catch(e){ o.innerHTML='<div style="background:var(--surf,#fff);color:var(--txt,#1b2330);border-radius:12px;padding:18px;max-width:560px;width:100%">'+_solE(e.message)+'<div style="margin-top:12px;text-align:right"><button class="btn" onclick="solCerrar()">Cerrar</button></div></div>'; }
+}
+async function svRechazar(id){
+  const m=prompt('¿Por qué se rechaza? (lo verá el cobrador y queda en el historial)','');
+  if(m===null) return;
+  try{ await _solApi('POST','/api/solicitudes-campo/'+id+'/rechazar',{motivo:m}); solCerrar(); svCargar(); }
+  catch(e){ alert(e.message); }
+}
+function svExcel(){
+  const rows=svFiltradas();
+  if(!rows.length){ alert('No hay solicitudes para exportar'); return; }
+  const H=[['Fecha','fecha'],['Estado','estado'],['Cliente','cliente'],['CURP','curp'],['Teléfono','tel'],['Domicilio','domicilio'],['Cobrador','cobrador'],['Sucursal','sucursal'],
+    ['Solicitado','solicitado'],['Plazo','plazoSolicitado'],['Ingreso semanal','ingresoSemanal'],['Gasto semanal','gastoSemanal'],['Folio','folio'],['Resolvió','resueltoPor'],['Fecha resuelta','fechaResuelta'],['Motivo','motivo']];
+  const aoa=[H.map(h=>h[0])].concat(rows.map(r=>H.map(h=>{const v=r[h[1]]; return v==null?'':(h[1].startsWith('fecha')?String(v).slice(0,10):v);})));
+  xlsxDL('solicitudes_en_tramite_'+new Date().toISOString().slice(0,10),[{name:'En trámite',aoa}]);
+}
+
 /* ===== EXPEDIENTES: buscador y exportación (admin y sucursal) ===== */
 let _expRows=[],_expT=null;
 async function expInit(){
