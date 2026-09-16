@@ -1140,14 +1140,14 @@ function limpiarSolicitud(){
   SOL_IDS.forEach(id=>{const e=document.getElementById(id); if(e) e.value='';});
   const c=document.getElementById('s-cons'); if(c) c.checked=false;
   const m=document.getElementById('sol-msg'); if(m) m.textContent='';
-  _solApMan=false; _solPrevCurp=''; SOL_FOTOS={}; if(typeof SC_PEND!=='undefined' && SC_PEND){ SC_PEND=null; try{ scAviso(); }catch(e){} }
+  _solApMan=false; _solPrevCurp=''; SOL_FOTOS={}; if(typeof SC_PEND!=='undefined' && SC_PEND){ SC_PEND=null; SC_REINC=false; try{ scAviso(); }catch(e){} }
   ['ineFrente','ineReverso','comprobante'].forEach(k=>{ const v=document.getElementById('sd-'+k+'-v'); if(v){ v.textContent='📷 Tomar'; v.style.color=''; } });
 }
 
 /* ===== BANDEJA: solicitudes levantadas por el cobrador en campo =====
    Convertir NO duplica lógica: precarga el formulario de Nuevo crédito y la sucursal captura la
    venta normal mandando solicitudCampoId, así corren los mismos candados de buró y duplicados. */
-let SC_PEND=null, _scRows=[];
+let SC_PEND=null, SC_REINC=false, _scRows=[];
 async function scCargar(silencioso){
   if(!SOL_ON) return;
   const w=document.getElementById('sc-lista');
@@ -1179,11 +1179,15 @@ async function scCargar(silencioso){
             <button class="btn" style="font-size:.8rem;border-color:var(--red);color:var(--red)" onclick="scRechazar(${r.id})">✗ Rechazar</button>`:''}
           ${r.folio?`<span style="font-size:.78rem;color:var(--grn);align-self:center">→ ${_solE(r.folio)}</span>`:''}
         </div>
-        ${r.motivo?`<div style="font-size:.78rem;color:var(--red);margin-top:6px">Motivo: ${_solE(r.motivo)}</div>`:''}</div>`;
+        ${r.motivo?`<div style="font-size:.78rem;color:var(--red);margin-top:6px">Motivo: ${_solE(r.motivo)}</div>`:''}
+        ${r.reincidente?`<div style="background:rgba(214,67,45,.09);border:1px solid var(--red);border-radius:8px;padding:8px 10px;margin-top:8px;font-size:.78rem;color:var(--red);line-height:1.5">
+          <b>⚠ Ya se le rechazó antes${r.rechazosPrevios.length>1?` (${r.rechazosPrevios.length} veces)`:''}.</b>
+          ${r.rechazosPrevios.map(x=>`<div style="margin-top:3px">• ${String(x.fecha).slice(0,10)} · ${_solE(x.cobrador)} · ${_solE(x.motivo||'sin motivo')} <span style="opacity:.75">(${_solE(x.por)})</span></div>`).join('')}</div>`:''}</div>`;
     }).join('')||'<div style="color:var(--faint);padding:12px;font-size:.85rem">Sin solicitudes con ese filtro.</div>';
   }catch(e){ if(w && !silencioso) w.innerHTML='<div style="color:var(--red);padding:12px;font-size:.85rem">'+_solE(e.message)+'</div>'; }
 }
 async function scVer(id){
+  _scVerif={};
   const o=_solOv(); o.innerHTML='<div style="background:var(--surf);border-radius:12px;padding:18px;max-width:560px;width:100%">⏳ Cargando…</div>'; o.style.display='flex';
   try{
     const d=await api('GET','/api/solicitudes-campo/'+id); const x=d.solicitudCampo, c=x.cliente, s=x.solicitud;
@@ -1193,6 +1197,8 @@ async function scVer(id){
     o.innerHTML=`<div style="background:var(--surf);color:var(--txt);border-radius:12px;padding:18px;max-width:560px;width:100%">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0;font-size:1.05rem">📋 Solicitud de campo</h3><button onclick="solCerrar()" style="border:none;background:transparent;color:inherit;font-size:1.3rem;cursor:pointer">✕</button></div>
       <div style="font-size:.8rem;opacity:.75;margin-top:2px">Levantó ${_solE(x.cobrador)} · ${new Date(x.fecha).toLocaleDateString('es-MX')} · ${_solE(d.sucursal)}</div>
+      ${x.reincidente?`<div style="background:rgba(214,67,45,.09);border:1px solid var(--red);border-radius:8px;padding:9px 11px;margin-top:9px;font-size:.8rem;color:var(--red);line-height:1.5">
+        <b>⚠ A esta persona ya se le rechazó una solicitud.</b>${(x.rechazosPrevios||[]).map(y=>`<div style="margin-top:3px">• ${String(y.fecha).slice(0,10)} · ${_solE(y.cobrador)} · ${_solE(y.motivo||'sin motivo')}</div>`).join('')}</div>`:''}
       ${sec('Cliente')}${fila('Nombre',_solE(c.nombre))}${fila('CURP',_solE(c.curp))}${fila('Nacimiento · sexo',_solE(s.fechaNac)+' · '+_solE(s.sexo))}${fila('Celular',_solE(c.tel))}
       ${fila('Domicilio',_solE([c.calle,s.numExt&&('No. '+s.numExt),s.numInt&&('Int. '+s.numInt),c.col,s.poblacion,c.ciudad,c.estado,s.cp&&('CP '+s.cp)].filter(Boolean).join(', ')))}${c.ref?fila('Seña',_solE(c.ref)):''}
       ${fila('Vivienda',_solE(s.vivienda)+' · '+_solE(s.tiempoDomicilio))}${fila('Estado civil · hijos',_solE(s.estadoCivil)+' · '+(s.hijos||0))}
@@ -1203,11 +1209,20 @@ async function scVer(id){
           ${src?`<a href="${src}" target="_blank"><img src="${src}" style="width:100%;height:100px;object-fit:cover;border-radius:6px"></a>`:'<div style="height:100px;display:flex;align-items:center;justify-content:center;color:var(--red)">Falta</div>'}</div>`;}).join('')}</div>
       ${sec('Referencias')}${(s.referencias||[]).map((r,i)=>`<div style="border:1px solid var(--line);border-radius:9px;padding:9px;margin-top:7px;font-size:.82rem">
         <b>${i+1}. ${_solE(r.nombre)}</b> <span style="opacity:.7">(${_solE(r.parentesco)})</span><br>📞 <a href="tel:${_solE(r.cel)}" style="color:inherit">${_solE(r.cel)}</a>${r.direccion?' · '+_solE(r.direccion):''}
-        <div style="margin-top:3px;font-weight:700;color:${r.verificacion==='positiva'?'var(--grn)':(r.verificacion==='negativa'?'var(--red)':'#caa23a')}">${r.verificacion?r.verificacion.toUpperCase():'Pendiente de verificar'}</div></div>`).join('')}
+        <div style="margin-top:3px;font-weight:700;color:${r.verificacion==='positiva'?'var(--grn)':(r.verificacion==='negativa'?'var(--red)':'#caa23a')}" id="scv-${i}">${r.verificacion?r.verificacion.toUpperCase():'Pendiente de verificar'}</div>
+        <div style="display:flex;gap:6px;margin-top:7px"><button class="btn" style="flex:1;font-size:.78rem;border-color:var(--grn);color:var(--grn)" onclick="scVerif(${i},'positiva')">✓ Positiva</button>
+          <button class="btn" style="flex:1;font-size:.78rem;border-color:var(--red);color:var(--red)" onclick="scVerif(${i},'negativa')">✗ Negativa</button></div></div>`).join('')}
       <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
         ${x.estado==='pendiente'&&d.puedeResolver?`<button class="btn" style="flex:1;border-color:var(--grn);color:var(--grn)" onclick="solCerrar();scUsar(${x.id})">➕ Capturar crédito</button>`:''}
         <button class="btn" style="flex:1" onclick="solCerrar()">Cerrar</button></div></div>`;
   }catch(e){ o.innerHTML='<div style="background:var(--surf);border-radius:12px;padding:18px;max-width:560px;width:100%">'+_solE(e.message)+'<div style="margin-top:12px;text-align:right"><button class="btn" onclick="solCerrar()">Cerrar</button></div></div>'; }
+}
+/* El gerente marca la verificación en la solicitud de campo ANTES de capturar el crédito. */
+let _scVerif={};
+function scVerif(i,v){
+  _scVerif[i]=v;
+  const el=document.getElementById('scv-'+i);
+  if(el){ el.textContent=v.toUpperCase(); el.style.color=v==='positiva'?'var(--grn)':'var(--red)'; }
 }
 /* Precarga el formulario de Nuevo crédito con lo que levantó el cobrador. La sucursal decide
    monto, plazo y ruta; el alta se manda con solicitudCampoId para cerrar el borrador. */
@@ -1221,11 +1236,19 @@ async function scUsar(id){
     put('s-next',s.numExt); put('s-nint',s.numInt); put('s-pob',s.poblacion); put('s-cp',s.cp);
     put('s-viv',s.vivienda); put('s-tdom',s.tiempoDomicilio); put('s-civ',s.estadoCivil); put('s-hij',s.hijos||''); put('s-esc',s.escuelaHijos);
     put('s-act',s.actividad); put('s-dtra',s.dirTrabajo); put('s-ing',s.ingresoSemanal||''); put('s-gas',s.gastoSemanal||'');
-    (s.referencias||[]).slice(0,2).forEach((r,i)=>{ put(`s-r${i+1}-nom`,r.nombre); put(`s-r${i+1}-cel`,r.cel); put(`s-r${i+1}-par`,r.parentesco); put(`s-r${i+1}-dir`,r.direccion); put(`s-r${i+1}-ver`,r.verificacion); });
+    /* El cobrador nunca verifica: si el gerente no marcó las referencias en el expediente, aquí se
+       le obliga antes de dejarlo capturar. */
+    const _vf=(s.referencias||[]).map((r,i)=>_scVerif[i]||r.verificacion||'');
+    if((s.referencias||[]).length && _vf.some(v=>!v)){
+      toast('Primero verifica las 2 referencias: abre 👁 Ver expediente y márcalas positiva o negativa');
+      scVer(id); return;
+    }
+    (s.referencias||[]).slice(0,2).forEach((r,i)=>{ put(`s-r${i+1}-nom`,r.nombre); put(`s-r${i+1}-cel`,r.cel); put(`s-r${i+1}-par`,r.parentesco); put(`s-r${i+1}-dir`,r.direccion); put(`s-r${i+1}-ver`,_vf[i]); });
     const cons=document.getElementById('s-cons'); if(cons) cons.checked=true;
     SOL_FOTOS=Object.assign({},s.fotos||{});
     ['ineFrente','ineReverso','comprobante'].forEach(k=>{ const v=document.getElementById('sd-'+k+'-v'); if(v){ v.textContent=SOL_FOTOS[k]?'✓ del cobrador':'📷 Tomar'; v.style.color=SOL_FOTOS[k]?'var(--grn)':''; } });
-    _solApMan=true; _solPrevCurp=c.curp; SC_PEND=x.id;
+    if(x.reincidente && !confirm('⚠ A esta persona ya se le rechazó una solicitud antes'+((x.rechazosPrevios||[]).map(y=>'\n• '+String(y.fecha).slice(0,10)+' · '+(y.motivo||'sin motivo')).join(''))+'\n\n¿Aun así vas a capturarle el crédito?')) return;
+    _solApMan=true; _solPrevCurp=c.curp; SC_PEND=x.id; SC_REINC=!!x.reincidente;
     const mt=document.getElementById('n-monto'); if(mt && s.solicitado) mt.value=s.solicitado;
     try{ calc(); }catch(e){}
     document.querySelector('.tab[data-v="nuevo"]').click();
@@ -1273,10 +1296,11 @@ async function crearCredito(){
   const _avalPend=leerAval(); if(_avalPend==='ERR') return;
   const _solPend=leerSolicitud(); if(_solPend==='ERR') return;
   const _scId=SC_PEND||undefined;
+  const _scConf=SC_PEND&&SC_REINC?true:undefined;   // el gerente ya confirmó el antecedente de rechazo
   const ref=(document.getElementById('n-ref')?.value||'').trim();
   // fetch directo para poder leer el 409 estructurado de validación
   try{
-    const r=await fetch('/api/sales',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+TOKEN},body:JSON.stringify({nombre,tel,calle,col,ciudad,estado,curp,ref,prom:(prom||EQ_PROM),tipo:t,plazo,monto,dias:plazo,articulos:leerArticulos(),aval:_avalPend,productoId:_eq,solicitud:_solPend||undefined,solicitudCampoId:_scId})});
+    const r=await fetch('/api/sales',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+TOKEN},body:JSON.stringify({nombre,tel,calle,col,ciudad,estado,curp,ref,prom:(prom||EQ_PROM),tipo:t,plazo,monto,dias:plazo,articulos:leerArticulos(),aval:_avalPend,productoId:_eq,solicitud:_solPend||undefined,solicitudCampoId:_scId,confirmarReincidente:_scConf})});
     const d=await r.json().catch(()=>({}));
     if(r.status===202 && d.voBo){
       document.getElementById('overlay').innerHTML=`<div class="modal">
@@ -1316,7 +1340,7 @@ async function crearCredito(){
     ['n-cli','n-tel','n-calle','n-col','n-ref','n-curp','n-ciudad','n-estado'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
     {const _bs=document.getElementById('buro-sem'); if(_bs)_bs.style.display='none'; _buroLast='';}
     resetArticulos(); eqReset(); if(EQ_ON) eqCargar(); limpiarSolicitud();
-    if(SC_PEND){ SC_PEND=null; scAviso(); scCargar(true); }
+    if(SC_PEND){ SC_PEND=null; SC_REINC=false; scAviso(); scCargar(true); }
     render(); _buscar();
     toast(`✓ ${d.folio} capturado · cuota ${fmt(d.cuota)}`+(d.producto?` · ${d.producto} por entregar`:` · en ruta de ${String(prom||EQ_PROM).split(' ')[0]}`));
     mostrarPagareCapturado(d.id, d.folio);
@@ -2452,7 +2476,7 @@ async function expCargar(silencioso){
     b.innerHTML=_expRows.map(r=>`<tr style="cursor:pointer" onclick="solAbrir(${r.saleId})">
       <td style="white-space:nowrap">${_solE(r.fecha)}</td><td><b>${_solE(r.folio)}</b><div style="font-size:.72rem;opacity:.7">crédito #${r.numCredito} · ${_solE(r.estado)}</div></td>
       <td><b>${_solE(r.cliente)}</b><div style="font-size:.72rem;opacity:.7">${_solE(r.curp)} · ${_solE(r.tel)}</div></td>
-      <td>${_solE(r.sucursal)}<div style="font-size:.72rem;opacity:.7">${_solE(r.prom)}</div><div style="font-size:.68rem;opacity:.6">${r.origen==='Campo'?('📋 campo · '+_solE(r.levantadaPor)):'🏢 sucursal'}</div></td>
+      <td>${_solE(r.sucursal)}<div style="font-size:.72rem;opacity:.7">${_solE(r.prom)}</div><div style="font-size:.68rem;opacity:.6">${r.origen==='Campo'?('📋 campo · '+_solE(r.levantadaPor)):'🏢 sucursal'}</div>${r.rechazosPrevios?`<div style="font-size:.68rem;color:#d6432d;font-weight:700">⚠ con rechazo previo</div>`:''}</td>
       <td style="text-align:right">${_solM(r.monto)}<div style="font-size:.72rem;opacity:.7">pidió ${_solM(r.solicitado)}</div></td>
       <td style="text-align:right">${_solM(r.ingresoSemanal)}<div style="font-size:.72rem;opacity:.7">gasto ${_solM(r.gastoSemanal)}</div></td>
       <td style="white-space:nowrap"><span style="color:#178a55">✓${r.refPos}</span> <span style="color:#d6432d">✗${r.refNeg}</span> <span style="color:#caa23a">⏳${r.refPend}</span></td>
