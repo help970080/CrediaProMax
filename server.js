@@ -409,7 +409,7 @@ function blankTenant(brandNombre, adminUser, adminPass, adminNombre) {
     users: [{ id: 1, nombre: adminNombre || 'Administrador', usuario: (adminUser || 'admin').toLowerCase(), rol: 'admin', sucursalId: null, passwordHash: bcrypt.hashSync(adminPass || 'admin123', 8), activo: true, createdAt: new Date().toISOString() }],
     sucursales: [], clients: [], sales: [], movimientos: [], caja: {}, porEntregar: [],
     productos: [], inventario: [],
-    encuestas: [], encuestasEnvios: [], encuestasResp: [],
+    encuestas: [], encuestasEnvios: [], encuestasResp: [], solicitudesCampo: [],
     gestiones: [], cortes: [], transferencias: [], recolecciones: [], jcEntregas: [], jcCierres: [], asignaciones: [], contactos: [], cierresSemana: [],
     objetivos: { suc: {}, cob: {} },
     config: { corteAutoHora: '19:00', corteAutoDias: [1, 2, 3, 4, 5, 6], semanaInicio: 4, brand: { nombre: brandNombre || 'CobraPro' }, tarifas: JSON.parse(JSON.stringify(DEFAULT_TARIFAS)), modulosOff: ['inventario', 'encuestas', 'credito14', 'solicitud'], _invSeed: 1, _encSeed: 1, _s14Seed: 1, _solSeed: 1 }, _idem: {}
@@ -466,6 +466,7 @@ function normalizeTenant(b) {
     if (!b.config.modulosOff.includes('solicitud')) b.config.modulosOff.push('solicitud');
     b.config._solSeed = 1;
   }
+  b.solicitudesCampo = b.solicitudesCampo || [];
   b._idem = b._idem || {};
   if(b.config.creditosVoz == null) b.config.creditosVoz = 0;
   b.config.voz = b.config.voz || { despacho:'', acreedor:'', telContacto:'', whatsapp:'' };
@@ -2198,6 +2199,18 @@ app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) 
   if (s14Bloqueado(tipo)) return res.status(403).json({ error: S14_OFF_MSG });
   /* Solicitud obligatoria con el módulo prendido. Se valida ANTES del buró y de crear el cliente
      para no dejar clientes huérfanos ni solicitudes de Vo.Bo sin expediente. */
+  /* Conversión de una solicitud levantada en campo: se valida ANTES de crear nada y se marca
+     convertida hasta el final, para que un rechazo por buró o duplicado la deje pendiente. */
+  let _scOrigen = null;
+  if (req.body.solicitudCampoId) {
+    if (!solOn()) return res.status(403).json({ error: 'El módulo de solicitud de crédito no está activo en esta agencia' });
+    _scOrigen = (db.solicitudesCampo || []).find(y => y.id === +req.body.solicitudCampoId);
+    if (!_scOrigen) return res.status(404).json({ error: 'La solicitud de campo no existe' });
+    if (_scOrigen.estado !== 'pendiente') return res.status(409).json({ error: 'Esa solicitud ya fue ' + _scOrigen.estado });
+    if (req.user.rol === 'sucursal' && Number(_scOrigen.sucursalId) !== Number(req.user.sucursalId || 0))
+      return res.status(403).json({ error: 'Esa solicitud es de otra sucursal' });
+  }
+
   let _solVenta = null;
   if (solOn()) {
     const _sv = solLimpiar(req.body.solicitud);
@@ -2310,6 +2323,7 @@ app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) 
      se aparta aquí; se asigna hasta la entrega, que es cuando el aparato sale de la vitrina. */
   if (_prodVenta) { sale.productoId = _prodVenta.id; sale.producto = prodLbl(_prodVenta); sale.entregaMonto = 0; }
   if (_solVenta) {
+    if (_scOrigen) { _solVenta.origen = 'campo'; _solVenta.levantadaPor = _scOrigen.cobrador; _solVenta.fechaCampo = _scOrigen.fecha; }
     const _cd = solDeCurp(client.curp);
     const ahora = new Date().toISOString();
     _solVenta.referencias.forEach(r => { if (r.verificacion) { r.verificadoPor = req.user.nombre; r.verificadoRol = req.user.rol; r.verificadoAt = ahora; } });
@@ -2326,6 +2340,10 @@ app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) 
   // Productos que descuentan el primer pago: se registra de inmediato como abono (el cliente recibe monto − primer pago)
   if (r.descuentaPP && r.primerPago > 0) {
     movAdd({ id: nextId('movimientos'), saleId: sale.id, fecha: fechaMxHoyDDMM(), concepto: 'Primer pago descontado al inicio', origen: 'Origen del crédito', cargo: 0, abono: r.primerPago, forma: 'descuento', sucursalCobro: sucCred, sucursalCredito: sucCred });
+  }
+  if (_scOrigen) {
+    _scOrigen.estado = 'convertida'; _scOrigen.saleId = sale.id; _scOrigen.folio = sale.folio;
+    _scOrigen.resueltoPor = req.user.nombre; _scOrigen.fechaResuelta = new Date().toISOString();
   }
   saveDB();
   const nCreditos = db.sales.filter(s => s.clientId === client.id).length;
@@ -2382,11 +2400,87 @@ app.get('/api/solicitudes/verificar', auth, rol('admin', 'supervisor', 'sucursal
     .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha))).slice(0, 100));
 });
 
+/* ---------- SOLICITUDES DE CAMPO (borradores levantados por el cobrador) ----------
+   El cobrador levanta la solicitud EN EL DOMICILIO del prospecto, con fotos y GPS, pero NO crea
+   crédito: queda un borrador sin folio ni saldo que no toca cartera, caja ni reportes. La sucursal
+   la revisa y la convierte capturando la venta normal (POST /api/sales con solicitudCampoId), así
+   los candados de buró, duplicados y Vo.Bo corren igual que en cualquier alta. */
+function scAcceso(req, x) {
+  const u = req.user;
+  if (u.rol === 'admin' || u.rol === 'supervisor') return true;
+  if (u.rol === 'sucursal' || u.rol === 'jc') return Number(x.sucursalId) === Number(u.sucursalId || 0);
+  if (u.rol === 'cobrador') return x.cobrador === u.nombre;
+  return false;
+}
+function scResolver(req) { return ['admin', 'supervisor', 'sucursal'].includes(req.user.rol); }
+app.post('/api/solicitudes-campo', auth, rol('admin', 'supervisor', 'sucursal', 'jc', 'cobrador'), solGuard, (req, res) => {
+  const c = req.body.cliente || {};
+  const nombre = _solT(c.nombre, 90);
+  const curp = _solT(c.curp, 18).toUpperCase();
+  const calle = _solT(c.calle, 120), col = _solT(c.col, 80);
+  const falta = [];
+  if (!nombre) falta.push('nombre del cliente');
+  if (!/^[A-Z]{4}\d{6}[A-Z0-9]{8}$/.test(curp)) falta.push('CURP válida (18 caracteres del INE)');
+  if (!calle || !col) falta.push('domicilio (calle y colonia)');
+  if (falta.length) return res.status(400).json({ error: 'solicitud_incompleta', detalle: 'Faltan datos del cliente: ' + falta.join(', ') });
+  const v = solLimpiar(req.body.solicitud);
+  if (v.error) return res.status(400).json({ error: 'solicitud_incompleta', detalle: v.error });
+  const suc = req.user.sucursalId || (req.body.sucursalId ? +req.body.sucursalId : null);
+  if (!suc) return res.status(400).json({ error: 'Tu usuario no tiene sucursal asignada. Pídele al administrador que te la asigne.' });
+  const cd = solDeCurp(curp);
+  const x = {
+    id: nextId('solicitudesCampo'), fecha: new Date().toISOString(), estado: 'pendiente',
+    cobrador: req.user.nombre, rolOrigen: req.user.rol, sucursalId: +suc,
+    cliente: { nombre, tel: String(c.tel || '').replace(/\D/g, '').slice(0, 15), calle, col,
+      ciudad: _solT(c.ciudad, 60), estado: _solT(c.estado, 60), curp, ref: _solT(c.ref, 160) },
+    solicitud: Object.assign(v.sol, { fechaNac: cd.fechaNac, sexo: cd.sexo, capturadoPor: req.user.nombre }),
+    lat: (req.body.lat != null && isFinite(+req.body.lat)) ? +req.body.lat : null,
+    lng: (req.body.lng != null && isFinite(+req.body.lng)) ? +req.body.lng : null,
+  };
+  db.solicitudesCampo.push(x); saveDB();
+  res.status(201).json({ ok: true, id: x.id });
+});
+app.get('/api/solicitudes-campo', auth, rol('admin', 'supervisor', 'sucursal', 'jc', 'cobrador'), (req, res) => {
+  if (!solOn()) return res.json({ rows: [], pendientes: 0 });
+  const estado = String(req.query.estado || '');
+  const sucMap = {}; db.sucursales.forEach(x => sucMap[x.id] = x.nombre);
+  const mias = (db.solicitudesCampo || []).filter(x => scAcceso(req, x));
+  const rows = mias.filter(x => !estado || x.estado === estado)
+    .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)))
+    .slice(0, 300)
+    .map(x => ({ id: x.id, fecha: x.fecha, estado: x.estado, cobrador: x.cobrador,
+      sucursalId: x.sucursalId, sucursal: sucMap[x.sucursalId] || '',
+      cliente: x.cliente.nombre, curp: x.cliente.curp, tel: x.cliente.tel,
+      domicilio: [x.cliente.calle, x.cliente.col, x.cliente.ciudad].filter(Boolean).join(', '),
+      solicitado: x.solicitud.solicitado, plazoSolicitado: x.solicitud.plazoSolicitado,
+      ingresoSemanal: x.solicitud.ingresoSemanal, gastoSemanal: x.solicitud.gastoSemanal,
+      lat: x.lat, lng: x.lng, folio: x.folio || null, saleId: x.saleId || null,
+      resueltoPor: x.resueltoPor || '', fechaResuelta: x.fechaResuelta || '', motivo: x.motivo || '' }));
+  res.json({ rows, pendientes: mias.filter(x => x.estado === 'pendiente').length });
+});
+// Detalle completo (incluye fotos como marcas "foto:N") para precargar la captura en sucursal.
+app.get('/api/solicitudes-campo/:id', auth, rol('admin', 'supervisor', 'sucursal', 'jc', 'cobrador'), solGuard, (req, res) => {
+  const x = (db.solicitudesCampo || []).find(y => y.id === +req.params.id);
+  if (!x) return res.status(404).json({ error: 'Solicitud no encontrada' });
+  if (!scAcceso(req, x)) return res.status(403).json({ error: 'Permiso insuficiente' });
+  const suc = db.sucursales.find(y => y.id === x.sucursalId);
+  res.json({ solicitudCampo: x, sucursal: suc ? suc.nombre : '', puedeResolver: scResolver(req) });
+});
+app.post('/api/solicitudes-campo/:id/rechazar', auth, rol('admin', 'supervisor', 'sucursal'), solGuard, (req, res) => {
+  const x = (db.solicitudesCampo || []).find(y => y.id === +req.params.id);
+  if (!x) return res.status(404).json({ error: 'Solicitud no encontrada' });
+  if (!scAcceso(req, x)) return res.status(403).json({ error: 'Permiso insuficiente' });
+  if (x.estado !== 'pendiente') return res.status(409).json({ error: 'Esa solicitud ya fue ' + x.estado });
+  x.estado = 'rechazada'; x.resueltoPor = req.user.nombre; x.fechaResuelta = new Date().toISOString();
+  x.motivo = _solT(req.body.motivo, 200);
+  saveDB();
+  res.json({ ok: true });
+});
 /* ---------- Documentos del expediente (INE frente/reverso y comprobante) ----------
    La foto se sube SOLA, en cuanto se toma, y regresa la marca "foto:N". La venta solo lleva marcas:
    si hay 409 por duplicado o Vo.Bo, el reintento no vuelve a subir nada y el payload del Vo.Bo no
    mete imágenes al bloque. Sin FLAG_FOTOS+PostgreSQL se rechaza en vez de inflar el bloque. */
-app.post('/api/solicitud/foto', auth, rol('admin', 'supervisor', 'sucursal'), solGuard, async (req, res) => {
+app.post('/api/solicitud/foto', auth, rol('admin', 'supervisor', 'sucursal', 'jc', 'cobrador'), solGuard, async (req, res) => {
   const tipo = String(req.body.tipo || '');
   if (!SOL_DOCS.includes(tipo)) return res.status(400).json({ error: 'Tipo de documento inválido' });
   const img = String(req.body.imagen || '');
@@ -2449,7 +2543,8 @@ app.get('/api/expedientes', auth, rol('admin', 'supervisor', 'sucursal'), solGua
       actividad: so.actividad, dirTrabajo: so.dirTrabajo, ingresoSemanal: so.ingresoSemanal, gastoSemanal: so.gastoSemanal,
       ref1: refs[0] ? `${refs[0].nombre} (${refs[0].parentesco}) ${refs[0].cel} · ${refs[0].verificacion || 'pendiente'}` : '',
       ref2: refs[1] ? `${refs[1].nombre} (${refs[1].parentesco}) ${refs[1].cel} · ${refs[1].verificacion || 'pendiente'}` : '',
-      refPos: pos, refNeg: neg, refPend: pend, docs, docsTotal: SOL_DOCS.length, capturadoPor: so.capturadoPor || '' });
+      refPos: pos, refNeg: neg, refPend: pend, docs, docsTotal: SOL_DOCS.length, capturadoPor: so.capturadoPor || '',
+      origen: so.origen === 'campo' ? 'Campo' : 'Sucursal', levantadaPor: so.levantadaPor || '' });
   }
   out.sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)) || b.saleId - a.saleId);
   res.json({ total: out.length, rows: out.slice(0, 2000) });
@@ -5673,7 +5768,7 @@ app.get('/api/admin/salud', auth, rol('admin'), async (req, res) => {
   res.json(out);
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v30', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, objetivoCartera: true, asignEnviadasFix: true, buro: true, numDiariosSuc: true, contactosParcial: true, resetFondo: true, soloEfectivo: true, reindexUsuarios: true, resetPassCobradores: true, limpiarCobradores: true, importLoginFix: true, loginAutoRepair: true, actualizarCuotas: true, cuotaPorFolio: true, metaSuc100: true, eliminarEntrega: true, cobradoSemana: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, s14: true, s14Modulo: true, mostrarMembrete: true, oplog: true, salud: true, inventario: true, solicitud: true, expedientes: true, ts: Date.now() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, version: 'numdiarios-v30', importBulk: true, geoZonas: true, muniFallback: true, backup: true, s21s31: true, comisConfig: true, articulos: true, ppNoComis: true, rutaCobradoHoy: true, porCobrarFiltro: true, entregasAgencia: true, asignaciones: true, sucScope: true, numerosDiarios: true, noPagos: true, contactos: true, ranking: true, objetivos100: true, semanaConfig: true, crecimiento: true, cierreSemana: true, voz: true, aging: true, atrasoCiclo: true, moraDebito: true, cobranzaSemanaCobrador: true, cartasContactos: true, ayudaFAQ: true, ayudaIA: true, metaSemanalCobrador: true, objetivoCartera: true, asignEnviadasFix: true, buro: true, numDiariosSuc: true, contactosParcial: true, resetFondo: true, soloEfectivo: true, reindexUsuarios: true, resetPassCobradores: true, limpiarCobradores: true, importLoginFix: true, loginAutoRepair: true, actualizarCuotas: true, cuotaPorFolio: true, metaSuc100: true, eliminarEntrega: true, cobradoSemana: true, pagoExterno: true, recibirEfectivoCobrador: true, pl: true, s14: true, s14Modulo: true, mostrarMembrete: true, oplog: true, salud: true, inventario: true, solicitud: true, expedientes: true, solCampo: true, ts: Date.now() }));
 
 /* ---------- Transferencias de cliente entre cobradores ---------- */
 app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
