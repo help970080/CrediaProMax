@@ -5259,7 +5259,7 @@ async function expCargar(silencioso){
     b.innerHTML=_expRows.map(r=>`<tr style="cursor:pointer" onclick="solAbrir(${r.saleId})">
       <td style="white-space:nowrap">${_solE(r.fecha)}</td><td><b>${_solE(r.folio)}</b><div style="font-size:.72rem;opacity:.7">crédito #${r.numCredito} · ${_solE(r.estado)}</div></td>
       <td><b>${_solE(r.cliente)}</b><div style="font-size:.72rem;opacity:.7">${_solE(r.curp)} · ${_solE(r.tel)}</div></td>
-      <td>${_solE(r.sucursal)}<div style="font-size:.72rem;opacity:.7">${_solE(r.prom)}</div></td>
+      <td>${_solE(r.sucursal)}<div style="font-size:.72rem;opacity:.7">${_solE(r.prom)}</div><div style="font-size:.68rem;opacity:.6">${r.origen==='Campo'?('📋 campo · '+_solE(r.levantadaPor)):'🏢 sucursal'}</div></td>
       <td style="text-align:right">${_solM(r.monto)}<div style="font-size:.72rem;opacity:.7">pidió ${_solM(r.solicitado)}</div></td>
       <td style="text-align:right">${_solM(r.ingresoSemanal)}<div style="font-size:.72rem;opacity:.7">gasto ${_solM(r.gastoSemanal)}</div></td>
       <td style="white-space:nowrap"><span style="color:#178a55">✓${r.refPos}</span> <span style="color:#d6432d">✗${r.refNeg}</span> <span style="color:#caa23a">⏳${r.refPend}</span></td>
@@ -5273,7 +5273,7 @@ function expExcel(){
     ['Domicilio','domicilio'],['Vivienda','vivienda'],['Tiempo domicilio','tiempoDomicilio'],['Estado civil','estadoCivil'],['Hijos','hijos'],['Actividad','actividad'],['Dirección trabajo','dirTrabajo'],
     ['Ingreso semanal','ingresoSemanal'],['Gasto semanal','gastoSemanal'],['Solicitado','solicitado'],['Plazo solicitado','plazoSolicitado'],
     ['Modalidad','tipo'],['Plazo','plazo'],['Monto','monto'],['Cuota','cuota'],['Saldo','saldo'],['Sucursal','sucursal'],['Cobrador','prom'],
-    ['Referencia 1','ref1'],['Referencia 2','ref2'],['Ref. positivas','refPos'],['Ref. negativas','refNeg'],['Ref. pendientes','refPend'],['Documentos','docs'],['Capturó','capturadoPor']];
+    ['Referencia 1','ref1'],['Referencia 2','ref2'],['Ref. positivas','refPos'],['Ref. negativas','refNeg'],['Ref. pendientes','refPend'],['Documentos','docs'],['Capturó','capturadoPor'],['Origen','origen'],['Levantó en campo','levantadaPor']];
   const aoa=[H.map(h=>h[0])].concat(_expRows.map(r=>H.map(h=>r[h[1]]==null?'':r[h[1]])));
   const fn='expedientes_'+new Date().toISOString().slice(0,10);
   try{ if(window.XLSX){ const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),'Expedientes'); XLSX.writeFile(wb,fn+'.xlsx'); return; } }catch(e){}
