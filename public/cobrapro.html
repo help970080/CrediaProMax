@@ -5187,7 +5187,7 @@ function _solPinta(){
   o.innerHTML=`<div style="background:var(--surf,#fff);color:var(--txt,#1b2330);border-radius:12px;padding:18px;max-width:560px;width:100%">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0;font-size:1.05rem">📋 Solicitud · ${_solE(d.folio)}</h3><button onclick="solCerrar()" style="border:none;background:transparent;color:inherit;font-size:1.3rem;cursor:pointer">✕</button></div>
     <div style="font-size:.8rem;opacity:.75;margin-top:2px">Crédito número ${s.numCredito||1} · capturó ${_solE(s.capturadoPor)} · ${s.fecha?new Date(s.fecha).toLocaleDateString('es-MX'):''}</div>
-    ${sec('Datos del crédito')}${fila('Solicitado',_solM(s.solicitado)+' · '+_solE(s.plazoSolicitado))}${s.oferta1?fila('Oferta 1',_solM(s.oferta1)+' · '+_solE(s.plazoOferta1)):''}${s.oferta2?fila('Oferta 2',_solM(s.oferta2)+' · '+_solE(s.plazoOferta2)):''}${fila('Otorgado',_solM(d.monto)+' · cuota '+_solM(d.cuota))}
+    ${sec('Datos del crédito')}${fila('Solicitado',_solM(s.solicitado)+' · '+_solE(s.plazoSolicitado))}${fila('Otorgado',_solM(d.monto)+' · cuota '+_solM(d.cuota))}
     ${sec('Solicitante')}${fila('Nombre',_solE(c.nombre))}${fila('Apellidos',_solE([s.apPaterno,s.apMaterno].filter(Boolean).join(' / ')))}${fila('CURP',_solE(c.curp))}${fila('Nacimiento · sexo',_solE(s.fechaNac)+' · '+_solE(s.sexo))}${fila('Celular',_solE(c.tel))}
     ${fila('Domicilio',_solE([c.calle,s.numExt&&('No. '+s.numExt),s.numInt&&('Int. '+s.numInt),c.col,s.poblacion,c.ciudad,c.estado,s.cp&&('CP '+s.cp)].filter(Boolean).join(', ')))}${c.ref?fila('Referencias domicilio',_solE(c.ref)):''}
     ${fila('Vivienda',_solE(s.vivienda)+' · '+_solE(s.tiempoDomicilio))}${fila('Estado civil · hijos',_solE(s.estadoCivil)+' · '+(s.hijos||0))}${s.escuelaHijos?fila('Escuela de los hijos',_solE(s.escuelaHijos)):''}
@@ -5227,7 +5227,7 @@ function solImprimir(){
     table{width:100%;border-collapse:collapse;margin-bottom:3px}td{border:1px solid #999;padding:3px 5px;vertical-align:top}td.k{width:17%;font-weight:bold;background:#f1f1f1;font-size:9.5px}td.v{width:33%}
     .leg{font-size:9.5px;line-height:1.4;margin-top:10px;text-align:justify}.firma{margin-top:36px;text-align:center}.firma div{border-top:1px solid #000;width:60%;margin:0 auto;padding-top:3px}@media print{button{display:none}}</style></head><body>
     <div style="display:flex;justify-content:space-between"><div><h1>SOLICITUD DE CRÉDITO</h1><div>${_solE(d.brand)} · Sucursal ${_solE(d.sucursal)}</div></div><div style="text-align:right">Folio <b>${_solE(d.folio)}</b><br>Crédito número <b>${s.numCredito||1}</b><br>${s.fecha?new Date(s.fecha).toLocaleDateString('es-MX'):''}</div></div>
-    <h2>DATOS DEL CRÉDITO</h2><table><tr>${L('SOLICITADO',_solM(s.solicitado))}${L('PLAZO',s.plazoSolicitado)}</tr><tr>${L('OFERTA 1',s.oferta1?_solM(s.oferta1):'')}${L('PLAZO',s.plazoOferta1)}</tr><tr>${L('OFERTA 2',s.oferta2?_solM(s.oferta2):'')}${L('PLAZO',s.plazoOferta2)}</tr><tr>${L('OTORGADO',_solM(d.monto))}${L('CUOTA',_solM(d.cuota))}</tr></table>
+    <h2>DATOS DEL CRÉDITO</h2><table><tr>${L('SOLICITADO',_solM(s.solicitado))}${L('PLAZO',s.plazoSolicitado)}</tr><tr>${L('OTORGADO',_solM(d.monto))}${L('CUOTA',_solM(d.cuota))}</tr></table>
     <h2>DATOS DEL SOLICITANTE</h2><table><tr>${L('NOMBRE',c.nombre)}${L('CURP',c.curp)}</tr><tr>${L('APELLIDO PATERNO',s.apPaterno)}${L('APELLIDO MATERNO',s.apMaterno)}</tr>
     <tr>${L('CALLE',c.calle)}${L('No. / INTERIOR',[s.numExt,s.numInt].filter(Boolean).join(' / '))}</tr><tr>${L('COLONIA',c.col)}${L('POBLACIÓN',s.poblacion)}</tr><tr>${L('CIUDAD',[c.ciudad,c.estado].filter(Boolean).join(', '))}${L('C.P.',s.cp)}</tr>
     <tr>${L('CELULAR',c.tel)}${L('REF. DOMICILIO',c.ref)}</tr><tr>${L('FECHA NACIMIENTO',s.fechaNac)}${L('SEXO',s.sexo)}</tr><tr>${L('TIPO VIVIENDA',String(s.vivienda||'').toUpperCase())}${L('TIEMPO EN DOMICILIO',s.tiempoDomicilio)}</tr>
@@ -5271,7 +5271,7 @@ function expExcel(){
   if(!_expRows.length){ alert('No hay expedientes para exportar con esos filtros'); return; }
   const H=[['Fecha','fecha'],['Folio','folio'],['Crédito #','numCredito'],['Estado','estado'],['Cliente','cliente'],['CURP','curp'],['Teléfono','tel'],['Fecha nac.','fechaNac'],['Sexo','sexo'],
     ['Domicilio','domicilio'],['Vivienda','vivienda'],['Tiempo domicilio','tiempoDomicilio'],['Estado civil','estadoCivil'],['Hijos','hijos'],['Actividad','actividad'],['Dirección trabajo','dirTrabajo'],
-    ['Ingreso semanal','ingresoSemanal'],['Gasto semanal','gastoSemanal'],['Solicitado','solicitado'],['Plazo solicitado','plazoSolicitado'],['Oferta 1','oferta1'],['Oferta 2','oferta2'],
+    ['Ingreso semanal','ingresoSemanal'],['Gasto semanal','gastoSemanal'],['Solicitado','solicitado'],['Plazo solicitado','plazoSolicitado'],
     ['Modalidad','tipo'],['Plazo','plazo'],['Monto','monto'],['Cuota','cuota'],['Saldo','saldo'],['Sucursal','sucursal'],['Cobrador','prom'],
     ['Referencia 1','ref1'],['Referencia 2','ref2'],['Ref. positivas','refPos'],['Ref. negativas','refNeg'],['Ref. pendientes','refPend'],['Documentos','docs'],['Capturó','capturadoPor']];
   const aoa=[H.map(h=>h[0])].concat(_expRows.map(r=>H.map(h=>r[h[1]]==null?'':r[h[1]])));
