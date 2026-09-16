@@ -786,8 +786,6 @@ function solLimpiar(b) {
   }));
   const sol = {
     solicitado: _solN(b.solicitado), plazoSolicitado: _solT(b.plazoSolicitado, 20),
-    oferta1: _solN(b.oferta1), plazoOferta1: _solT(b.plazoOferta1, 20),
-    oferta2: _solN(b.oferta2), plazoOferta2: _solT(b.plazoOferta2, 20),
     apPaterno: _solT(b.apPaterno, 40).toUpperCase(), apMaterno: _solT(b.apMaterno, 40).toUpperCase(),
     numExt: _solT(b.numExt, 12), numInt: _solT(b.numInt, 12), poblacion: _solT(b.poblacion, 60),
     cp: String(b.cp || '').replace(/\D/g, '').slice(0, 5),
@@ -2446,7 +2444,7 @@ app.get('/api/expedientes', auth, rol('admin', 'supervisor', 'sucursal'), solGua
       domicilio: [c.calle, so.numExt && ('No. ' + so.numExt), so.numInt && ('Int. ' + so.numInt), c.col, so.poblacion, c.ciudad, c.estado, so.cp && ('CP ' + so.cp)].filter(Boolean).join(', '),
       sucursal: sucMap[s.sucursalId] || '', prom: s.prom || '', numCredito: so.numCredito || 1, tipo: s.tipo, plazo: s.plazo, monto: s.monto, cuota: s.cuota,
       saldo: Math.round(saldo), estado: saldo > 0 ? 'Activo' : 'Liquidado',
-      solicitado: so.solicitado, plazoSolicitado: so.plazoSolicitado, oferta1: so.oferta1, oferta2: so.oferta2,
+      solicitado: so.solicitado, plazoSolicitado: so.plazoSolicitado,
       fechaNac: so.fechaNac, sexo: so.sexo, vivienda: so.vivienda, tiempoDomicilio: so.tiempoDomicilio, estadoCivil: so.estadoCivil, hijos: so.hijos,
       actividad: so.actividad, dirTrabajo: so.dirTrabajo, ingresoSemanal: so.ingresoSemanal, gastoSemanal: so.gastoSemanal,
       ref1: refs[0] ? `${refs[0].nombre} (${refs[0].parentesco}) ${refs[0].cel} · ${refs[0].verificacion || 'pendiente'}` : '',
