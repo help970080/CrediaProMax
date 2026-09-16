@@ -243,7 +243,19 @@
       <div class="tabs">
         <button class="tab on" data-v="nuevo">Nuevo crédito</button>
         <button class="tab" data-v="corte">Corte de caja</button>
+        <button class="tab" data-v="expedientes" id="tab-exp" style="display:none">Expedientes</button>
       </div>
+      <section class="view" id="expedientes">
+        <div class="ph-sub" style="margin-top:-6px">Solicitudes de crédito con sus documentos. Toca un expediente para verlo, verificar referencias o imprimir.</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+          <input id="exp-q" placeholder="🔍 Nombre, CURP, folio o teléfono" oninput="expBuscar()" style="flex:1 1 220px">
+          <select id="exp-verif" onchange="expCargar()"><option value="">Todos</option><option value="pendientes">Referencias pendientes</option><option value="negativas">Con referencia negativa</option><option value="completas">Verificados positivos</option><option value="sindocs">Documentos incompletos</option></select>
+          <input id="exp-desde" type="date" onchange="expCargar()" title="Desde"><input id="exp-hasta" type="date" onchange="expCargar()" title="Hasta">
+          <button class="btn" onclick="expExcel()">⬇ Excel</button>
+        </div>
+        <div id="exp-total" style="font-size:.76rem;color:var(--dim);margin-bottom:6px"></div>
+        <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.82rem"><thead><tr style="text-align:left;color:var(--dim)"><th>Fecha</th><th>Folio</th><th>Cliente</th><th>Sucursal</th><th style="text-align:right">Monto</th><th style="text-align:right">Ingreso</th><th>Refs</th><th>Docs</th><th></th></tr></thead><tbody id="exp-body"></tbody></table></div>
+      </section>
       <section class="view on" id="nuevo">
         <div class="ph-sub" style="margin-top:-6px">El crédito que el cliente firma en sucursal. Se asigna a un cobrador y entra a su ruta de inmediato.</div>
         <div class="sect-lbl">Datos del cliente</div>
@@ -266,6 +278,94 @@
         <div class="frow">
           <div class="field"><label>Ciudad / municipio <span class="req">*</span></label><input id="n-ciudad" placeholder="Ciudad o municipio"></div>
           <div class="field"><label>Estado <span class="req">*</span></label><input id="n-estado" placeholder="Estado"></div>
+        </div>
+        <!-- SOLICITUD DE CRÉDITO (módulo 'solicitud'). Solo se muestra si el módulo está prendido.
+             No repite lo que ya está arriba (nombre, CURP, tel, domicilio, aval). Sin datos del cónyuge. -->
+        <div id="sol-box" style="display:none">
+          <div class="sect-lbl">Solicitud de crédito</div>
+          <div id="sol-msg" style="font-size:.76rem;color:var(--dim);margin:-4px 0 10px"></div>
+          <div class="frow">
+            <div class="field"><label>Monto solicitado <span class="req">*</span></label><input id="s-sol" type="number" inputmode="numeric" placeholder="$"></div>
+            <div class="field"><label>Plazo solicitado <span class="req">*</span></label><input id="s-psol" placeholder="Ej. 17 semanas"></div>
+          </div>
+          <div class="frow">
+            <div class="field"><label>Oferta 1</label><input id="s-of1" type="number" inputmode="numeric" placeholder="$"></div>
+            <div class="field"><label>Plazo oferta 1</label><input id="s-pof1" placeholder="Plazo"></div>
+          </div>
+          <div class="frow">
+            <div class="field"><label>Oferta 2</label><input id="s-of2" type="number" inputmode="numeric" placeholder="$"></div>
+            <div class="field"><label>Plazo oferta 2</label><input id="s-pof2" placeholder="Plazo"></div>
+          </div>
+          <div class="frow">
+            <div class="field"><label>Apellido paterno <span class="req">*</span></label><input id="s-appat" style="text-transform:uppercase"></div>
+            <div class="field"><label>Apellido materno</label><input id="s-apmat" style="text-transform:uppercase"></div>
+          </div>
+          <div class="frow">
+            <div class="field"><label>No. exterior</label><input id="s-next"></div>
+            <div class="field"><label>Interior</label><input id="s-nint"></div>
+          </div>
+          <div class="frow">
+            <div class="field"><label>Población</label><input id="s-pob"></div>
+            <div class="field"><label>Código postal</label><input id="s-cp" inputmode="numeric" maxlength="5"></div>
+          </div>
+          <div class="frow">
+            <div class="field"><label>Tipo de vivienda <span class="req">*</span></label><select id="s-viv"><option value="">—</option><option value="propia">Propia</option><option value="rentada">Rentada</option><option value="familiar">Familiar</option></select></div>
+            <div class="field"><label>Tiempo en el domicilio <span class="req">*</span></label><input id="s-tdom" placeholder="Ej. 3 años"></div>
+          </div>
+          <div class="frow">
+            <div class="field"><label>Estado civil <span class="req">*</span></label><select id="s-civ"><option value="">—</option><option value="soltero">Soltero(a)</option><option value="casado">Casado(a)</option><option value="union libre">Unión libre</option></select></div>
+            <div class="field"><label>Número de hijos</label><input id="s-hij" type="number" min="0" inputmode="numeric"></div>
+          </div>
+          <div class="field"><label>Escuela de los hijos</label><input id="s-esc"></div>
+          <div class="field"><label>Actividad principal <span class="req">*</span></label><input id="s-act" placeholder="Ej. comerciante, empleada"></div>
+          <div class="field"><label>Dirección del trabajo</label><input id="s-dtra"></div>
+          <div class="frow">
+            <div class="field"><label>Ingreso semanal <span class="req">*</span></label><input id="s-ing" type="number" inputmode="numeric" placeholder="$"></div>
+            <div class="field"><label>Gasto semanal <span class="req">*</span></label><input id="s-gas" type="number" inputmode="numeric" placeholder="$"></div>
+          </div>
+          <div style="font-size:.74rem;color:var(--faint);margin:-4px 0 10px">Fecha de nacimiento y sexo se toman de la CURP · el número de crédito lo calcula el sistema.</div>
+          <div class="sect-lbl">Documentos del expediente</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+            <label class="sol-doc" style="flex:1 1 30%;min-width:96px;border:1px dashed var(--line);border-radius:10px;padding:7px;text-align:center;cursor:pointer;font-size:.74rem;color:var(--dim)">
+              <div style="font-weight:700;color:var(--txt)">INE frente <span class="req">*</span></div>
+              <div id="sd-ineFrente-v" style="height:70px;display:flex;align-items:center;justify-content:center;margin-top:4px">📷 Tomar</div>
+              <input type="file" accept="image/*" capture="environment" style="display:none" onchange="solDocForm(this,'ineFrente')">
+            </label>
+            <label class="sol-doc" style="flex:1 1 30%;min-width:96px;border:1px dashed var(--line);border-radius:10px;padding:7px;text-align:center;cursor:pointer;font-size:.74rem;color:var(--dim)">
+              <div style="font-weight:700;color:var(--txt)">INE reverso <span class="req">*</span></div>
+              <div id="sd-ineReverso-v" style="height:70px;display:flex;align-items:center;justify-content:center;margin-top:4px">📷 Tomar</div>
+              <input type="file" accept="image/*" capture="environment" style="display:none" onchange="solDocForm(this,'ineReverso')">
+            </label>
+            <label class="sol-doc" style="flex:1 1 30%;min-width:96px;border:1px dashed var(--line);border-radius:10px;padding:7px;text-align:center;cursor:pointer;font-size:.74rem;color:var(--dim)">
+              <div style="font-weight:700;color:var(--txt)">Comprobante domicilio <span class="req">*</span></div>
+              <div id="sd-comprobante-v" style="height:70px;display:flex;align-items:center;justify-content:center;margin-top:4px">📷 Tomar</div>
+              <input type="file" accept="image/*" capture="environment" style="display:none" onchange="solDocForm(this,'comprobante')">
+            </label>
+          </div>
+          <div class="sect-lbl">Referencias personales</div>
+                    <div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px 2px;margin-bottom:10px">
+            <div style="font-size:.78rem;font-weight:700;color:var(--dim);margin-bottom:6px">Referencia 1</div>
+            <div class="field"><label>Nombre <span class="req">*</span></label><input id="s-r1-nom"></div>
+            <div class="frow">
+              <div class="field"><label>Celular <span class="req">*</span></label><input id="s-r1-cel" inputmode="numeric" maxlength="14"></div>
+              <div class="field"><label>Parentesco <span class="req">*</span></label><input id="s-r1-par"></div>
+            </div>
+            <div class="field"><label>Dirección</label><input id="s-r1-dir"></div>
+            <div class="field"><label>Verificación</label><select id="s-r1-ver"><option value="">Pendiente (se verifica después)</option><option value="positiva">Positiva</option><option value="negativa">Negativa</option></select></div>
+          </div>
+          <div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px 2px;margin-bottom:10px">
+            <div style="font-size:.78rem;font-weight:700;color:var(--dim);margin-bottom:6px">Referencia 2</div>
+            <div class="field"><label>Nombre <span class="req">*</span></label><input id="s-r2-nom"></div>
+            <div class="frow">
+              <div class="field"><label>Celular <span class="req">*</span></label><input id="s-r2-cel" inputmode="numeric" maxlength="14"></div>
+              <div class="field"><label>Parentesco <span class="req">*</span></label><input id="s-r2-par"></div>
+            </div>
+            <div class="field"><label>Dirección</label><input id="s-r2-dir"></div>
+            <div class="field"><label>Verificación</label><select id="s-r2-ver"><option value="">Pendiente (se verifica después)</option><option value="positiva">Positiva</option><option value="negativa">Negativa</option></select></div>
+          </div>
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--surf-2);margin-bottom:13px">
+            <input type="checkbox" id="s-cons" style="width:19px;height:19px;flex:0 0 auto;margin-top:2px">
+            <span style="font-size:.8rem;color:var(--txt);line-height:1.45">El solicitante manifiesta que tiene el consentimiento de proporcionar los datos de sus referidos para verificación y promoción, y acepta que sean contactados por cualquier medio para gestiones de cobranza si es necesario. <span class="req">*</span></span></label>
         </div>
         <div class="sect-lbl">Aval / obligado solidario</div>
         <!-- Nada de float: flotar el interruptor empujaba la fila siguiente y en el celular
@@ -491,9 +591,10 @@ async function ineLeer(input){
   try{
     const img=await _fotoComprimida(f, 1400, 0.82);      // más resolución que una evidencia: hay que leer texto
     const r=await api('POST','/api/ine/leer',{imagen:img});
+    if(typeof SOL_ON!=='undefined' && SOL_ON && !SOL_FOTOS.ineFrente) solDocForm(null,'ineFrente',f);   // la misma foto queda en el expediente
     let puestos=[];
-    if(r.nombre){ document.getElementById('n-cli').value=r.nombre; puestos.push('nombre'); }
-    if(r.curp){ document.getElementById('n-curp').value=r.curp; puestos.push('CURP'); }
+    if(r.nombre){ const _nc=document.getElementById('n-cli'); _nc.value=r.nombre; _nc.dispatchEvent(new Event('input')); puestos.push('nombre'); }
+    if(r.curp){ const _cu=document.getElementById('n-curp'); _cu.value=r.curp; _cu.dispatchEvent(new Event('input')); puestos.push('CURP'); }
     if(!puestos.length){ set('No se alcanzaron a leer los datos. Captúralos a mano.','var(--red)'); }
     else{
       let t='✓ Se llenó el '+puestos.join(' y la ')+'. Revísalo antes de guardar.';
@@ -539,6 +640,7 @@ function pintar(){
         <span class="tipo ${tipoCls[cr.tipo]||'sem'}">${tipoLbl[cr.tipo]||cr.tipo}</span>
         <div class="cdata"><div class="l1">${cr.folio} · cuota ${fmt(cr.cuota)}</div><div class="l2">saldo ${fmt(cr.saldo)}</div></div>
         <span class="pill ${liq?'ok':'w'}">${liq?'Liquidado':'Activo'}</span>
+        ${cr.tieneSolicitud?`<span onclick="event.stopPropagation();solAbrir(${cr.id})" title="Solicitud de crédito" style="cursor:pointer;font-size:1.05rem;margin:0 2px">📋</span>`:''}
         ${cr.entrega?`<span onclick="event.stopPropagation();verEvidenciaSuc(${cr.id})" title="Datos de entrega" style="cursor:pointer;font-size:1.05rem;margin:0 2px">📷</span>`:''}
         ${liq?'':`<button class="pay" onclick="event.stopPropagation();abrirPago(${c.id},${cr.id})">Cobrar</button>`}</div>`;}).join('')}</div>
     </div>`;
@@ -790,12 +892,13 @@ async function agregarCreditoExistente(clienteId){
   if(!prom && !EQ_ON){toast('Selecciona el cobrador para este crédito');return;}
   try{
     const _av=leerAval(); if(_av==='ERR') return;
-    const d=await api('POST','/api/sales',{clienteExistenteId:clienteId,prom:(prom||EQ_PROM),tipo:t,plazo,monto,dias:plazo,articulos:leerArticulos(),aval:_av,productoId:eqSel()});
+    const _sol=leerSolicitud(); if(_sol==='ERR') return;
+    const d=await api('POST','/api/sales',{clienteExistenteId:clienteId,prom:(prom||EQ_PROM),tipo:t,plazo,monto,dias:plazo,articulos:leerArticulos(),aval:_av,productoId:eqSel(),solicitud:_sol||undefined});
     caja.ncred++; caja.coloc+=monto;
     const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
     movs.unshift({hora,txt:`Crédito ${d.folio} — ${d.cliente} (${prom}) · 2º crédito`,monto:0});
     ['n-cli','n-tel','n-calle','n-col','n-ref','n-curp','n-ciudad','n-estado'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-    resetArticulos(); limpiarAval(); eqReset(); if(EQ_ON) eqCargar();
+    resetArticulos(); limpiarAval(); eqReset(); if(EQ_ON) eqCargar(); limpiarSolicitud();
     render(); _buscar();
     toast(`✓ ${d.folio} agregado a ${d.cliente} · ahora tiene ${d.totalCreditosCliente} créditos · cuota ${fmt(d.cuota)}`);
   }catch(e){ toast(e.message); }
@@ -895,7 +998,7 @@ if(document.readyState==='loading') document.addEventListener('DOMContentLoaded'
 function limpiarNuevoCredito(){
   ['n-cli','n-tel','n-calle','n-col','n-ref','n-curp','n-ciudad','n-estado'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const mt=document.getElementById('n-monto'); if(mt) mt.value=5000;
-  try{ resetArticulos(); limpiarAval(); }catch(e){}
+  try{ resetArticulos(); limpiarAval(); limpiarSolicitud(); }catch(e){}
   const bs=document.getElementById('buro-sem'); if(bs)bs.style.display='none'; _buroLast='';
   try{ calc(); }catch(e){}
 }
@@ -961,6 +1064,82 @@ function eqElegir(){
     `El IMEI se captura al entregar el aparato, no aquí.`;
   calc();
 }
+
+/* ===== SOLICITUD DE CRÉDITO (módulo 'solicitud') =====
+   Con el módulo apagado la sección no aparece y la venta viaja sin solicitud, igual que siempre. */
+let SOL_ON=false, _solApMan=false, SOL_FOTOS={};
+/* Cada documento se sube en cuanto se toma; la venta solo lleva la marca "foto:N". */
+async function solDocForm(input,tipo,file){
+  const f=file||(input&&input.files&&input.files[0]); if(!f) return;
+  const v=document.getElementById('sd-'+tipo+'-v'); if(v) v.textContent='⏳ Subiendo…';
+  try{ SOL_FOTOS[tipo]=await solSubirFoto(f,tipo);
+    if(v){ const u=URL.createObjectURL(f); v.innerHTML='<img src="'+u+'" style="max-width:100%;max-height:70px;border-radius:6px">'; }
+  }catch(e){ delete SOL_FOTOS[tipo]; if(v){ v.textContent='✗ Reintentar'; v.style.color='var(--red)'; } toast(e.message); }
+  if(input) input.value='';
+}
+const SOL_IDS=['s-sol','s-psol','s-of1','s-pof1','s-of2','s-pof2','s-appat','s-apmat','s-next','s-nint','s-pob','s-cp','s-viv','s-tdom','s-civ','s-hij','s-esc','s-act','s-dtra','s-ing','s-gas','s-r1-nom','s-r1-cel','s-r1-par','s-r1-dir','s-r1-ver','s-r2-nom','s-r2-cel','s-r2-par','s-r2-dir','s-r2-ver'];
+async function solInit(){
+  try{ const b=await api('GET','/api/brand'); SOL_ON=!(Array.isArray(b.modulosOff)&&b.modulosOff.includes('solicitud')); }catch(e){ SOL_ON=false; }
+  const box=document.getElementById('sol-box'); if(box) box.style.display=SOL_ON?'':'none';
+  const te=document.getElementById('tab-exp'); if(te){ te.style.display=SOL_ON?'':'none'; if(SOL_ON && !te._b){ te._b=1; te.addEventListener('click',()=>expInit()); } }
+  if(!SOL_ON) return;
+  // Apellidos: se proponen del nombre completo (orden INE: nombre(s) paterno materno) hasta que el capturista los edite.
+  ['s-appat','s-apmat'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{_solApMan=true;}));
+  const nc=document.getElementById('n-cli');
+  const prop=()=>{ if(_solApMan) return; const w=(nc.value||'').trim().toUpperCase().split(/\s+/).filter(Boolean);
+    if(w.length>=3){ document.getElementById('s-appat').value=w[w.length-2]; document.getElementById('s-apmat').value=w[w.length-1]; }
+    else if(w.length===2){ document.getElementById('s-appat').value=w[1]; document.getElementById('s-apmat').value=''; } };
+  nc.addEventListener('input',prop); nc.addEventListener('change',prop);
+  const mt=document.getElementById('n-monto'), ss=document.getElementById('s-sol');
+  ss.addEventListener('focus',()=>{ if(!ss.value && mt.value) ss.value=mt.value; });
+  const cu=document.getElementById('n-curp');
+  cu.addEventListener('input',()=>{ if(cu.value.length===18) solPrevia(cu.value); });
+}
+/* Renovación: si la CURP ya tiene solicitud anterior, llena SOLO los campos vacíos (las verificaciones no se copian). */
+let _solPrevCurp='';
+async function solPrevia(curp){
+  if(!SOL_ON || curp===_solPrevCurp) return; _solPrevCurp=curp;
+  try{
+    const d=await api('GET','/api/solicitud/previa?curp='+encodeURIComponent(curp));
+    const s=d&&d.solicitud; if(!s) return;
+    const put=(id,v)=>{ const e=document.getElementById(id); if(e && !e.value && v!=null && v!=='' && v!==0) e.value=v; };
+    put('s-appat',s.apPaterno); put('s-apmat',s.apMaterno); put('s-next',s.numExt); put('s-nint',s.numInt); put('s-pob',s.poblacion); put('s-cp',s.cp);
+    put('s-viv',s.vivienda); put('s-tdom',s.tiempoDomicilio); put('s-civ',s.estadoCivil); put('s-hij',s.hijos); put('s-esc',s.escuelaHijos);
+    put('s-act',s.actividad); put('s-dtra',s.dirTrabajo); put('s-ing',s.ingresoSemanal); put('s-gas',s.gastoSemanal);
+    (s.referencias||[]).slice(0,2).forEach((r,i)=>{ put(`s-r${i+1}-nom`,r.nombre); put(`s-r${i+1}-cel`,r.cel); put(`s-r${i+1}-par`,r.parentesco); put(`s-r${i+1}-dir`,r.direccion); });
+    _solApMan=true;
+    Object.entries(d.fotosPrevias||{}).forEach(([k,ref])=>{ if(!SOL_FOTOS[k]){ SOL_FOTOS[k]=ref; const v=document.getElementById('sd-'+k+'-v'); if(v){ v.textContent='✓ del crédito anterior'; v.style.color='var(--grn)'; } } });
+    const m=document.getElementById('sol-msg'); if(m){ m.style.color='var(--grn)'; m.textContent='✓ Se prellenó con la solicitud anterior de '+(d.cliente||'este cliente')+'. Revisa ingreso, gasto y referencias.'; }
+  }catch(e){}
+}
+/* Devuelve null (módulo apagado), 'ERR' (faltan datos, ya avisó) o el objeto solicitud. */
+function leerSolicitud(){
+  if(!SOL_ON) return null;
+  const g=id=>(document.getElementById(id)?.value||'').trim();
+  const refs=[1,2].map(i=>({nombre:g(`s-r${i}-nom`),cel:g(`s-r${i}-cel`).replace(/\D/g,''),parentesco:g(`s-r${i}-par`),direccion:g(`s-r${i}-dir`),verificacion:g(`s-r${i}-ver`)}));
+  const s={solicitado:+g('s-sol')||0,plazoSolicitado:g('s-psol'),oferta1:+g('s-of1')||0,plazoOferta1:g('s-pof1'),oferta2:+g('s-of2')||0,plazoOferta2:g('s-pof2'),
+    apPaterno:g('s-appat'),apMaterno:g('s-apmat'),numExt:g('s-next'),numInt:g('s-nint'),poblacion:g('s-pob'),cp:g('s-cp'),
+    vivienda:g('s-viv'),tiempoDomicilio:g('s-tdom'),estadoCivil:g('s-civ'),hijos:+g('s-hij')||0,escuelaHijos:g('s-esc'),
+    actividad:g('s-act'),dirTrabajo:g('s-dtra'),ingresoSemanal:+g('s-ing')||0,gastoSemanal:+g('s-gas')||0,referencias:refs,
+    consentimiento:!!document.getElementById('s-cons')?.checked, fotos:Object.assign({},SOL_FOTOS)};
+  const falta=[];
+  if(!s.solicitado) falta.push('monto solicitado'); if(!s.plazoSolicitado) falta.push('plazo solicitado');
+  if(!s.apPaterno) falta.push('apellido paterno'); if(!s.vivienda) falta.push('tipo de vivienda');
+  if(!s.tiempoDomicilio) falta.push('tiempo en domicilio'); if(!s.estadoCivil) falta.push('estado civil');
+  if(!s.actividad) falta.push('actividad principal'); if(!s.ingresoSemanal) falta.push('ingreso semanal'); if(!s.gastoSemanal) falta.push('gasto semanal');
+  refs.forEach((r,i)=>{ if(!r.nombre||r.cel.length<10||!r.parentesco) falta.push(`referencia ${i+1} (nombre, celular 10 dígitos, parentesco)`); });
+  if(!s.consentimiento) falta.push('consentimiento');
+  [['ineFrente','foto INE frente'],['ineReverso','foto INE reverso'],['comprobante','foto comprobante de domicilio']].forEach(([k,l])=>{ if(!SOL_FOTOS[k]) falta.push(l); });
+  if(falta.length){ toast('Solicitud incompleta: '+falta.join(', ')); document.getElementById('sol-box')?.scrollIntoView({behavior:'smooth',block:'start'}); return 'ERR'; }
+  return s;
+}
+function limpiarSolicitud(){
+  SOL_IDS.forEach(id=>{const e=document.getElementById(id); if(e) e.value='';});
+  const c=document.getElementById('s-cons'); if(c) c.checked=false;
+  const m=document.getElementById('sol-msg'); if(m) m.textContent='';
+  _solApMan=false; _solPrevCurp=''; SOL_FOTOS={};
+  ['ineFrente','ineReverso','comprobante'].forEach(k=>{ const v=document.getElementById('sd-'+k+'-v'); if(v){ v.textContent='📷 Tomar'; v.style.color=''; } });
+}
 function eqSel(){ const e=document.getElementById('n-equipo'); return (EQ_ON && e && e.value) ? +e.value : undefined; }
 function eqReset(){ const e=document.getElementById('n-equipo'); if(e){ e.value=''; eqElegir(); } }
 
@@ -983,9 +1162,11 @@ async function crearCredito(){
   const _eq = eqSel();
   if(EQ_ON && !_eq && !confirm('No elegiste equipo. ¿Capturar este crédito como préstamo en efectivo?')) return;
   const _avalPend=leerAval(); if(_avalPend==='ERR') return;
+  const _solPend=leerSolicitud(); if(_solPend==='ERR') return;
+  const ref=(document.getElementById('n-ref')?.value||'').trim();
   // fetch directo para poder leer el 409 estructurado de validación
   try{
-    const r=await fetch('/api/sales',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+TOKEN},body:JSON.stringify({nombre,tel,calle,col,ciudad,estado,curp,prom:(prom||EQ_PROM),tipo:t,plazo,monto,dias:plazo,articulos:leerArticulos(),aval:_avalPend,productoId:_eq})});
+    const r=await fetch('/api/sales',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+TOKEN},body:JSON.stringify({nombre,tel,calle,col,ciudad,estado,curp,ref,prom:(prom||EQ_PROM),tipo:t,plazo,monto,dias:plazo,articulos:leerArticulos(),aval:_avalPend,productoId:_eq,solicitud:_solPend||undefined})});
     const d=await r.json().catch(()=>({}));
     if(r.status===202 && d.voBo){
       document.getElementById('overlay').innerHTML=`<div class="modal">
@@ -998,6 +1179,7 @@ async function crearCredito(){
     }
     if(r.status===403 && d.error==='vobo_requerido'){ toast('Esta venta requiere Vo.Bo del administrador.'); return; }
     if(r.status===400 && d.error==='curp_invalida'){ toast(d.detalle); return; }
+    if(r.status===400 && d.error==='solicitud_incompleta'){ toast(d.detalle); return; }
     if(r.status===409 && d.error==='cliente_duplicado'){
       const ex=d.clienteExistente||{};
       const puedeAgregar=d.puedeAgregar && ex.mismaSucursal;
@@ -1023,7 +1205,7 @@ async function crearCredito(){
     movs.unshift({hora,txt:`Crédito ${d.folio} — ${nombre} (${prom})`,monto:0});
     ['n-cli','n-tel','n-calle','n-col','n-ref','n-curp','n-ciudad','n-estado'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
     {const _bs=document.getElementById('buro-sem'); if(_bs)_bs.style.display='none'; _buroLast='';}
-    resetArticulos(); eqReset(); if(EQ_ON) eqCargar();
+    resetArticulos(); eqReset(); if(EQ_ON) eqCargar(); limpiarSolicitud();
     render(); _buscar();
     toast(`✓ ${d.folio} capturado · cuota ${fmt(d.cuota)}`+(d.producto?` · ${d.producto} por entregar`:` · en ruta de ${String(prom||EQ_PROM).split(' ')[0]}`));
     mostrarPagareCapturado(d.id, d.folio);
@@ -1933,7 +2115,7 @@ async function _init(){
       ? cob.map(c=>`<option>${c.nombre}</option>`).join('')
       : '<option value="">— sin cobradores en esta sucursal —</option>';
   }catch(e){}
-  fillPlazos(); calc(); _buscar(); cargarCaja(); cargarJCSuc(); addArticulo(); eqInit();
+  fillPlazos(); calc(); _buscar(); cargarCaja(); cargarJCSuc(); addArticulo(); eqInit(); solInit();
 // Ping de ubicación para el rastreo del admin/supervisor (mientras la app está abierta)
 function _pingUbic(){ if(!navigator.geolocation) return; navigator.geolocation.getCurrentPosition(function(p){ try{ api('POST','/api/ubicacion/ping',{lat:p.coords.latitude,lng:p.coords.longitude}); }catch(e){} }, function(){}, {enableHighAccuracy:false,timeout:8000,maximumAge:120000}); }
 _pingUbic(); setInterval(_pingUbic, 180000);
@@ -2034,5 +2216,152 @@ _init();
 })();
 </script>
 
+<script>
+/* ===== SOLICITUD DE CRÉDITO · visor, verificación de referencias e impresión =====
+   Bloque idéntico en admin, sucursal y campo. Usa su propio overlay para no chocar con los modales
+   de cada pantalla. El servidor decide permisos (puedeVerificar). */
+function _solTok(){ try{ return localStorage.getItem('cobrapro_token')||''; }catch(e){ return ''; } }
+async function _solApi(m,p,b){
+  const r=await fetch(p,{method:m,headers:{'Content-Type':'application/json',Authorization:'Bearer '+_solTok()},body:b?JSON.stringify(b):undefined});
+  const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.detalle||d.error||('Error '+r.status)); return d;
+}
+const _solE=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const _solM=n=>n?('$'+Math.round(n).toLocaleString('es-MX')):'—';
+let _solD=null,_solId=null,_solFT='',_solFTt=0;
+async function _solFotoTok(){ if(_solFT && Date.now()-_solFTt<6*3600e3) return _solFT; try{ const d=await _solApi('GET','/api/foto-token'); _solFT=d.token; _solFTt=Date.now(); }catch(e){} return _solFT; }
+const _solSrc=(ref,t)=>{ const m=/^foto:(\d+)$/.exec(ref||''); return m?('/api/foto/'+m[1]+'?t='+encodeURIComponent(t)):''; };
+/* 1000px calidad 0.6: el INE y el comprobante se leen bien y cada foto queda en ~100 KB. */
+function _solComprimir(f,MAX=1000,Q=0.6){
+  return new Promise((ok,ko)=>{ const url=URL.createObjectURL(f); const img=new Image();
+    img.onload=()=>{ let w=img.width,h=img.height; if(w>MAX||h>MAX){ if(w>h){h=Math.round(h*MAX/w);w=MAX;}else{w=Math.round(w*MAX/h);h=MAX;} }
+      const cv=document.createElement('canvas'); cv.width=w; cv.height=h; cv.getContext('2d').drawImage(img,0,0,w,h); URL.revokeObjectURL(url); ok(cv.toDataURL('image/jpeg',Q)); };
+    img.onerror=()=>{ URL.revokeObjectURL(url); ko(new Error('No se pudo leer la imagen')); }; img.src=url; });
+}
+async function solSubirFoto(file,tipo){ const img=await _solComprimir(file); const d=await _solApi('POST','/api/solicitud/foto',{tipo,imagen:img}); return d.ref; }
+function _solOv(){
+  let o=document.getElementById('sol-ov');
+  if(!o){ o=document.createElement('div'); o.id='sol-ov';
+    o.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:none;align-items:flex-start;justify-content:center;overflow:auto;padding:18px 10px';
+    o.onclick=e=>{ if(e.target===o) solCerrar(); }; document.body.appendChild(o); }
+  return o;
+}
+function solCerrar(){ const o=document.getElementById('sol-ov'); if(o) o.style.display='none'; }
+async function solAbrir(saleId){
+  _solId=saleId; const o=_solOv();
+  o.innerHTML='<div style="background:var(--surf,#fff);color:var(--txt,#1b2330);border-radius:12px;padding:18px;max-width:560px;width:100%">⏳ Cargando solicitud…</div>';
+  o.style.display='flex';
+  try{ _solD=await _solApi('GET','/api/sales/'+saleId+'/solicitud'); _solD._ft=await _solFotoTok(); _solPinta(); }
+  catch(e){ o.innerHTML='<div style="background:var(--surf,#fff);color:var(--txt,#1b2330);border-radius:12px;padding:18px;max-width:560px;width:100%">'+_solE(e.message)+'<div style="margin-top:12px;text-align:right"><button onclick="solCerrar()" style="padding:8px 14px;border-radius:8px;border:1px solid #999;background:transparent;color:inherit;cursor:pointer">Cerrar</button></div></div>'; }
+}
+function _solPinta(){
+  const d=_solD, s=d.solicitud, c=d.cliente, o=_solOv();
+  const fila=(k,v)=>`<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid rgba(128,128,128,.15);font-size:.84rem"><span style="flex:0 0 42%;opacity:.7">${k}</span><span style="flex:1;font-weight:600">${v||'—'}</span></div>`;
+  const sec=t=>`<div style="font-weight:700;font-size:.78rem;letter-spacing:.04em;text-transform:uppercase;opacity:.75;margin:14px 0 4px">${t}</div>`;
+  const refs=(s.referencias||[]).map((r,i)=>{
+    const col=r.verificacion==='positiva'?'#178a55':(r.verificacion==='negativa'?'#d6432d':'#caa23a');
+    const est=r.verificacion?(r.verificacion==='positiva'?'✓ POSITIVA':'✗ NEGATIVA')+` · ${_solE(r.verificadoPor||'')} ${r.verificadoAt?new Date(r.verificadoAt).toLocaleDateString('es-MX'):''}`:'⏳ Pendiente de verificar';
+    const btns=d.puedeVerificar?`<div style="display:flex;gap:6px;margin-top:8px"><button onclick="solVerificar(${i},'positiva')" style="flex:1;padding:8px;border-radius:8px;border:1px solid #178a55;background:transparent;color:#178a55;font-weight:700;cursor:pointer">✓ Positiva</button><button onclick="solVerificar(${i},'negativa')" style="flex:1;padding:8px;border-radius:8px;border:1px solid #d6432d;background:transparent;color:#d6432d;font-weight:700;cursor:pointer">✗ Negativa</button></div>`:'';
+    return `<div style="border:1px solid rgba(128,128,128,.3);border-radius:9px;padding:10px;margin-top:8px">
+      <div style="font-weight:700">${i+1}. ${_solE(r.nombre)} <span style="opacity:.7;font-weight:400">(${_solE(r.parentesco)})</span></div>
+      <div style="font-size:.82rem;margin-top:3px">📞 <a href="tel:${_solE(r.cel)}" style="color:inherit">${_solE(r.cel)}</a>${r.direccion?' · 📍 '+_solE(r.direccion):''}</div>
+      <div style="font-size:.78rem;margin-top:5px;color:${col};font-weight:700">${est}</div>${r.nota?`<div style="font-size:.76rem;opacity:.75">Nota: ${_solE(r.nota)}</div>`:''}${btns}</div>`;
+  }).join('');
+  o.innerHTML=`<div style="background:var(--surf,#fff);color:var(--txt,#1b2330);border-radius:12px;padding:18px;max-width:560px;width:100%">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><h3 style="margin:0;font-size:1.05rem">📋 Solicitud · ${_solE(d.folio)}</h3><button onclick="solCerrar()" style="border:none;background:transparent;color:inherit;font-size:1.3rem;cursor:pointer">✕</button></div>
+    <div style="font-size:.8rem;opacity:.75;margin-top:2px">Crédito número ${s.numCredito||1} · capturó ${_solE(s.capturadoPor)} · ${s.fecha?new Date(s.fecha).toLocaleDateString('es-MX'):''}</div>
+    ${sec('Datos del crédito')}${fila('Solicitado',_solM(s.solicitado)+' · '+_solE(s.plazoSolicitado))}${s.oferta1?fila('Oferta 1',_solM(s.oferta1)+' · '+_solE(s.plazoOferta1)):''}${s.oferta2?fila('Oferta 2',_solM(s.oferta2)+' · '+_solE(s.plazoOferta2)):''}${fila('Otorgado',_solM(d.monto)+' · cuota '+_solM(d.cuota))}
+    ${sec('Solicitante')}${fila('Nombre',_solE(c.nombre))}${fila('Apellidos',_solE([s.apPaterno,s.apMaterno].filter(Boolean).join(' / ')))}${fila('CURP',_solE(c.curp))}${fila('Nacimiento · sexo',_solE(s.fechaNac)+' · '+_solE(s.sexo))}${fila('Celular',_solE(c.tel))}
+    ${fila('Domicilio',_solE([c.calle,s.numExt&&('No. '+s.numExt),s.numInt&&('Int. '+s.numInt),c.col,s.poblacion,c.ciudad,c.estado,s.cp&&('CP '+s.cp)].filter(Boolean).join(', ')))}${c.ref?fila('Referencias domicilio',_solE(c.ref)):''}
+    ${fila('Vivienda',_solE(s.vivienda)+' · '+_solE(s.tiempoDomicilio))}${fila('Estado civil · hijos',_solE(s.estadoCivil)+' · '+(s.hijos||0))}${s.escuelaHijos?fila('Escuela de los hijos',_solE(s.escuelaHijos)):''}
+    ${sec('Datos laborales')}${fila('Actividad',_solE(s.actividad))}${s.dirTrabajo?fila('Dirección trabajo',_solE(s.dirTrabajo)):''}${fila('Ingreso semanal',_solM(s.ingresoSemanal))}${fila('Gasto semanal',_solM(s.gastoSemanal))}${fila('Disponible',_solM((s.ingresoSemanal||0)-(s.gastoSemanal||0)))}
+    ${sec('Documentos')}<div style="display:flex;gap:8px;flex-wrap:wrap">${(d.docs||[]).map(x=>{ const ref=(s.fotos||{})[x.tipo]; const src=_solSrc(ref,d._ft);
+      return `<div style="flex:1 1 150px;border:1px solid rgba(128,128,128,.3);border-radius:9px;padding:6px;text-align:center;font-size:.74rem">
+        <div style="font-weight:700;margin-bottom:4px">${x.lbl}</div>
+        ${src?`<a href="${src}" target="_blank"><img src="${src}" style="width:100%;height:110px;object-fit:cover;border-radius:6px;background:#eee"></a>`:'<div style="height:110px;display:flex;align-items:center;justify-content:center;color:#d6432d;font-weight:700">Falta</div>'}
+        ${d.puedeDocs?`<label style="display:block;margin-top:5px;cursor:pointer;color:#0e9f9a;font-weight:700">${src?'↻ Reemplazar':'＋ Subir'}<input type="file" accept="image/*" capture="environment" style="display:none" onchange="solDocCambiar(this,'${x.tipo}')"></label>`:''}</div>`; }).join('')}</div>
+    ${sec('Referencias personales')}${refs}
+    <div style="display:flex;gap:8px;margin-top:16px"><button onclick="solImprimir()" style="flex:1;padding:10px;border-radius:9px;border:none;background:#d99a0f;color:#1b2330;font-weight:700;cursor:pointer">🖨 Imprimir</button><button onclick="solCerrar()" style="flex:1;padding:10px;border-radius:9px;border:1px solid rgba(128,128,128,.5);background:transparent;color:inherit;font-weight:600;cursor:pointer">Cerrar</button></div>
+  </div>`;
+}
+async function solVerificar(idx,resultado){
+  const nota=prompt(`Referencia ${resultado.toUpperCase()}. Nota opcional (qué dijo, quién contestó):`,'');
+  if(nota===null) return;
+  try{ await _solApi('POST','/api/sales/'+_solId+'/solicitud/verificar',{idx,resultado,nota});
+    _solD=await _solApi('GET','/api/sales/'+_solId+'/solicitud'); _solD._ft=await _solFotoTok(); _solPinta();
+    try{ if(typeof expCargar==='function' && document.getElementById('exp-body')) expCargar(true); }catch(e){}
+    try{ if(typeof solCargarPend==='function') solCargarPend(); }catch(e){}
+  }catch(e){ alert(e.message); }
+}
+async function solDocCambiar(input,tipo){
+  const f=input.files&&input.files[0]; if(!f) return;
+  try{ const ref=await solSubirFoto(f,tipo); await _solApi('POST','/api/sales/'+_solId+'/solicitud/foto',{tipo,ref});
+    _solD=await _solApi('GET','/api/sales/'+_solId+'/solicitud'); _solD._ft=await _solFotoTok(); _solPinta();
+    try{ if(typeof expCargar==='function' && document.getElementById('exp-body')) expCargar(true); }catch(e){}
+  }catch(e){ alert(e.message); }
+}
+function solImprimir(){
+  const d=_solD; if(!d) return; const s=d.solicitud, c=d.cliente;
+  const L=(k,v)=>`<td class="k">${k}</td><td class="v">${_solE(v)||'&nbsp;'}</td>`;
+  const refs=(s.referencias||[]).map((r,i)=>`<table><tr>${L('NOMBRE',r.nombre)}${L('CEL',r.cel)}</tr><tr>${L('DIRECCIÓN',r.direccion)}${L('PARENTESCO',r.parentesco)}</tr><tr>${L('VERIFICACIÓN',r.verificacion?r.verificacion.toUpperCase()+' · '+(r.verificadoPor||''):'PENDIENTE')}${L('NOTA',r.nota||'')}</tr></table>`).join('');
+  const w=window.open('','_blank'); if(!w){ alert('Permite ventanas emergentes para imprimir'); return; }
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Solicitud ${_solE(d.folio)}</title><style>
+    body{font-family:Arial,sans-serif;font-size:11px;margin:18px;color:#000}h1{font-size:15px;margin:0}h2{font-size:11px;background:#222;color:#fff;padding:3px 6px;margin:10px 0 3px}
+    table{width:100%;border-collapse:collapse;margin-bottom:3px}td{border:1px solid #999;padding:3px 5px;vertical-align:top}td.k{width:17%;font-weight:bold;background:#f1f1f1;font-size:9.5px}td.v{width:33%}
+    .leg{font-size:9.5px;line-height:1.4;margin-top:10px;text-align:justify}.firma{margin-top:36px;text-align:center}.firma div{border-top:1px solid #000;width:60%;margin:0 auto;padding-top:3px}@media print{button{display:none}}</style></head><body>
+    <div style="display:flex;justify-content:space-between"><div><h1>SOLICITUD DE CRÉDITO</h1><div>${_solE(d.brand)} · Sucursal ${_solE(d.sucursal)}</div></div><div style="text-align:right">Folio <b>${_solE(d.folio)}</b><br>Crédito número <b>${s.numCredito||1}</b><br>${s.fecha?new Date(s.fecha).toLocaleDateString('es-MX'):''}</div></div>
+    <h2>DATOS DEL CRÉDITO</h2><table><tr>${L('SOLICITADO',_solM(s.solicitado))}${L('PLAZO',s.plazoSolicitado)}</tr><tr>${L('OFERTA 1',s.oferta1?_solM(s.oferta1):'')}${L('PLAZO',s.plazoOferta1)}</tr><tr>${L('OFERTA 2',s.oferta2?_solM(s.oferta2):'')}${L('PLAZO',s.plazoOferta2)}</tr><tr>${L('OTORGADO',_solM(d.monto))}${L('CUOTA',_solM(d.cuota))}</tr></table>
+    <h2>DATOS DEL SOLICITANTE</h2><table><tr>${L('NOMBRE',c.nombre)}${L('CURP',c.curp)}</tr><tr>${L('APELLIDO PATERNO',s.apPaterno)}${L('APELLIDO MATERNO',s.apMaterno)}</tr>
+    <tr>${L('CALLE',c.calle)}${L('No. / INTERIOR',[s.numExt,s.numInt].filter(Boolean).join(' / '))}</tr><tr>${L('COLONIA',c.col)}${L('POBLACIÓN',s.poblacion)}</tr><tr>${L('CIUDAD',[c.ciudad,c.estado].filter(Boolean).join(', '))}${L('C.P.',s.cp)}</tr>
+    <tr>${L('CELULAR',c.tel)}${L('REF. DOMICILIO',c.ref)}</tr><tr>${L('FECHA NACIMIENTO',s.fechaNac)}${L('SEXO',s.sexo)}</tr><tr>${L('TIPO VIVIENDA',String(s.vivienda||'').toUpperCase())}${L('TIEMPO EN DOMICILIO',s.tiempoDomicilio)}</tr>
+    <tr>${L('ESTADO CIVIL',String(s.estadoCivil||'').toUpperCase())}${L('NÚMERO DE HIJOS',String(s.hijos||0))}</tr><tr>${L('ESCUELA DE HIJOS',s.escuelaHijos)}${L('COBRADOR',d.prom)}</tr></table>
+    <h2>DATOS LABORALES</h2><table><tr>${L('ACTIVIDAD PRINCIPAL',s.actividad)}${L('DIRECCIÓN TRABAJO',s.dirTrabajo)}</tr><tr>${L('INGRESO SEMANAL',_solM(s.ingresoSemanal))}${L('GASTO SEMANAL',_solM(s.gastoSemanal))}</tr></table>
+    ${d.aval?`<h2>AVAL</h2><table><tr>${L('NOMBRE',d.aval.nombre)}${L('TEL',d.aval.tel)}</tr><tr>${L('DOMICILIO',d.aval.domicilio)}${L('PARENTESCO',d.aval.parentesco)}</tr></table>`:''}
+    <h2>REFERENCIAS PERSONALES</h2>${refs}
+    <div class="leg">El solicitante manifiesta que tiene el consentimiento de proporcionar los datos de sus referidos para efectos de verificación y promoción. Asimismo otorga el consentimiento para que sean contactados por cualquier medio impreso, electrónico o presencial para gestiones de cobranza si es necesario.</div>
+    <div class="firma"><div>Nombre y firma del solicitante<br><b>${_solE(c.nombre)}</b></div></div>
+    ${(d.docs||[]).some(x=>(s.fotos||{})[x.tipo])?`<div style="page-break-before:always"><h2>DOCUMENTOS · ${_solE(d.folio)} · ${_solE(c.nombre)}</h2>${(d.docs||[]).map(x=>{const src=_solSrc((s.fotos||{})[x.tipo],d._ft); return src?`<div style="margin:6px 0 10px;text-align:center"><div style="font-weight:bold;margin-bottom:3px">${x.lbl.toUpperCase()}</div><img src="${location.origin}${src}" style="max-width:100%;max-height:${x.tipo==='comprobante'?'520':'300'}px;border:1px solid #999"></div>`:'';}).join('')}</div>`:''}
+    <div style="text-align:center;margin-top:14px"><button onclick="window.print()">🖨 Imprimir / Guardar PDF</button></div></body></html>`);
+  w.document.close();
+}
+/* ===== EXPEDIENTES: buscador y exportación (admin y sucursal) ===== */
+let _expRows=[],_expT=null;
+async function expInit(){
+  const ss=document.getElementById('exp-suc');
+  if(ss && !ss._ok){ ss._ok=1; try{ const l=await _solApi('GET','/api/sucursales'); ss.innerHTML='<option value="">Todas las sucursales</option>'+l.map(x=>`<option value="${x.id}">${_solE(x.nombre)}</option>`).join(''); }catch(e){ ss.style.display='none'; } }
+  expCargar();
+}
+function expBuscar(){ clearTimeout(_expT); _expT=setTimeout(()=>expCargar(),300); }
+async function expCargar(silencioso){
+  const b=document.getElementById('exp-body'); if(!b) return;
+  const g=id=>(document.getElementById(id)?.value||'').trim();
+  const qs=new URLSearchParams({q:g('exp-q'),sucursalId:g('exp-suc'),verif:g('exp-verif'),desde:g('exp-desde'),hasta:g('exp-hasta')});
+  if(!silencioso) b.innerHTML='<tr><td colspan="9" style="padding:14px;opacity:.7">⏳ Buscando…</td></tr>';
+  try{ const d=await _solApi('GET','/api/expedientes?'+qs.toString()); _expRows=d.rows||[];
+    const t=document.getElementById('exp-total'); if(t) t.textContent=d.total+' expediente'+(d.total===1?'':'s')+(d.total>_expRows.length?` (mostrando ${_expRows.length})`:'');
+    b.innerHTML=_expRows.map(r=>`<tr style="cursor:pointer" onclick="solAbrir(${r.saleId})">
+      <td style="white-space:nowrap">${_solE(r.fecha)}</td><td><b>${_solE(r.folio)}</b><div style="font-size:.72rem;opacity:.7">crédito #${r.numCredito} · ${_solE(r.estado)}</div></td>
+      <td><b>${_solE(r.cliente)}</b><div style="font-size:.72rem;opacity:.7">${_solE(r.curp)} · ${_solE(r.tel)}</div></td>
+      <td>${_solE(r.sucursal)}<div style="font-size:.72rem;opacity:.7">${_solE(r.prom)}</div></td>
+      <td style="text-align:right">${_solM(r.monto)}<div style="font-size:.72rem;opacity:.7">pidió ${_solM(r.solicitado)}</div></td>
+      <td style="text-align:right">${_solM(r.ingresoSemanal)}<div style="font-size:.72rem;opacity:.7">gasto ${_solM(r.gastoSemanal)}</div></td>
+      <td style="white-space:nowrap"><span style="color:#178a55">✓${r.refPos}</span> <span style="color:#d6432d">✗${r.refNeg}</span> <span style="color:#caa23a">⏳${r.refPend}</span></td>
+      <td style="white-space:nowrap;color:${r.docs===r.docsTotal?'#178a55':'#d6432d'};font-weight:700">📎 ${r.docs}/${r.docsTotal}</td>
+      <td style="text-align:right"><span style="color:#0e9f9a;font-weight:700">Abrir ›</span></td></tr>`).join('')||'<tr><td colspan="9" style="padding:14px;opacity:.7">Sin expedientes con esos filtros.</td></tr>';
+  }catch(e){ b.innerHTML='<tr><td colspan="9" style="padding:14px;color:#d6432d">'+_solE(e.message)+'</td></tr>'; }
+}
+function expExcel(){
+  if(!_expRows.length){ alert('No hay expedientes para exportar con esos filtros'); return; }
+  const H=[['Fecha','fecha'],['Folio','folio'],['Crédito #','numCredito'],['Estado','estado'],['Cliente','cliente'],['CURP','curp'],['Teléfono','tel'],['Fecha nac.','fechaNac'],['Sexo','sexo'],
+    ['Domicilio','domicilio'],['Vivienda','vivienda'],['Tiempo domicilio','tiempoDomicilio'],['Estado civil','estadoCivil'],['Hijos','hijos'],['Actividad','actividad'],['Dirección trabajo','dirTrabajo'],
+    ['Ingreso semanal','ingresoSemanal'],['Gasto semanal','gastoSemanal'],['Solicitado','solicitado'],['Plazo solicitado','plazoSolicitado'],['Oferta 1','oferta1'],['Oferta 2','oferta2'],
+    ['Modalidad','tipo'],['Plazo','plazo'],['Monto','monto'],['Cuota','cuota'],['Saldo','saldo'],['Sucursal','sucursal'],['Cobrador','prom'],
+    ['Referencia 1','ref1'],['Referencia 2','ref2'],['Ref. positivas','refPos'],['Ref. negativas','refNeg'],['Ref. pendientes','refPend'],['Documentos','docs'],['Capturó','capturadoPor']];
+  const aoa=[H.map(h=>h[0])].concat(_expRows.map(r=>H.map(h=>r[h[1]]==null?'':r[h[1]])));
+  const fn='expedientes_'+new Date().toISOString().slice(0,10);
+  try{ if(window.XLSX){ const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),'Expedientes'); XLSX.writeFile(wb,fn+'.xlsx'); return; } }catch(e){}
+  const csv='\ufeff'+aoa.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'})); a.download=fn+'.csv'; a.click();
+}
+</script>
 </body>
 </html>
