@@ -17,6 +17,15 @@
     --txt:#1b2330;--ink:#1b2330;--dim:#5b6675;--faint:#97a2b2;--acc:#d99a0f;--acc-d:#a87a10;
     --grn:#178a55;--grn-d:#0f6e42;--red:#d6432d;--blu:#2f7fd1;--vio:#7c5ce0;--r:13px;
   }
+  .sc-f{margin-bottom:10px}
+  .sc-f label{display:block;font-size:.76rem;color:var(--dim);margin-bottom:4px;font-weight:600}
+  .sc-f input,.sc-f select{width:100%;background:var(--surf-2);border:1px solid var(--line-2);color:var(--txt);font-family:'Sora';font-size:.9rem;padding:10px 11px;border-radius:9px;outline:none}
+  .sc-f input:focus,.sc-f select:focus{border-color:var(--acc)}
+  .sc-row{display:flex;gap:8px}.sc-row>*{flex:1;min-width:0}
+  .sc-lbl{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);font-weight:700;margin:16px 0 8px}
+  .sc-req{color:var(--acc)}
+  .sc-doc{flex:1 1 30%;min-width:92px;border:1px dashed var(--line-2);border-radius:10px;padding:7px;text-align:center;font-size:.72rem;color:var(--dim);background:var(--surf-2)}
+  .sc-card{background:var(--surf-2);border:1px solid var(--line-2);border-radius:11px;padding:11px 12px;margin-bottom:9px}
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
   body{background:#05070a;font-family:"Sora",sans-serif;color:var(--txt);display:flex;justify-content:center;min-height:100vh}
   .mono{font-family:"IBM Plex Mono",monospace;font-feature-settings:"tnum"}
@@ -153,6 +162,7 @@
   <div class="tabs">
     <button class="tab on" data-v="ruta">Mi ruta</button>
     <button class="tab" data-v="resumen">Mi efectivo</button>
+    <button class="tab" data-v="solicitar" id="tab-sc" style="display:none">Solicitudes</button>
   </div>
 
   <div class="scroll">
@@ -177,6 +187,89 @@
       <div id="list"></div>
     </section>
 
+    <section class="view" id="solicitar">
+      <div style="display:flex;gap:6px;margin-bottom:10px">
+        <button class="tab on" id="sc-t-nueva" onclick="scVista('nueva')" style="flex:1;background:var(--acc);color:#1b2330;border:none;font-family:'Sora';font-weight:700;font-size:.82rem;padding:9px;border-radius:9px;cursor:pointer">Nueva solicitud</button>
+        <button class="tab" id="sc-t-mias" onclick="scVista('mias')" style="flex:1;background:var(--surf-2);color:var(--txt);border:1px solid var(--line-2);font-family:'Sora';font-size:.82rem;padding:9px;border-radius:9px;cursor:pointer">Mis solicitudes</button>
+      </div>
+
+      <div id="sc-mias" style="display:none"></div>
+
+      <div id="sc-nueva">
+        <div style="font-size:.78rem;color:var(--dim);line-height:1.5;margin-bottom:6px">Levanta la solicitud en el domicilio del cliente. Tu sucursal la revisa y decide el monto: aquí no se crea el crédito.</div>
+        <div class="sc-lbl">Datos del cliente</div>
+        <div class="sc-f"><label>Nombre completo <span class="sc-req">*</span></label><input id="sc-nom" placeholder="Como viene en el INE"></div>
+        <div class="sc-f"><label>CURP (del INE) <span class="sc-req">*</span></label><input id="sc-curp" maxlength="18" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" placeholder="18 caracteres"></div>
+        <div class="sc-row"><div class="sc-f"><label>Celular</label><input id="sc-tel" inputmode="numeric" maxlength="14"></div>
+          <div class="sc-f"><label>Fecha nacimiento</label><input id="sc-fnac" readonly placeholder="de la CURP" style="opacity:.75"></div></div>
+        <div class="sc-f"><label>Calle y número <span class="sc-req">*</span></label><input id="sc-calle"></div>
+        <div class="sc-row"><div class="sc-f"><label>No. exterior</label><input id="sc-next"></div>
+          <div class="sc-f"><label>Interior</label><input id="sc-nint"></div></div>
+        <div class="sc-row"><div class="sc-f"><label>Colonia <span class="sc-req">*</span></label><input id="sc-col"></div>
+          <div class="sc-f"><label>Población</label><input id="sc-pob"></div></div>
+        <div class="sc-row"><div class="sc-f"><label>Ciudad</label><input id="sc-ciudad"></div>
+          <div class="sc-f"><label>Estado</label><input id="sc-estado"></div></div>
+        <div class="sc-row"><div class="sc-f"><label>Código postal</label><input id="sc-cp" inputmode="numeric" maxlength="5"></div>
+          <div class="sc-f"><label>Entre calles / seña</label><input id="sc-ref"></div></div>
+
+        <div class="sc-lbl">Crédito que pide</div>
+        <div class="sc-row"><div class="sc-f"><label>Monto solicitado <span class="sc-req">*</span></label><input id="sc-sol" type="number" inputmode="numeric" placeholder="$"></div>
+          <div class="sc-f"><label>Plazo <span class="sc-req">*</span></label><input id="sc-psol" placeholder="Ej. 17 semanas"></div></div>
+
+        <div class="sc-lbl">Datos personales</div>
+        <div class="sc-row"><div class="sc-f"><label>Apellido paterno <span class="sc-req">*</span></label><input id="sc-appat" style="text-transform:uppercase"></div>
+          <div class="sc-f"><label>Apellido materno</label><input id="sc-apmat" style="text-transform:uppercase"></div></div>
+        <div class="sc-row"><div class="sc-f"><label>Tipo de vivienda <span class="sc-req">*</span></label><select id="sc-viv"><option value="">—</option><option value="propia">Propia</option><option value="rentada">Rentada</option><option value="familiar">Familiar</option></select></div>
+          <div class="sc-f"><label>Tiempo ahí <span class="sc-req">*</span></label><input id="sc-tdom" placeholder="Ej. 3 años"></div></div>
+        <div class="sc-row"><div class="sc-f"><label>Estado civil <span class="sc-req">*</span></label><select id="sc-civ"><option value="">—</option><option value="soltero">Soltero(a)</option><option value="casado">Casado(a)</option><option value="union libre">Unión libre</option></select></div>
+          <div class="sc-f"><label>Hijos</label><input id="sc-hij" type="number" min="0" inputmode="numeric"></div></div>
+        <div class="sc-f"><label>Escuela de los hijos</label><input id="sc-esc"></div>
+
+        <div class="sc-lbl">Trabajo e ingresos</div>
+        <div class="sc-f"><label>Actividad principal <span class="sc-req">*</span></label><input id="sc-act" placeholder="Ej. comerciante"></div>
+        <div class="sc-f"><label>Dirección del trabajo</label><input id="sc-dtra"></div>
+        <div class="sc-row"><div class="sc-f"><label>Ingreso semanal <span class="sc-req">*</span></label><input id="sc-ing" type="number" inputmode="numeric" placeholder="$"></div>
+          <div class="sc-f"><label>Gasto semanal <span class="sc-req">*</span></label><input id="sc-gas" type="number" inputmode="numeric" placeholder="$"></div></div>
+
+        <div class="sc-lbl">Documentos</div>
+        <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:6px">
+        <label class="sc-doc"><div style="font-weight:700;color:var(--txt)">INE frente <span class="sc-req">*</span></div>
+          <div id="scd-ineFrente" style="height:66px;display:flex;align-items:center;justify-content:center;margin-top:4px">📷 Tomar</div>
+          <input type="file" accept="image/*" capture="environment" style="display:none" onchange="scFoto(this,'ineFrente')"></label>
+        <label class="sc-doc"><div style="font-weight:700;color:var(--txt)">INE reverso <span class="sc-req">*</span></div>
+          <div id="scd-ineReverso" style="height:66px;display:flex;align-items:center;justify-content:center;margin-top:4px">📷 Tomar</div>
+          <input type="file" accept="image/*" capture="environment" style="display:none" onchange="scFoto(this,'ineReverso')"></label>
+        <label class="sc-doc"><div style="font-weight:700;color:var(--txt)">Comprobante <span class="sc-req">*</span></div>
+          <div id="scd-comprobante" style="height:66px;display:flex;align-items:center;justify-content:center;margin-top:4px">📷 Tomar</div>
+          <input type="file" accept="image/*" capture="environment" style="display:none" onchange="scFoto(this,'comprobante')"></label>
+        </div>
+
+        <div class="sc-lbl">Referencias personales</div>
+      <div style="border:1px solid var(--line-2);border-radius:10px;padding:10px 11px 2px;margin-bottom:9px">
+        <div style="font-size:.76rem;font-weight:700;color:var(--dim);margin-bottom:7px">Referencia 1</div>
+        <div class="sc-f"><label>Nombre <span class="sc-req">*</span></label><input id="sc-r1-nom"></div>
+        <div class="sc-row"><div class="sc-f"><label>Celular <span class="sc-req">*</span></label><input id="sc-r1-cel" inputmode="numeric" maxlength="14"></div>
+          <div class="sc-f"><label>Parentesco <span class="sc-req">*</span></label><input id="sc-r1-par"></div></div>
+        <div class="sc-f"><label>Dirección</label><input id="sc-r1-dir"></div>
+        <div class="sc-f"><label>Verificación</label><select id="sc-r1-ver"><option value="">Pendiente</option><option value="positiva">Positiva</option><option value="negativa">Negativa</option></select></div>
+      </div>
+      <div style="border:1px solid var(--line-2);border-radius:10px;padding:10px 11px 2px;margin-bottom:9px">
+        <div style="font-size:.76rem;font-weight:700;color:var(--dim);margin-bottom:7px">Referencia 2</div>
+        <div class="sc-f"><label>Nombre <span class="sc-req">*</span></label><input id="sc-r2-nom"></div>
+        <div class="sc-row"><div class="sc-f"><label>Celular <span class="sc-req">*</span></label><input id="sc-r2-cel" inputmode="numeric" maxlength="14"></div>
+          <div class="sc-f"><label>Parentesco <span class="sc-req">*</span></label><input id="sc-r2-par"></div></div>
+        <div class="sc-f"><label>Dirección</label><input id="sc-r2-dir"></div>
+        <div class="sc-f"><label>Verificación</label><select id="sc-r2-ver"><option value="">Pendiente</option><option value="positiva">Positiva</option><option value="negativa">Negativa</option></select></div>
+      </div>
+
+        <label style="display:flex;align-items:flex-start;gap:9px;padding:11px 12px;border:1px solid var(--line-2);border-radius:10px;background:var(--surf-2);margin-bottom:11px;cursor:pointer">
+          <input type="checkbox" id="sc-cons" style="width:19px;height:19px;flex:0 0 auto;margin-top:2px;accent-color:var(--acc)">
+          <span style="font-size:.78rem;line-height:1.45">El cliente autoriza dar los datos de sus referidos para verificación y promoción, y que sean contactados para gestiones de cobranza. <span class="sc-req">*</span></span></label>
+
+        <div id="sc-gps" style="font-size:.76rem;color:var(--dim);margin-bottom:9px"></div>
+        <button id="sc-btn" onclick="scEnviar()" style="width:100%;background:var(--acc);color:#1b2330;border:none;padding:13px;border-radius:10px;font-family:'Sora';font-weight:700;font-size:.95rem;cursor:pointer">Enviar solicitud a mi sucursal</button>
+      </div>
+    </section>
     <section class="view" id="resumen">
       <div class="big-cut"><div class="l">Efectivo en mano (acumulado)</div><div class="v" id="cut-ef">$0</div></div>
       <div class="res-card" id="comision-card" style="border-color:var(--grn)">
@@ -665,6 +758,7 @@ document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
   t.classList.add('on');document.getElementById(t.dataset.v).classList.add('on');
   if(t.dataset.v==='resumen'){ cargarCierreCob(); cargarComision(); }
+  if(t.dataset.v==='solicitar'){ scMias(); }
 });
 /* ===== Cierre de semana (cobrador) ===== */
 let _cierreCob=null;
@@ -920,7 +1014,7 @@ async function expCargar(silencioso){
     b.innerHTML=_expRows.map(r=>`<tr style="cursor:pointer" onclick="solAbrir(${r.saleId})">
       <td style="white-space:nowrap">${_solE(r.fecha)}</td><td><b>${_solE(r.folio)}</b><div style="font-size:.72rem;opacity:.7">crédito #${r.numCredito} · ${_solE(r.estado)}</div></td>
       <td><b>${_solE(r.cliente)}</b><div style="font-size:.72rem;opacity:.7">${_solE(r.curp)} · ${_solE(r.tel)}</div></td>
-      <td>${_solE(r.sucursal)}<div style="font-size:.72rem;opacity:.7">${_solE(r.prom)}</div></td>
+      <td>${_solE(r.sucursal)}<div style="font-size:.72rem;opacity:.7">${_solE(r.prom)}</div><div style="font-size:.68rem;opacity:.6">${r.origen==='Campo'?('📋 campo · '+_solE(r.levantadaPor)):'🏢 sucursal'}</div></td>
       <td style="text-align:right">${_solM(r.monto)}<div style="font-size:.72rem;opacity:.7">pidió ${_solM(r.solicitado)}</div></td>
       <td style="text-align:right">${_solM(r.ingresoSemanal)}<div style="font-size:.72rem;opacity:.7">gasto ${_solM(r.gastoSemanal)}</div></td>
       <td style="white-space:nowrap"><span style="color:#178a55">✓${r.refPos}</span> <span style="color:#d6432d">✗${r.refNeg}</span> <span style="color:#caa23a">⏳${r.refPend}</span></td>
@@ -934,7 +1028,7 @@ function expExcel(){
     ['Domicilio','domicilio'],['Vivienda','vivienda'],['Tiempo domicilio','tiempoDomicilio'],['Estado civil','estadoCivil'],['Hijos','hijos'],['Actividad','actividad'],['Dirección trabajo','dirTrabajo'],
     ['Ingreso semanal','ingresoSemanal'],['Gasto semanal','gastoSemanal'],['Solicitado','solicitado'],['Plazo solicitado','plazoSolicitado'],
     ['Modalidad','tipo'],['Plazo','plazo'],['Monto','monto'],['Cuota','cuota'],['Saldo','saldo'],['Sucursal','sucursal'],['Cobrador','prom'],
-    ['Referencia 1','ref1'],['Referencia 2','ref2'],['Ref. positivas','refPos'],['Ref. negativas','refNeg'],['Ref. pendientes','refPend'],['Documentos','docs'],['Capturó','capturadoPor']];
+    ['Referencia 1','ref1'],['Referencia 2','ref2'],['Ref. positivas','refPos'],['Ref. negativas','refNeg'],['Ref. pendientes','refPend'],['Documentos','docs'],['Capturó','capturadoPor'],['Origen','origen'],['Levantó en campo','levantadaPor']];
   const aoa=[H.map(h=>h[0])].concat(_expRows.map(r=>H.map(h=>r[h[1]]==null?'':r[h[1]])));
   const fn='expedientes_'+new Date().toISOString().slice(0,10);
   try{ if(window.XLSX){ const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),'Expedientes'); XLSX.writeFile(wb,fn+'.xlsx'); return; } }catch(e){}
@@ -958,6 +1052,108 @@ async function solCargarPend(){
   </details>`;
 }
 solCargarPend();
+</script>
+<script>
+/* ===== SOLICITUD LEVANTADA EN CAMPO (módulo 'solicitud') =====
+   El cobrador captura al prospecto en su domicilio. NO crea crédito: manda un borrador a su
+   sucursal, que decide monto y plazo y lo convierte en alta normal. */
+let SC_ON=false, SC_FOTOS={}, SC_LAT=null, SC_LNG=null;
+const SC_IDS=['sc-nom','sc-curp','sc-tel','sc-fnac','sc-calle','sc-next','sc-nint','sc-col','sc-pob','sc-ciudad','sc-estado','sc-cp','sc-ref','sc-sol','sc-psol','sc-appat','sc-apmat','sc-viv','sc-tdom','sc-civ','sc-hij','sc-esc','sc-act','sc-dtra','sc-ing','sc-gas','sc-r1-nom','sc-r1-cel','sc-r1-par','sc-r1-dir','sc-r1-ver','sc-r2-nom','sc-r2-cel','sc-r2-par','sc-r2-dir','sc-r2-ver'];
+async function scInit(){
+  try{ const b=await api('GET','/api/brand'); SC_ON=!(Array.isArray(b.modulosOff)&&b.modulosOff.includes('solicitud')); }catch(e){ SC_ON=false; }
+  const t=document.getElementById('tab-sc'); if(t) t.style.display=SC_ON?'':'none';
+  if(!SC_ON) return;
+  const cu=document.getElementById('sc-curp');
+  cu.addEventListener('input',()=>{ const d=scDeCurp(cu.value); document.getElementById('sc-fnac').value=d.fechaNac||''; });
+  const nc=document.getElementById('sc-nom');
+  nc.addEventListener('input',()=>{ if(nc._man) return; const w=(nc.value||'').trim().toUpperCase().split(/\s+/).filter(Boolean);
+    if(w.length>=3){ document.getElementById('sc-appat').value=w[w.length-2]; document.getElementById('sc-apmat').value=w[w.length-1]; }
+    else if(w.length===2){ document.getElementById('sc-appat').value=w[1]; } });
+  ['sc-appat','sc-apmat'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{nc._man=true;}));
+  scGPS();
+}
+function scDeCurp(c){ const m=/^[A-Z]{4}(\d{2})(\d{2})(\d{2})([HMX])/.exec(String(c||'').toUpperCase());
+  if(!m) return {fechaNac:''}; const yy=+m[1]; const siglo=(yy>26)?1900:2000;   // aproximado: el server manda el definitivo
+  return { fechaNac:`${m[3]}/${m[2]}/${siglo+yy}` }; }
+function scGPS(){
+  const el=document.getElementById('sc-gps'); if(!el||!navigator.geolocation) return;
+  el.textContent='📍 Tomando ubicación…';
+  navigator.geolocation.getCurrentPosition(p=>{ SC_LAT=p.coords.latitude; SC_LNG=p.coords.longitude; el.textContent='📍 Ubicación del domicilio lista'; el.style.color='var(--grn)'; },
+    ()=>{ el.textContent='📍 Sin ubicación (opcional)'; el.style.color='var(--faint)'; }, {timeout:8000, enableHighAccuracy:true});
+}
+function scVista(v){
+  const n=v==='nueva';
+  document.getElementById('sc-nueva').style.display=n?'':'none';
+  document.getElementById('sc-mias').style.display=n?'none':'';
+  const a=document.getElementById('sc-t-nueva'), b=document.getElementById('sc-t-mias');
+  [[a,n],[b,!n]].forEach(([el,on])=>{ el.style.background=on?'var(--acc)':'var(--surf-2)'; el.style.color=on?'#1b2330':'var(--txt)'; el.style.border=on?'none':'1px solid var(--line-2)'; el.style.fontWeight=on?'700':'400'; });
+  if(!n) scMias();
+}
+async function scFoto(input,tipo){
+  const f=input.files&&input.files[0]; if(!f) return;
+  const v=document.getElementById('scd-'+tipo); if(v){ v.textContent='⏳'; v.style.color=''; }
+  try{ SC_FOTOS[tipo]=await solSubirFoto(f,tipo);
+    if(v) v.innerHTML='<img src="'+URL.createObjectURL(f)+'" style="max-width:100%;max-height:66px;border-radius:6px">';
+  }catch(e){ delete SC_FOTOS[tipo]; if(v){ v.textContent='✗ Reintentar'; v.style.color='var(--red)'; } toast(e.message); }
+  input.value='';
+}
+async function scEnviar(){
+  const g=id=>(document.getElementById(id)?.value||'').trim();
+  const refs=[1,2].map(i=>({nombre:g(`sc-r${i}-nom`),cel:g(`sc-r${i}-cel`).replace(/\D/g,''),parentesco:g(`sc-r${i}-par`),direccion:g(`sc-r${i}-dir`),verificacion:g(`sc-r${i}-ver`)}));
+  const falta=[];
+  const curp=g('sc-curp').toUpperCase();
+  if(!g('sc-nom')) falta.push('nombre');
+  if(!/^[A-Z]{4}\d{6}[A-Z0-9]{8}$/.test(curp)) falta.push('CURP de 18 caracteres');
+  if(!g('sc-calle')||!g('sc-col')) falta.push('domicilio');
+  if(!+g('sc-sol')) falta.push('monto solicitado');
+  if(!g('sc-psol')) falta.push('plazo');
+  if(!g('sc-appat')) falta.push('apellido paterno');
+  if(!g('sc-viv')) falta.push('tipo de vivienda');
+  if(!g('sc-tdom')) falta.push('tiempo en el domicilio');
+  if(!g('sc-civ')) falta.push('estado civil');
+  if(!g('sc-act')) falta.push('actividad');
+  if(!+g('sc-ing')) falta.push('ingreso semanal');
+  if(!+g('sc-gas')) falta.push('gasto semanal');
+  refs.forEach((r,i)=>{ if(!r.nombre||r.cel.length<10||!r.parentesco) falta.push(`referencia ${i+1}`); });
+  [['ineFrente','INE frente'],['ineReverso','INE reverso'],['comprobante','comprobante']].forEach(([k,l])=>{ if(!SC_FOTOS[k]) falta.push('foto '+l); });
+  if(!document.getElementById('sc-cons').checked) falta.push('autorización del cliente');
+  if(falta.length){ toast('Falta: '+falta.join(', ')); return; }
+  const btn=document.getElementById('sc-btn'); btn.disabled=true; btn.textContent='Enviando…';
+  try{
+    await api('POST','/api/solicitudes-campo',{
+      cliente:{nombre:g('sc-nom'),curp,tel:g('sc-tel'),calle:g('sc-calle'),col:g('sc-col'),ciudad:g('sc-ciudad'),estado:g('sc-estado'),ref:g('sc-ref')},
+      lat:SC_LAT,lng:SC_LNG,
+      solicitud:{solicitado:+g('sc-sol')||0,plazoSolicitado:g('sc-psol'),apPaterno:g('sc-appat'),apMaterno:g('sc-apmat'),
+        numExt:g('sc-next'),numInt:g('sc-nint'),poblacion:g('sc-pob'),cp:g('sc-cp'),vivienda:g('sc-viv'),tiempoDomicilio:g('sc-tdom'),
+        estadoCivil:g('sc-civ'),hijos:+g('sc-hij')||0,escuelaHijos:g('sc-esc'),actividad:g('sc-act'),dirTrabajo:g('sc-dtra'),
+        ingresoSemanal:+g('sc-ing')||0,gastoSemanal:+g('sc-gas')||0,referencias:refs,consentimiento:true,fotos:Object.assign({},SC_FOTOS)}});
+    scLimpiar(); toast('✓ Solicitud enviada a tu sucursal'); scVista('mias');
+  }catch(e){ toast(e.message); }
+  btn.disabled=false; btn.textContent='Enviar solicitud a mi sucursal';
+}
+function scLimpiar(){
+  SC_IDS.forEach(id=>{const e=document.getElementById(id); if(e) e.value='';});
+  document.getElementById('sc-cons').checked=false; SC_FOTOS={};
+  const nc=document.getElementById('sc-nom'); if(nc) nc._man=false;
+  ['ineFrente','ineReverso','comprobante'].forEach(k=>{ const v=document.getElementById('scd-'+k); if(v){ v.textContent='📷 Tomar'; v.style.color=''; } });
+  scGPS();
+}
+async function scMias(){
+  const w=document.getElementById('sc-mias'); if(!w||!SC_ON) return;
+  w.innerHTML='<div style="color:var(--faint);font-size:.85rem;padding:10px">⏳ Cargando…</div>';
+  try{ const d=await api('GET','/api/solicitudes-campo');
+    const C={pendiente:['#caa23a','⏳ En revisión'],convertida:['#178a55','✓ Aprobada'],rechazada:['#d6432d','✗ Rechazada']};
+    w.innerHTML=(d.rows||[]).map(r=>{ const [col,lbl]=C[r.estado]||C.pendiente;
+      return `<div class="sc-card"><div style="display:flex;justify-content:space-between;gap:8px">
+        <div><b>${_solE(r.cliente)}</b><div style="font-size:.75rem;color:var(--dim)">${_solE(r.domicilio)}</div>
+          <div style="font-size:.75rem;color:var(--faint);margin-top:2px">Pidió ${_solM(r.solicitado)} · ${_solE(r.plazoSolicitado)} · ${new Date(r.fecha).toLocaleDateString('es-MX')}</div></div>
+        <div style="text-align:right;white-space:nowrap"><span style="color:${col};font-weight:700;font-size:.78rem">${lbl}</span>
+          ${r.folio?`<div style="font-size:.75rem;color:var(--dim);margin-top:3px">${_solE(r.folio)}</div>`:''}</div></div>
+        ${r.motivo?`<div style="font-size:.75rem;color:var(--red);margin-top:6px">Motivo: ${_solE(r.motivo)}</div>`:''}</div>`;
+    }).join('')||'<div style="color:var(--faint);font-size:.85rem;padding:10px">Todavía no has levantado solicitudes.</div>';
+  }catch(e){ w.innerHTML='<div style="color:var(--red);font-size:.85rem;padding:10px">'+_solE(e.message)+'</div>'; }
+}
+scInit();
 </script>
 </body>
 </html>
