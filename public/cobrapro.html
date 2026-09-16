@@ -5259,7 +5259,7 @@ async function expCargar(silencioso){
     b.innerHTML=_expRows.map(r=>`<tr style="cursor:pointer" onclick="solAbrir(${r.saleId})">
       <td style="white-space:nowrap">${_solE(r.fecha)}</td><td><b>${_solE(r.folio)}</b><div style="font-size:.72rem;opacity:.7">crédito #${r.numCredito} · ${_solE(r.estado)}</div></td>
       <td><b>${_solE(r.cliente)}</b><div style="font-size:.72rem;opacity:.7">${_solE(r.curp)} · ${_solE(r.tel)}</div></td>
-      <td>${_solE(r.sucursal)}<div style="font-size:.72rem;opacity:.7">${_solE(r.prom)}</div><div style="font-size:.68rem;opacity:.6">${r.origen==='Campo'?('📋 campo · '+_solE(r.levantadaPor)):'🏢 sucursal'}</div></td>
+      <td>${_solE(r.sucursal)}<div style="font-size:.72rem;opacity:.7">${_solE(r.prom)}</div><div style="font-size:.68rem;opacity:.6">${r.origen==='Campo'?('📋 campo · '+_solE(r.levantadaPor)):'🏢 sucursal'}</div>${r.rechazosPrevios?`<div style="font-size:.68rem;color:#d6432d;font-weight:700">⚠ con rechazo previo</div>`:''}</td>
       <td style="text-align:right">${_solM(r.monto)}<div style="font-size:.72rem;opacity:.7">pidió ${_solM(r.solicitado)}</div></td>
       <td style="text-align:right">${_solM(r.ingresoSemanal)}<div style="font-size:.72rem;opacity:.7">gasto ${_solM(r.gastoSemanal)}</div></td>
       <td style="white-space:nowrap"><span style="color:#178a55">✓${r.refPos}</span> <span style="color:#d6432d">✗${r.refNeg}</span> <span style="color:#caa23a">⏳${r.refPend}</span></td>
