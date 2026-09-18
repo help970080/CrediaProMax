@@ -385,7 +385,7 @@
 
         <div class="sect-lbl">Producto de crédito</div>
         <div class="frow">
-          <div class="field"><label>Modalidad</label><select id="n-tipo" onchange="fillPlazos();calc()"><option value="diario">Diario</option><option value="s16">Semanal 16 (primer pago)</option><option value="s17" selected>Semanal 17 (primer pago)</option><option value="s21">21 semanas (primer pago)</option><option value="s31">31 semanas (primer pago)</option><option value="unico">Pago único</option><option value="p17">Celulares 17 pagos</option></select></div>
+          <div class="field"><label>Modalidad</label><select id="n-tipo" onchange="fillPlazos();calc()"><option value="diario">Diario</option><option value="s14" id="n-tipo-s14">Semanal 14 (sin primer pago)</option><option value="s16">Semanal 16 (primer pago)</option><option value="s17" selected>Semanal 17 (primer pago)</option><option value="s21">21 semanas (primer pago)</option><option value="s31">31 semanas (primer pago)</option><option value="unico">Pago único</option><option value="p17">Celulares 17 pagos</option></select></div>
           <div class="field" id="plazoWrap"><label>Plazo</label><select id="n-plazo" onchange="calc()"></select></div>
         </div>
         <div class="field" id="n-eq-wrap" style="display:none"><label>Equipo a crédito <span class="req">*</span></label>
@@ -462,7 +462,7 @@
         <div class="field"><label>Cobrador / ruta</label><select id="cs-cob" onchange="pintaCartSuc()"><option value="">Todos</option></select></div>
       </div>
       <div class="frow">
-        <div class="field"><label>Modalidad</label><select id="cs-tipo" onchange="pintaCartSuc()"><option value="">Todas</option><option value="diario">Diario</option><option value="semanal">Semanal</option><option value="s16">Semanal 16</option><option value="s17">Semanal 17</option><option value="s21">21 semanas</option><option value="s31">31 semanas</option><option value="unico">Pago único</option><option value="p17">Celulares 17</option></select></div>
+        <div class="field"><label>Modalidad</label><select id="cs-tipo" onchange="pintaCartSuc()"><option value="">Todas</option><option value="diario">Diario</option><option value="semanal">Semanal</option><option value="s14">Semanal 14</option><option value="s16">Semanal 16</option><option value="s17">Semanal 17</option><option value="s21">21 semanas</option><option value="s31">31 semanas</option><option value="unico">Pago único</option><option value="p17">Celulares 17</option></select></div>
         <div class="field"><label>Estado</label><select id="cs-est" onchange="pintaCartSuc()"><option value="">Todos</option><option value="act">Con saldo</option><option value="liq">Liquidados</option></select></div>
       </div>
       <div style="color:var(--dim);font-size:.85rem;margin:4px 0 10px" id="cs-count"></div>
@@ -555,6 +555,7 @@ let PROD={
   diario:[{p:10,f:1.17,fijo:30},{p:20,f:1.23,fijo:60},{p:30,f:1.33,fijo:90}],
   semanal:[{p:4,f:1.35,fijo:60},{p:8,f:1.43,fijo:120},{p:12,f:1.53,fijo:180},{p:16,f:1.63,fijo:240},{p:20,f:1.83,fijo:300}],
   p17:[{p:17,f:1.73,fijo:270}],
+  s14:{factor:1.75,fijo:0,ppFactor:0,ppFijo:0,pagos:14},
   s16:{factor:1.6,fijo:100,ppFactor:0.1,ppFijo:100,pagos:16},
   s17:{factor:1.7,fijo:200,ppFactor:0.1,ppFijo:200,pagos:17},
   s21:{factor:1.785,fijo:200,ppFactor:0.085,ppFijo:200,pagos:21},
@@ -563,8 +564,12 @@ let PROD={
 };
 let diasUnico=15;
 function calcCredito(tipo,plazo,monto){
-  if(tipo==='s16'||tipo==='s17'||tipo==='s21'||tipo==='s31'){const DEF={s16:{factor:1.6,fijo:100,ppFactor:0.1,ppFijo:100,pagos:16},s17:{factor:1.7,fijo:200,ppFactor:0.1,ppFijo:200,pagos:17},s21:{factor:1.785,fijo:200,ppFactor:0.085,ppFijo:200,pagos:21},s31:{factor:1.86,fijo:200,ppFactor:0.06,ppFijo:200,pagos:31}};const c=PROD[tipo]||DEF[tipo];
-    const total=monto*c.factor+c.fijo;const primerPago=monto*c.ppFactor+c.ppFijo;const cuota=(total-primerPago)/(c.pagos-1);
+  if(tipo==='s14'||tipo==='s16'||tipo==='s17'||tipo==='s21'||tipo==='s31'){const DEF={s14:{factor:1.75,fijo:0,ppFactor:0,ppFijo:0,pagos:14},s16:{factor:1.6,fijo:100,ppFactor:0.1,ppFijo:100,pagos:16},s17:{factor:1.7,fijo:200,ppFactor:0.1,ppFijo:200,pagos:17},s21:{factor:1.785,fijo:200,ppFactor:0.085,ppFijo:200,pagos:21},s31:{factor:1.86,fijo:200,ppFactor:0.06,ppFijo:200,pagos:31}};const c=PROD[tipo]||DEF[tipo];
+    const total=monto*c.factor+(c.fijo||0);const primerPago=monto*(c.ppFactor||0)+(c.ppFijo||0);
+    /* Tarifas SIN primer pago descontado (s14): 14 cuotas iguales = total/14. Dividir entre pagos-1
+       como en s16/s17 inflaba la cuota y dejaba el crédito con un pago de más. Misma regla que el server. */
+    if(!(primerPago>0)) return {total,pagos:c.pagos,cuota:total/c.pagos,com:(total-monto)/c.pagos,primerPago:0,descuentaPP:false,entregaCliente:monto};
+    const cuota=(total-primerPago)/(c.pagos-1);
     return {total,pagos:c.pagos,cuota,com:(total-monto)/c.pagos,primerPago,descuentaPP:true,entregaCliente:monto-primerPago};}
   if(tipo==='unico'){const u=PROD.unico||{base:2,factor:0.0183};const tap=monto+diasUnico*((u.base||0)+monto*(u.factor||0));const mor=4+tap*0.0183;return {total:tap,pagos:1,cuota:tap,com:0,mor,dias:diasUnico};}
   const arr=PROD[tipo];const it=arr.find(x=>x.p===plazo)||arr[0];
@@ -693,7 +698,7 @@ function abrirRefin(){
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
       <div><div class="l" style="font-size:.7rem;color:var(--dim);margin-bottom:4px">Modalidad</div>
         <select id="ref-tipo" style="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--ink);padding:9px;border-radius:7px;font-family:inherit" onchange="fillPlazosRefin();calcRefin()">
-          <option value="diario">Diario</option><option value="s16">Semanal 16 (primer pago)</option><option value="s17" selected>Semanal 17 (primer pago)</option><option value="s21">21 semanas (primer pago)</option><option value="s31">31 semanas (primer pago)</option><option value="unico">Pago único</option><option value="p17">Celulares 17 pagos</option>
+          <option value="diario">Diario</option>${S14_ON?'<option value="s14">Semanal 14 (sin primer pago)</option>':''}<option value="s16">Semanal 16 (primer pago)</option><option value="s17" selected>Semanal 17 (primer pago)</option><option value="s21">21 semanas (primer pago)</option><option value="s31">31 semanas (primer pago)</option><option value="unico">Pago único</option><option value="p17">Celulares 17 pagos</option>
         </select></div>
       <div id="ref-plazoWrap"><div class="l" style="font-size:.7rem;color:var(--dim);margin-bottom:4px">Plazo</div>
         <select id="ref-plazo" style="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--ink);padding:9px;border-radius:7px;font-family:inherit" onchange="calcRefin()"></select></div>
@@ -716,6 +721,7 @@ function fillPlazosRefin(){
   const stl="width:100%;background:var(--surf-2);border:1px solid var(--line);color:var(--ink);padding:9px;border-radius:7px;font-family:inherit";
   if(t==='unico'){ w.innerHTML=lbl+`<input id="ref-plazo" type="number" value="15" min="1" step="1" style="${stl}" oninput="calcRefin()">`; return; }
   if(t==='p17'){ w.innerHTML=lbl+`<select id="ref-plazo" style="${stl}" onchange="calcRefin()"><option value="17">17 pagos fijos</option></select>`; return; }
+  if(t==='s14'){ w.innerHTML=lbl+`<select id="ref-plazo" style="${stl}" onchange="calcRefin()"><option value="14">14 semanas</option></select>`; return; }
   if(t==='s16'){ w.innerHTML=lbl+`<select id="ref-plazo" style="${stl}" onchange="calcRefin()"><option value="16">16 semanas</option></select>`; return; }
   if(t==='s17'){ w.innerHTML=lbl+`<select id="ref-plazo" style="${stl}" onchange="calcRefin()"><option value="17">17 semanas</option></select>`; return; }
   if(t==='s21'){ w.innerHTML=lbl+`<select id="ref-plazo" style="${stl}" onchange="calcRefin()"><option value="21">21 semanas</option></select>`; return; }
@@ -832,6 +838,7 @@ function fillPlazos(){
   const t=document.getElementById('n-tipo').value;const w=document.getElementById('plazoWrap');const s=document.getElementById('n-plazo');
   if(t==='unico'){w.innerHTML=`<label>Días de plazo</label><input id="n-plazo" type="number" value="15" min="1" step="1" oninput="diasUnico=+this.value||0;calc()">`;diasUnico=15;return;}
   if(t==='p17'){w.innerHTML=`<label>Plazo</label><select id="n-plazo" onchange="calc()"><option value="17">17 pagos fijos</option></select>`;return;}
+  if(t==='s14'){w.innerHTML=`<label>Plazo</label><select id="n-plazo" onchange="calc()"><option value="14">14 semanas</option></select>`;return;}
   if(t==='s16'){w.innerHTML=`<label>Plazo</label><select id="n-plazo" onchange="calc()"><option value="16">16 semanas</option></select>`;return;}
   if(t==='s17'){w.innerHTML=`<label>Plazo</label><select id="n-plazo" onchange="calc()"><option value="17">17 semanas</option></select>`;return;}
   if(t==='s21'){w.innerHTML=`<label>Plazo</label><select id="n-plazo" onchange="calc()"><option value="21">21 semanas</option></select>`;return;}
@@ -846,7 +853,7 @@ function calc(){
   const monto=+document.getElementById('n-monto').value||0;
   const plazo=+(document.getElementById('n-plazo')?.value||0);
   const r=calcCredito(t,plazo,monto);
-  const freq=t==='diario'?'diaria':t==='semanal'?'semanal':t==='p17'?'(17 pagos)':(t==='s16'||t==='s17'||t==='s21'||t==='s31')?'semanal':'única';
+  const freq=t==='diario'?'diaria':t==='semanal'?'semanal':t==='p17'?'(17 pagos)':(t==='s14'||t==='s16'||t==='s17'||t==='s21'||t==='s31')?'semanal':'única';
   let extra= t==='unico'? `<div class="calc-row"><span>Moratorio por día</span><span class="v" style="color:var(--red)">${fmt(r.mor)}</span></div>` :
              `<div class="calc-row"><span>Comisión por no pago</span><span class="v">${fmt(r.com)}</span></div>`;
   if(r.descuentaPP){
@@ -1010,6 +1017,16 @@ function limpiarNuevoCredito(){
    plazo le pone el interés. Lo único distinto es que la entrega no saca efectivo de caja, saca una
    unidad del inventario. Si el módulo está apagado en esta agencia, nada de esto se muestra y la
    pantalla se comporta exactamente como siempre. */
+/* Modalidad a 14 semanas: el admin la prende/apaga por agencia (modulosOff: 'credito14').
+   Si está apagada se quita la opción de ALTA y de REFIN — igual que el candado del server, que
+   rechaza tipo s14 con 403 aunque alguien lo mande a mano. La cartera s14 ya colocada se sigue
+   viendo y cobrando normal: apagarla deja de venderla, no toca los créditos vivos. */
+let S14_ON = false;
+async function s14Init(){
+  try{ const b=await api('GET','/api/brand'); S14_ON=!(Array.isArray(b.modulosOff)&&b.modulosOff.includes('credito14')); }catch(e){ S14_ON=false; }
+  const o=document.getElementById('n-tipo-s14');
+  if(o && !S14_ON){ const sel=document.getElementById('n-tipo'); const era=sel?sel.value:''; o.remove(); if(sel&&era==='s14'){ sel.value='s17'; fillPlazos(); calc(); } }
+}
 let EQ_ON = false, EQ_PROD = [], EQ_PROM = '';
 async function eqInit(){
   try{
@@ -2178,7 +2195,7 @@ let _cartSuc=[];
 const _nkey=s=>String(s==null?'':s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[\u200B-\u200D\uFEFF]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
 const _escAt=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const _opts=arr=>'<option value="">Todos</option>'+arr.map(c=>`<option value="${_escAt(c)}">${_escAt(c)}</option>`).join('');
-const TIPO_LBL={diario:'Diario',semanal:'Semanal',s16:'Semanal 16',s17:'Semanal 17',s21:'21 sem',s31:'31 sem',unico:'Pago único',p17:'Cel 17'};
+const TIPO_LBL={diario:'Diario',semanal:'Semanal',s14:'Semanal 14',s16:'Semanal 16',s17:'Semanal 17',s21:'21 sem',s31:'31 sem',unico:'Pago único',p17:'Cel 17'};
 async function cargarCartSuc(){
   try{ _cartSuc=(await api('GET','/api/sales')).filter(s=>s.entregado!==false);
     const cobs=[...new Set(_cartSuc.map(s=>s.prom).filter(Boolean))].sort();
@@ -2250,6 +2267,7 @@ async function _init(){
       ? cob.map(c=>`<option>${c.nombre}</option>`).join('')
       : '<option value="">— sin cobradores en esta sucursal —</option>';
   }catch(e){}
+  await s14Init();
   fillPlazos(); calc(); _buscar(); cargarCaja(); cargarJCSuc(); addArticulo(); eqInit(); solInit();
 // Ping de ubicación para el rastreo del admin/supervisor (mientras la app está abierta)
 function _pingUbic(){ if(!navigator.geolocation) return; navigator.geolocation.getCurrentPosition(function(p){ try{ api('POST','/api/ubicacion/ping',{lat:p.coords.latitude,lng:p.coords.longitude}); }catch(e){} }, function(){}, {enableHighAccuracy:false,timeout:8000,maximumAge:120000}); }
