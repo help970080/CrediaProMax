@@ -33,7 +33,10 @@
   @media(max-width:900px){.grid{grid-template-columns:1fr}}
   .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:20px}
   @media(max-width:680px){.kpis{grid-template-columns:1fr 1fr}}
-  @media(max-width:680px){.wrap{padding:16px 12px 50px}table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}}
+  @media(max-width:680px){.wrap{padding:16px 12px 50px}}
+  /* Las tablas anchas (cartera, cobradores) se recorren solas hasta 900 px: entre 681 y 900 px
+     — tablet y celular acostado — quedaban cortadas y sin forma de ver las últimas columnas. */
+  @media(max-width:900px){table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}}
   @media(max-width:680px){
     header{padding:9px 12px;gap:10px;flex-wrap:wrap}
     .mk{width:30px;height:30px;font-size:15px}
@@ -116,9 +119,9 @@
   .pe-card .pe-btn{background:var(--surf-3);border:1px solid var(--grn-d);color:var(--grn);font-family:"Sora";font-weight:600;font-size:.76rem;padding:8px 11px;border-radius:8px;cursor:pointer;white-space:nowrap}
   .pe-card .pe-btn:active{transform:scale(.97)}
   .pe-note{font-size:.74rem;color:var(--faint);line-height:1.5;background:rgba(240,180,41,.06);border:1px solid rgba(240,180,41,.18);border-radius:8px;padding:11px 13px;margin-bottom:13px}
-  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:50;padding:20px;overflow-y:auto;-webkit-overflow-scrolling:touch}
   .overlay.on{display:flex;animation:fade .2s}@keyframes fade{from{opacity:0}to{opacity:1}}
-  .modal{background:var(--surf);border:1px solid var(--line-2);border-radius:16px;max-width:390px;width:100%;padding:22px;animation:pop .25s}
+  .modal{background:var(--surf);border:1px solid var(--line-2);border-radius:16px;max-width:390px;width:100%;padding:22px;animation:pop .25s;margin:auto;max-height:92vh;overflow-y:auto}
   @keyframes pop{from{transform:scale(.94);opacity:0}to{transform:none;opacity:1}}
   .modal h3{font-size:1.05rem;margin-bottom:14px}
   .amt-box{background:var(--surf-2);border:1px solid var(--line-2);border-radius:11px;padding:14px;text-align:center;margin-bottom:14px}
@@ -135,8 +138,11 @@
   .ma.cancel{background:var(--surf-3);color:var(--dim)}.ma.ok{background:linear-gradient(140deg,var(--acc),var(--acc-d));color:#1a1408}
   .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--grn);color:#04130c;padding:13px 22px;border-radius:30px;font-weight:600;opacity:0;transition:.3s;z-index:100;max-width:90%;text-align:center}
   .toast.show{opacity:1;transform:translateX(-50%)}
-  .tabs{display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid var(--line)}
-  .tab{background:none;border:none;color:var(--dim);font-family:"Sora";font-size:.9rem;font-weight:500;padding:10px 15px;cursor:pointer;position:relative}
+  /* La barra de pestañas se desliza en lugar de empujar la página: con Expedientes y Solicitudes
+     de campo encendidas no cabía en un celular y arrastraba TODO el panel a scroll horizontal. */
+  .tabs{display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid var(--line);overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{background:none;border:none;color:var(--dim);font-family:"Sora";font-size:.9rem;font-weight:500;padding:10px 15px;cursor:pointer;position:relative;flex:0 0 auto;white-space:nowrap}
   .tab.on{color:var(--acc)}.tab.on::after{content:"";position:absolute;left:10px;right:10px;bottom:-1px;height:2px;background:var(--acc)}
   .view{display:none}.view.on{display:block}
 
@@ -156,6 +162,37 @@
   .bd-card{background:var(--surf-1);border:1px solid var(--line);border-radius:10px;padding:12px}
   .bd-b{width:100%;margin-top:8px;background:var(--surf-2);border:1px solid var(--line);color:var(--dim);padding:9px;border-radius:8px;font-family:'Sora';font-weight:600;font-size:.78rem;cursor:pointer}
   .bd-b.gold{background:var(--acc);border-color:var(--acc);color:#1b2330}
+  /* ===== Ajustes de celular (va al final: aqui si gana a las reglas base) ===== */
+  @media(max-width:680px){
+    /* Formularios de una sola columna: a dos columnas los campos quedaban en 143 px y etiquetas
+       como "Tiempo en el domicilio" se partían en tres renglones. Aplica a alta y a SOLICITUD. */
+    .frow,.frow3{grid-template-columns:1fr;gap:0}
+    /* 16 px reales: por debajo de eso iOS hace zoom automático al tocar un campo y el panel
+       "se sale" de la pantalla hasta que el usuario cierra el teclado. */
+    .field input,.field select{font-size:16px;padding:11px 12px}
+    .field{margin-bottom:11px}
+    .tabs{margin-bottom:12px;gap:2px}
+    .tab{padding:9px 11px;font-size:.84rem}
+    .tab.on::after{left:6px;right:6px}
+    .sect-lbl{margin:14px 0 8px}
+    .calc{padding:12px}
+    .calc-row{gap:12px}
+    .calc-row .v{white-space:nowrap}
+    .calc-row.big .v{font-size:1.12rem}
+    .big-cut{padding:14px}
+    .big-cut .v{font-size:1.7rem}
+    .amt-input{font-size:1.6rem}
+    .overlay{padding:10px;align-items:flex-start}
+    .modal{padding:16px;max-height:none;border-radius:14px}
+    .modal h3{font-size:.98rem}
+    .ma{padding:12px 8px;font-size:.86rem}
+    /* La tarjeta de entrega pendiente metía nombre + monto + botón en un solo renglón. */
+    .pe-card{flex-wrap:wrap;gap:9px}
+    .pe-card .pe-monto{margin-left:auto}
+    .pe-card .pe-btn{width:100%}
+    .dgbox{padding:12px;width:100%}
+    .toast{bottom:16px;font-size:.86rem;padding:11px 16px}
+  }
 </style>
 </head>
 <body>
