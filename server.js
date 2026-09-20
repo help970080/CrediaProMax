@@ -1125,13 +1125,19 @@ app.post('/api/users', auth, rol('admin'), (req, res) => {
 });
 /* Mueve la cartera VIVA de un cobrador a otra sucursal. Se usa al cambiarle la sucursal al
    usuario y desde la corrección masiva. Solo toca créditos con saldo > 0: los liquidados se
-   quedan donde se cobraron para no alterar el histórico de cobranza ni el P&L de la sucursal. */
-function _moverCarteraCobrador(nombreProm, sucDestino, quien, incluirLiquidados) {
+   quedan donde se cobraron para no alterar el histórico de cobranza ni el P&L de la sucursal.
+   Y solo de clientes ACTIVOS: es el mismo universo que reporta _desfaseSucursal(), para que lo
+   que anuncia el diagnóstico sea exactamente lo que se mueve. Los créditos de clientes dados de
+   baja no se ven en ninguna vista; se quedan donde están y se informan aparte (omitidosBaja). */
+function _moverCarteraCobrador(nombreProm, sucDestino, quien, incluirLiquidados, incluirInactivos) {
   const sid = +sucDestino;
-  if (!nombreProm || !sid) return { creditos: 0, clientes: 0 };
+  if (!nombreProm || !sid) return { creditos: 0, clientes: 0, omitidosBaja: 0 };
   const fecha = new Date().toISOString();
-  const tocados = db.sales.filter(s => s.prom === nombreProm && Number(s.sucursalId) !== sid
+  const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
+  const candidatos = db.sales.filter(s => s.prom === nombreProm && Number(s.sucursalId) !== sid
     && (incluirLiquidados === true || saldoDe(s.id) > 0));
+  const tocados = candidatos.filter(s => incluirInactivos === true || activos.has(s.clientId));
+  const omitidosBaja = candidatos.length - tocados.length;
   const clientIds = new Set();
   tocados.forEach(s => {
     s.historialSucursal = s.historialSucursal || [];
@@ -1144,7 +1150,7 @@ function _moverCarteraCobrador(nombreProm, sucDestino, quien, incluirLiquidados)
     const c = db.clients.find(x => x.id === cid);
     if (c && Number(c.sucursalId) !== sid) { c.sucursalId = sid; nClientes++; }
   });
-  return { creditos: tocados.length, clientes: nClientes };
+  return { creditos: tocados.length, clientes: nClientes, omitidosBaja };
 }
 
 app.patch('/api/users/:id', auth, rol('admin'), (req, res) => {
@@ -1174,7 +1180,7 @@ app.patch('/api/users/:id', auth, rol('admin'), (req, res) => {
      Aquí se arrastra la cartera viva, igual que ya lo hace POST /api/transferencias. */
   let movidos = { creditos: 0, clientes: 0 };
   if (u.rol === 'cobrador' && u.sucursalId && Number(u.sucursalId) !== Number(sucAntes || 0)) {
-    movidos = _moverCarteraCobrador(u.nombre, u.sucursalId, req.user.nombre, false);
+    movidos = _moverCarteraCobrador(u.nombre, u.sucursalId, req.user.nombre, false, false);
     db.reasigSucursal = db.reasigSucursal || [];
     db.reasigSucursal.push({
       id: nextId('reasigSucursal'), cobrador: u.nombre, de: sucAntes || null, a: u.sucursalId,
@@ -5940,14 +5946,16 @@ app.get('/api/admin/desfase-sucursal', auth, rol('admin'), (req, res) => {
 });
 app.post('/api/admin/desfase-sucursal/corregir', auth, rol('admin'), (req, res) => {
   const incluirLiquidados = req.body.incluirLiquidados === true;
-  const soloCobrador = (req.body.cobrador || '').trim() || null;   // opcional: corrige uno solo
+  const incluirInactivos = req.body.incluirInactivos === true;   // clientes dados de baja: por defecto NO
+  const soloCobrador = (req.body.cobrador || '').trim() || null; // opcional: corrige uno solo
   const previo = _desfaseSucursal();
   if (!previo.totales.creditos) return res.json({ ok: true, creditos: 0, clientes: 0, mensaje: 'No hay créditos desfasados.' });
   const cobs = db.users.filter(u => u.rol === 'cobrador' && u.activo !== false && u.sucursalId
     && (!soloCobrador || u.nombre === soloCobrador));
-  let creditos = 0, clientes = 0; const aplicado = [];
+  let creditos = 0, clientes = 0, omitidosBaja = 0; const aplicado = [];
   cobs.forEach(u => {
-    const r = _moverCarteraCobrador(u.nombre, u.sucursalId, req.user.nombre, incluirLiquidados);
+    const r = _moverCarteraCobrador(u.nombre, u.sucursalId, req.user.nombre, incluirLiquidados, incluirInactivos);
+    omitidosBaja += r.omitidosBaja || 0;
     if (r.creditos || r.clientes) {
       creditos += r.creditos; clientes += r.clientes;
       aplicado.push({ cobrador: u.nombre, sucursalId: u.sucursalId, ...r });
@@ -5958,11 +5966,44 @@ app.post('/api/admin/desfase-sucursal/corregir', auth, rol('admin'), (req, res) 
     db.reasigSucursal.push({
       id: nextId('reasigSucursal'), cobrador: soloCobrador || '(todos)', de: null, a: null,
       creditos, clientes, fecha: new Date().toISOString(), por: req.user.nombre,
-      origen: 'corrección masiva' + (incluirLiquidados ? ' (con liquidados)' : '')
+      origen: 'corrección masiva' + (incluirLiquidados ? ' (con liquidados)' : '') + (incluirInactivos ? ' (con bajas)' : '')
     });
     saveDB();
   }
-  res.json({ ok: true, creditos, clientes, incluirLiquidados, aplicado, restante: _desfaseSucursal().totales });
+  res.json({ ok: true, creditos, clientes, omitidosBaja, incluirLiquidados, incluirInactivos, aplicado, restante: _desfaseSucursal().totales });
+});
+/* Deshacer movimientos de sucursal ya aplicados. Cada crédito guarda historialSucursal, así que
+   se revierte al valor exacto que traía, sin adivinar. Por defecto solo revierte los créditos de
+   clientes DADOS DE BAJA (el excedente que movió la primera corrección). Con todos:true revierte
+   todo lo movido en la ventana. Siempre pide una fecha desde, para no tocar historia vieja. */
+app.post('/api/admin/desfase-sucursal/deshacer', auth, rol('admin'), (req, res) => {
+  const desde = req.body.desde ? Date.parse(req.body.desde) : null;
+  if (!desde || isNaN(desde)) return res.status(400).json({ error: 'Indica "desde" en ISO, p.ej. 2026-09-19T00:00:00.000Z' });
+  const todos = req.body.todos === true;
+  const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
+  let creditos = 0; const detalle = [];
+  db.sales.forEach(s => {
+    const h = s.historialSucursal;
+    if (!h || !h.length) return;
+    const ult = h[h.length - 1];
+    if (!ult || !ult.fecha || Date.parse(ult.fecha) < desde) return;
+    if (!todos && activos.has(s.clientId)) return;   // por defecto solo los de clientes de baja
+    detalle.push({ folio: s.folio, prom: s.prom, de: s.sucursalId, a: ult.de });
+    s.sucursalId = ult.de;
+    h.pop();
+    if (!h.length) delete s.historialSucursal;
+    creditos++;
+  });
+  if (creditos) {
+    db.reasigSucursal = db.reasigSucursal || [];
+    db.reasigSucursal.push({
+      id: nextId('reasigSucursal'), cobrador: '(deshacer)', de: null, a: null,
+      creditos, clientes: 0, fecha: new Date().toISOString(), por: req.user.nombre,
+      origen: 'deshacer desde ' + req.body.desde + (todos ? ' (todos)' : ' (solo bajas)')
+    });
+    saveDB();
+  }
+  res.json({ ok: true, creditos, todos, detalle, restante: _desfaseSucursal().totales });
 });
 app.get('/api/admin/desfase-sucursal/log', auth, rol('admin'), (req, res) => {
   res.json((db.reasigSucursal || []).slice().reverse());
