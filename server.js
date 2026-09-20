@@ -1194,6 +1194,48 @@ app.patch('/api/users/:id', auth, rol('admin'), (req, res) => {
   res.json({ ok: true, passwordGenerada: nueva, carteraMovida: movidos, creditosRenombrados: renombrados, usuario: { id: u.id, nombre: u.nombre, rol: u.rol, sucursalId: u.sucursalId } });
 });
 
+/* ---------- Eliminar usuario ----------
+   Hasta aquí solo existía desactivar, y un usuario desactivado sigue ocupando el listado, el
+   nombre y el login. Eliminar es distinto: borra el registro. Solo se permite cuando el usuario
+   NO tiene nada colgando, porque su nombre queda escrito en créditos, cajas y movimientos:
+   borrarlo con cartera viva dejaría clientes sin dueño y dinero sin responsable.
+   Los créditos ya liquidados conservan su nombre como historia; eso no impide eliminarlo. */
+function _bloqueosEliminarUsuario(u, actorId) {
+  const b = [];
+  if (u.id === actorId) b.push('No puedes eliminar tu propio usuario.');
+  const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
+  const vivos = db.sales.filter(s => s.prom === u.nombre && activos.has(s.clientId) && saldoDe(s.id) > 0.5);
+  if (vivos.length) b.push(`Tiene ${vivos.length} crédito(s) con saldo. Transfiérelos a otro cobrador en Transferencias.`);
+  const cli = db.clients.filter(c => c.activo !== false && c.prom === u.nombre);
+  if (cli.length) b.push(`Tiene ${cli.length} cliente(s) asignado(s). Reasígnalos antes de eliminar.`);
+  const tomados = db.sales.filter(s => s.entregado !== true && s.tomadoPor && s.tomadoPor.id === u.id);
+  if (tomados.length) b.push(`Tiene ${tomados.length} crédito(s) tomado(s) en la bandeja de entregas sin entregar.`);
+  if (u.rol === 'jc') { const caja = jcCajaDe(u.id); if (Math.abs(caja.saldo) > 0.5) b.push(`Tiene $${Math.round(caja.saldo)} en su caja de JC. Concilia antes de eliminar.`); }
+  if (u.rol === 'supervisor') { const sal = supervisorCajaDe(u.id); if (Math.abs(sal) > 0.5) b.push(`Tiene $${Math.round(sal)} de efectivo a su cargo. Concilia antes de eliminar.`); }
+  if (u.rol === 'admin' && db.users.filter(x => x.rol === 'admin' && x.activo !== false && x.id !== u.id).length === 0)
+    b.push('Es el único administrador activo. Crea otro admin antes de eliminarlo.');
+  return { bloqueos: b, creditosHistoricos: db.sales.filter(s => s.prom === u.nombre).length };
+}
+app.get('/api/users/:id/eliminable', auth, rol('admin'), (req, res) => {
+  const u = db.users.find(x => x.id == req.params.id);
+  if (!u) return res.status(404).json({ error: 'Usuario no encontrado' });
+  const r = _bloqueosEliminarUsuario(u, req.user.id);
+  res.json({ puede: r.bloqueos.length === 0, ...r, usuario: { id: u.id, nombre: u.nombre, rol: u.rol } });
+});
+app.delete('/api/users/:id', auth, rol('admin'), (req, res) => {
+  const u = db.users.find(x => x.id == req.params.id);
+  if (!u) return res.status(404).json({ error: 'Usuario no encontrado' });
+  const r = _bloqueosEliminarUsuario(u, req.user.id);
+  if (r.bloqueos.length) return res.status(409).json({ error: 'No se puede eliminar a ' + u.nombre, bloqueos: r.bloqueos });
+  const { passwordHash, ...limpio } = u;
+  db.usuariosEliminados = db.usuariosEliminados || [];
+  db.usuariosEliminados.push({ id: nextId('usuariosEliminados'), usuario: limpio, creditosHistoricos: r.creditosHistoricos, fecha: new Date().toISOString(), por: req.user.nombre });
+  db.users = db.users.filter(x => x.id !== u.id);
+  saveDB();
+  res.json({ ok: true, eliminado: { id: u.id, nombre: u.nombre, usuario: u.usuario }, creditosHistoricos: r.creditosHistoricos });
+});
+app.get('/api/users/eliminados', auth, rol('admin'), (req, res) => res.json((db.usuariosEliminados || []).slice().reverse()));
+
 /* ---------- Catálogos ---------- */
 app.get('/api/sucursales', auth, (req, res) => res.json(db.sucursales.filter(s => s.activo !== false)));
 app.post('/api/sucursales', auth, rol('admin'), (req, res) => {
