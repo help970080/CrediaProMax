@@ -5015,7 +5015,8 @@ async function cargarUsuarios(){
         <td style="text-align:right;white-space:nowrap">
           <button class="btn" style="padding:5px 9px;font-size:.74rem" onclick='editarUsuario(${JSON.stringify(u).replace(/'/g,"&#39;")})'>✏️ Editar</button>
           <button class="btn" style="padding:5px 9px;font-size:.74rem" onclick="toggleU(${u.id},${!u.activo})">${u.activo?'Desactivar':'Activar'}</button>
-          <button class="btn" style="padding:5px 9px;font-size:.74rem" onclick="resetU(${u.id})">Reset clave</button></td></tr>`;
+          <button class="btn" style="padding:5px 9px;font-size:.74rem" onclick="resetU(${u.id})">Reset clave</button>
+          <button class="btn" style="padding:5px 9px;font-size:.74rem;color:var(--red);border-color:var(--red)" onclick="eliminarU(${u.id},'${(u.nombre||'').replace(/'/g,'')}')" title="Eliminar usuario (solo si no tiene cartera)">🗑</button></td></tr>`;
     }).join('') || '<tr><td colspan="6" style="color:var(--faint);padding:14px">Sin usuarios.</td></tr>';
   }catch(e){ document.getElementById('u-list').innerHTML = `<tr><td colspan="6" style="color:var(--red);padding:14px">${e.message}</td></tr>`; }
 }
@@ -5056,6 +5057,25 @@ async function crearUsuario(){
   }catch(e){ alert(e.message); }
 }
 async function toggleU(id,activo){ try{ await apiU('PATCH','/api/users/'+id,{activo}); cargarUsuarios(); }catch(e){ alert(e.message); } }
+/* Eliminar usuario: primero pregunta al servidor si se puede y por qué no, para que el motivo
+   salga ANTES de la confirmación y no como un error después de decir que sí. */
+async function eliminarU(id,nombre){
+  let chk;
+  try{ chk = await apiU('GET','/api/users/'+id+'/eliminable'); }
+  catch(e){ alert(e.message); return; }
+  if(!chk.puede){
+    alert('No se puede eliminar a '+nombre+':\n\n• '+chk.bloqueos.join('\n• ')+'\n\nMientras tanto puedes Desactivarlo: no podrá entrar al sistema y su historial queda intacto.');
+    return;
+  }
+  const hist = chk.creditosHistoricos
+    ? '\n\nConserva '+chk.creditosHistoricos+' crédito(s) liquidado(s) en el histórico. Su nombre seguirá apareciendo ahí como cobranza pasada; eso no se borra.'
+    : '';
+  if(!confirm('¿Eliminar definitivamente al usuario "'+nombre+'"?\n\nSe borra su acceso y su registro. No se puede deshacer.'+hist+'\n\nSi solo quieres quitarle el acceso, usa Desactivar.')) return;
+  try{ const d = await apiU('DELETE','/api/users/'+id);
+    alert('Usuario "'+d.eliminado.nombre+'" eliminado.');
+    cargarUsuarios();
+  }catch(e){ alert(e.message + (e.bloqueos? '\n\n• '+e.bloqueos.join('\n• '):'')); }
+}
 async function resetU(id){ try{ const d=await apiU('PATCH','/api/users/'+id,{resetPassword:true}); mostrarPw('(clave reseteada)',d.passwordGenerada); }catch(e){ alert(e.message); } }
 function mostrarPw(n,pw){ document.getElementById('u-pbname').textContent=n; document.getElementById('u-pbpw').textContent=pw; document.getElementById('u-passbox').style.display='flex'; }
 function copyPw(){ navigator.clipboard.writeText(document.getElementById('u-pbpw').textContent); }
