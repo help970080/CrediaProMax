@@ -3185,7 +3185,13 @@ app.get('/api/dashboard', auth, (req,res)=>{
     let bajas=0;
     sus_sales.forEach(s=>{ if((_sDesde[s.id]||0)>0.5 && saldoDe(s.id)<=0.5) bajas++; });
     const crecimiento = unidades - bajas;
-    return {id:c.id, nombre:c.nombre, sucursal:suc?suc.nombre:'—', sucursalId:c.sucursalId,
+    /* El desempeño por cobrador hace match SOLO por nombre (s.prom === c.nombre), sin filtrar
+       sucursal: a propósito, para no perder cobranza de créditos que quedaron en otra sucursal.
+       Pero entonces esta fila puede no cuadrar contra Cartera ni contra el desglose, que sí
+       filtran por sucursal. "fuera_sucursal" expone cuántos créditos vivos suyos están fuera:
+       si es > 0, corre GET /api/admin/desfase-sucursal. */
+    const fuera_sucursal = sus_sales.filter(s => Number(s.sucursalId) !== Number(c.sucursalId) && saldoDe(s.id) > 0.5).length;
+    return {id:c.id, nombre:c.nombre, sucursal:suc?suc.nombre:'—', sucursalId:c.sucursalId, fuera_sucursal,
       clientes:clientes_vigentes, cartera, pagos_recibidos:recuperado, comisionable, npagos:sus_abonos.length, nopago:nopagoCob.size, por_entregar,
       unidades, debito, clientes_vigentes, clientes_cobrados, pct_cob, bajas, crecimiento,
       atraso_monto, atraso_clientes, esperado_acum };
@@ -5525,7 +5531,12 @@ app.get('/api/reports/desglose', auth, rol('admin', 'supervisor', 'sucursal'), (
     carteraSinPago: [], pctCarteraSinPago: [], liquidados: [], eliminados: [], ventas: [], valorVentas: [], debitoVentas: [], cobranza: [], pctCobranzaDebito: []
   };
   semanas.forEach(w => {
-    let valorCartera = 0, debito = 0, totalClientes = 0, sinPago = 0, debitoSinPago = 0, carteraSinPago = 0, liquidados = 0, ventas = 0, valorVentas = 0, debitoVentas = 0, cobranza = 0;
+    let valorCartera = 0, debito = 0, liquidados = 0, ventas = 0, valorVentas = 0, debitoVentas = 0, cobranza = 0;
+    /* "Total de clientes" y "Clientes sin pago" se cuentan por PERSONA, no por crédito: un cliente
+       con dos créditos vivos (paralelo o refin) es un solo cliente. Antes se sumaba una unidad por
+       crédito, así que esta fila no cuadraba contra el Resumen ni contra la ruta del cobrador. */
+    const cliVig = new Set();
+    const cliDeuda = new Map();   // clientId -> { debito, cartera, pago } de sus créditos con cobro esperado
     sales.forEach(s => {
       const esImp = s.importado === true;   // cartera migrada: NO es venta nueva de la semana en que se subió
       const createdTs = _diaMxMs(s.createdAt);
@@ -5545,7 +5556,7 @@ app.get('/api/reports/desglose', auth, rol('admin', 'supervisor', 'sucursal'), (
       // vigente: con saldo previo, o venta nueva real, o cartera importada con saldo en la semana
       const vigente = existed && (saldoIni > 0.5 || createdEsta || (esImp && saldoFin > 0.5)) && clienteActivo(s.clientId);
       if (vigente) {
-        totalClientes++;
+        cliVig.add(s.clientId);
         valorCartera += Math.max(0, saldoFin);   // la cartera sí crece el día que se coloca: el dinero ya salió
         const exp = expSemanal(s);
         // El crédito colocado ESTA semana todavía no tiene cuota que cobrar: su primer pago cae la
@@ -5553,12 +5564,22 @@ app.get('/api/reports/desglose', auth, rol('admin', 'supervisor', 'sucursal'), (
         // justo en las semanas de mayor colocación. Es el mismo criterio que ya usan "sin pago" y
         // el reporte semanal de no pagos.
         if (!createdEsta) debito += exp;
-        // sin pago: vigente que NO es venta nueva de la semana, con cobro esperado, y no abonó
-        if (!createdEsta && exp > 0 && abonoSem < 0.5) { sinPago++; debitoSinPago += exp; carteraSinPago += Math.max(0, saldoFin); }
+        // sin pago: vigente que NO es venta nueva de la semana, con cobro esperado, y no abonó.
+        // Se acumula por CLIENTE: si abonó en cualquiera de sus créditos, no es un cliente sin pago.
+        if (!createdEsta && exp > 0) {
+          const d = cliDeuda.get(s.clientId) || { debito: 0, cartera: 0, pago: false };
+          d.debito += exp;
+          d.cartera += Math.max(0, saldoFin);
+          if (abonoSem >= 0.5) d.pago = true;
+          cliDeuda.set(s.clientId, d);
+        }
       }
       // liquidados: tenía saldo al inicio y quedó en cero esta semana
       if (existed && saldoIni > 0.5 && saldoFin < 0.5) liquidados++;
     });
+    let sinPago = 0, debitoSinPago = 0, carteraSinPago = 0;
+    cliDeuda.forEach(d => { if (!d.pago) { sinPago++; debitoSinPago += d.debito; carteraSinPago += d.cartera; } });
+    const totalClientes = cliVig.size;
     const eliminados = 0; // sin fecha de baja por crédito; se reporta 0 hasta tener marca temporal
     F.valorCartera.push(Math.round(valorCartera));
     F.debito.push(Math.round(debito));
