@@ -1123,9 +1123,35 @@ app.post('/api/users', auth, rol('admin'), (req, res) => {
   SYS.userIndex = SYS.userIndex || {}; SYS.userIndex[uname] = tid; saveSystem();
   res.status(201).json({ id: u.id, nombre: u.nombre, usuario: u.usuario, rol: u.rol, sucursalId: u.sucursalId, passwordGenerada: plain });
 });
+/* Mueve la cartera VIVA de un cobrador a otra sucursal. Se usa al cambiarle la sucursal al
+   usuario y desde la corrección masiva. Solo toca créditos con saldo > 0: los liquidados se
+   quedan donde se cobraron para no alterar el histórico de cobranza ni el P&L de la sucursal. */
+function _moverCarteraCobrador(nombreProm, sucDestino, quien, incluirLiquidados) {
+  const sid = +sucDestino;
+  if (!nombreProm || !sid) return { creditos: 0, clientes: 0 };
+  const fecha = new Date().toISOString();
+  const tocados = db.sales.filter(s => s.prom === nombreProm && Number(s.sucursalId) !== sid
+    && (incluirLiquidados === true || saldoDe(s.id) > 0));
+  const clientIds = new Set();
+  tocados.forEach(s => {
+    s.historialSucursal = s.historialSucursal || [];
+    s.historialSucursal.push({ de: s.sucursalId, a: sid, fecha, por: quien || 'sistema' });
+    s.sucursalId = sid;
+    clientIds.add(s.clientId);
+  });
+  let nClientes = 0;
+  clientIds.forEach(cid => {
+    const c = db.clients.find(x => x.id === cid);
+    if (c && Number(c.sucursalId) !== sid) { c.sucursalId = sid; nClientes++; }
+  });
+  return { creditos: tocados.length, clientes: nClientes };
+}
+
 app.patch('/api/users/:id', auth, rol('admin'), (req, res) => {
   const u = db.users.find(x => x.id == req.params.id);
   if (!u) return res.status(404).json({ error: 'Usuario no encontrado' });
+  const nombreAntes = u.nombre;
+  const sucAntes = u.sucursalId;
   if (typeof req.body.activo === 'boolean') u.activo = req.body.activo;
   if (req.body.nombre) u.nombre = String(req.body.nombre).trim();
   if (req.body.rol && ['admin','supervisor','sucursal','cobrador','jc','promotor_grupal'].includes(req.body.rol)) u.rol = req.body.rol;
@@ -1134,10 +1160,32 @@ app.patch('/api/users/:id', auth, rol('admin'), (req, res) => {
     if ((u.rol === 'cobrador' || u.rol === 'sucursal' || u.rol === 'jc' || u.rol === 'promotor_grupal') && !sid) return res.status(400).json({ error: 'Un cobrador, promotor grupal, JC o usuario de sucursal debe tener una sucursal asignada.' });
     u.sucursalId = sid;
   }
+  /* Si al cobrador le cambia el NOMBRE, sus créditos y clientes lo traen escrito en "prom":
+     sin esto quedan colgando de un cobrador que ya no existe (no aparecen en su ruta ni en
+     su comisión). Se renombra la referencia antes de mover la sucursal. */
+  let renombrados = 0;
+  if (u.rol === 'cobrador' && u.nombre !== nombreAntes && nombreAntes) {
+    db.sales.forEach(s => { if (s.prom === nombreAntes) { s.prom = u.nombre; renombrados++; } });
+    db.clients.forEach(c => { if (c.prom === nombreAntes) c.prom = u.nombre; });
+  }
+  /* La sucursal del crédito se hereda del cobrador al capturar la venta (POST /api/sales).
+     Si después se le mueve de sucursal y no se arrastra la cartera, sus clientes viejos
+     desaparecen de la sucursal nueva: no salen en cartera, ni en la ruta, ni en los reportes.
+     Aquí se arrastra la cartera viva, igual que ya lo hace POST /api/transferencias. */
+  let movidos = { creditos: 0, clientes: 0 };
+  if (u.rol === 'cobrador' && u.sucursalId && Number(u.sucursalId) !== Number(sucAntes || 0)) {
+    movidos = _moverCarteraCobrador(u.nombre, u.sucursalId, req.user.nombre, false);
+    db.reasigSucursal = db.reasigSucursal || [];
+    db.reasigSucursal.push({
+      id: nextId('reasigSucursal'), cobrador: u.nombre, de: sucAntes || null, a: u.sucursalId,
+      creditos: movidos.creditos, clientes: movidos.clientes,
+      fecha: new Date().toISOString(), por: req.user.nombre, origen: 'cambio de usuario'
+    });
+  }
   let nueva = null;
   if (req.body.resetPassword) { nueva = genPassword(); u.passwordHash = bcrypt.hashSync(nueva, 8); }
   saveDB();
-  res.json({ ok: true, passwordGenerada: nueva, usuario: { id: u.id, nombre: u.nombre, rol: u.rol, sucursalId: u.sucursalId } });
+  res.json({ ok: true, passwordGenerada: nueva, carteraMovida: movidos, creditosRenombrados: renombrados, usuario: { id: u.id, nombre: u.nombre, rol: u.rol, sucursalId: u.sucursalId } });
 });
 
 /* ---------- Catálogos ---------- */
@@ -5827,6 +5875,76 @@ app.post('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => 
 app.get('/api/transferencias', auth, rol('admin', 'supervisor'), (req, res) => {
   const log = (db.transferencias || []).slice().reverse();
   res.json(log);
+});
+
+/* ---------- Desfase de sucursal: auditoría y corrección ----------
+   Un crédito hereda la sucursal del cobrador al capturarse. Si al cobrador se le cambió de
+   sucursal antes de este parche, su cartera vieja quedó congelada en la sucursal anterior y
+   esos clientes no aparecen en la cartera, la ruta ni los reportes de su sucursal real.
+   GET  = diagnóstico (no escribe nada)
+   POST = corrección (mueve solo cartera viva salvo incluirLiquidados:true) ------------------ */
+function _desfaseSucursal() {
+  const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
+  const cobs = db.users.filter(u => u.rol === 'cobrador' && u.activo !== false && u.sucursalId);
+  const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
+  const porCobrador = {}; const detalle = [];
+  cobs.forEach(u => {
+    db.sales.forEach(s => {
+      if (s.prom !== u.nombre || !activos.has(s.clientId)) return;
+      if (Number(s.sucursalId) === Number(u.sucursalId)) return;
+      const saldo = saldoDe(s.id);
+      const c = db.clients.find(x => x.id === s.clientId) || {};
+      const k = u.nombre;
+      porCobrador[k] = porCobrador[k] || { cobrador: u.nombre, de: sucMap[s.sucursalId] || '—', deId: s.sucursalId, a: sucMap[u.sucursalId] || '—', aId: u.sucursalId, creditos: 0, conSaldo: 0, saldoTotal: 0 };
+      porCobrador[k].creditos++;
+      if (saldo > 0) { porCobrador[k].conSaldo++; porCobrador[k].saldoTotal += saldo; }
+      detalle.push({ saleId: s.id, folio: s.folio, cliente: c.nombre || '—', cobrador: u.nombre, deId: s.sucursalId, de: sucMap[s.sucursalId] || '—', aId: u.sucursalId, a: sucMap[u.sucursalId] || '—', saldo: Math.round(saldo), liquidado: saldo <= 0 });
+    });
+  });
+  const lista = Object.values(porCobrador);
+  return {
+    totales: {
+      creditos: detalle.length,
+      conSaldo: detalle.filter(d => !d.liquidado).length,
+      liquidados: detalle.filter(d => d.liquidado).length,
+      saldoAtrapado: Math.round(lista.reduce((a, x) => a + x.saldoTotal, 0)),
+      cobradores: lista.length
+    },
+    porCobrador: lista.map(x => ({ ...x, saldoTotal: Math.round(x.saldoTotal) })),
+    detalle
+  };
+}
+app.get('/api/admin/desfase-sucursal', auth, rol('admin'), (req, res) => {
+  res.json(_desfaseSucursal());
+});
+app.post('/api/admin/desfase-sucursal/corregir', auth, rol('admin'), (req, res) => {
+  const incluirLiquidados = req.body.incluirLiquidados === true;
+  const soloCobrador = (req.body.cobrador || '').trim() || null;   // opcional: corrige uno solo
+  const previo = _desfaseSucursal();
+  if (!previo.totales.creditos) return res.json({ ok: true, creditos: 0, clientes: 0, mensaje: 'No hay créditos desfasados.' });
+  const cobs = db.users.filter(u => u.rol === 'cobrador' && u.activo !== false && u.sucursalId
+    && (!soloCobrador || u.nombre === soloCobrador));
+  let creditos = 0, clientes = 0; const aplicado = [];
+  cobs.forEach(u => {
+    const r = _moverCarteraCobrador(u.nombre, u.sucursalId, req.user.nombre, incluirLiquidados);
+    if (r.creditos || r.clientes) {
+      creditos += r.creditos; clientes += r.clientes;
+      aplicado.push({ cobrador: u.nombre, sucursalId: u.sucursalId, ...r });
+    }
+  });
+  if (creditos || clientes) {
+    db.reasigSucursal = db.reasigSucursal || [];
+    db.reasigSucursal.push({
+      id: nextId('reasigSucursal'), cobrador: soloCobrador || '(todos)', de: null, a: null,
+      creditos, clientes, fecha: new Date().toISOString(), por: req.user.nombre,
+      origen: 'corrección masiva' + (incluirLiquidados ? ' (con liquidados)' : '')
+    });
+    saveDB();
+  }
+  res.json({ ok: true, creditos, clientes, incluirLiquidados, aplicado, restante: _desfaseSucursal().totales });
+});
+app.get('/api/admin/desfase-sucursal/log', auth, rol('admin'), (req, res) => {
+  res.json((db.reasigSucursal || []).slice().reverse());
 });
 app.post('/api/transferencias/lote', auth, rol('admin', 'supervisor'), (req, res) => {
   const { clientIds, nuevoProm, nuevaSucursalId, motivo } = req.body;
