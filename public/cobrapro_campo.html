@@ -265,6 +265,12 @@
           <input type="checkbox" id="sc-cons" style="width:19px;height:19px;flex:0 0 auto;margin-top:2px;accent-color:var(--acc)">
           <span style="font-size:.78rem;line-height:1.45">El cliente autoriza dar los datos de sus referidos para verificación y promoción, y que sean contactados para gestiones de cobranza. <span class="sc-req">*</span></span></label>
 
+        <div style="padding:11px 12px;border:1px solid var(--line-2);border-radius:10px;background:var(--surf-2);margin-bottom:11px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:.82rem;font-weight:700">✍️ Firma del cliente <span class="sc-req">*</span></span>
+            <button type="button" onclick="scFirmaLimpiar()" style="background:transparent;border:1px solid var(--line-2);color:inherit;border-radius:7px;padding:4px 10px;font-size:.74rem;cursor:pointer">Borrar</button></div>
+          <canvas id="sc-firma" width="700" height="260" style="display:block;width:100%;height:150px;background:#fff;border:1.5px dashed #999;border-radius:9px;touch-action:none"></canvas>
+          <div style="font-size:.72rem;color:var(--dim);margin-top:5px">El solicitante firma con el dedo. Con su firma acepta la declaración de la solicitud.</div>
+        </div>
         <div id="sc-gps" style="font-size:.76rem;color:var(--dim);margin-bottom:9px"></div>
         <button id="sc-btn" onclick="scEnviar()" style="width:100%;background:var(--acc);color:#1b2330;border:none;padding:13px;border-radius:10px;font-family:'Sora';font-weight:700;font-size:.95rem;cursor:pointer">Enviar solicitud a mi sucursal</button>
       </div>
@@ -1094,6 +1100,22 @@ async function scFoto(input,tipo){
   }catch(e){ delete SC_FOTOS[tipo]; if(v){ v.textContent='✗ Reintentar'; v.style.color='var(--red)'; } toast(e.message); }
   input.value='';
 }
+/* Firma del cliente (canvas). Se sube como foto tipo 'firma' al enviar. */
+function scFirmaInit(){
+  const cv=document.getElementById('sc-firma'); if(!cv||cv._ok) return; cv._ok=1;
+  const ctx=cv.getContext('2d'); let dn=false;
+  cv._blanco=()=>{ ctx.fillStyle='#fff'; ctx.fillRect(0,0,cv.width,cv.height); ctx.lineWidth=3; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle='#1a2a6c'; cv._trazos=0; };
+  cv._blanco();
+  const pos=e=>{ const r=cv.getBoundingClientRect(); const t=e.touches?e.touches[0]:e; return {x:(t.clientX-r.left)*(cv.width/r.width),y:(t.clientY-r.top)*(cv.height/r.height)}; };
+  const st=e=>{ e.preventDefault(); dn=true; const p=pos(e); ctx.beginPath(); ctx.moveTo(p.x,p.y); };
+  const mv=e=>{ if(!dn) return; e.preventDefault(); const p=pos(e); ctx.lineTo(p.x,p.y); ctx.stroke(); cv._trazos++; if(SC_FOTOS.firma) delete SC_FOTOS.firma; };
+  const en=()=>{ dn=false; };
+  cv.addEventListener('mousedown',st); cv.addEventListener('mousemove',mv); window.addEventListener('mouseup',en);
+  cv.addEventListener('touchstart',st,{passive:false}); cv.addEventListener('touchmove',mv,{passive:false}); cv.addEventListener('touchend',en);
+}
+function scFirmaLimpiar(){ scFirmaInit(); const cv=document.getElementById('sc-firma'); if(cv&&cv._blanco) cv._blanco(); if(typeof SC_FOTOS!=='undefined') delete SC_FOTOS.firma; }
+function scFirmaHay(){ scFirmaInit(); const cv=document.getElementById('sc-firma'); return !!(cv&&(cv._trazos||0)>=15); }
+document.addEventListener('DOMContentLoaded',scFirmaInit); setTimeout(scFirmaInit,500);
 async function scEnviar(){
   const g=id=>(document.getElementById(id)?.value||'').trim();
   const refs=[1,2].map(i=>({nombre:g(`sc-r${i}-nom`),cel:g(`sc-r${i}-cel`).replace(/\D/g,''),parentesco:g(`sc-r${i}-par`),direccion:g(`sc-r${i}-dir`),verificacion:''}));
@@ -1114,9 +1136,11 @@ async function scEnviar(){
   refs.forEach((r,i)=>{ if(!r.nombre||r.cel.length<10||!r.parentesco) falta.push(`referencia ${i+1}`); });
   [['ineFrente','INE frente'],['ineReverso','INE reverso'],['comprobante','comprobante']].forEach(([k,l])=>{ if(!SC_FOTOS[k]) falta.push('foto '+l); });
   if(!document.getElementById('sc-cons').checked) falta.push('autorización del cliente');
+  if(!scFirmaHay()) falta.push('firma del cliente');
   if(falta.length){ toast('Falta: '+falta.join(', ')); return; }
   const btn=document.getElementById('sc-btn'); btn.disabled=true; btn.textContent='Enviando…';
   try{
+    if(!SC_FOTOS.firma){ const cv=document.getElementById('sc-firma'); const f=await _solApi('POST','/api/solicitud/foto',{tipo:'firma',imagen:cv.toDataURL('image/jpeg',0.8)}); SC_FOTOS.firma=f.ref; }
     const d=await api('POST','/api/solicitudes-campo',{
       cliente:{nombre:scNombreCompleto(),curp,tel:g('sc-tel'),calle:g('sc-calle'),col:g('sc-col'),ciudad:g('sc-ciudad'),estado:g('sc-estado'),ref:g('sc-ref')},
       lat:SC_LAT,lng:SC_LNG,
@@ -1131,7 +1155,7 @@ async function scEnviar(){
 }
 function scLimpiar(){
   SC_IDS.forEach(id=>{const e=document.getElementById(id); if(e) e.value='';});
-  document.getElementById('sc-cons').checked=false; SC_FOTOS={};
+  document.getElementById('sc-cons').checked=false; SC_FOTOS={}; scFirmaLimpiar();
   ['ineFrente','ineReverso','comprobante'].forEach(k=>{ const v=document.getElementById('scd-'+k); if(v){ v.textContent='📷 Tomar'; v.style.color=''; } });
   scGPS();
 }
