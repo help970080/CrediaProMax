@@ -788,6 +788,11 @@
           <span><b>Mostrar membrete</b> (nombre de la agencia) en recibos, cartas y comprobantes</span>
         </label>
       </div>
+      <div class="filters" id="cfg-nombre-box" style="display:none;margin-top:10px">
+        <label style="flex:1;min-width:220px;font-size:.85rem">Nombre / razón social de la agencia
+          <input id="cfg-nombre" maxlength="120" style="display:block;width:100%;margin-top:4px" placeholder="Ej. Grupo JR Libertad S de RL de CV"></label>
+        <button class="btn gold" onclick="guardarNombreAgencia()">Guardar nombre</button>
+      </div>
       <div class="note" style="margin-top:8px">Apágalo si la agencia no quiere su marca en los documentos (por ejemplo, si imprimen en papel membretado propio). Aplica a los recibos de WhatsApp y a las cartas de cobranza. Los usuarios verán el cambio al volver a iniciar sesión.</div>
     </div>
     <div class="note" style="margin-top:-6px">El corte deja de ser un Excel nocturno: el sistema ya sabe cuánto cobró cada quien, entonces sabe cuánto debe entregar. El admin solo revisa las diferencias marcadas.</div>
@@ -2710,11 +2715,24 @@ async function ecReAplicar(){
 
 /* ===== Cortes (admin) ===== */
 const _diasLbl=['D','L','M','M','J','V','S']; // 0..6
+async function guardarNombreAgencia(){
+  const n=($('cfg-nombre').value||'').trim();
+  if(n.length<3){ alert('Escribe el nombre de la agencia'); return; }
+  if(!confirm('¿Cambiar el nombre de la agencia a:\n\n"'+n+'"?\n\nSe usará en el encabezado y en todos los documentos impresos.')) return;
+  try{
+    await apiU('PATCH','/api/config',{brandNombre:n});
+    try{ const g=JSON.parse(localStorage.getItem('cobrapro_brand')||'{}'); g.nombre=n; localStorage.setItem('cobrapro_brand',JSON.stringify(g)); }catch(_){}
+    if(typeof BRAND!=='undefined') BRAND.nombre=n;
+    const bn=document.getElementById('brandName'); if(bn) bn.textContent=n; document.title=n+' · Crédito y Cobranza';
+    alert('✓ Nombre actualizado');
+  }catch(e){ alert(e.message); }
+}
 async function cargarCortes(){
   try{
     const cfg=await apiU('GET','/api/config');
     $('cfg-hora').value=cfg.corteAutoHora||'19:00';
     { const mb=$('cfg-membrete'); if(mb) mb.checked=!(cfg.brand && cfg.brand.mostrarMembrete===false); }
+    { const bx=$('cfg-nombre-box'); if(bx){ bx.style.display=(ME&&ME.rol==='admin')?'flex':'none'; const n=$('cfg-nombre'); if(n) n.value=(cfg.brand&&cfg.brand.nombre)||''; } }
     const dias=cfg.corteAutoDias||[1,2,3,4,5,6];
     $('cfg-dias').innerHTML=[1,2,3,4,5,6,0].map(d=>`<label style="display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" class="cfg-d" value="${d}" ${dias.includes(d)?'checked':''} style="width:auto"> ${_diasLbl[d]}</label>`).join('');
     const fecha=hoyMX();   // hora de México (antes UTC: tras las 6pm pedía los cortes de mañana)
