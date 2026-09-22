@@ -2184,8 +2184,54 @@ app.delete('/api/clients/:id', auth, rol('admin', 'supervisor'), (req, res) => {
   const c = db.clients.find(x => x.id === id);
   if (!c) return res.status(404).json({ error: 'Cliente no encontrado' });
   c.activo = false; c.bajaAt = new Date().toISOString(); c.bajaBy = req.user.nombre;
+  const _b = req.body || {};
+  const _desp = String(_b.despacho || '').trim().slice(0, 120), _mot = String(_b.motivo || '').trim().slice(0, 300);
+  if (_desp) c.bajaDespacho = _desp;
+  if (_mot) c.bajaMotivo = _mot;
   saveDB();
   res.json({ ok: true });
+});
+// Clientes dados de baja (soft delete) — para poder restaurarlos
+app.get('/api/clients/eliminados', auth, rol('admin', 'supervisor'), (req, res) => {
+  const sucMap = {}; (db.sucursales || []).forEach(s => sucMap[s.id] = s.nombre);
+  const out = db.clients.filter(c => c.activo === false).map(c => {
+    const cr = db.sales.filter(s => s.clientId === c.id);
+    return { id: c.id, nombre: c.nombre, tel: c.tel || '', curp: c.curp || '', prom: c.prom || '', sucursal: sucMap[c.sucursalId] || '—',
+      bajaAt: c.bajaAt || null, bajaBy: c.bajaBy || '', despacho: c.bajaDespacho || '', motivo: c.bajaMotivo || '', creditos: cr.length,
+      saldo: cr.reduce((a, s) => a + (+saldoDe(s.id) || 0), 0) };
+  }).sort((a, b) => String(b.bajaAt || '').localeCompare(String(a.bajaAt || '')));
+  res.json(out);
+});
+// Expediente completo de un cliente (activo o eliminado), SOLO LECTURA: no toca cartera ni saldos
+app.get('/api/clients/:id/expediente', auth, rol('admin', 'supervisor'), (req, res) => {
+  const id = +req.params.id;
+  const c = db.clients.find(x => x.id === id);
+  if (!c) return res.status(404).json({ error: 'Cliente no encontrado' });
+  const sucMap = {}; (db.sucursales || []).forEach(s => sucMap[s.id] = s.nombre);
+  const { solicitud: _cs, ...cli } = c;
+  const creditos = db.sales.filter(s => s.clientId === id).map(s => {
+    let saldo = 0;
+    const movs = db.movimientos.filter(m => m.saleId === s.id).map(m => { saldo += (m.cargo || 0) - (m.abono || 0); return { id: m.id, fecha: m.fecha, concepto: m.concepto, origen: m.origen || '', forma: m.forma || '', cargo: m.cargo || 0, abono: m.abono || 0, saldo, revertido: !!m.revertido }; });
+    let at = null; try { at = calcAtraso(s); } catch (e) {}
+    return { id: s.id, folio: s.folio, tipo: s.tipo, plazo: s.plazo, monto: s.monto, total: s.total, cuota: s.cuota, prom: s.prom || '',
+      sucursal: sucMap[s.sucursalId] || '—', createdAt: s.createdAt || null, saldo: saldoDe(s.id), atraso: at,
+      abonado: movs.reduce((a, m) => a + (m.abono || 0), 0), movimientos: movs };
+  });
+  res.json({ cliente: { ...cli, sucursal: sucMap[c.sucursalId] || '—' }, creditos });
+});
+app.post('/api/clients/:id/restaurar', auth, rol('admin', 'supervisor'), (req, res) => {
+  const id = +req.params.id;
+  const c = db.clients.find(x => x.id === id);
+  if (!c) return res.status(404).json({ error: 'Cliente no encontrado' });
+  if (c.activo !== false) return res.status(400).json({ error: 'El cliente ya está activo' });
+  const cn = String(c.curp || '').trim().toUpperCase();
+  if (cn) { const d = db.clients.find(x => x.id !== id && x.activo !== false && (x.curp || '').trim().toUpperCase() === cn); if (d) return res.status(409).json({ error: `No se puede restaurar: la CURP ${cn} ya está en uso por "${d.nombre}".` }); }
+  c.activo = true;
+  c.restauradoAt = new Date().toISOString(); c.restauradoBy = req.user.nombre;
+  c.bajaPrev = { at: c.bajaAt || null, by: c.bajaBy || null, motivo: c.bajaMotivo || null, despacho: c.bajaDespacho || null };
+  delete c.bajaAt; delete c.bajaBy; delete c.bajaMotivo; delete c.bajaDespacho;
+  saveDB();
+  res.json({ ok: true, cliente: { id: c.id, nombre: c.nombre } });
 });
 app.patch('/api/clients/:id', auth, rol('admin', 'supervisor'), (req, res) => {
   const id = +req.params.id;
