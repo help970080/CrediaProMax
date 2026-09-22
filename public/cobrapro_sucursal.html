@@ -1240,7 +1240,8 @@ async function scCargar(silencioso){
     }).join('')||'<div style="color:var(--faint);padding:12px;font-size:.85rem">Sin solicitudes con ese filtro.</div>';
   }catch(e){ if(w && !silencioso) w.innerHTML='<div style="color:var(--red);padding:12px;font-size:.85rem">'+_solE(e.message)+'</div>'; }
 }
-async function scVer(id){
+let _scId=null;
+async function scVer(id){ _scId=id;
   _scVerif={};
   const o=_solOv(); o.innerHTML='<div style="background:var(--surf);border-radius:12px;padding:18px;max-width:560px;width:100%">⏳ Cargando…</div>'; o.style.display='flex';
   try{
@@ -1258,25 +1259,57 @@ async function scVer(id){
       ${fila('Vivienda',_solE(s.vivienda)+' · '+_solE(s.tiempoDomicilio))}${fila('Estado civil · hijos',_solE(s.estadoCivil)+' · '+(s.hijos||0))}
       ${sec('Pide')}${fila('Monto y plazo',_solM(s.solicitado)+' · '+_solE(s.plazoSolicitado))}
       ${sec('Trabajo')}${fila('Actividad',_solE(s.actividad))}${s.dirTrabajo?fila('Dirección',_solE(s.dirTrabajo)):''}${fila('Ingreso semanal',_solM(s.ingresoSemanal))}${fila('Gasto semanal',_solM(s.gastoSemanal))}${fila('Disponible',_solM((s.ingresoSemanal||0)-(s.gastoSemanal||0)))}
-      ${sec('Documentos')}<div style="display:flex;gap:8px;flex-wrap:wrap">${[['ineFrente','INE frente'],['ineReverso','INE reverso'],['comprobante','Comprobante']].map(([k,l])=>{const src=_solSrc((s.fotos||{})[k],ft);
+      ${sec('Documentos')}<div style="display:flex;gap:8px;flex-wrap:wrap">${[['ineFrente','INE frente'],['ineReverso','INE reverso'],['comprobante','Comprobante'],['firma','✍️ Firma cliente']].map(([k,l])=>{const src=_solSrc((s.fotos||{})[k],ft);
         return `<div style="flex:1 1 140px;border:1px solid var(--line);border-radius:9px;padding:6px;text-align:center;font-size:.74rem"><div style="font-weight:700;margin-bottom:4px">${l}</div>
           ${src?`<a href="${src}" target="_blank"><img src="${src}" style="width:100%;height:100px;object-fit:cover;border-radius:6px"></a>`:'<div style="height:100px;display:flex;align-items:center;justify-content:center;color:var(--red)">Falta</div>'}</div>`;}).join('')}</div>
       ${sec('Referencias')}${(s.referencias||[]).map((r,i)=>`<div style="border:1px solid var(--line);border-radius:9px;padding:9px;margin-top:7px;font-size:.82rem">
         <b>${i+1}. ${_solE(r.nombre)}</b> <span style="opacity:.7">(${_solE(r.parentesco)})</span><br>📞 <a href="tel:${_solE(r.cel)}" style="color:inherit">${_solE(r.cel)}</a>${r.direccion?' · '+_solE(r.direccion):''}
         <div style="margin-top:3px;font-weight:700;color:${r.verificacion==='positiva'?'var(--grn)':(r.verificacion==='negativa'?'var(--red)':'#caa23a')}" id="scv-${i}">${r.verificacion?r.verificacion.toUpperCase():'Pendiente de verificar'}</div>
-        <div style="display:flex;gap:6px;margin-top:7px"><button class="btn" style="flex:1;font-size:.78rem;border-color:var(--grn);color:var(--grn)" onclick="scVerif(${i},'positiva')">✓ Positiva</button>
-          <button class="btn" style="flex:1;font-size:.78rem;border-color:var(--red);color:var(--red)" onclick="scVerif(${i},'negativa')">✗ Negativa</button></div></div>`).join('')}
+        ${r.verificadoPor?`<div style="font-size:.74rem;opacity:.75">${_solE(r.verificadoPor)} (${_solE(r.verificadoRol||'')})${r.nota?' · 📝 '+_solE(r.nota):''}</div>`:''}
+        ${x.estado==='pendiente'&&d.puedeVerificar?`<div style="display:flex;gap:6px;margin-top:7px"><button class="btn" style="flex:1;font-size:.78rem;border-color:var(--grn);color:var(--grn)" onclick="scVerif(${i},'positiva')">✓ Positiva</button>
+          <button class="btn" style="flex:1;font-size:.78rem;border-color:var(--red);color:var(--red)" onclick="scVerif(${i},'negativa')">✗ Negativa</button></div>`:''}</div>`).join('')}
+      ${x.estado==='pendiente'&&d.esNuevo?'<div style="font-size:.8rem;color:#caa23a;margin-top:9px;line-height:1.45">🔒 <b>Cliente NUEVO:</b> las referencias las verifica y el crédito lo autoriza el <b>supervisor</b>. Puedes revisar el expediente y capturar la firma si falta.</div>':''}
       <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
-        ${x.estado==='pendiente'&&d.puedeResolver?`<button class="btn" style="flex:1;border-color:var(--grn);color:var(--grn)" onclick="solCerrar();scUsar(${x.id})">➕ Capturar crédito</button>`:''}
+        ${x.estado==='pendiente'?`<button class="btn" style="flex:1" onclick="scFirmar(${x.id})">✍️ ${(s.fotos||{}).firma?'Volver a firmar':'Firma del cliente'}</button>`:''}
+        ${x.estado==='pendiente'&&d.puedeResolver&&!d.esNuevo?`<button class="btn" style="flex:1;border-color:var(--grn);color:var(--grn)" onclick="solCerrar();scUsar(${x.id})">➕ Capturar crédito</button>`:''}
         <button class="btn" style="flex:1" onclick="solCerrar()">Cerrar</button></div></div>`;
   }catch(e){ o.innerHTML='<div style="background:var(--surf);border-radius:12px;padding:18px;max-width:560px;width:100%">'+_solE(e.message)+'<div style="margin-top:12px;text-align:right"><button class="btn" onclick="solCerrar()">Cerrar</button></div></div>'; }
 }
 /* El gerente marca la verificación en la solicitud de campo ANTES de capturar el crédito. */
 let _scVerif={};
-function scVerif(i,v){
-  _scVerif[i]=v;
-  const el=document.getElementById('scv-'+i);
-  if(el){ el.textContent=v.toUpperCase(); el.style.color=v==='positiva'?'var(--grn)':'var(--red)'; }
+/* La verificación se guarda en el servidor (quién, cuándo y rol): es la que vale al autorizar. */
+async function scVerif(i,v){
+  const nota=prompt((v==='positiva'?'✓ Referencia POSITIVA':'✗ Referencia NEGATIVA')+'\n\nNota de la llamada (opcional):','');
+  if(nota===null) return;
+  try{ await api('POST','/api/solicitudes-campo/'+_scId+'/verificar',{idx:i,resultado:v,nota}); scVer(_scId); }
+  catch(e){ toast(e.message); }
+}
+/* Firma del cliente capturada en sucursal (cuando no se recabó en campo). */
+function scFirmar(id){
+  const o=_solOv();
+  o.innerHTML=`<div style="background:var(--surf);color:var(--txt);border-radius:12px;padding:18px;max-width:560px;width:100%">
+    <div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0;font-size:1.05rem">✍️ Firma del cliente</h3><button onclick="scVer(${id})" style="border:none;background:transparent;color:inherit;font-size:1.3rem;cursor:pointer">✕</button></div>
+    <div style="font-size:.78rem;opacity:.75;margin:4px 0 10px">El solicitante firma con el dedo. Con su firma acepta la declaración de la solicitud.</div>
+    <canvas id="scf-pad" width="700" height="260" style="width:100%;height:180px;background:#fff;border:1.5px dashed #999;border-radius:10px;touch-action:none"></canvas>
+    <div style="display:flex;gap:8px;margin-top:12px"><button class="btn" style="flex:1" onclick="document.getElementById('scf-pad')._blanco()">Borrar</button><button class="btn" id="scf-ok" style="flex:1;border-color:var(--grn);color:var(--grn)" onclick="scFirmaGuardar(${id})">✓ Guardar firma</button></div></div>`;
+  o.style.display='flex';
+  const cv=document.getElementById('scf-pad'), ctx=cv.getContext('2d'); let dn=false;
+  cv._blanco=()=>{ ctx.fillStyle='#fff'; ctx.fillRect(0,0,cv.width,cv.height); ctx.lineWidth=3; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle='#1a2a6c'; cv._trazos=0; };
+  cv._blanco();
+  const pos=e=>{ const r=cv.getBoundingClientRect(); const t=e.touches?e.touches[0]:e; return {x:(t.clientX-r.left)*(cv.width/r.width),y:(t.clientY-r.top)*(cv.height/r.height)}; };
+  const st=e=>{ e.preventDefault(); dn=true; const p=pos(e); ctx.beginPath(); ctx.moveTo(p.x,p.y); };
+  const mv=e=>{ if(!dn) return; e.preventDefault(); const p=pos(e); ctx.lineTo(p.x,p.y); ctx.stroke(); cv._trazos++; };
+  const en=()=>{ dn=false; };
+  cv.addEventListener('mousedown',st); cv.addEventListener('mousemove',mv); cv.addEventListener('mouseup',en); cv.addEventListener('mouseleave',en);
+  cv.addEventListener('touchstart',st,{passive:false}); cv.addEventListener('touchmove',mv,{passive:false}); cv.addEventListener('touchend',en);
+}
+async function scFirmaGuardar(id){
+  const cv=document.getElementById('scf-pad'); if(!cv) return;
+  if((cv._trazos||0)<15){ toast('La firma está vacía. Pide al cliente que firme.'); return; }
+  const b=document.getElementById('scf-ok'); b.disabled=true; b.textContent='Guardando…';
+  try{ const f=await api('POST','/api/solicitud/foto',{tipo:'firma',imagen:cv.toDataURL('image/jpeg',0.8)});
+    await api('PUT','/api/solicitudes-campo/'+id+'/firma',{ref:f.ref}); toast('✓ Firma guardada'); scVer(id); }
+  catch(e){ toast(e.message); b.disabled=false; b.textContent='✓ Guardar firma'; }
 }
 /* Precarga el formulario de Nuevo crédito con lo que levantó el cobrador. La sucursal decide
    monto, plazo y ruta; el alta se manda con solicitudCampoId para cerrar el borrador. */
@@ -1292,7 +1325,9 @@ async function scUsar(id){
     put('s-act',s.actividad); put('s-dtra',s.dirTrabajo); put('s-ing',s.ingresoSemanal||''); put('s-gas',s.gastoSemanal||'');
     /* El cobrador nunca verifica: si el gerente no marcó las referencias en el expediente, aquí se
        le obliga antes de dejarlo capturar. */
-    const _vf=(s.referencias||[]).map((r,i)=>_scVerif[i]||r.verificacion||'');
+    if(d.esNuevo){ toast('Cliente NUEVO: el crédito lo autoriza el supervisor'); scVer(id); return; }
+    if(!(s.fotos||{}).firma){ toast('Falta la firma del cliente: captúrala antes de capturar el crédito'); scFirmar(id); return; }
+    const _vf=(s.referencias||[]).map(r=>r.verificacion||'');
     if((s.referencias||[]).length && _vf.some(v=>!v)){
       toast('Primero verifica las 2 referencias: abre 👁 Ver expediente y márcalas positiva o negativa');
       scVer(id); return;
