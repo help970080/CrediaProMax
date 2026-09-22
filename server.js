@@ -2367,6 +2367,12 @@ app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) 
       return res.status(403).json({ error: 'Esa solicitud es de otra sucursal' });
     if (!((_scOrigen.solicitud || {}).fotos || {}).firma)
       return res.status(409).json({ error: 'Falta la firma del cliente en la solicitud. Captúrala (✍️ Firma del cliente) antes de autorizar.', code: 'falta_firma' });
+    /* Referencias: todas verificadas antes de autorizar. Cliente NUEVO: ninguna puede ser negativa. */
+    { const _rf = (_scOrigen.solicitud || {}).referencias || [];
+      if (!_rf.length || _rf.some(r => !r.verificacion))
+        return res.status(409).json({ error: 'Faltan referencias por verificar. ' + (scEsNuevo(_scOrigen) ? 'Por ser cliente NUEVO, las verifica el supervisor o el administrador.' : 'Verifícalas antes de autorizar.'), code: 'referencias_pendientes' });
+      if (scEsNuevo(_scOrigen) && _rf.some(r => r.verificacion === 'negativa'))
+        return res.status(409).json({ error: 'Cliente NUEVO con referencia NEGATIVA: no se puede autorizar.', code: 'referencia_negativa' }); }
   }
 
   let _solVenta = null;
@@ -2487,7 +2493,11 @@ app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) 
       if (_scOrigen.reincidente) { _solVenta.reincidente = true; _solVenta.rechazosPrevios = _scOrigen.rechazosPrevios || []; } }
     const _cd = solDeCurp(client.curp);
     const ahora = new Date().toISOString();
-    _solVenta.referencias.forEach(r => { if (r.verificacion) { r.verificadoPor = req.user.nombre; r.verificadoRol = req.user.rol; r.verificadoAt = ahora; } });
+    if (_scOrigen) {
+      /* La verificación vale la que quedó registrada en la solicitud (quién y cuándo), no la que venga en el body. */
+      const _rf = (_scOrigen.solicitud || {}).referencias || [];
+      _solVenta.referencias.forEach((r, i) => { const o = _rf[i] || {}; r.verificacion = o.verificacion || ''; ['verificadoPor', 'verificadoRol', 'verificadoAt', 'nota'].forEach(k => { if (o[k] !== undefined) r[k] = o[k]; else delete r[k]; }); });
+    } else _solVenta.referencias.forEach(r => { if (r.verificacion) { r.verificadoPor = req.user.nombre; r.verificadoRol = req.user.rol; r.verificadoAt = ahora; } });
     sale.solicitud = Object.assign(_solVenta, {
       numCredito: db.sales.filter(s => s.clientId === client.id).length + 1,
       fechaNac: _cd.fechaNac, sexo: _cd.sexo, capturadoPor: req.user.nombre, fecha: ahora,
@@ -2574,6 +2584,10 @@ function scAcceso(req, x) {
   return false;
 }
 function scResolver(req) { return ['admin', 'supervisor', 'sucursal'].includes(req.user.rol); }
+/* ¿La persona de la solicitud ya es cliente activo? (misma CURP) → renovación; si no → cliente NUEVO. */
+function scEsNuevo(x) { const cu = String((x.cliente || {}).curp || '').trim().toUpperCase(); return !cu || !db.clients.some(c => c.activo !== false && String(c.curp || '').trim().toUpperCase() === cu); }
+/* Verificar referencias: cliente NUEVO solo supervisor/admin; renovación también la sucursal. */
+function scPuedeVerificar(req, x) { const r = req.user.rol; if (r === 'admin' || r === 'supervisor') return true; return r === 'sucursal' && !scEsNuevo(x); }
 app.post('/api/solicitudes-campo', auth, rol('admin', 'supervisor', 'sucursal', 'jc', 'cobrador'), solGuard, (req, res) => {
   const c = req.body.cliente || {};
   const nombre = _solT(c.nombre, 90);
@@ -2651,7 +2665,7 @@ app.get('/api/solicitudes-campo/:id', auth, rol('admin', 'supervisor', 'sucursal
       createdAt: s.createdAt || null, esNuevo: !db.sales.some(o => o.clientId === s.clientId && o.id < s.id),
       referencias: (s.solicitud && s.solicitud.referencias) || null }; }
   const brand = (db.config && db.config.brand && db.config.brand.nombre) || 'CobraPro';
-  res.json({ solicitudCampo: x, sucursal: suc ? suc.nombre : '', puedeResolver: scResolver(req), venta, brand });
+  res.json({ solicitudCampo: x, sucursal: suc ? suc.nombre : '', puedeResolver: scResolver(req), venta, brand, esNuevo: scEsNuevo(x), puedeVerificar: scPuedeVerificar(req, x) });
 });
 app.post('/api/solicitudes-campo/:id/rechazar', auth, rol('admin', 'supervisor', 'sucursal'), solGuard, (req, res) => {
   const x = (db.solicitudesCampo || []).find(y => y.id === +req.params.id);
@@ -2662,6 +2676,23 @@ app.post('/api/solicitudes-campo/:id/rechazar', auth, rol('admin', 'supervisor',
   x.motivo = _solT(req.body.motivo, 200);
   saveDB();
   res.json({ ok: true });
+});
+/* Verificación de referencias ANTES de autorizar. Queda quién, cuándo y rol. */
+app.post('/api/solicitudes-campo/:id/verificar', auth, rol('admin', 'supervisor', 'sucursal'), solGuard, (req, res) => {
+  const x = (db.solicitudesCampo || []).find(y => y.id === +req.params.id);
+  if (!x) return res.status(404).json({ error: 'Solicitud no encontrada' });
+  if (!scAcceso(req, x)) return res.status(403).json({ error: 'Permiso insuficiente' });
+  if (!scPuedeVerificar(req, x)) return res.status(403).json({ error: 'Las referencias de un cliente NUEVO solo las verifica el supervisor o el administrador.' });
+  if (x.estado !== 'pendiente') return res.status(409).json({ error: 'La solicitud ya fue ' + x.estado });
+  const i = +req.body.idx, resultado = String(req.body.resultado || '');
+  const r = (x.solicitud.referencias || [])[i];
+  if (!r) return res.status(400).json({ error: 'Referencia inválida' });
+  if (!['positiva', 'negativa', ''].includes(resultado)) return res.status(400).json({ error: 'Resultado inválido' });
+  r.verificacion = resultado;
+  if (resultado) { r.verificadoPor = req.user.nombre; r.verificadoRol = req.user.rol; r.verificadoAt = new Date().toISOString(); r.nota = _solT(req.body.nota, 160) || undefined; }
+  else { delete r.verificadoPor; delete r.verificadoRol; delete r.verificadoAt; delete r.nota; }
+  saveDB();
+  res.json({ ok: true, referencias: x.solicitud.referencias });
 });
 /* Firma del cliente en la solicitud de campo (la sube /api/solicitud/foto con tipo 'firma').
    La captura el cobrador en campo o, si faltó, la sucursal/supervisor con el cliente presente. */
@@ -2714,7 +2745,7 @@ app.patch('/api/solicitudes-campo/:id', auth, rol('admin', 'supervisor', 'sucurs
   v.sol.referencias.forEach((r, i) => {
     const a = refsAnt[i] || {};
     if (r.nombre !== _solT(a.nombre, 90) || r.cel !== _solTel(a.cel)) { r.verificacion = ''; }
-    else { ['verificadoPor', 'verificadoRol', 'verificadoAt'].forEach(k => { if (a[k] !== undefined) r[k] = a[k]; }); }
+    else { ['verificadoPor', 'verificadoRol', 'verificadoAt', 'nota'].forEach(k => { if (a[k] !== undefined) r[k] = a[k]; }); }
   });
   // Diferencias para la bitácora
   const cambios = [];
