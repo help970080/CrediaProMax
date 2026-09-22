@@ -1266,7 +1266,11 @@ setTimeout(async()=>{ try{
   const b=await apiU('GET','/api/brand');
   if(b && Array.isArray(b.modulosOff)){
     aplicarModulos(b.modulosOff);
-    try{ const g=JSON.parse(localStorage.getItem('cobrapro_brand')||'{}'); g.modulosOff=b.modulosOff; localStorage.setItem('cobrapro_brand',JSON.stringify(g)); }catch(_){}
+    try{ const g=JSON.parse(localStorage.getItem('cobrapro_brand')||'{}'); g.modulosOff=b.modulosOff;
+      /* El nombre de la agencia también se revalida: si el superadmin lo cambió, impresos y encabezado toman el nuevo sin re-login. */
+      if(b.nombre && b.nombre!==g.nombre){ g.nombre=b.nombre; if(typeof BRAND!=='undefined') BRAND.nombre=b.nombre;
+        const bn=document.getElementById('brandName'); if(bn) bn.textContent=b.nombre; document.title=b.nombre+' · Crédito y Cobranza'; }
+      localStorage.setItem('cobrapro_brand',JSON.stringify(g)); }catch(_){}
   }
 }catch(_){} }, 1200);
 if(!TOKEN){ location.replace('index.html'); }
@@ -5418,7 +5422,7 @@ async function svVer(id){
       ${fila('Vivienda',_solE(s.vivienda)+' · '+_solE(s.tiempoDomicilio))}${fila('Estado civil · hijos',_solE(s.estadoCivil)+' · '+(s.hijos||0))}
       ${sec('Pide')}${fila('Monto y plazo',_solM(s.solicitado)+' · '+_solE(s.plazoSolicitado))}
       ${sec('Trabajo')}${fila('Actividad',_solE(s.actividad))}${fila('Ingreso semanal',_solM(s.ingresoSemanal))}${fila('Gasto semanal',_solM(s.gastoSemanal))}${fila('Disponible',_solM((s.ingresoSemanal||0)-(s.gastoSemanal||0)))}
-      ${sec('Documentos')}<div style="display:flex;gap:8px;flex-wrap:wrap">${[['ineFrente','INE frente'],['ineReverso','INE reverso'],['comprobante','Comprobante']].map(([k,l])=>{const src=_solSrc((s.fotos||{})[k],ft);
+      ${sec('Documentos')}<div style="display:flex;gap:8px;flex-wrap:wrap">${[['ineFrente','INE frente'],['ineReverso','INE reverso'],['comprobante','Comprobante'],['firma','✍️ Firma cliente']].map(([k,l])=>{const src=_solSrc((s.fotos||{})[k],ft);
         return `<div style="flex:1 1 140px;border:1px solid rgba(128,128,128,.3);border-radius:9px;padding:6px;text-align:center;font-size:.74rem"><div style="font-weight:700;margin-bottom:4px">${l}</div>
           ${src?`<a href="${src}" target="_blank"><img src="${src}" style="width:100%;height:100px;object-fit:cover;border-radius:6px"></a>`:'<div style="height:100px;display:flex;align-items:center;justify-content:center;color:#d6432d">Falta</div>'}</div>`;}).join('')}</div>
       ${sec('Referencias')}${(s.referencias||[]).map((r,i)=>`<div style="border:1px solid rgba(128,128,128,.3);border-radius:9px;padding:9px;margin-top:7px;font-size:.82rem">
@@ -5426,6 +5430,8 @@ async function svVer(id){
         <div style="margin-top:3px;font-weight:700;color:${r.verificacion==='positiva'?'#178a55':(r.verificacion==='negativa'?'#d6432d':'#caa23a')}">${r.verificacion?r.verificacion.toUpperCase():'Pendiente de verificar'}</div></div>`).join('')}
       <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
         ${x.lat!=null?`<a class="btn" style="flex:1;text-decoration:none;text-align:center" href="https://maps.google.com/?q=${x.lat},${x.lng}" target="_blank">📍 Domicilio</a>`:''}
+        ${x.estado==='pendiente'?`<button class="btn" style="flex:1" onclick="svFirmar(${x.id})">✍️ ${(s.fotos||{}).firma?'Volver a firmar':'Firma del cliente'}</button>`:''}
+        ${x.estado==='convertida'?`<button class="btn" style="flex:1;background:#0e9f9a;color:#fff;border-color:#0e9f9a" onclick="svImprimir(${x.id})">🖨 Imprimir</button>`:''}
         ${x.estado==='pendiente'&&d.puedeResolver?`<button class="btn" style="flex:1" onclick="svEditar(${x.id})">✏️ Corregir</button>`:''}
         ${x.estado==='pendiente'&&d.puedeResolver?`<button class="btn" style="flex:1;border-color:#d6432d;color:#d6432d" onclick="svRechazar(${x.id})">✗ Rechazar</button>`:''}
         <button class="btn" style="flex:1" onclick="solCerrar()">Cerrar</button></div>
@@ -5470,6 +5476,100 @@ async function svGuardarEd(id){
     alert(r.cambios?('✓ '+r.cambios+' cambio(s) guardado(s)'):'Sin cambios');
     svVer(id); if(typeof svCargar==='function') svCargar();
   }catch(e){ alert(e.message); if(b){ b.disabled=false; b.textContent='💾 Guardar cambios'; } }
+}
+function svFirmar(id){
+  const o=_solOv();
+  o.innerHTML=`<div style="background:var(--surf,#fff);color:var(--txt,#1b2330);border-radius:12px;padding:18px;max-width:560px;width:100%">
+    <div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0;font-size:1.05rem">✍️ Firma del cliente</h3><button onclick="svVer(${id})" style="border:none;background:transparent;color:inherit;font-size:1.3rem;cursor:pointer">✕</button></div>
+    <div style="font-size:.78rem;opacity:.75;margin:4px 0 10px">El solicitante firma con el dedo. Con su firma acepta la declaración y el aviso de privacidad de la solicitud.</div>
+    <canvas id="sv-pad" width="700" height="260" style="width:100%;height:180px;background:#fff;border:1.5px dashed #999;border-radius:10px;touch-action:none"></canvas>
+    <div style="display:flex;gap:8px;margin-top:12px"><button class="btn" style="flex:1" onclick="svPadLimpiar()">Borrar</button><button class="btn" id="sv-pad-ok" style="flex:1;background:#0e9f9a;color:#fff;border-color:#0e9f9a" onclick="svPadGuardar(${id})">✓ Guardar firma</button></div></div>`;
+  o.style.display='flex';
+  const cv=document.getElementById('sv-pad'), ctx=cv.getContext('2d');
+  const blanco=()=>{ ctx.fillStyle='#fff'; ctx.fillRect(0,0,cv.width,cv.height); ctx.lineWidth=3; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle='#1a2a6c'; cv._trazos=0; };
+  blanco(); cv._limpiar=blanco;
+  let dn=false;
+  const pos=e=>{ const r=cv.getBoundingClientRect(); const t=e.touches?e.touches[0]:e; return {x:(t.clientX-r.left)*(cv.width/r.width),y:(t.clientY-r.top)*(cv.height/r.height)}; };
+  const st=e=>{ e.preventDefault(); dn=true; const p=pos(e); ctx.beginPath(); ctx.moveTo(p.x,p.y); };
+  const mv=e=>{ if(!dn) return; e.preventDefault(); const p=pos(e); ctx.lineTo(p.x,p.y); ctx.stroke(); cv._trazos++; };
+  const en=()=>{ dn=false; };
+  cv.addEventListener('mousedown',st); cv.addEventListener('mousemove',mv); cv.addEventListener('mouseup',en); cv.addEventListener('mouseleave',en);
+  cv.addEventListener('touchstart',st,{passive:false}); cv.addEventListener('touchmove',mv,{passive:false}); cv.addEventListener('touchend',en);
+}
+function svPadLimpiar(){ const cv=document.getElementById('sv-pad'); if(cv&&cv._limpiar) cv._limpiar(); }
+async function svPadGuardar(id){
+  const cv=document.getElementById('sv-pad'); if(!cv) return;
+  if((cv._trazos||0)<15){ alert('La firma está vacía o es muy corta. Pide al cliente que firme.'); return; }
+  const b=document.getElementById('sv-pad-ok'); b.disabled=true; b.textContent='Guardando…';
+  try{
+    const f=await _solApi('POST','/api/solicitud/foto',{tipo:'firma',imagen:cv.toDataURL('image/jpeg',0.8)});
+    await _solApi('PUT','/api/solicitudes-campo/'+id+'/firma',{ref:f.ref});
+    svVer(id); if(typeof svCargar==='function') svCargar();
+  }catch(e){ alert(e.message); b.disabled=false; b.textContent='✓ Guardar firma'; }
+}
+async function svImprimir(id){
+  const w=window.open('','_blank'); if(!w){ alert('Permite ventanas emergentes para imprimir'); return; }
+  w.document.write('<p style="font-family:Arial">Preparando solicitud…</p>');
+  try{
+    const d=await _solApi('GET','/api/solicitudes-campo/'+id); const x=d.solicitudCampo, c=x.cliente, s=x.solicitud, v=d.venta||{};
+    const ft=await _solFotoTok(); const E=_solE, M=n=>(n||n===0)?('$'+(+n).toLocaleString('es-MX',{minimumFractionDigits:0,maximumFractionDigits:2})):'—';
+    const fd=t=>t?new Date(t).toLocaleString('es-MX',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
+    const fdd=t=>t?new Date(t).toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'numeric'}):'—';
+    const brand=E(d.brand||'CobraPro'); const F=s.fotos||{};
+    const img=(k,l)=>{ const src=_solSrc(F[k],ft); return `<div class="doc">${src?`<img src="${location.origin+src}">`:`<span>Falta ${l}</span>`}</div>`; };
+    const refs=(v.referencias||s.referencias||[]);
+    const vf=r=>r.verificacion==='positiva'?'<td class="ok">✓ Positiva</td>':(r.verificacion==='negativa'?'<td class="bad">✗ Negativa</td>':'<td class="pen">Sin verificar</td>');
+    const plazoTxt=t=>{ if(!v.tipo) return ''; if(v.tipo==='diario') return v.plazo+' días'; if(v.tipo==='unico') return 'pago único a '+v.plazo+' días'; if(v.tipo==='p17') return '17 pagos'; return v.plazo+' semanas'; };
+    const nombreCompleto=[c.nombre].filter(Boolean).join(' ');
+    const ed=x.ediciones||[]; const ult=ed[ed.length-1];
+    const html=`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Solicitud ${E(v.folio||x.id)} · ${E(c.nombre)}</title><style>
+@page{size:letter;margin:12mm}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#111;font-size:10.5px;margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2.5px solid #0e6f6b;padding-bottom:6px}.brand{font-size:19px;font-weight:800;color:#0e6f6b;text-transform:uppercase}.sub{font-size:10px;color:#555}
+.fol{text-align:right;font-size:10px}.fol b{font-size:13px}.est{display:inline-block;margin-top:3px;padding:2px 8px;border:1.5px solid #178a55;color:#178a55;font-weight:800;border-radius:4px;font-size:10px}
+h2{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;background:#e8f3f2;color:#0e4f4c;padding:3px 6px;margin:9px 0 4px}
+table{width:100%;border-collapse:collapse;font-size:10.5px}td{padding:3px 5px;border:1px solid #cfd6d6;vertical-align:top;font-size:10.5px}td.l{background:#f6f8f8;color:#555;width:17%;font-size:9.5px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.docs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.doc{border:1px solid #cfd6d6;height:100px;display:flex;align-items:center;justify-content:center;color:#b00;font-size:9px;overflow:hidden}.doc img{max-width:100%;max-height:100%;object-fit:contain}
+.ok{color:#178a55;font-weight:700}.bad{color:#c0392b;font-weight:700}.pen{color:#a07800;font-weight:700}.aut td{background:#f1faf5}
+.leg{font-size:8.6px;color:#333;line-height:1.35;text-align:justify;margin-top:4px}
+.firmas{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:14px;margin-top:10px}.f{text-align:center;font-size:9.5px}.f .ln{border-top:1px solid #111;margin-top:2px;padding-top:3px}
+.f .img{height:62px;display:flex;align-items:flex-end;justify-content:center}.f .img img{max-height:62px;max-width:100%}
+.pie{margin-top:8px;border-top:1px solid #ccc;padding-top:4px;font-size:8.3px;color:#666;display:flex;justify-content:space-between;gap:10px}
+</style></head><body>
+<div class="hd"><div><div class="brand">${brand}</div><div class="sub">Solicitud de crédito personal · Sucursal ${E(d.sucursal)}</div></div>
+<div class="fol">Folio de crédito <b>${E(v.folio||x.folio||'—')}</b><br>Solicitud No. ${x.id} · ${fdd(x.fecha)}<br><span class="est">✓ AUTORIZADA</span></div></div>
+<h2>1. Datos del solicitante</h2><table>
+<tr><td class="l">Nombre completo</td><td colspan="3"><b>${E(nombreCompleto)}</b></td></tr>
+<tr><td class="l">CURP</td><td>${E(c.curp)}</td><td class="l">Nacimiento · sexo</td><td>${E(s.fechaNac)} · ${E(s.sexo)}</td></tr>
+<tr><td class="l">Celular</td><td>${E(c.tel)}</td><td class="l">Estado civil · hijos</td><td>${E(s.estadoCivil)} · ${s.hijos||0}${s.escuelaHijos?' ('+E(s.escuelaHijos)+')':''}</td></tr></table>
+<h2>2. Domicilio</h2><table>
+<tr><td class="l">Calle y número</td><td colspan="3">${E([c.calle,s.numExt&&('No. '+s.numExt),s.numInt&&('Int. '+s.numInt)].filter(Boolean).join(' '))}</td></tr>
+<tr><td class="l">Colonia</td><td>${E(c.col)}</td><td class="l">Población · CP</td><td>${E(s.poblacion||'—')} · ${E(s.cp||'—')}</td></tr>
+<tr><td class="l">Ciudad · estado</td><td>${E(c.ciudad||'—')} · ${E(c.estado||'—')}</td><td class="l">Vivienda · tiempo</td><td>${E(s.vivienda)} · ${E(s.tiempoDomicilio)}</td></tr>
+<tr><td class="l">Referencia</td><td>${E(c.ref||'—')}</td><td class="l">Ubicación GPS</td><td>${x.lat!=null?(x.lat.toFixed(5)+', '+x.lng.toFixed(5)):'—'}</td></tr></table>
+<div class="g2"><div><h2>3. Actividad e ingresos</h2><table>
+<tr><td class="l">Actividad</td><td>${E(s.actividad)}</td></tr><tr><td class="l">Dir. trabajo</td><td>${E(s.dirTrabajo||'—')}</td></tr>
+<tr><td class="l">Ingreso semanal</td><td>${M(s.ingresoSemanal)}</td></tr><tr><td class="l">Gasto semanal</td><td>${M(s.gastoSemanal)}</td></tr>
+<tr><td class="l">Disponible</td><td><b>${M((s.ingresoSemanal||0)-(s.gastoSemanal||0))}</b></td></tr></table></div>
+<div><h2>4. Crédito</h2><table>
+<tr><td class="l">Solicitó</td><td>${M(s.solicitado)} · ${E(s.plazoSolicitado)}</td></tr>
+<tr class="aut"><td class="l">Autorizado</td><td class="ok">${M(v.monto)} · ${E(plazoTxt())}</td></tr>
+<tr><td class="l">Cuota</td><td><b>${M(v.cuota)}</b></td></tr><tr><td class="l">Total a pagar</td><td>${M(v.total)}</td></tr>
+<tr><td class="l">Tipo</td><td>${v.esNuevo===false?'Renovación':'Cliente nuevo'}</td></tr></table></div></div>
+<h2>5. Referencias personales</h2><table>${refs.map((r,i)=>`<tr><td class="l">${i+1}. Nombre</td><td>${E(r.nombre)} (${E(r.parentesco)})</td><td class="l">Celular</td><td>${E(r.cel)}</td>${vf(r)}</tr>`).join('')}</table>
+<h2>6. Documentos</h2><div class="docs">${img('ineFrente','INE frente')}${img('ineReverso','INE reverso')}${img('comprobante','comprobante')}</div>
+<h2>7. Declaración y consentimiento</h2><div class="leg">Declaro bajo protesta de decir verdad que los datos asentados en esta solicitud y los documentos que presento son verídicos. Autorizo a ${brand} a verificar la información proporcionada, a contactar a mis referencias y a consultar mi historial crediticio. Acepto que la presente solicitud no obliga al otorgamiento del crédito, el cual queda sujeto a la autorización correspondiente. Mis datos personales serán tratados conforme al Aviso de Privacidad que me fue dado a conocer, de acuerdo con la Ley Federal de Protección de Datos Personales en Posesión de los Particulares.</div>
+<div class="firmas">
+<div class="f"><div class="img">${F.firma?`<img src="${location.origin+_solSrc(F.firma,ft)}">`:''}</div><div class="ln"><b>${E(c.nombre)}</b><br>Firma del solicitante${x.firmaAt?' · '+fd(x.firmaAt):''}</div></div>
+<div class="f"><div class="img"></div><div class="ln"><b>${E(x.cobrador)}</b><br>Promotor que levantó la solicitud</div></div>
+<div class="f"><div class="img"></div><div class="ln"><b>${E(x.resueltoPor||'—')}</b><br>Autorizó · ${fd(x.fechaResuelta)}</div></div></div>
+<div class="pie"><span>${ed.length?`Corregida ${ed.length} vez(es) · última: ${E(ult.por)} · ${fd(ult.fecha)}`:'Sin correcciones'}</span><span>Impreso ${fd(new Date().toISOString())} · ${E(ME?ME.nombre:'')}</span></div>
+</body></html>`;
+    w.document.open(); w.document.write(html); w.document.close();
+    const imgs=[...w.document.images];
+    await Promise.all(imgs.map(im=>im.complete?1:new Promise(r=>{im.onload=im.onerror=r; setTimeout(r,8000);})));
+    w.focus(); w.print();
+  }catch(e){ w.document.body.innerHTML='<p style="font-family:Arial;color:#b00">'+_solE(e.message)+'</p>'; }
 }
 async function svRechazar(id){
   const m=prompt('¿Por qué se rechaza? (lo verá el cobrador y queda en el historial)','');
