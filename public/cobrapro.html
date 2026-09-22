@@ -1652,20 +1652,34 @@ async function borrarCliente(clientId, nombre){
   try{ await apiU('DELETE','/api/clients/'+clientId,{despacho:desp.trim(),motivo:motivo.trim()}); await cargarCartera(); }
   catch(e){ alert(e.message); }
 }
+let _cliElim=[];
 async function verClientesEliminados(){
   try{
-    const L=await apiU('GET','/api/clients/eliminados');
-    const f=d=>d?new Date(d).toLocaleString('es-MX',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
+    _cliElim=await apiU('GET','/api/clients/eliminados');
     const esc=t=>String(t==null?'':t).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+    const uniq=k=>[...new Set(_cliElim.map(c=>c[k]).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
+    const opts=(k,lbl)=>`<option value="">${lbl}</option>`+uniq(k).map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');
+    const prev=document.getElementById('ov-cli-elim'); if(prev) prev.remove();
     const ov=document.createElement('div'); ov.id='ov-cli-elim';
     ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
     ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
-    const rows=L.length?L.map(c=>`<tr><td><b>${esc(c.nombre)}</b><div style="font-size:.72rem;color:var(--dim)">${esc(c.tel)} ${c.curp?'· '+esc(c.curp):''}</div></td><td>${esc(c.sucursal)}</td><td>${esc(c.prom)}</td><td class="n">${c.creditos}</td><td class="n">$${(+c.saldo||0).toLocaleString('es-MX',{maximumFractionDigits:2})}</td><td>${c.despacho?'<b>'+esc(c.despacho)+'</b>':'<span style="color:var(--faint)">—</span>'}${c.motivo?'<div style="font-size:.72rem;color:var(--dim)">'+esc(c.motivo)+'</div>':''}</td><td style="font-size:.75rem">${f(c.bajaAt)}<div style="color:var(--dim)">${esc(c.bajaBy)}</div></td><td style="white-space:nowrap"><button class="btn" onclick="verExpediente(${c.id})">👁 Ver</button> <button class="btn" onclick="restaurarCliente(${c.id})">Restaurar</button></td></tr>`).join('')
-      :'<tr><td colspan="8" style="text-align:center;color:var(--dim);padding:18px">No hay clientes eliminados</td></tr>';
-    ov.innerHTML=`<div class="panel" style="max-width:960px;width:100%;max-height:85vh;overflow:auto;position:relative"><button class="btn" style="position:absolute;top:10px;right:10px" onclick="document.getElementById('ov-cli-elim').remove()">✕</button><h3 style="margin:0 0 12px">♻️ Clientes eliminados / asignados a despacho (${L.length})</h3><table><thead><tr><th>Cliente</th><th>Sucursal</th><th>Cobrador</th><th class="n">Créditos</th><th class="n">Saldo</th><th>Asignado a</th><th>Baja</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
-    const prev=document.getElementById('ov-cli-elim'); if(prev) prev.remove();
+    ov.innerHTML=`<div class="panel" style="max-width:1000px;width:100%;max-height:85vh;overflow:auto;position:relative"><button class="btn" style="position:absolute;top:10px;right:10px" onclick="document.getElementById('ov-cli-elim').remove()">✕</button><h3 style="margin:0 0 12px">♻️ Clientes eliminados / asignados a despacho (<span id="ce-n">${_cliElim.length}</span>)</h3>
+      <div class="filters"><select id="ce-suc" onchange="renderCliElim()">${opts('sucursal','Todas las sucursales')}</select><select id="ce-prom" onchange="renderCliElim()">${opts('prom','Todos los promotores')}</select><input id="ce-q" placeholder="Buscar cliente, tel, CURP o despacho…" style="flex:1;min-width:160px" oninput="renderCliElim()"></div>
+      <table><thead><tr><th>Cliente</th><th>Sucursal</th><th>Cobrador</th><th class="n">Créditos</th><th class="n">Saldo</th><th>Asignado a</th><th>Baja</th><th></th></tr></thead><tbody id="ce-tb"></tbody></table></div>`;
     document.body.appendChild(ov);
+    renderCliElim();
   }catch(e){ alert(e.message); }
+}
+function renderCliElim(){
+  const esc=t=>String(t==null?'':t).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const f=d=>d?new Date(d).toLocaleString('es-MX',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
+  const fs=(document.getElementById('ce-suc')||{}).value||'', fp=(document.getElementById('ce-prom')||{}).value||'';
+  const q=((document.getElementById('ce-q')||{}).value||'').toLowerCase().trim();
+  const L=_cliElim.filter(c=>(!fs||c.sucursal===fs)&&(!fp||c.prom===fp)&&(!q||[c.nombre,c.tel,c.curp,c.despacho].join(' ').toLowerCase().includes(q)));
+  const n=document.getElementById('ce-n'); if(n) n.textContent=L.length+(L.length!==_cliElim.length?' de '+_cliElim.length:'');
+  const tb=document.getElementById('ce-tb'); if(!tb) return;
+  tb.innerHTML=L.length?L.map(c=>`<tr><td><b>${esc(c.nombre)}</b><div style="font-size:.72rem;color:var(--dim)">${esc(c.tel)} ${c.curp?'· '+esc(c.curp):''}</div></td><td>${esc(c.sucursal)}</td><td>${esc(c.prom)}</td><td class="n">${c.creditos}</td><td class="n">$${(+c.saldo||0).toLocaleString('es-MX',{maximumFractionDigits:2})}</td><td>${c.despacho?'<b>'+esc(c.despacho)+'</b>':'<span style="color:var(--faint)">—</span>'}${c.motivo?'<div style="font-size:.72rem;color:var(--dim)">'+esc(c.motivo)+'</div>':''}</td><td style="font-size:.75rem">${f(c.bajaAt)}<div style="color:var(--dim)">${esc(c.bajaBy)}</div></td><td style="white-space:nowrap"><button class="btn" onclick="verExpediente(${c.id})">👁 Ver</button> <button class="btn" onclick="restaurarCliente(${c.id})">Restaurar</button></td></tr>`).join('')
+    :'<tr><td colspan="8" style="text-align:center;color:var(--dim);padding:18px">'+(_cliElim.length?'Sin resultados con esos filtros':'No hay clientes eliminados')+'</td></tr>';
 }
 async function verExpediente(id){
   try{
