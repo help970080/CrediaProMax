@@ -5445,7 +5445,10 @@ async function svVer(id){
           ${src?`<a href="${src}" target="_blank"><img src="${src}" style="width:100%;height:100px;object-fit:cover;border-radius:6px"></a>`:'<div style="height:100px;display:flex;align-items:center;justify-content:center;color:#d6432d">Falta</div>'}</div>`;}).join('')}</div>
       ${sec('Referencias')}${(s.referencias||[]).map((r,i)=>`<div style="border:1px solid rgba(128,128,128,.3);border-radius:9px;padding:9px;margin-top:7px;font-size:.82rem">
         <b>${i+1}. ${_solE(r.nombre)}</b> <span style="opacity:.7">(${_solE(r.parentesco)})</span><br>📞 ${_solE(r.cel)}${r.direccion?' · '+_solE(r.direccion):''}
-        <div style="margin-top:3px;font-weight:700;color:${r.verificacion==='positiva'?'#178a55':(r.verificacion==='negativa'?'#d6432d':'#caa23a')}">${r.verificacion?r.verificacion.toUpperCase():'Pendiente de verificar'}</div></div>`).join('')}
+        <div style="margin-top:3px;font-weight:700;color:${r.verificacion==='positiva'?'#178a55':(r.verificacion==='negativa'?'#d6432d':'#caa23a')}">${r.verificacion?r.verificacion.toUpperCase():'Pendiente de verificar'}${r.verificadoPor?`<span style="font-weight:400;opacity:.75;font-size:.76rem"> · ${_solE(r.verificadoPor)} (${_solE(r.verificadoRol||'')}) ${r.verificadoAt?new Date(r.verificadoAt).toLocaleString('es-MX',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):''}</span>`:''}</div>
+        ${r.nota?`<div style="font-size:.76rem;opacity:.8">📝 ${_solE(r.nota)}</div>`:''}
+        ${x.estado==='pendiente'&&d.puedeVerificar?`<div style="display:flex;gap:6px;margin-top:7px"><button class="btn" style="flex:1;border-color:#178a55;color:#178a55" onclick="svVerificar(${x.id},${i},'positiva')">✓ Positiva</button><button class="btn" style="flex:1;border-color:#d6432d;color:#d6432d" onclick="svVerificar(${x.id},${i},'negativa')">✗ Negativa</button>${r.verificacion?`<button class="btn" onclick="svVerificar(${x.id},${i},'')" title="Quitar verificación">↺</button>`:''}</div>`:''}</div>`).join('')}
+      ${x.estado==='pendiente'&&!d.puedeVerificar&&d.esNuevo&&(s.referencias||[]).some(r=>!r.verificacion)?'<div style="font-size:.78rem;color:#caa23a;margin-top:6px">🔒 Cliente NUEVO: las referencias las verifica el supervisor o el administrador.</div>':''}
       <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
         ${x.lat!=null?`<a class="btn" style="flex:1;text-decoration:none;text-align:center" href="https://maps.google.com/?q=${x.lat},${x.lng}" target="_blank">📍 Domicilio</a>`:''}
         ${x.estado==='pendiente'&&d.puedeResolver?`<button class="btn" style="flex:1 1 100%;background:#178a55;color:#fff;border-color:#178a55;font-weight:700" onclick="svAutorizar(${x.id})">✓ Autorizar crédito</button>`:''}
@@ -5496,11 +5499,21 @@ async function svGuardarEd(id){
     svVer(id); if(typeof svCargar==='function') svCargar();
   }catch(e){ alert(e.message); if(b){ b.disabled=false; b.textContent='💾 Guardar cambios'; } }
 }
+async function svVerificar(id,idx,resultado){
+  let nota='';
+  if(resultado){ const n=prompt((resultado==='positiva'?'✓ Referencia POSITIVA':'✗ Referencia NEGATIVA')+'\n\nNota de la llamada (opcional):',''); if(n===null) return; nota=n; }
+  else if(!confirm('¿Quitar la verificación de esta referencia?')) return;
+  try{ await _solApi('POST','/api/solicitudes-campo/'+id+'/verificar',{idx,resultado,nota}); svVer(id); }
+  catch(e){ alert(e.message); }
+}
 async function svAutorizar(id){
   const o=_solOv();
   try{
     const d=await _solApi('GET','/api/solicitudes-campo/'+id); const x=d.solicitudCampo, c=x.cliente, s=x.solicitud;
     if(!(s.fotos||{}).firma){ if(confirm('Esta solicitud no tiene la firma del cliente y no se puede autorizar sin ella.\n\n¿Capturar la firma ahora?')) svFirmar(id); return; }
+    const _rf=s.referencias||[];
+    if(!_rf.length||_rf.some(r=>!r.verificacion)){ alert('Faltan referencias por verificar.\n\n'+(d.esNuevo?'Cliente NUEVO: las verifica el supervisor o el administrador desde este mismo detalle (✓ Positiva / ✗ Negativa).':'Verifícalas desde el detalle antes de autorizar.')); return; }
+    if(d.esNuevo&&_rf.some(r=>r.verificacion==='negativa')){ alert('Cliente NUEVO con referencia NEGATIVA: no se puede autorizar.'); return; }
     try{ const t=await apiU('GET','/api/tarifas'); if(t&&t.semanal) PROD=t; }catch(_){}
     let cobs=[]; try{ cobs=(await apiU('GET','/api/cobradores')).filter(u=>Number(u.sucursalId)===Number(x.sucursalId)); }catch(_){}
     if(!cobs.some(u=>u.nombre===x.cobrador)) cobs.unshift({nombre:x.cobrador});
@@ -5519,7 +5532,7 @@ async function svAutorizar(id){
       ${lab('Cobrador',`<select id="au-prom" style="${st}">${cobs.map(u=>`<option value="${E(u.nombre)}"${u.nombre===x.cobrador?' selected':''}>${E(u.nombre)}</option>`).join('')}</select>`)}
       <div id="au-calc" style="margin-top:10px;padding:9px 11px;border-radius:8px;background:rgba(14,159,154,.08);font-size:.86rem"></div>
       <div style="font-weight:700;font-size:.78rem;text-transform:uppercase;opacity:.75;margin:14px 0 2px">Verificación de referencias</div>
-      ${R.map((r,i)=>lab(`${i+1}. ${E(r.nombre)} (${E(r.parentesco)}) · ${E(r.cel)}`,`<select id="au-ref${i}" style="${st}"><option value="">Sin verificar</option><option value="positiva"${r.verificacion==='positiva'?' selected':''}>✓ Positiva</option><option value="negativa"${r.verificacion==='negativa'?' selected':''}>✗ Negativa</option></select>`)).join('')}
+      ${R.map((r,i)=>`<div style="font-size:.82rem;margin-top:5px">${i+1}. ${E(r.nombre)} (${E(r.parentesco)}) — <b style="color:${r.verificacion==='positiva'?'#178a55':'#d6432d'}">${r.verificacion==='positiva'?'✓ Positiva':'✗ Negativa'}</b> <span style="opacity:.7">· ${E(r.verificadoPor||'')}</span></div>`).join('')}
       <div style="display:flex;gap:8px;margin-top:16px"><button class="btn" style="flex:1" onclick="svVer(${id})">Cancelar</button><button class="btn" id="au-ok" style="flex:1;background:#178a55;color:#fff;border-color:#178a55;font-weight:700" onclick="auEnviar(${id})">✓ Autorizar</button></div>
       <div style="font-size:.74rem;opacity:.7;margin-top:8px">El crédito queda en la bandeja de entregas para dispersarse. Buró, duplicados y Vo.Bo se validan igual que en cualquier alta.</div></div>`;
     o.style.display='flex';
@@ -5547,7 +5560,7 @@ async function auEnviar(id,extra){
   const A=window._au; if(!A||A.id!==id) return;
   const monto=+$('au-monto').value||0; if(monto<100){ alert('Monto inválido'); return; }
   const tipo=$('au-tipo').value, plazo=+$('au-plazo').value, prom=$('au-prom').value;
-  const sol=JSON.parse(JSON.stringify(A.s)); (sol.referencias||[]).forEach((r,i)=>{ const el=document.getElementById('au-ref'+i); r.verificacion=el?el.value:''; });
+  const sol=JSON.parse(JSON.stringify(A.s));
   if((sol.referencias||[]).some(r=>r.verificacion==='negativa') && !(extra&&extra._okNeg)){
     if(!confirm('Hay una referencia NEGATIVA. ¿Autorizar de todos modos?')) return; extra=Object.assign({},extra,{_okNeg:1}); }
   const body=Object.assign({ nombre:A.c.nombre, tel:A.c.tel, calle:A.c.calle, col:A.c.col, ciudad:A.c.ciudad, estado:A.c.estado, curp:A.c.curp, ref:A.c.ref,
