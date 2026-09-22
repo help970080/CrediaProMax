@@ -5448,6 +5448,7 @@ async function svVer(id){
         <div style="margin-top:3px;font-weight:700;color:${r.verificacion==='positiva'?'#178a55':(r.verificacion==='negativa'?'#d6432d':'#caa23a')}">${r.verificacion?r.verificacion.toUpperCase():'Pendiente de verificar'}</div></div>`).join('')}
       <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
         ${x.lat!=null?`<a class="btn" style="flex:1;text-decoration:none;text-align:center" href="https://maps.google.com/?q=${x.lat},${x.lng}" target="_blank">📍 Domicilio</a>`:''}
+        ${x.estado==='pendiente'&&d.puedeResolver?`<button class="btn" style="flex:1 1 100%;background:#178a55;color:#fff;border-color:#178a55;font-weight:700" onclick="svAutorizar(${x.id})">✓ Autorizar crédito</button>`:''}
         ${x.estado==='pendiente'?`<button class="btn" style="flex:1" onclick="svFirmar(${x.id})">✍️ ${(s.fotos||{}).firma?'Volver a firmar':'Firma del cliente'}</button>`:''}
         ${x.estado==='convertida'?`<button class="btn" style="flex:1;background:#0e9f9a;color:#fff;border-color:#0e9f9a" onclick="svImprimir(${x.id})">🖨 Imprimir</button>`:''}
         ${x.estado==='pendiente'&&d.puedeResolver?`<button class="btn" style="flex:1" onclick="svEditar(${x.id})">✏️ Corregir</button>`:''}
@@ -5494,6 +5495,78 @@ async function svGuardarEd(id){
     alert(r.cambios?('✓ '+r.cambios+' cambio(s) guardado(s)'):'Sin cambios');
     svVer(id); if(typeof svCargar==='function') svCargar();
   }catch(e){ alert(e.message); if(b){ b.disabled=false; b.textContent='💾 Guardar cambios'; } }
+}
+async function svAutorizar(id){
+  const o=_solOv();
+  try{
+    const d=await _solApi('GET','/api/solicitudes-campo/'+id); const x=d.solicitudCampo, c=x.cliente, s=x.solicitud;
+    if(!(s.fotos||{}).firma){ if(confirm('Esta solicitud no tiene la firma del cliente y no se puede autorizar sin ella.\n\n¿Capturar la firma ahora?')) svFirmar(id); return; }
+    try{ const t=await apiU('GET','/api/tarifas'); if(t&&t.semanal) PROD=t; }catch(_){}
+    let cobs=[]; try{ cobs=(await apiU('GET','/api/cobradores')).filter(u=>Number(u.sucursalId)===Number(x.sucursalId)); }catch(_){}
+    if(!cobs.some(u=>u.nombre===x.cobrador)) cobs.unshift({nombre:x.cobrador});
+    const E=_solE, R=s.referencias||[];
+    const tipos=(document.getElementById('s-tipo')||{}).innerHTML||'<option value="s16">Semanal 16</option><option value="s17">Semanal 17</option>';
+    const lab=(l,inner)=>`<label style="display:block;font-size:.76rem;opacity:.8;margin-top:9px">${l}${inner}</label>`;
+    const st='display:block;width:100%;box-sizing:border-box;padding:8px;border:1px solid rgba(128,128,128,.4);border-radius:7px;font-size:.9rem;margin-top:3px';
+    o.innerHTML=`<div id="sv-au" style="background:var(--surf,#fff);color:var(--txt,#1b2330);border-radius:12px;padding:18px;max-width:520px;width:100%;max-height:90vh;overflow:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0;font-size:1.05rem">✓ Autorizar crédito</h3><button onclick="svVer(${id})" style="border:none;background:transparent;color:inherit;font-size:1.3rem;cursor:pointer">✕</button></div>
+      <div style="font-size:.84rem;margin-top:4px"><b>${E(c.nombre)}</b> · ${E(c.curp)}<br><span style="opacity:.75">Pidió ${_solM(s.solicitado)} · ${E(s.plazoSolicitado)} · disponible semanal ${_solM((s.ingresoSemanal||0)-(s.gastoSemanal||0))}</span></div>
+      ${lab('Monto autorizado',`<input id="au-monto" type="number" min="100" step="50" value="${+s.solicitado||''}" style="${st}" oninput="auCalc()">`)}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 10px">
+        ${lab('Modalidad',`<select id="au-tipo" style="${st}" onchange="auPlazos();auCalc()">${tipos}</select>`)}
+        ${lab('Plazo',`<select id="au-plazo" style="${st}" onchange="auCalc()"></select>`)}
+      </div>
+      ${lab('Cobrador',`<select id="au-prom" style="${st}">${cobs.map(u=>`<option value="${E(u.nombre)}"${u.nombre===x.cobrador?' selected':''}>${E(u.nombre)}</option>`).join('')}</select>`)}
+      <div id="au-calc" style="margin-top:10px;padding:9px 11px;border-radius:8px;background:rgba(14,159,154,.08);font-size:.86rem"></div>
+      <div style="font-weight:700;font-size:.78rem;text-transform:uppercase;opacity:.75;margin:14px 0 2px">Verificación de referencias</div>
+      ${R.map((r,i)=>lab(`${i+1}. ${E(r.nombre)} (${E(r.parentesco)}) · ${E(r.cel)}`,`<select id="au-ref${i}" style="${st}"><option value="">Sin verificar</option><option value="positiva"${r.verificacion==='positiva'?' selected':''}>✓ Positiva</option><option value="negativa"${r.verificacion==='negativa'?' selected':''}>✗ Negativa</option></select>`)).join('')}
+      <div style="display:flex;gap:8px;margin-top:16px"><button class="btn" style="flex:1" onclick="svVer(${id})">Cancelar</button><button class="btn" id="au-ok" style="flex:1;background:#178a55;color:#fff;border-color:#178a55;font-weight:700" onclick="auEnviar(${id})">✓ Autorizar</button></div>
+      <div style="font-size:.74rem;opacity:.7;margin-top:8px">El crédito queda en la bandeja de entregas para dispersarse. Buró, duplicados y Vo.Bo se validan igual que en cualquier alta.</div></div>`;
+    o.style.display='flex';
+    window._au={id,x,s,c};
+    const tp=document.getElementById('au-tipo'); const m=/(\d+)\s*sem/i.exec(s.plazoSolicitado||'');
+    if(m && [...tp.options].some(op=>op.value==='s'+m[1])) tp.value='s'+m[1];
+    auPlazos(); auCalc();
+  }catch(e){ alert(e.message); }
+}
+function auPlazos(){
+  const t=$('au-tipo').value, p=$('au-plazo');
+  if(t==='unico'){ p.innerHTML=[10,15,20,30].map(v=>`<option value="${v}">${v} días</option>`).join(''); p.value=15; return; }
+  if(/^s\d+$/.test(t)){ const n=t.slice(1); p.innerHTML=`<option value="${n}">${n} semanas</option>`; return; }
+  const arr=PROD[t]||[]; p.innerHTML=arr.map(v=>`<option value="${v.p}">${v.p} ${t==='semanal'?'semanas':t==='p17'?'pagos':'días'}</option>`).join('');
+  if(t==='semanal') p.value=12;
+}
+function auCalc(){
+  const t=$('au-tipo').value, pl=+$('au-plazo').value, m=+$('au-monto').value||0, box=$('au-calc');
+  if(!m){ box.innerHTML='Captura el monto autorizado'; return; }
+  try{ const r=calcReal(t,pl,m); const f=n=>'$'+(Math.round(n*100)/100).toLocaleString('es-MX');
+    box.innerHTML=`Cuota <b>${f(r.cuota)}</b> · Total <b>${f(r.total)}</b>`+(r.descuentaPP?` · 1er pago descontado ${f(r.primerPago)} · <b>entrega ${f(r.entregaCliente)}</b>`:''); }
+  catch(e){ box.textContent='—'; }
+}
+async function auEnviar(id,extra){
+  const A=window._au; if(!A||A.id!==id) return;
+  const monto=+$('au-monto').value||0; if(monto<100){ alert('Monto inválido'); return; }
+  const tipo=$('au-tipo').value, plazo=+$('au-plazo').value, prom=$('au-prom').value;
+  const sol=JSON.parse(JSON.stringify(A.s)); (sol.referencias||[]).forEach((r,i)=>{ const el=document.getElementById('au-ref'+i); r.verificacion=el?el.value:''; });
+  if((sol.referencias||[]).some(r=>r.verificacion==='negativa') && !(extra&&extra._okNeg)){
+    if(!confirm('Hay una referencia NEGATIVA. ¿Autorizar de todos modos?')) return; extra=Object.assign({},extra,{_okNeg:1}); }
+  const body=Object.assign({ nombre:A.c.nombre, tel:A.c.tel, calle:A.c.calle, col:A.c.col, ciudad:A.c.ciudad, estado:A.c.estado, curp:A.c.curp, ref:A.c.ref,
+    sucursalId:A.x.sucursalId, prom, tipo, plazo, monto, dias: tipo==='unico'?plazo:undefined, solicitud:sol, solicitudCampoId:id }, extra||{});
+  delete body._okNeg;
+  const b=$('au-ok'); b.disabled=true; b.textContent='Autorizando…';
+  try{
+    const r=await fetch('/api/sales',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+TOKEN},body:JSON.stringify(body)});
+    const d=await r.json().catch(()=>({}));
+    if(r.status===201){ alert('✓ Crédito autorizado · folio '+d.folio+'\n\nQuedó en la bandeja de entregas.'); svVer(id); if(typeof svCargar==='function') svCargar(); return; }
+    if(r.status===202 && d.voBo){ alert('Buró en ROJO: se envió a Vo.Bo (solicitud #'+d.solicitudId+'). Apruébala en la bandeja de Vo.Bo y vuelve a autorizar.'); svVer(id); return; }
+    if(r.status===409 && d.error==='solicitud_reincidente'){ if(confirm((d.detalle||'Reincidente')+'\n\n¿Autorizar de todos modos?')) return auEnviar(id,Object.assign({},extra,{confirmarReincidente:true,_okNeg:1})); }
+    else if(r.status===409 && d.clienteExistente){
+      const ce=d.clienteExistente;
+      if(d.puedeAgregar!==false && confirm((d.detalle||'Cliente ya registrado')+'\n\n¿Autorizarlo como RENOVACIÓN (nuevo crédito al cliente existente "'+ce.nombre+'")?'))
+        return auEnviar(id,Object.assign({},extra,{clienteExistenteId:ce.id,_okNeg:1}));
+    } else alert(d.detalle||d.error||('Error '+r.status));
+  }catch(e){ alert(e.message); }
+  b.disabled=false; b.textContent='✓ Autorizar';
 }
 function svFirmar(id){
   const o=_solOv();
