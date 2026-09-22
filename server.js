@@ -2382,8 +2382,9 @@ app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) 
   /* POLÍTICA: solo SUPERVISOR (o admin) autoriza clientes NUEVOS. La sucursal solo renueva a
      clientes que ya existen (clienteExistenteId) y hace refines (/api/sales/:id/refin).
      Si la sucursal captura como "nuevo" a alguien que YA existe (misma CURP o teléfono), se deja
-     pasar para que el candado de duplicados le ofrezca agregarlo como renovación. */
-  if (req.user.rol === 'sucursal' && !clienteExistenteId) {
+     pasar para que el candado de duplicados le ofrezca agregarlo como renovación.
+     Solo aplica en agencias con el módulo de Solicitud digital activo (superadmin → módulos). */
+  if (solOn() && req.user.rol === 'sucursal' && !clienteExistenteId) {
     const _cN = String(curp || '').trim().toUpperCase(), _tN = String(tel || '').replace(/\D/g, '');
     const _yaExiste = db.clients.some(c => c.activo !== false && (
       (_cN && (c.curp || '').trim().toUpperCase() === _cN) ||
