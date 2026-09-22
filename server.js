@@ -1136,7 +1136,7 @@ function _moverCarteraCobrador(nombreProm, sucDestino, quien, incluirLiquidados,
   const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
   const candidatos = db.sales.filter(s => s.prom === nombreProm && Number(s.sucursalId) !== sid
     && (incluirLiquidados === true || saldoDe(s.id) > 0));
-  const tocados = candidatos.filter(s => incluirInactivos === true || activos.has(s.clientId));
+  const tocados = candidatos.filter(s => incluirInactivos === true || (activos.has(s.clientId) && !s.baja));
   const omitidosBaja = candidatos.length - tocados.length;
   const clientIds = new Set();
   tocados.forEach(s => {
@@ -1204,7 +1204,7 @@ function _bloqueosEliminarUsuario(u, actorId) {
   const b = [];
   if (u.id === actorId) b.push('No puedes eliminar tu propio usuario.');
   const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
-  const vivos = db.sales.filter(s => s.prom === u.nombre && activos.has(s.clientId) && saldoDe(s.id) > 0.5);
+  const vivos = db.sales.filter(s => s.prom === u.nombre && (activos.has(s.clientId) && !s.baja) && saldoDe(s.id) > 0.5);
   if (vivos.length) b.push(`Tiene ${vivos.length} crédito(s) con saldo. Transfiérelos a otro cobrador en Transferencias.`);
   const cli = db.clients.filter(c => c.activo !== false && c.prom === u.nombre);
   if (cli.length) b.push(`Tiene ${cli.length} cliente(s) asignado(s). Reasígnalos antes de eliminar.`);
@@ -1260,7 +1260,7 @@ app.delete('/api/sucursales/:id', auth, rol('admin'), (req, res) => {
   const s = db.sucursales.find(x => x.id === id);
   if (!s) return res.status(404).json({ error: 'Sucursal no encontrada' });
   const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
-  const credAct = db.sales.filter(x => x.sucursalId === id && activos.has(x.clientId) && saldoDe(x.id) > 0);
+  const credAct = db.sales.filter(x => x.sucursalId === id && (activos.has(x.clientId) && !x.baja) && saldoDe(x.id) > 0);
   if (credAct.length) return res.status(409).json({ error: `No se puede eliminar "${s.nombre}": tiene ${credAct.length} crédito(s) activo(s). Transfiérelos a otra sucursal primero.` });
   const usuarios = db.users.filter(u => u.activo && u.sucursalId === id);
   if (usuarios.length) return res.status(409).json({ error: `No se puede eliminar "${s.nombre}": tiene ${usuarios.length} usuario(s) asignado(s). Reasígnalos primero.` });
@@ -1275,13 +1275,13 @@ app.get('/api/clients', auth, (req, res) => {
   const out = db.clients.filter(c => c.activo !== false)
     .filter(c => !prom || c.prom === prom)
     .filter(c => !q || [c.nombre, c.tel, c.calle, c.col, c.prom].join(' ').toLowerCase().includes(q))
-    .map(c => { const { solicitud: _cs, ...cc } = c; return { ...cc, creditos: db.sales.filter(s => s.clientId === c.id).map(s => { const { solicitud: _ss, ...ss } = s; return { ...ss, saldo: saldoDe(s.id), tieneSolicitud: !!_ss }; }) }; });
+    .map(c => { const { solicitud: _cs, ...cc } = c; return { ...cc, creditos: db.sales.filter(s => s.clientId === c.id && !s.baja).map(s => { const { solicitud: _ss, ...ss } = s; return { ...ss, saldo: saldoDe(s.id), tieneSolicitud: !!_ss }; }) }; });
   res.json(out);
 });
 app.get('/api/sales', auth, (req, res) => {
   const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
   const miSuc = (req.user.rol === 'sucursal') ? Number(req.user.sucursalId || 0) : null;
-  res.json(db.sales.filter(s => activos.has(s.clientId) && (miSuc == null || s.sucursalId === miSuc)).map(s => {
+  res.json(db.sales.filter(s => (activos.has(s.clientId) && !s.baja) && (miSuc == null || s.sucursalId === miSuc)).map(s => {
     const c = db.clients.find(x => x.id === s.clientId) || {};
     const { entrega, solicitud, ...rest } = s;
     return { ...rest, saldo: saldoDe(s.id), cliente: c.nombre, tel: c.tel || '', calle: c.calle || '', col: c.col || '', tieneEvidencia: !!entrega, tieneSolicitud: !!solicitud };
@@ -1297,7 +1297,7 @@ app.get('/api/oportunidades', auth, (req, res) => {
   const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
   const refin = [], paralelo = [];
   ventas.forEach(s => {
-    if (!activos.has(s.clientId)) return;
+    if (!(activos.has(s.clientId) && !s.baja)) return;
     const op = oportunidadDe(s);
     if (!op.refin && !op.paralelo) return;
     const c = db.clients.find(x => x.id === s.clientId) || {};
@@ -1321,7 +1321,7 @@ app.get('/api/mapa', auth, rol('admin', 'supervisor'), (req, res) => {
   const activos = db.clients.filter(c => c.activo !== false);
   const out = []; let pendientes = 0, sumLat = 0, sumLng = 0, nLoc = 0;
   for (const c of activos) {
-    const sales = db.sales.filter(s => s.clientId === c.id);
+    const sales = db.sales.filter(s => s.clientId === c.id && !s.baja);
     const saldo = sales.reduce((a, s) => a + Math.max(0, saldoDe(s.id)), 0);
     let maxAtraso = 0, cuotaRef = 1;
     sales.forEach(s => { if (saldoDe(s.id) > 0) { const at = calcAtraso(s); if (at.montoAtraso > maxAtraso) maxAtraso = at.montoAtraso; cuotaRef = s.cuota || cuotaRef; } });
@@ -2193,13 +2193,21 @@ app.delete('/api/clients/:id', auth, rol('admin', 'supervisor'), (req, res) => {
 });
 // Clientes dados de baja (soft delete) — para poder restaurarlos
 app.get('/api/clients/eliminados', auth, rol('admin', 'supervisor'), (req, res) => {
+  /* Una fila por CRÉDITO dado de baja: baja por crédito (s.baja) o, en bajas anteriores, todo el cliente. */
   const sucMap = {}; (db.sucursales || []).forEach(s => sucMap[s.id] = s.nombre);
-  const out = db.clients.filter(c => c.activo === false).map(c => {
-    const cr = db.sales.filter(s => s.clientId === c.id);
-    return { id: c.id, nombre: c.nombre, tel: c.tel || '', curp: c.curp || '', prom: c.prom || '', sucursal: sucMap[c.sucursalId] || '—',
-      bajaAt: c.bajaAt || null, bajaBy: c.bajaBy || '', despacho: c.bajaDespacho || '', motivo: c.bajaMotivo || '', creditos: cr.length,
-      saldo: cr.reduce((a, s) => a + (+saldoDe(s.id) || 0), 0) };
-  }).sort((a, b) => String(b.bajaAt || '').localeCompare(String(a.bajaAt || '')));
+  const cliMap = new Map(db.clients.map(c => [c.id, c]));
+  const out = [];
+  db.sales.forEach(s => {
+    const c = cliMap.get(s.clientId); if (!c) return;
+    let b = null;
+    if (s.baja) b = { at: s.baja.at, by: s.baja.by, despacho: s.baja.despacho, motivo: s.baja.motivo, nivel: 'credito' };
+    else if (c.activo === false) b = { at: c.bajaAt || null, by: c.bajaBy || '', despacho: c.bajaDespacho || '', motivo: c.bajaMotivo || '', nivel: 'cliente' };
+    if (!b) return;
+    out.push({ id: c.id, saleId: s.id, folio: s.folio, nombre: c.nombre, tel: c.tel || '', curp: c.curp || '', prom: s.prom || c.prom || '',
+      sucursal: sucMap[s.sucursalId] || sucMap[c.sucursalId] || '—', saldo: saldoDe(s.id), creditos: 1,
+      bajaAt: b.at, bajaBy: b.by || '', despacho: b.despacho || '', motivo: b.motivo || '', nivel: b.nivel, clienteActivo: c.activo !== false });
+  });
+  out.sort((a, b) => String(b.bajaAt || '').localeCompare(String(a.bajaAt || '')));
   res.json(out);
 });
 // Expediente completo de un cliente (activo o eliminado), SOLO LECTURA: no toca cartera ni saldos
@@ -2214,7 +2222,7 @@ app.get('/api/clients/:id/expediente', auth, rol('admin', 'supervisor'), (req, r
     const movs = db.movimientos.filter(m => m.saleId === s.id).map(m => { saldo += (m.cargo || 0) - (m.abono || 0); return { id: m.id, fecha: m.fecha, concepto: m.concepto, origen: m.origen || '', forma: m.forma || '', cargo: m.cargo || 0, abono: m.abono || 0, saldo, revertido: !!m.revertido }; });
     let at = null; try { at = calcAtraso(s); } catch (e) {}
     return { id: s.id, folio: s.folio, tipo: s.tipo, plazo: s.plazo, monto: s.monto, total: s.total, cuota: s.cuota, prom: s.prom || '',
-      sucursal: sucMap[s.sucursalId] || '—', createdAt: s.createdAt || null, saldo: saldoDe(s.id), atraso: at,
+      sucursal: sucMap[s.sucursalId] || '—', createdAt: s.createdAt || null, saldo: saldoDe(s.id), atraso: at, baja: s.baja || null,
       abonado: movs.reduce((a, m) => a + (m.abono || 0), 0), movimientos: movs };
   });
   res.json({ cliente: { ...cli, sucursal: sucMap[c.sucursalId] || '—' }, creditos });
@@ -2232,6 +2240,38 @@ app.post('/api/clients/:id/restaurar', auth, rol('admin', 'supervisor'), (req, r
   delete c.bajaAt; delete c.bajaBy; delete c.bajaMotivo; delete c.bajaDespacho;
   saveDB();
   res.json({ ok: true, cliente: { id: c.id, nombre: c.nombre } });
+});
+/* Baja de UN crédito (asignado a despacho). Los demás créditos del cliente siguen vigentes.
+   Si ya no le queda ningún crédito vigente, el cliente también sale de la cartera. */
+app.delete('/api/sales/:id/baja', auth, rol('admin', 'supervisor'), (req, res) => {
+  const s = db.sales.find(x => x.id === +req.params.id);
+  if (!s) return res.status(404).json({ error: 'Crédito no encontrado' });
+  if (s.baja) return res.status(409).json({ error: 'Ese crédito ya fue dado de baja' });
+  const b = req.body || {};
+  const desp = String(b.despacho || '').trim().slice(0, 120);
+  if (!desp) return res.status(400).json({ error: 'Indica a qué despacho o persona se asigna la cobranza' });
+  s.baja = { at: new Date().toISOString(), by: req.user.nombre, despacho: desp, motivo: String(b.motivo || '').trim().slice(0, 300) };
+  const c = db.clients.find(x => x.id === s.clientId);
+  const quedan = db.sales.filter(x => x.clientId === s.clientId && !x.baja).length;
+  if (c && !quedan && c.activo !== false) { c.activo = false; c.bajaAt = s.baja.at; c.bajaBy = req.user.nombre; c.bajaDespacho = desp; if (s.baja.motivo) c.bajaMotivo = s.baja.motivo; }
+  saveDB();
+  res.json({ ok: true, clienteDadoDeBaja: !quedan, creditosVigentes: quedan });
+});
+app.post('/api/sales/:id/restaurar', auth, rol('admin', 'supervisor'), (req, res) => {
+  const s = db.sales.find(x => x.id === +req.params.id);
+  if (!s) return res.status(404).json({ error: 'Crédito no encontrado' });
+  if (!s.baja) return res.status(400).json({ error: 'El crédito no está dado de baja' });
+  const c = db.clients.find(x => x.id === s.clientId);
+  if (c && c.activo === false) {
+    const cn = String(c.curp || '').trim().toUpperCase();
+    if (cn) { const d = db.clients.find(x => x.id !== c.id && x.activo !== false && (x.curp || '').trim().toUpperCase() === cn); if (d) return res.status(409).json({ error: `No se puede restaurar: la CURP ${cn} ya está en uso por "${d.nombre}".` }); }
+    c.activo = true; c.restauradoAt = new Date().toISOString(); c.restauradoBy = req.user.nombre;
+    c.bajaPrev = { at: c.bajaAt || null, by: c.bajaBy || null, motivo: c.bajaMotivo || null, despacho: c.bajaDespacho || null };
+    delete c.bajaAt; delete c.bajaBy; delete c.bajaMotivo; delete c.bajaDespacho;
+  }
+  s.bajaPrev = s.baja; delete s.baja; s.restauradoAt = new Date().toISOString(); s.restauradoBy = req.user.nombre;
+  saveDB();
+  res.json({ ok: true });
 });
 app.patch('/api/clients/:id', auth, rol('admin', 'supervisor'), (req, res) => {
   const id = +req.params.id;
@@ -2563,7 +2603,7 @@ app.post('/api/sales/:id/solicitud/verificar', auth, rol('admin', 'supervisor', 
 app.get('/api/solicitudes/verificar', auth, rol('admin', 'supervisor', 'sucursal', 'jc', 'cobrador'), (req, res) => {
   if (!solOn()) return res.json([]);
   const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
-  res.json(db.sales.filter(s => s.solicitud && activos.has(s.clientId) && solAcceso(req, s)
+  res.json(db.sales.filter(s => s.solicitud && (activos.has(s.clientId) && !s.baja) && solAcceso(req, s)
       && (s.solicitud.referencias || []).some(r => !r.verificacion))
     .map(s => { const c = db.clients.find(x => x.id === s.clientId) || {};
       return { saleId: s.id, folio: s.folio, cliente: c.nombre || '—', prom: s.prom, fecha: s.solicitud.fecha,
@@ -3211,7 +3251,7 @@ app.get('/api/mi-comision', auth, rol('cobrador'), (req, res) => {
   const desdeMs = _desdePeriodo('semana');
   const tasa = (db.config && db.config.tasaCobrador) || 5;
   const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
-  const ids = new Set(db.sales.filter(s => s.prom === req.user.nombre && activos.has(s.clientId)).map(s => s.id));
+  const ids = new Set(db.sales.filter(s => s.prom === req.user.nombre && (activos.has(s.clientId) && !s.baja)).map(s => s.id));
   const movs = db.movimientos.filter(m => ids.has(m.saleId) && m.abono > 0 && m.forma !== 'descuento' && m.forma !== 'recomendacion' && _parseFechaMx(m.fecha) >= desdeMs);
   const efe = movs.filter(m => !m.forma || m.forma === 'efectivo').reduce((a,m)=>a+m.abono,0);
   const tra = movs.filter(m => m.forma === 'transferencia').reduce((a,m)=>a+m.abono,0);
@@ -3226,7 +3266,7 @@ app.get('/api/mi-acumulado', auth, rol('cobrador'), (req, res) => {
   const desdeMs = _desdePeriodo('semana');
   const hoy = fechaMxHoyDDMM();
   const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
-  const ids = new Set(db.sales.filter(s => s.prom === req.user.nombre && activos.has(s.clientId)).map(s => s.id));
+  const ids = new Set(db.sales.filter(s => s.prom === req.user.nombre && (activos.has(s.clientId) && !s.baja)).map(s => s.id));
   const movs = db.movimientos.filter(m => ids.has(m.saleId) && m.abono > 0 && m.forma !== 'descuento' && m.forma !== 'recomendacion' && m.fecha !== hoy && _parseFechaMx(m.fecha) >= desdeMs);
   // Objetivo semanal = la cuota semanal propia del cobrador: suma de las cuotas de sus créditos activos con saldo.
   // Si el admin le fijó un objetivo manual de cobranza, ese manda.
@@ -3241,7 +3281,7 @@ app.get('/api/mi-acumulado', auth, rol('cobrador'), (req, res) => {
     // Objetivo = base CONGELADA de la semana (no se mueve por ventas nuevas ni liquidaciones a media semana)
     const _sIniObj = _mapSaldoInicioSemana(desdeMs);
     objetivoSemanal = db.sales
-      .filter(s => s.prom === req.user.nombre && activos.has(s.clientId) && (((_sIniObj[s.id]||0) > 0.5) || (s.importado===true && saldoDe(s.id) > 0.5)))
+      .filter(s => s.prom === req.user.nombre && (activos.has(s.clientId) && !s.baja) && (((_sIniObj[s.id]||0) > 0.5) || (s.importado===true && saldoDe(s.id) > 0.5)))
       .reduce((a, s) => a + eqSemanal(s), 0);
   }
   res.json({ semanaPrevia: Math.round(movs.reduce((a, m) => a + m.abono, 0)), objetivoSemanal: Math.round(objetivoSemanal) });
@@ -3264,7 +3304,7 @@ app.get('/api/cobradores', auth, (req, res) => {
     const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
     const nombresUsuario = new Set(users.map(u => u.nombre));
     const promsCartera = {};
-    db.sales.filter(s => activos.has(s.clientId) && saldoDe(s.id) > 0 && s.prom).forEach(s => {
+    db.sales.filter(s => (activos.has(s.clientId) && !s.baja) && saldoDe(s.id) > 0 && s.prom).forEach(s => {
       if (nombresUsuario.has(s.prom)) return;
       promsCartera[s.prom] = promsCartera[s.prom] || { nombre: s.prom, sucursal: sucMap[s.sucursalId] || null, clientes: new Set() };
       promsCartera[s.prom].clientes.add(s.clientId);
@@ -3303,7 +3343,7 @@ app.get('/api/dashboard', auth, (req,res)=>{
   const miSuc = (req.user.rol==='sucursal') ? Number(req.user.sucursalId||0) : null;
   const activeClients=db.clients.filter(c=>c.activo!==false);
   const activeClientIds=new Set(activeClients.map(c=>c.id));
-  const sales=db.sales.filter(s=>activeClientIds.has(s.clientId) && s.entregado!==false && (miSuc==null || s.sucursalId===miSuc)), clients=activeClients, sucursales=db.sucursales.filter(s=>s.activo!==false && (miSuc==null || s.id===miSuc));
+  const sales=db.sales.filter(s=>(activeClientIds.has(s.clientId) && !s.baja) && s.entregado!==false && (miSuc==null || s.sucursalId===miSuc)), clients=activeClients, sucursales=db.sucursales.filter(s=>s.activo!==false && (miSuc==null || s.id===miSuc));
   const _saleIds=new Set(sales.map(s=>s.id));
   const abonos=db.movimientos.filter(m=>m.abono>0 && _parseFechaMx(m.fecha)>=desde && _parseFechaMx(m.fecha)<=hasta && _saleIds.has(m.saleId));
   const nuevos=sales.filter(s=>!s.importado && s.createdAt && _diaMxMs(s.createdAt)>=desde && _diaMxMs(s.createdAt)<=hasta);
@@ -3538,7 +3578,7 @@ app.get('/api/reports/numeros-diarios', auth, rol('admin','supervisor'), (req,re
   const wkEnd = Math.min(Date.now(), wkFinTs);
   const wkFin = wkFinTs - 1;                        // para mostrar "Termina"
   const activos = new Set(db.clients.filter(c=>c.activo!==false).map(c=>c.id));
-  const sales = db.sales.filter(s=>activos.has(s.clientId) && s.entregado!==false);
+  const sales = db.sales.filter(s=>(activos.has(s.clientId) && !s.baja) && s.entregado!==false);
   const sucursales = db.sucursales.filter(s=>s.activo!==false);
   const abonos = db.movimientos.filter(m=>m.abono>0 && m.forma!=='descuento' && m.forma!=='recomendacion');
   const abonosAll = db.movimientos.filter(m=>m.abono>0 && m.forma!=='recomendacion');  // incluye primer pago (descuento) para cubrir no-pago; excluye recomendación (no es pago del cliente)
@@ -3602,7 +3642,7 @@ app.get('/api/reports/numeros-diarios-suc', auth, rol('admin','supervisor','sucu
   const wkEnd = Math.min(Date.now(), wkFinTs);
   const wkFin = wkFinTs - 1;
   const activos = new Set(db.clients.filter(c=>c.activo!==false).map(c=>c.id));
-  const sales = db.sales.filter(s=>activos.has(s.clientId) && s.entregado!==false && Number(s.sucursalId)===sid);
+  const sales = db.sales.filter(s=>(activos.has(s.clientId) && !s.baja) && s.entregado!==false && Number(s.sucursalId)===sid);
   const abonos = db.movimientos.filter(m=>m.abono>0 && m.forma!=='descuento' && m.forma!=='recomendacion');
   const abonosAll = db.movimientos.filter(m=>m.abono>0 && m.forma!=='recomendacion');  // incluye primer pago (descuento) para cubrir no-pago; excluye recomendación (no es pago del cliente)
   const saleRef = {}; sales.forEach(s=>{ saleRef[s.id]={prom:s.prom||'—', cli:s.clientId}; });
@@ -3734,7 +3774,7 @@ function _vencidoDe(sale){
 function _listaContactos(iso){
   const wb=_semanaDesdeISO(iso);
   const activos=new Set(db.clients.filter(c=>c.activo!==false).map(c=>c.id));
-  const sales=db.sales.filter(s=>activos.has(s.clientId) && s.entregado!==false && saldoDe(s.id)>0);
+  const sales=db.sales.filter(s=>(activos.has(s.clientId) && !s.baja) && s.entregado!==false && saldoDe(s.id)>0);
   const saleCli={}; sales.forEach(s=>saleCli[s.id]=s.clientId);
   const pagadoSemana=new Map(); // clientId -> total abonado en la semana
   for(const m of db.movimientos){ if(m.abono>0 && saleCli[m.saleId]!=null){ const t=_parseFechaMx(m.fecha); if(t>=wb.start && t<wb.end){ const cid=saleCli[m.saleId]; pagadoSemana.set(cid,(pagadoSemana.get(cid)||0)+m.abono); } } }
@@ -3860,7 +3900,7 @@ function _recuperacionMorosos(nSem, scope){
   const activos = new Set(db.clients.filter(c=>c.activo!==false).map(c=>c.id));
   const saldoSale = {};
   db.movimientos.forEach(m=>{ saldoSale[m.saleId] = (saldoSale[m.saleId]||0) + (m.cargo||0) - (m.abono||0); });
-  const ventas = db.sales.filter(s => activos.has(s.clientId) && s.entregado!==false && (saldoSale[s.id]||0) > 0.5);
+  const ventas = db.sales.filter(s => (activos.has(s.clientId) && !s.baja) && s.entregado!==false && (saldoSale[s.id]||0) > 0.5);
   if(!ventas.length) return vacio;
   const saleCli = {}, cli = new Map();
   ventas.forEach(s=>{
@@ -4520,7 +4560,7 @@ app.get('/api/reports/colocacion', auth, rol('admin','supervisor'), (req, res) =
   const desde = new Date(ahora); desde.setDate(desde.getDate() - dias);
   const desdeIso = `${desde.getFullYear()}-${String(desde.getMonth()+1).padStart(2,'0')}-${String(desde.getDate()).padStart(2,'0')}`;
   const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
-  const ventas = db.sales.filter(s => s.createdAt && activos.has(s.clientId) && _isoMxDe(s.createdAt) >= desdeIso);
+  const ventas = db.sales.filter(s => s.createdAt && (activos.has(s.clientId) && !s.baja) && _isoMxDe(s.createdAt) >= desdeIso);
   const buckets = {};
   ventas.forEach(s => {
     // clave por día o por inicio de semana, siempre en hora de México
@@ -5227,7 +5267,7 @@ app.get('/api/reports/comisiones', auth, rol('admin','supervisor'), (req, res) =
   const cobradores = db.users.filter(u => u.rol === 'cobrador' && u.activo);
   const sucActivos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
   const out = cobradores.map(c => {
-    const sus_sales = db.sales.filter(s => s.prom === c.nombre && sucActivos.has(s.clientId));
+    const sus_sales = db.sales.filter(s => s.prom === c.nombre && (sucActivos.has(s.clientId) && !s.baja));
     const sus_movs = db.movimientos.filter(m => {
       const s = sus_sales.find(x => x.id === m.saleId);
       const t = _parseFechaMx(m.fecha);
@@ -5296,13 +5336,13 @@ app.get('/api/reports/gerencial', auth, rol('admin', 'supervisor', 'sucursal'), 
   if (esGerente) sucursales = sucursales.filter(s => s.id === miSuc);
   const kp = sales => _kpisVentas(sales, desde, hasta);
   const porSucursal = sucursales.map(suc => {
-    const ventasSuc = db.sales.filter(s => s.sucursalId === suc.id && activos.has(s.clientId));
+    const ventasSuc = db.sales.filter(s => s.sucursalId === suc.id && (activos.has(s.clientId) && !s.baja));
     const enc = db.users.find(u => u.rol === 'sucursal' && u.sucursalId === suc.id);
     const cobradores = db.users.filter(u => u.rol === 'cobrador' && u.activo && u.sucursalId === suc.id);
     const promotores = cobradores.map(cob => ({ promotor: cob.nombre, ...kp(ventasSuc.filter(s => s.prom === cob.nombre)) }));
     return { id: suc.id, sucursal: suc.nombre, gerente: enc ? enc.nombre : '—', ...kp(ventasSuc), promotores };
   });
-  const todas = db.sales.filter(s => (esGerente ? s.sucursalId === miSuc : true) && activos.has(s.clientId));
+  const todas = db.sales.filter(s => (esGerente ? s.sucursalId === miSuc : true) && (activos.has(s.clientId) && !s.baja));
   res.json({ periodo: modo, rango: label, generado: new Date().toISOString(), nivel: esGerente ? 'sucursal' : 'empresa', empresa: kp(todas), sucursales: porSucursal });
 });
 // Drill-down: clientes de una sucursal o de un promotor (con cobrado/vencido en el rango)
@@ -5312,7 +5352,7 @@ app.get('/api/reports/gerencial-clientes', auth, rol('admin', 'supervisor', 'suc
   const promotor = req.query.promotor || null;
   if (req.user.rol === 'sucursal') { const me = db.users.find(u => u.id === req.user.id); if (!me || (sucursalId && sucursalId !== me.sucursalId)) return res.status(403).json({ error: 'Fuera de tu sucursal' }); }
   const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
-  let sales = db.sales.filter(s => activos.has(s.clientId));
+  let sales = db.sales.filter(s => (activos.has(s.clientId) && !s.baja));
   if (sucursalId) sales = sales.filter(s => s.sucursalId === sucursalId);
   if (promotor) sales = sales.filter(s => s.prom === promotor);
   const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
@@ -5386,7 +5426,7 @@ function _inicioDatos(nSem) {
        Un crédito liquidado no puede tener "semanas sin pagar" ni debe cuota.
      - todas: incluye los liquidados. El dinero que terminó de pagar un crédito esta semana
        también se cobró, y así la cifra cuadra con el Resumen operativo. */
-  const todas = db.sales.filter(s => activos.has(s.clientId) && s.entregado !== false);
+  const todas = db.sales.filter(s => (activos.has(s.clientId) && !s.baja) && s.entregado !== false);
   const ventas = todas.filter(s => (saldo[s.id] || 0) > 0.5);
 
   // pagos por crédito y por ciclo (una sola pasada; el primer pago descontado no es cobranza)
@@ -5450,7 +5490,7 @@ function _inicioDatos(nSem) {
   // KPIs comparativos
   const colocSem = ciclos.map((ini, k) => {
     let m = 0;
-    db.sales.forEach(s => { if (!s.createdAt || !activos.has(s.clientId)) return;
+    db.sales.forEach(s => { if (!s.createdAt || !(activos.has(s.clientId) && !s.baja)) return;
       const t = _diaMxMs(s.createdAt); if (t >= ini && t < finCiclo(ini)) m += (s.monto || 0); });
     return { ini: _isoDe(ini), lbl: _lblSemana(ini), monto: Math.round(m), enCurso: k === N - 1 };
   });
@@ -5630,7 +5670,7 @@ app.get('/api/reports/aging', auth, rol('admin', 'supervisor', 'sucursal'), (req
   const porSuc = {};
   let saldoTotal = 0, moraMonto = 0, creditosMora = 0;
   ventas.forEach(s => {
-    if (!activos.has(s.clientId)) return;
+    if (!(activos.has(s.clientId) && !s.baja)) return;
     const saldo = saldoDe(s.id);
     if (saldo <= 0) return;
     const at = calcAtraso(s);
@@ -5771,7 +5811,7 @@ app.get('/api/reports/desglose', auth, rol('admin', 'supervisor', 'sucursal'), (
       // ventas de la semana (los importados NO cuentan como colocación nueva)
       if (createdEsta) { ventas++; valorVentas += s.monto || 0; debitoVentas += s.cuota || 0; }
       // vigente: con saldo previo, o venta nueva real, o cartera importada con saldo en la semana
-      const vigente = existed && (saldoIni > 0.5 || createdEsta || (esImp && saldoFin > 0.5)) && clienteActivo(s.clientId);
+      const vigente = existed && (saldoIni > 0.5 || createdEsta || (esImp && saldoFin > 0.5)) && clienteActivo(s.clientId) && !s.baja;
       if (vigente) {
         cliVig.add(s.clientId);
         valorCartera += Math.max(0, saldoFin);   // la cartera sí crece el día que se coloca: el dinero ya salió
@@ -5850,7 +5890,7 @@ app.get('/api/reports/cartera-cobrador', auth, rol('admin','supervisor','sucursa
   const reportes = sel.map(cob => {
     const suc = db.sucursales.find(s => s.id === cob.sucursalId);
     const enc = db.users.find(u => u.rol === 'sucursal' && u.sucursalId === cob.sucursalId);
-    const sus_sales = db.sales.filter(s => s.prom === cob.nombre && activos.has(s.clientId));
+    const sus_sales = db.sales.filter(s => s.prom === cob.nombre && (activos.has(s.clientId) && !s.baja));
     const clientes = sus_sales.map(s => {
       const c = db.clients.find(x => x.id === s.clientId) || {};
       // Solo cobranza REAL: el "primer pago descontado al inicio" (forma 'descuento') de s16/s17/s21/s31
@@ -6128,7 +6168,7 @@ function _desfaseSucursal() {
   const porCobrador = {}; const detalle = [];
   cobs.forEach(u => {
     db.sales.forEach(s => {
-      if (s.prom !== u.nombre || !activos.has(s.clientId)) return;
+      if (s.prom !== u.nombre || !(activos.has(s.clientId) && !s.baja)) return;
       if (Number(s.sucursalId) === Number(u.sucursalId)) return;
       const saldo = saldoDe(s.id);
       const c = db.clients.find(x => x.id === s.clientId) || {};
@@ -6198,7 +6238,7 @@ app.post('/api/admin/desfase-sucursal/deshacer', auth, rol('admin'), (req, res) 
     if (!h || !h.length) return;
     const ult = h[h.length - 1];
     if (!ult || !ult.fecha || Date.parse(ult.fecha) < desde) return;
-    if (!todos && activos.has(s.clientId)) return;   // por defecto solo los de clientes de baja
+    if (!todos && (activos.has(s.clientId) && !s.baja)) return;   // por defecto solo los de clientes de baja
     detalle.push({ folio: s.folio, prom: s.prom, de: s.sucursalId, a: ult.de });
     s.sucursalId = ult.de;
     h.pop();
