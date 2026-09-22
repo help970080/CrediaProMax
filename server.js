@@ -2339,6 +2339,17 @@ app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) 
      agencia; el candado POR SUCURSAL vive en la bandeja de entregas, que es donde el aparato
      sale físicamente y donde antes se validaba el efectivo. */
   if (s14Bloqueado(tipo)) return res.status(403).json({ error: S14_OFF_MSG });
+  /* POLÍTICA: solo SUPERVISOR (o admin) autoriza clientes NUEVOS. La sucursal solo renueva a
+     clientes que ya existen (clienteExistenteId) y hace refines (/api/sales/:id/refin).
+     Si la sucursal captura como "nuevo" a alguien que YA existe (misma CURP o teléfono), se deja
+     pasar para que el candado de duplicados le ofrezca agregarlo como renovación. */
+  if (req.user.rol === 'sucursal' && !clienteExistenteId) {
+    const _cN = String(curp || '').trim().toUpperCase(), _tN = String(tel || '').replace(/\D/g, '');
+    const _yaExiste = db.clients.some(c => c.activo !== false && (
+      (_cN && (c.curp || '').trim().toUpperCase() === _cN) ||
+      (_tN.length >= 10 && (c.tel || '').replace(/\D/g, '') === _tN)));
+    if (!_yaExiste) return res.status(403).json({ error: 'Los clientes NUEVOS solo los autoriza el supervisor. La sucursal puede autorizar renovaciones y refines.', code: 'nuevo_requiere_supervisor', detalle: 'Deja la solicitud pendiente para que el supervisor la revise y la autorice.' });
+  }
   /* Solicitud obligatoria con el módulo prendido. Se valida ANTES del buró y de crear el cliente
      para no dejar clientes huérfanos ni solicitudes de Vo.Bo sin expediente. */
   /* Conversión de una solicitud levantada en campo: se valida ANTES de crear nada y se marca
