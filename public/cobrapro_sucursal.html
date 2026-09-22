@@ -1268,10 +1268,9 @@ async function scVer(id){ _scId=id;
         ${r.verificadoPor?`<div style="font-size:.74rem;opacity:.75">${_solE(r.verificadoPor)} (${_solE(r.verificadoRol||'')})${r.nota?' · 📝 '+_solE(r.nota):''}</div>`:''}
         ${x.estado==='pendiente'&&d.puedeVerificar?`<div style="display:flex;gap:6px;margin-top:7px"><button class="btn" style="flex:1;font-size:.78rem;border-color:var(--grn);color:var(--grn)" onclick="scVerif(${i},'positiva')">✓ Positiva</button>
           <button class="btn" style="flex:1;font-size:.78rem;border-color:var(--red);color:var(--red)" onclick="scVerif(${i},'negativa')">✗ Negativa</button></div>`:''}</div>`).join('')}
-      ${x.estado==='pendiente'&&d.esNuevo?'<div style="font-size:.8rem;color:#caa23a;margin-top:9px;line-height:1.45">🔒 <b>Cliente NUEVO:</b> las referencias las verifica y el crédito lo autoriza el <b>supervisor</b>. Puedes revisar el expediente y capturar la firma si falta.</div>':''}
       <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
         ${x.estado==='pendiente'?`<button class="btn" style="flex:1" onclick="scFirmar(${x.id})">✍️ ${(s.fotos||{}).firma?'Volver a firmar':'Firma del cliente'}</button>`:''}
-        ${x.estado==='pendiente'&&d.puedeResolver&&!d.esNuevo?`<button class="btn" style="flex:1;border-color:var(--grn);color:var(--grn)" onclick="solCerrar();scUsar(${x.id})">➕ Capturar crédito</button>`:''}
+        ${x.estado==='pendiente'&&d.puedeResolver?`<button class="btn" style="flex:1;border-color:var(--grn);color:var(--grn)" onclick="solCerrar();scUsar(${x.id})">➕ Capturar crédito</button>`:''}
         <button class="btn" style="flex:1" onclick="solCerrar()">Cerrar</button></div></div>`;
   }catch(e){ o.innerHTML='<div style="background:var(--surf);border-radius:12px;padding:18px;max-width:560px;width:100%">'+_solE(e.message)+'<div style="margin-top:12px;text-align:right"><button class="btn" onclick="solCerrar()">Cerrar</button></div></div>'; }
 }
@@ -1325,7 +1324,6 @@ async function scUsar(id){
     put('s-act',s.actividad); put('s-dtra',s.dirTrabajo); put('s-ing',s.ingresoSemanal||''); put('s-gas',s.gastoSemanal||'');
     /* El cobrador nunca verifica: si el gerente no marcó las referencias en el expediente, aquí se
        le obliga antes de dejarlo capturar. */
-    if(d.esNuevo){ toast('Cliente NUEVO: el crédito lo autoriza el supervisor'); scVer(id); return; }
     if(!(s.fotos||{}).firma){ toast('Falta la firma del cliente: captúrala antes de capturar el crédito'); scFirmar(id); return; }
     const _vf=(s.referencias||[]).map(r=>r.verificacion||'');
     if((s.referencias||[]).length && _vf.some(v=>!v)){
