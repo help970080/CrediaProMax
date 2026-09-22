@@ -2651,6 +2651,60 @@ app.post('/api/solicitudes-campo/:id/rechazar', auth, rol('admin', 'supervisor',
   saveDB();
   res.json({ ok: true });
 });
+/* Corregir una solicitud de campo ANTES de autorizarla (solo pendientes). Sucursal (la suya),
+   supervisor y admin. Cada corrección queda en x.ediciones con antes→después. Las fotos se conservan;
+   si cambia una referencia (nombre/celular) su verificación se reinicia. */
+app.patch('/api/solicitudes-campo/:id', auth, rol('admin', 'supervisor', 'sucursal'), solGuard, (req, res) => {
+  const x = (db.solicitudesCampo || []).find(y => y.id === +req.params.id);
+  if (!x) return res.status(404).json({ error: 'Solicitud no encontrada' });
+  if (!scAcceso(req, x) || !scResolver(req)) return res.status(403).json({ error: 'Permiso insuficiente' });
+  if (x.estado !== 'pendiente') return res.status(409).json({ error: 'Solo se corrigen solicitudes pendientes. Esta ya fue ' + x.estado });
+  const bc = req.body.cliente || {}, bs = req.body.solicitud || {};
+  const cli = Object.assign({}, x.cliente);
+  const T = { nombre: 90, calle: 120, col: 80, ciudad: 60, estado: 60, ref: 160 };
+  Object.keys(T).forEach(k => { if (bc[k] !== undefined) cli[k] = _solT(bc[k], T[k]); });
+  if (bc.tel !== undefined) cli.tel = String(bc.tel || '').replace(/\D/g, '').slice(0, 15);
+  if (bc.curp !== undefined) cli.curp = _solT(bc.curp, 18).toUpperCase();
+  const falta = [];
+  if (!cli.nombre) falta.push('nombre del cliente');
+  if (!/^[A-Z]{4}\d{6}[A-Z0-9]{8}$/.test(cli.curp || '')) falta.push('CURP válida (18 caracteres del INE)');
+  if (!cli.calle || !cli.col) falta.push('domicilio (calle y colonia)');
+  if (falta.length) return res.status(400).json({ error: 'Faltan datos del cliente: ' + falta.join(', ') });
+  // Referencias: se editan nombre/cel/parentesco/dirección; si cambia nombre o celular, se reinicia su verificación
+  const refsAnt = x.solicitud.referencias || [];
+  let refsNew = refsAnt;
+  if (Array.isArray(bs.referencias)) refsNew = bs.referencias.slice(0, 2).map((r, i) => {
+    const a = refsAnt[i] || {}; const n = Object.assign({}, a, {
+      nombre: r.nombre !== undefined ? r.nombre : a.nombre, cel: r.cel !== undefined ? r.cel : a.cel,
+      parentesco: r.parentesco !== undefined ? r.parentesco : a.parentesco, direccion: r.direccion !== undefined ? r.direccion : a.direccion });
+    return n;
+  });
+  const EDIT = ['solicitado', 'plazoSolicitado', 'apPaterno', 'apMaterno', 'numExt', 'numInt', 'poblacion', 'cp', 'vivienda', 'tiempoDomicilio', 'estadoCivil', 'hijos', 'escuelaHijos', 'actividad', 'dirTrabajo', 'ingresoSemanal', 'gastoSemanal'];
+  const merged = Object.assign({}, x.solicitud); EDIT.forEach(k => { if (bs[k] !== undefined) merged[k] = bs[k]; });
+  merged.referencias = refsNew;
+  const v = solLimpiar(merged);
+  if (v.error) return res.status(400).json({ error: v.error });
+  v.sol.referencias.forEach((r, i) => {
+    const a = refsAnt[i] || {};
+    if (r.nombre !== _solT(a.nombre, 90) || r.cel !== _solTel(a.cel)) { r.verificacion = ''; }
+    else { ['verificadoPor', 'verificadoRol', 'verificadoAt'].forEach(k => { if (a[k] !== undefined) r[k] = a[k]; }); }
+  });
+  // Diferencias para la bitácora
+  const cambios = [];
+  const dif = (campo, a, b) => { if (String(a == null ? '' : a) !== String(b == null ? '' : b)) cambios.push({ campo, antes: a == null ? '' : a, despues: b == null ? '' : b }); };
+  ['nombre', 'curp', 'tel', 'calle', 'col', 'ciudad', 'estado', 'ref'].forEach(k => dif('cliente.' + k, x.cliente[k], cli[k]));
+  EDIT.forEach(k => dif(k, x.solicitud[k], v.sol[k]));
+  v.sol.referencias.forEach((r, i) => { const a = refsAnt[i] || {}; ['nombre', 'cel', 'parentesco', 'direccion'].forEach(k => dif('ref' + (i + 1) + '.' + k, a[k], r[k])); });
+  if (!cambios.length) return res.json({ ok: true, cambios: 0 });
+  const cd = solDeCurp(cli.curp);
+  const extra = {}; Object.keys(x.solicitud).forEach(k => { if (!(k in v.sol)) extra[k] = x.solicitud[k]; });
+  x.cliente = cli;
+  x.solicitud = Object.assign(extra, v.sol, { fechaNac: cd.fechaNac, sexo: cd.sexo });
+  x.ediciones = (x.ediciones || []).slice(-49);
+  x.ediciones.push({ fecha: new Date().toISOString(), por: req.user.nombre, rol: req.user.rol, cambios });
+  saveDB();
+  res.json({ ok: true, cambios: cambios.length });
+});
 /* ---------- Documentos del expediente (INE frente/reverso y comprobante) ----------
    La foto se sube SOLA, en cuanto se toma, y regresa la marca "foto:N". La venta solo lleva marcas:
    si hay 409 por duplicado o Vo.Bo, el reintento no vuelve a subir nada y el payload del Vo.Bo no
