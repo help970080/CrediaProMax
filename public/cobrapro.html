@@ -5519,7 +5519,7 @@ async function svAutorizar(id){
     const d=await _solApi('GET','/api/solicitudes-campo/'+id); const x=d.solicitudCampo, c=x.cliente, s=x.solicitud;
     if(!(s.fotos||{}).firma){ if(confirm('Esta solicitud no tiene la firma del cliente y no se puede autorizar sin ella.\n\n¿Capturar la firma ahora?')) svFirmar(id); return; }
     const _rf=s.referencias||[];
-    if(!_rf.length||_rf.some(r=>!r.verificacion)){ alert('Faltan referencias por verificar.\n\n'+(d.esNuevo?'Cliente NUEVO: las verifica el supervisor o el administrador desde este mismo detalle (✓ Positiva / ✗ Negativa).':'Verifícalas desde el detalle antes de autorizar.')); return; }
+    if(!_rf.length||_rf.some(r=>!r.verificacion)){ alert('Faltan referencias por verificar.\n\nVerifícalas desde el detalle (✓ Positiva / ✗ Negativa) antes de autorizar.'); return; }
     if(d.esNuevo&&_rf.some(r=>r.verificacion==='negativa')){ alert('Cliente NUEVO con referencia NEGATIVA: no se puede autorizar.'); return; }
     try{ const t=await apiU('GET','/api/tarifas'); if(t&&t.semanal) PROD=t; }catch(_){}
     let cobs=[]; try{ cobs=(await apiU('GET','/api/cobradores')).filter(u=>Number(u.sucursalId)===Number(x.sucursalId)); }catch(_){}
