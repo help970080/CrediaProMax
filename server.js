@@ -2379,18 +2379,7 @@ app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) 
      agencia; el candado POR SUCURSAL vive en la bandeja de entregas, que es donde el aparato
      sale físicamente y donde antes se validaba el efectivo. */
   if (s14Bloqueado(tipo)) return res.status(403).json({ error: S14_OFF_MSG });
-  /* POLÍTICA: solo SUPERVISOR (o admin) autoriza clientes NUEVOS. La sucursal solo renueva a
-     clientes que ya existen (clienteExistenteId) y hace refines (/api/sales/:id/refin).
-     Si la sucursal captura como "nuevo" a alguien que YA existe (misma CURP o teléfono), se deja
-     pasar para que el candado de duplicados le ofrezca agregarlo como renovación.
-     Solo aplica en agencias con el módulo de Solicitud digital activo (superadmin → módulos). */
-  if (solOn() && req.user.rol === 'sucursal' && !clienteExistenteId) {
-    const _cN = String(curp || '').trim().toUpperCase(), _tN = String(tel || '').replace(/\D/g, '');
-    const _yaExiste = db.clients.some(c => c.activo !== false && (
-      (_cN && (c.curp || '').trim().toUpperCase() === _cN) ||
-      (_tN.length >= 10 && (c.tel || '').replace(/\D/g, '') === _tN)));
-    if (!_yaExiste) return res.status(403).json({ error: 'Los clientes NUEVOS solo los autoriza el supervisor. La sucursal puede autorizar renovaciones y refines.', code: 'nuevo_requiere_supervisor', detalle: 'Deja la solicitud pendiente para que el supervisor la revise y la autorice.' });
-  }
+  /* (Política retirada 22/09: sucursal y supervisor autorizan clientes nuevos y renovaciones.) */
   /* Solicitud obligatoria con el módulo prendido. Se valida ANTES del buró y de crear el cliente
      para no dejar clientes huérfanos ni solicitudes de Vo.Bo sin expediente. */
   /* Conversión de una solicitud levantada en campo: se valida ANTES de crear nada y se marca
@@ -2411,7 +2400,7 @@ app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) 
     /* Referencias: todas verificadas antes de autorizar. Cliente NUEVO: ninguna puede ser negativa. */
     { const _rf = (_scOrigen.solicitud || {}).referencias || [];
       if (!_rf.length || _rf.some(r => !r.verificacion))
-        return res.status(409).json({ error: 'Faltan referencias por verificar. ' + (scEsNuevo(_scOrigen) ? 'Por ser cliente NUEVO, las verifica el supervisor o el administrador.' : 'Verifícalas antes de autorizar.'), code: 'referencias_pendientes' });
+        return res.status(409).json({ error: 'Faltan referencias por verificar. Verifícalas antes de autorizar.', code: 'referencias_pendientes' });
       if (scEsNuevo(_scOrigen) && _rf.some(r => r.verificacion === 'negativa'))
         return res.status(409).json({ error: 'Cliente NUEVO con referencia NEGATIVA: no se puede autorizar.', code: 'referencia_negativa' }); }
   }
@@ -2627,8 +2616,8 @@ function scAcceso(req, x) {
 function scResolver(req) { return ['admin', 'supervisor', 'sucursal'].includes(req.user.rol); }
 /* ¿La persona de la solicitud ya es cliente activo? (misma CURP) → renovación; si no → cliente NUEVO. */
 function scEsNuevo(x) { const cu = String((x.cliente || {}).curp || '').trim().toUpperCase(); return !cu || !db.clients.some(c => c.activo !== false && String(c.curp || '').trim().toUpperCase() === cu); }
-/* Verificar referencias: cliente NUEVO solo supervisor/admin; renovación también la sucursal. */
-function scPuedeVerificar(req, x) { const r = req.user.rol; if (r === 'admin' || r === 'supervisor') return true; return r === 'sucursal' && !scEsNuevo(x); }
+/* Verificar referencias: sucursal, supervisor y admin (nuevos y renovaciones). */
+function scPuedeVerificar(req, x) { return ['admin', 'supervisor', 'sucursal'].includes(req.user.rol); }
 app.post('/api/solicitudes-campo', auth, rol('admin', 'supervisor', 'sucursal', 'jc', 'cobrador'), solGuard, (req, res) => {
   const c = req.body.cliente || {};
   const nombre = _solT(c.nombre, 90);
@@ -2723,7 +2712,7 @@ app.post('/api/solicitudes-campo/:id/verificar', auth, rol('admin', 'supervisor'
   const x = (db.solicitudesCampo || []).find(y => y.id === +req.params.id);
   if (!x) return res.status(404).json({ error: 'Solicitud no encontrada' });
   if (!scAcceso(req, x)) return res.status(403).json({ error: 'Permiso insuficiente' });
-  if (!scPuedeVerificar(req, x)) return res.status(403).json({ error: 'Las referencias de un cliente NUEVO solo las verifica el supervisor o el administrador.' });
+  if (!scPuedeVerificar(req, x)) return res.status(403).json({ error: 'Permiso insuficiente para verificar referencias' });
   if (x.estado !== 'pendiente') return res.status(409).json({ error: 'La solicitud ya fue ' + x.estado });
   const i = +req.body.idx, resultado = String(req.body.resultado || '');
   const r = (x.solicitud.referencias || [])[i];
