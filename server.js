@@ -799,7 +799,7 @@ function solLimpiar(b) {
     referencias: refs, consentimiento: b.consentimiento === true,
     /* Documentos: SOLO marcas "foto:N" ya guardadas en cobrapro_fotos (POST /api/solicitud/foto).
        Nunca base64 aquí: la solicitud vive en el bloque y lo inflaría. */
-    fotos: SOL_DOCS.reduce((o, k) => { const v = b.fotos && b.fotos[k]; if (_esRefFoto(v)) o[k] = v; return o; }, {}),
+    fotos: SOL_DOCS.concat('firma').reduce((o, k) => { const v = b.fotos && b.fotos[k]; if (_esRefFoto(v)) o[k] = v; return o; }, {}),
   };
   const falta = [];
   if (!sol.solicitado) falta.push('monto solicitado');
@@ -2365,6 +2365,8 @@ app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) 
       return res.status(409).json({ error: 'solicitud_reincidente', detalle: 'A esta persona ya se le rechazó una solicitud antes.', rechazosPrevios: _scOrigen.rechazosPrevios || [] });
     if (req.user.rol === 'sucursal' && Number(_scOrigen.sucursalId) !== Number(req.user.sucursalId || 0))
       return res.status(403).json({ error: 'Esa solicitud es de otra sucursal' });
+    if (!((_scOrigen.solicitud || {}).fotos || {}).firma)
+      return res.status(409).json({ error: 'Falta la firma del cliente en la solicitud. Captúrala (✍️ Firma del cliente) antes de autorizar.', code: 'falta_firma' });
   }
 
   let _solVenta = null;
@@ -2480,6 +2482,8 @@ app.post('/api/sales', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) 
   if (_prodVenta) { sale.productoId = _prodVenta.id; sale.producto = prodLbl(_prodVenta); sale.entregaMonto = 0; }
   if (_solVenta) {
     if (_scOrigen) { _solVenta.origen = 'campo'; _solVenta.levantadaPor = _scOrigen.cobrador; _solVenta.fechaCampo = _scOrigen.fecha;
+      const _fz = ((_scOrigen.solicitud || {}).fotos || {}).firma;
+      if (_fz) { _solVenta.fotos = _solVenta.fotos || {}; if (!_solVenta.fotos.firma) _solVenta.fotos.firma = _fz; _solVenta.firmaAt = _scOrigen.firmaAt || null; }
       if (_scOrigen.reincidente) { _solVenta.reincidente = true; _solVenta.rechazosPrevios = _scOrigen.rechazosPrevios || []; } }
     const _cd = solDeCurp(client.curp);
     const ahora = new Date().toISOString();
@@ -2605,9 +2609,11 @@ app.post('/api/solicitudes-campo', auth, rol('admin', 'supervisor', 'sucursal', 
     const u = rech[rech.length - 1];
     x.reincidente = true;
     x.rechazosPrevios = rech.map(y => ({ id: y.id, fecha: y.fechaResuelta || y.fecha, cobrador: y.cobrador, motivo: y.motivo || '', por: y.resueltoPor || '' }));
+    if (x.solicitud.fotos && x.solicitud.fotos.firma) { x.firmaAt = x.fecha; x.firmaCapturo = req.user.nombre; }
     db.solicitudesCampo.push(x); saveDB();
     return res.status(201).json({ ok: true, id: x.id, aviso: `Ojo: a esta persona ya se le rechazó una solicitud el ${String(u.fechaResuelta || u.fecha).slice(0, 10)} (${u.motivo || 'sin motivo'}). Se envía marcada para que tu sucursal lo revise.` });
   }
+  if (x.solicitud.fotos && x.solicitud.fotos.firma) { x.firmaAt = x.fecha; x.firmaCapturo = req.user.nombre; }
   db.solicitudesCampo.push(x); saveDB();
   res.status(201).json({ ok: true, id: x.id });
 });
@@ -2639,7 +2645,13 @@ app.get('/api/solicitudes-campo/:id', auth, rol('admin', 'supervisor', 'sucursal
   if (!x) return res.status(404).json({ error: 'Solicitud no encontrada' });
   if (!scAcceso(req, x)) return res.status(403).json({ error: 'Permiso insuficiente' });
   const suc = db.sucursales.find(y => y.id === x.sucursalId);
-  res.json({ solicitudCampo: x, sucursal: suc ? suc.nombre : '', puedeResolver: scResolver(req) });
+  let venta = null;
+  if (x.saleId) { const s = db.sales.find(y => y.id === x.saleId);
+    if (s) venta = { folio: s.folio, tipo: s.tipo, plazo: s.plazo, monto: s.monto, total: s.total, cuota: s.cuota, prom: s.prom || '',
+      createdAt: s.createdAt || null, esNuevo: !db.sales.some(o => o.clientId === s.clientId && o.id < s.id),
+      referencias: (s.solicitud && s.solicitud.referencias) || null }; }
+  const brand = (db.config && db.config.brand && db.config.brand.nombre) || 'CobraPro';
+  res.json({ solicitudCampo: x, sucursal: suc ? suc.nombre : '', puedeResolver: scResolver(req), venta, brand });
 });
 app.post('/api/solicitudes-campo/:id/rechazar', auth, rol('admin', 'supervisor', 'sucursal'), solGuard, (req, res) => {
   const x = (db.solicitudesCampo || []).find(y => y.id === +req.params.id);
@@ -2650,6 +2662,21 @@ app.post('/api/solicitudes-campo/:id/rechazar', auth, rol('admin', 'supervisor',
   x.motivo = _solT(req.body.motivo, 200);
   saveDB();
   res.json({ ok: true });
+});
+/* Firma del cliente en la solicitud de campo (la sube /api/solicitud/foto con tipo 'firma').
+   La captura el cobrador en campo o, si faltó, la sucursal/supervisor con el cliente presente. */
+app.put('/api/solicitudes-campo/:id/firma', auth, rol('admin', 'supervisor', 'sucursal', 'jc', 'cobrador'), solGuard, (req, res) => {
+  const x = (db.solicitudesCampo || []).find(y => y.id === +req.params.id);
+  if (!x) return res.status(404).json({ error: 'Solicitud no encontrada' });
+  if (!scAcceso(req, x)) return res.status(403).json({ error: 'Permiso insuficiente' });
+  if (x.estado !== 'pendiente') return res.status(409).json({ error: 'La solicitud ya fue ' + x.estado + '; la firma ya no se puede cambiar' });
+  const ref = String(req.body.ref || '');
+  if (!_esRefFoto(ref)) return res.status(400).json({ error: 'Firma inválida' });
+  x.solicitud.fotos = x.solicitud.fotos || {};
+  if (x.solicitud.fotos.firma) { x.firmasPrevias = (x.firmasPrevias || []).slice(-9); x.firmasPrevias.push({ ref: x.solicitud.fotos.firma, at: x.firmaAt || null, por: x.firmaCapturo || null }); }
+  x.solicitud.fotos.firma = ref; x.firmaAt = new Date().toISOString(); x.firmaCapturo = req.user.nombre;
+  saveDB();
+  res.json({ ok: true, firmaAt: x.firmaAt });
 });
 /* Corregir una solicitud de campo ANTES de autorizarla (solo pendientes). Sucursal (la suya),
    supervisor y admin. Cada corrección queda en x.ediciones con antes→después. Las fotos se conservan;
@@ -2711,7 +2738,7 @@ app.patch('/api/solicitudes-campo/:id', auth, rol('admin', 'supervisor', 'sucurs
    mete imágenes al bloque. Sin FLAG_FOTOS+PostgreSQL se rechaza en vez de inflar el bloque. */
 app.post('/api/solicitud/foto', auth, rol('admin', 'supervisor', 'sucursal', 'jc', 'cobrador'), solGuard, async (req, res) => {
   const tipo = String(req.body.tipo || '');
-  if (!SOL_DOCS.includes(tipo)) return res.status(400).json({ error: 'Tipo de documento inválido' });
+  if (!SOL_DOCS.includes(tipo) && tipo !== 'firma') return res.status(400).json({ error: 'Tipo de documento inválido' });
   const img = String(req.body.imagen || '');
   if (!/^data:image\/(jpeg|png|webp);base64,/.test(img)) return res.status(400).json({ error: 'Envía la foto en JPEG o PNG' });
   if (img.length > 2000000) return res.status(413).json({ error: 'La foto pesa demasiado. Vuelve a tomarla.' });
