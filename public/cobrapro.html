@@ -1631,7 +1631,7 @@ function renderCartera(){
       <td><div style="display:flex;align-items:center;gap:7px"><div class="bar" style="min-width:46px"><i style="width:${(av*100).toFixed(0)}%;background:var(--grn)"></i></div><span class="mono" style="font-size:.72rem">${(av*100).toFixed(0)}%</span></div></td>
       <td class="sn">${liq?'—':'Pendiente'}</td>
       <td><span class="pill ok">${liq?'Liquidado':'Activo'}</span></td>
-      <td style="text-align:right;white-space:nowrap"><button class="btn" style="padding:4px 8px;font-size:.72rem;color:#3b82f6;border-color:#3b82f6" onclick="amortizarCredito(${c.id})" title="Tabla de amortización">📄</button> ${c.tieneEvidencia?`<button class="btn" style="padding:4px 8px;font-size:.72rem;color:var(--vio);border-color:var(--vio)" onclick="verEvidencia(${c.id})" title="Ver evidencia de entrega">📷</button> `:''}${puedeBorrar?`<button class="btn" style="padding:4px 8px;font-size:.72rem" onclick='editarCliente(${JSON.stringify({id:c.clientId,nombre:c.cliente,tel:c.tel||"",calle:c.calle||"",col:c.col||"",prom:c.prom||"",sucursalId:c.sucursalId})})'>✏️</button> <button class="btn" style="padding:4px 8px;font-size:.72rem;color:var(--red);border-color:var(--red)" onclick="borrarCliente(${c.clientId},'${(c.cliente||'').replace(/'/g,'')}')">🗑</button>`:''}</td></tr>`;
+      <td style="text-align:right;white-space:nowrap"><button class="btn" style="padding:4px 8px;font-size:.72rem;color:#3b82f6;border-color:#3b82f6" onclick="amortizarCredito(${c.id})" title="Tabla de amortización">📄</button> ${c.tieneEvidencia?`<button class="btn" style="padding:4px 8px;font-size:.72rem;color:var(--vio);border-color:var(--vio)" onclick="verEvidencia(${c.id})" title="Ver evidencia de entrega">📷</button> `:''}${puedeBorrar?`<button class="btn" style="padding:4px 8px;font-size:.72rem" onclick='editarCliente(${JSON.stringify({id:c.clientId,nombre:c.cliente,tel:c.tel||"",calle:c.calle||"",col:c.col||"",prom:c.prom||"",sucursalId:c.sucursalId})})'>✏️</button> <button class="btn" style="padding:4px 8px;font-size:.72rem;color:var(--red);border-color:var(--red)" onclick="borrarCliente(${c.clientId},'${(c.cliente||'').replace(/'/g,'')}',${c.id},'${(c.folio||'').replace(/'/g,'')}')">🗑</button>`:''}</td></tr>`;
   }).join('') || `<tr><td colspan="12" style="text-align:center;color:var(--faint);padding:24px">Sin créditos en la base.</td></tr>`;
 }
 async function verEvidencia(saleId){
@@ -1653,12 +1653,14 @@ async function verEvidencia(saleId){
     document.body.appendChild(ov);
   }catch(e){ alert(e.message); }
 }
-async function borrarCliente(clientId, nombre){
-  const desp=prompt(`Eliminar a "${nombre}" de la cartera.\n\n¿A qué despacho o persona se asigna su cobranza?\n(Sus pagos ya no entrarán por la app. Su historial queda consultable en ♻️ Eliminados.)`);
+async function borrarCliente(clientId, nombre, saleId, folio){
+  const otros=(_cartera||[]).filter(x=>x.clientId===clientId && x.id!==saleId).length;
+  const desp=prompt(`Dar de baja el crédito ${folio||''} de "${nombre}".\n`+(otros?`(Sus otros ${otros} crédito(s) siguen vigentes en cartera.)\n`:'')+`\n¿A qué despacho o persona se asigna su cobranza?\n(Sus pagos ya no entrarán por la app. El historial queda en ♻️ Eliminados.)`);
   if(desp===null) return;
   if(!desp.trim()){ alert('Indica a quién se asigna la cobranza.'); return; }
   const motivo=prompt('Motivo / nota (opcional):')||'';
-  try{ await apiU('DELETE','/api/clients/'+clientId,{despacho:desp.trim(),motivo:motivo.trim()}); await cargarCartera(); }
+  try{ const r=await apiU('DELETE','/api/sales/'+saleId+'/baja',{despacho:desp.trim(),motivo:motivo.trim()}); await cargarCartera();
+    if(r&&r.creditosVigentes) alert('✓ Crédito dado de baja. El cliente sigue con '+r.creditosVigentes+' crédito(s) vigente(s).'); }
   catch(e){ alert(e.message); }
 }
 let _cliElim=[];
@@ -1674,7 +1676,7 @@ async function verClientesEliminados(){
     ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
     ov.innerHTML=`<div class="panel" style="max-width:1000px;width:100%;max-height:85vh;overflow:auto;position:relative"><button class="btn" style="position:absolute;top:10px;right:10px" onclick="document.getElementById('ov-cli-elim').remove()">✕</button><h3 style="margin:0 0 12px">♻️ Clientes eliminados / asignados a despacho (<span id="ce-n">${_cliElim.length}</span>)</h3>
       <div class="filters"><select id="ce-suc" onchange="renderCliElim()">${opts('sucursal','Todas las sucursales')}</select><select id="ce-prom" onchange="renderCliElim()">${opts('prom','Todos los promotores')}</select><input id="ce-q" placeholder="Buscar cliente, tel, CURP o despacho…" style="flex:1;min-width:160px" oninput="renderCliElim()"></div>
-      <table><thead><tr><th>Cliente</th><th>Sucursal</th><th>Cobrador</th><th class="n">Créditos</th><th class="n">Saldo</th><th>Asignado a</th><th>Baja</th><th></th></tr></thead><tbody id="ce-tb"></tbody></table></div>`;
+      <table><thead><tr><th>Cliente / crédito</th><th>Sucursal</th><th>Cobrador</th><th class="n">Créditos</th><th class="n">Saldo</th><th>Asignado a</th><th>Baja</th><th></th></tr></thead><tbody id="ce-tb"></tbody></table></div>`;
     document.body.appendChild(ov);
     renderCliElim();
   }catch(e){ alert(e.message); }
@@ -1687,7 +1689,7 @@ function renderCliElim(){
   const L=_cliElim.filter(c=>(!fs||c.sucursal===fs)&&(!fp||c.prom===fp)&&(!q||[c.nombre,c.tel,c.curp,c.despacho].join(' ').toLowerCase().includes(q)));
   const n=document.getElementById('ce-n'); if(n) n.textContent=L.length+(L.length!==_cliElim.length?' de '+_cliElim.length:'');
   const tb=document.getElementById('ce-tb'); if(!tb) return;
-  tb.innerHTML=L.length?L.map(c=>`<tr><td><b>${esc(c.nombre)}</b><div style="font-size:.72rem;color:var(--dim)">${esc(c.tel)} ${c.curp?'· '+esc(c.curp):''}</div></td><td>${esc(c.sucursal)}</td><td>${esc(c.prom)}</td><td class="n">${c.creditos}</td><td class="n">$${(+c.saldo||0).toLocaleString('es-MX',{maximumFractionDigits:2})}</td><td>${c.despacho?'<b>'+esc(c.despacho)+'</b>':'<span style="color:var(--faint)">—</span>'}${c.motivo?'<div style="font-size:.72rem;color:var(--dim)">'+esc(c.motivo)+'</div>':''}</td><td style="font-size:.75rem">${f(c.bajaAt)}<div style="color:var(--dim)">${esc(c.bajaBy)}</div></td><td style="white-space:nowrap"><button class="btn" onclick="verExpediente(${c.id})">👁 Ver</button> <button class="btn" onclick="restaurarCliente(${c.id})">Restaurar</button></td></tr>`).join('')
+  tb.innerHTML=L.length?L.map(c=>`<tr><td><b>${esc(c.nombre)}</b><div style="font-size:.72rem;color:var(--dim)">${c.folio?'<b>'+esc(c.folio)+'</b> · ':''}${esc(c.tel)} ${c.curp?'· '+esc(c.curp):''}${c.clienteActivo?' · <span style="color:#178a55">cliente con otros créditos vigentes</span>':''}</div></td><td>${esc(c.sucursal)}</td><td>${esc(c.prom)}</td><td class="n">${c.creditos}</td><td class="n">$${(+c.saldo||0).toLocaleString('es-MX',{maximumFractionDigits:2})}</td><td>${c.despacho?'<b>'+esc(c.despacho)+'</b>':'<span style="color:var(--faint)">—</span>'}${c.motivo?'<div style="font-size:.72rem;color:var(--dim)">'+esc(c.motivo)+'</div>':''}</td><td style="font-size:.75rem">${f(c.bajaAt)}<div style="color:var(--dim)">${esc(c.bajaBy)}</div></td><td style="white-space:nowrap"><button class="btn" onclick="verExpediente(${c.id})">👁 Ver</button> <button class="btn" onclick="${c.nivel==='credito'?`restaurarCredito(${c.saleId})`:`restaurarCliente(${c.id})`}">Restaurar</button></td></tr>`).join('')
     :'<tr><td colspan="8" style="text-align:center;color:var(--dim);padding:18px">'+(_cliElim.length?'Sin resultados con esos filtros':'No hay clientes eliminados')+'</td></tr>';
 }
 async function verExpediente(id){
@@ -1701,7 +1703,7 @@ async function verExpediente(id){
       const at=s.atraso||{};
       const mv=(s.movimientos||[]).map(m=>`<tr${m.revertido?' style="opacity:.5;text-decoration:line-through"':''}><td>${esc(m.fecha)}</td><td>${esc(m.concepto)}</td><td>${esc(m.origen)}${m.forma?' · '+esc(m.forma):''}</td><td class="n">${m.cargo?$$(m.cargo):''}</td><td class="n">${m.abono?$$(m.abono):''}</td><td class="n">${$$(m.saldo)}</td></tr>`).join('')||'<tr><td colspan="6" style="color:var(--dim)">Sin movimientos</td></tr>';
       return `<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:12px">
-        <div style="display:flex;flex-wrap:wrap;gap:6px 18px;font-size:.82rem;margin-bottom:8px"><b>Folio ${esc(s.folio||s.id)}</b><span>${esc(s.tipo)} · ${esc(s.plazo)}</span><span>Otorgado ${fd(s.createdAt)}</span><span>Sucursal ${esc(s.sucursal)}</span><span>Cobrador ${esc(s.prom)}</span></div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px 18px;font-size:.82rem;margin-bottom:8px"><b>Folio ${esc(s.folio||s.id)}</b>${s.baja?`<span style="color:var(--red);font-weight:700">DE BAJA · asignado a ${esc(s.baja.despacho)} · ${fd(s.baja.at)}</span>`:''}<span>${esc(s.tipo)} · ${esc(s.plazo)}</span><span>Otorgado ${fd(s.createdAt)}</span><span>Sucursal ${esc(s.sucursal)}</span><span>Cobrador ${esc(s.prom)}</span></div>
         <div style="display:flex;flex-wrap:wrap;gap:6px 18px;font-size:.82rem;margin-bottom:10px"><span>Monto ${$$(s.monto)}</span><span>Total ${$$(s.total)}</span><span>Cuota ${$$(s.cuota)}</span><span>Abonado ${$$(s.abonado)}</span><b>Saldo ${$$(s.saldo)}</b>${at.montoAtraso?`<span style="color:var(--red)">Atraso ${$$(at.montoAtraso)} (${at.cuotasAtraso||0} cuotas)</span>`:''}</div>
         <table><thead><tr><th>Fecha</th><th>Concepto</th><th>Origen</th><th class="n">Cargo</th><th class="n">Abono</th><th class="n">Saldo</th></tr></thead><tbody>${mv}</tbody></table></div>`;
     }).join('')||'<div style="color:var(--dim);margin-top:12px">Sin créditos</div>';
@@ -1717,6 +1719,11 @@ async function verExpediente(id){
     const p=document.getElementById('ov-expediente'); if(p) p.remove();
     document.body.appendChild(ov);
   }catch(e){ alert(e.message); }
+}
+async function restaurarCredito(saleId){
+  if(!confirm('¿Restaurar este crédito? Vuelve a la cartera y a la ruta de su cobrador con su historial completo.')) return;
+  try{ await apiU('POST','/api/sales/'+saleId+'/restaurar'); const o=document.getElementById('ov-cli-elim'); if(o) o.remove(); await cargarCartera(); verClientesEliminados(); }
+  catch(e){ alert(e.message); }
 }
 async function restaurarCliente(id){
   if(!confirm('¿Restaurar este cliente? Volverá a la cartera y a la ruta de su cobrador con su historial completo.')) return;
