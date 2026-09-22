@@ -5412,6 +5412,7 @@ async function svVer(id){
       ${x.motivo?`<div style="font-size:.82rem;color:#d6432d;margin-top:4px">Motivo: ${_solE(x.motivo)}</div>`:''}
       ${x.reincidente?`<div style="background:rgba(214,67,45,.09);border:1px solid #d6432d;border-radius:8px;padding:9px 11px;margin-top:9px;font-size:.8rem;color:#d6432d;line-height:1.5">
         <b>⚠ A esta persona ya se le rechazó una solicitud.</b>${(x.rechazosPrevios||[]).map(y=>`<div style="margin-top:3px">• ${String(y.fecha).slice(0,10)} · ${_solE(y.cobrador)} · ${_solE(y.motivo||'sin motivo')}</div>`).join('')}</div>`:''}
+      ${(x.ediciones||[]).length?`<details style="margin-top:9px;font-size:.78rem"><summary style="cursor:pointer;opacity:.8">✏️ Corregida ${x.ediciones.length} vez(es) · última por ${_solE(x.ediciones[x.ediciones.length-1].por)}</summary>${x.ediciones.map(e=>`<div style="margin-top:6px;padding:6px 8px;border-left:3px solid #0e9f9a;background:rgba(128,128,128,.07)"><b>${_solE(e.por)}</b> (${_solE(e.rol)}) · ${new Date(e.fecha).toLocaleString('es-MX')}${(e.cambios||[]).map(k=>`<div>${_solE(k.campo)}: <s style="opacity:.6">${_solE(k.antes)||'—'}</s> → <b>${_solE(k.despues)||'—'}</b></div>`).join('')}</div>`).join('')}</details>`:''}
       ${sec('Cliente')}${fila('CURP',_solE(c.curp))}${fila('Nacimiento · sexo',_solE(s.fechaNac)+' · '+_solE(s.sexo))}${fila('Celular',_solE(c.tel))}
       ${fila('Domicilio',_solE([c.calle,s.numExt&&('No. '+s.numExt),s.numInt&&('Int. '+s.numInt),c.col,s.poblacion,c.ciudad,c.estado,s.cp&&('CP '+s.cp)].filter(Boolean).join(', ')))}
       ${fila('Vivienda',_solE(s.vivienda)+' · '+_solE(s.tiempoDomicilio))}${fila('Estado civil · hijos',_solE(s.estadoCivil)+' · '+(s.hijos||0))}
@@ -5425,10 +5426,50 @@ async function svVer(id){
         <div style="margin-top:3px;font-weight:700;color:${r.verificacion==='positiva'?'#178a55':(r.verificacion==='negativa'?'#d6432d':'#caa23a')}">${r.verificacion?r.verificacion.toUpperCase():'Pendiente de verificar'}</div></div>`).join('')}
       <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
         ${x.lat!=null?`<a class="btn" style="flex:1;text-decoration:none;text-align:center" href="https://maps.google.com/?q=${x.lat},${x.lng}" target="_blank">📍 Domicilio</a>`:''}
+        ${x.estado==='pendiente'&&d.puedeResolver?`<button class="btn" style="flex:1" onclick="svEditar(${x.id})">✏️ Corregir</button>`:''}
         ${x.estado==='pendiente'&&d.puedeResolver?`<button class="btn" style="flex:1;border-color:#d6432d;color:#d6432d" onclick="svRechazar(${x.id})">✗ Rechazar</button>`:''}
         <button class="btn" style="flex:1" onclick="solCerrar()">Cerrar</button></div>
       ${x.estado==='pendiente'?'<div style="font-size:.76rem;opacity:.7;margin-top:10px;line-height:1.45">El crédito lo captura la sucursal desde su bandeja, con el monto que autorice.</div>':''}</div>`;
   }catch(e){ o.innerHTML='<div style="background:var(--surf,#fff);color:var(--txt,#1b2330);border-radius:12px;padding:18px;max-width:560px;width:100%">'+_solE(e.message)+'<div style="margin-top:12px;text-align:right"><button class="btn" onclick="solCerrar()">Cerrar</button></div></div>'; }
+}
+async function svEditar(id){
+  const o=_solOv();
+  try{
+    const d=await _solApi('GET','/api/solicitudes-campo/'+id); const x=d.solicitudCampo, c=x.cliente, s=x.solicitud;
+    const E=v=>_solE(v==null?'':v);
+    const inp=(k,l,v,t)=>`<label style="display:block;font-size:.74rem;opacity:.8;margin-top:7px">${l}<input data-k="${k}" ${t?'type="'+t+'"':''} value="${E(v)}" style="display:block;width:100%;box-sizing:border-box;padding:7px;border:1px solid rgba(128,128,128,.4);border-radius:7px;font-size:.86rem;margin-top:2px"></label>`;
+    const sel=(k,l,v,ops)=>`<label style="display:block;font-size:.74rem;opacity:.8;margin-top:7px">${l}<select data-k="${k}" style="display:block;width:100%;padding:7px;border:1px solid rgba(128,128,128,.4);border-radius:7px;font-size:.86rem;margin-top:2px">${ops.map(p=>`<option value="${p}"${p===v?' selected':''}>${p}</option>`).join('')}</select></label>`;
+    const g=(a)=>`<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 10px">${a.join('')}</div>`;
+    const sec=t=>`<div style="font-weight:700;font-size:.78rem;text-transform:uppercase;opacity:.75;margin:14px 0 0">${t}</div>`;
+    const R=s.referencias||[];
+    o.innerHTML=`<div id="sv-ed" style="background:var(--surf,#fff);color:var(--txt,#1b2330);border-radius:12px;padding:18px;max-width:600px;width:100%;max-height:90vh;overflow:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0;font-size:1.05rem">✏️ Corregir solicitud</h3><button onclick="svVer(${id})" style="border:none;background:transparent;color:inherit;font-size:1.3rem;cursor:pointer">✕</button></div>
+      <div style="font-size:.76rem;opacity:.7;margin-top:3px">Cada cambio queda registrado con tu nombre. Las fotos no se modifican aquí.</div>
+      ${sec('Cliente')}${inp('c.nombre','Nombre completo',c.nombre)}${g([inp('s.apPaterno','Apellido paterno',s.apPaterno),inp('s.apMaterno','Apellido materno',s.apMaterno),inp('c.curp','CURP',c.curp),inp('c.tel','Celular',c.tel,'tel')])}
+      ${sec('Domicilio')}${inp('c.calle','Calle',c.calle)}${g([inp('s.numExt','No. ext',s.numExt),inp('s.numInt','No. int',s.numInt),inp('c.col','Colonia',c.col),inp('s.poblacion','Población',s.poblacion),inp('c.ciudad','Ciudad',c.ciudad),inp('c.estado','Estado',c.estado),inp('s.cp','CP',s.cp),inp('s.tiempoDomicilio','Tiempo en domicilio',s.tiempoDomicilio)])}
+      ${inp('c.ref','Referencia del domicilio',c.ref)}
+      ${g([sel('s.vivienda','Vivienda',s.vivienda,['propia','rentada','familiar']),sel('s.estadoCivil','Estado civil',s.estadoCivil,['soltero','casado','union libre']),inp('s.hijos','Hijos',s.hijos,'number'),inp('s.escuelaHijos','Escuela hijos',s.escuelaHijos)])}
+      ${sec('Pide')}${g([inp('s.solicitado','Monto solicitado',s.solicitado,'number'),inp('s.plazoSolicitado','Plazo solicitado',s.plazoSolicitado)])}
+      ${sec('Trabajo')}${inp('s.actividad','Actividad',s.actividad)}${inp('s.dirTrabajo','Dirección del trabajo',s.dirTrabajo)}${g([inp('s.ingresoSemanal','Ingreso semanal',s.ingresoSemanal,'number'),inp('s.gastoSemanal','Gasto semanal',s.gastoSemanal,'number')])}
+      ${[0,1].map(i=>{const r=R[i]||{};return sec('Referencia '+(i+1))+g([inp('r'+i+'.nombre','Nombre',r.nombre),inp('r'+i+'.cel','Celular',r.cel,'tel'),inp('r'+i+'.parentesco','Parentesco',r.parentesco),inp('r'+i+'.direccion','Dirección',r.direccion)]);}).join('')}
+      <div style="font-size:.74rem;opacity:.7;margin-top:6px">Si cambias nombre o celular de una referencia, su verificación se reinicia.</div>
+      <div style="display:flex;gap:8px;margin-top:16px"><button class="btn" style="flex:1" onclick="svVer(${id})">Cancelar</button><button class="btn" id="sv-ed-ok" style="flex:1;background:#0e9f9a;color:#fff;border-color:#0e9f9a" onclick="svGuardarEd(${id})">💾 Guardar cambios</button></div></div>`;
+    o.style.display='flex';
+  }catch(e){ alert(e.message); }
+}
+async function svGuardarEd(id){
+  const cli={}, sol={}, refs=[{},{}];
+  document.querySelectorAll('#sv-ed [data-k]').forEach(el=>{
+    const [p,k]=el.dataset.k.split('.'); const v=el.value;
+    if(p==='c') cli[k]=v; else if(p==='s') sol[k]=v; else refs[+p.slice(1)][k]=v;
+  });
+  sol.referencias=refs;
+  const b=document.getElementById('sv-ed-ok'); if(b){ b.disabled=true; b.textContent='Guardando…'; }
+  try{
+    const r=await _solApi('PATCH','/api/solicitudes-campo/'+id,{cliente:cli,solicitud:sol});
+    alert(r.cambios?('✓ '+r.cambios+' cambio(s) guardado(s)'):'Sin cambios');
+    svVer(id); if(typeof svCargar==='function') svCargar();
+  }catch(e){ alert(e.message); if(b){ b.disabled=false; b.textContent='💾 Guardar cambios'; } }
 }
 async function svRechazar(id){
   const m=prompt('¿Por qué se rechaza? (lo verá el cobrador y queda en el historial)','');
