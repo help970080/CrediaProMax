@@ -6123,13 +6123,27 @@ app.get('/api/admin/salud', auth, rol('admin'), async (req, res) => {
   try {
     const tam = await pool.query("SELECT pg_size_pretty(pg_database_size(current_database())) AS total, pg_database_size(current_database())::bigint AS bytes");
     out.base = { conecta: true, tamano: tam.rows[0].total, bytes: Number(tam.rows[0].bytes) };
-    const tablas = await pool.query("SELECT relname, pg_total_relation_size(relid)::bigint AS total_b, n_dead_tup, n_live_tup FROM pg_stat_user_tables WHERE relname IN ('cobrapro_state','cobrapro_oplog')");
-    // Datos reales del JSONB (pg_column_size SÍ cuenta el TOAST, a diferencia de pg_relation_size).
+    /* TODAS las tablas del esquema (antes solo state/oplog: fotos y espejo quedaban fuera y el
+       tamaño total no cuadraba con la suma de la tabla). Ordenadas de mayor a menor. */
+    const tablas = await pool.query("SELECT relname, pg_total_relation_size(relid)::bigint AS total_b, n_dead_tup, n_live_tup FROM pg_stat_user_tables ORDER BY pg_total_relation_size(relid) DESC");
+    // Datos reales (pg_column_size SÍ cuenta el TOAST, a diferencia de pg_relation_size).
+    const COL = { cobrapro_state: 'data', cobrapro_oplog: 'data', cobrapro_fotos: 'datos' };
     const dr = {};
-    for (const nm of ['cobrapro_state', 'cobrapro_oplog']) {
-      try { const a = await pool.query('SELECT coalesce(sum(pg_column_size(data)),0)::bigint AS b FROM ' + nm); dr[nm] = Number(a.rows[0].b); } catch (e) { dr[nm] = null; }
+    for (const r of tablas.rows) {
+      const col = COL[r.relname]; if (!col) continue;
+      try { const a = await pool.query('SELECT coalesce(sum(pg_column_size(' + col + ')),0)::bigint AS b FROM ' + r.relname); dr[r.relname] = Number(a.rows[0].b); } catch (e) { dr[r.relname] = null; }
     }
     out.base.tablas = tablas.rows.map(r => ({ tabla: r.relname, total: Number(r.total_b), datos: (dr[r.relname] != null ? dr[r.relname] : null), basura: Number(r.n_dead_tup), filas: Number(r.n_live_tup) }));
+    const _sumT = out.base.tablas.reduce((a, t) => a + t.total, 0);
+    out.base.sinExplicar = Math.max(0, out.base.bytes - _sumT);   // catálogos del sistema y espacio libre
+    // Fotos por agencia (INE, comprobantes, evidencias, firmas): es lo que más crece.
+    if (tablas.rows.some(r => r.relname === 'cobrapro_fotos')) {
+      try {
+        const f = await pool.query('SELECT tenant, count(*)::int AS n, coalesce(sum(bytes),0)::bigint AS b, max(creado) AS ult FROM cobrapro_fotos GROUP BY tenant ORDER BY 3 DESC');
+        const nom = {}; (SYS.tenants || []).forEach(t => nom[t.id] = t.nombre);
+        out.base.fotos = f.rows.map(r => ({ tenant: r.tenant, agencia: nom[r.tenant] || ('#' + r.tenant), fotos: r.n, bytes: Number(r.b), ultima: r.ult }));
+      } catch (e) { out.base.fotos = null; }
+    }
     const opl = await pool.query('SELECT count(*)::int AS n, max(ts) AS ult FROM cobrapro_oplog');
     out.base.oplog = { eventos: opl.rows[0].n, ultimo: opl.rows[0].ult };
   } catch (e) {
