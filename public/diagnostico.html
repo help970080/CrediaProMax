@@ -142,12 +142,14 @@ async function cargarSalud(){
     ['Tamaño total', b.tamano||'—', b.bytes!=null?'límite típico 30 GB':''],
     ['Datos reales (estado)', fmtBytes(st.datos), st.total!=null?('ocupa '+fmtBytes(st.total)+' con índices/TOAST'):''],
     ['Basura acumulada', dead.toLocaleString('es-MX')+' filas', dead>50000?'⚠ conviene VACUUM':(dead>10000?'vigilar':'normal')],
+    ...(b.fotos?[['Fotos (INE, evidencias, firmas)', fmtBytes(b.fotos.reduce((a,f)=>a+f.bytes,0)), b.fotos.reduce((a,f)=>a+f.fotos,0).toLocaleString('es-MX')+' fotos · '+b.fotos.length+' agencia(s)']]:[]),
     ['Operaciones (oplog)', (b.oplog&&b.oplog.eventos!=null)?b.oplog.eventos.toLocaleString('es-MX'):'—', (b.oplog&&b.oplog.ultimo)?('última: '+new Date(b.oplog.ultimo).toLocaleString('es-MX')):'']
   ].map(m=>`<div class="metric"><div class="l">${m[0]}</div><div class="v">${m[1]}</div><div class="s">${m[2]||''}</div></div>`).join('');
   if(b.tablas&&b.tablas.length){
     $('db-tablas').innerHTML='<table><thead><tr><th>Tabla</th><th>En disco</th><th>Datos reales</th><th>Filas</th><th>Basura (filas muertas)</th><th>Salud</th></tr></thead><tbody>'+
       b.tablas.map(t=>{ const ok=(t.basura||0)<10000; return `<tr><td class="mono">${t.tabla}</td><td>${fmtBytes(t.total)}</td><td>${fmtBytes(t.datos)}</td><td>${(t.filas!=null?t.filas.toLocaleString('es-MX'):'—')}</td><td>${(t.basura||0).toLocaleString('es-MX')}</td><td>${ok?'<span class="g">✓ ok</span>':'<span class="a">⚠ revisar</span>'}</td></tr>`; }).join('')+
-      '</tbody></table>';
+      (b.sinExplicar!=null?`<tr><td class="muted">sistema de Postgres / espacio libre</td><td class="muted">${fmtBytes(b.sinExplicar)}</td><td colspan="4"></td></tr>`:'')+
+      '</tbody></table>'+fotosHTML(b);
   } else $('db-tablas').innerHTML='';
   const s=d.server||{};
   $('srv-metrics').innerHTML=[
@@ -159,6 +161,15 @@ async function cargarSalud(){
   ].map(m=>`<div class="metric"><div class="l">${m[0]}</div><div class="v">${m[1]}</div><div class="s">${m[2]||''}</div></div>`).join('');
 }
 
+/* Fotos por agencia: es lo que más crece. Barra = parte del total de fotos. */
+function fotosHTML(b){
+  if(!b.fotos||!b.fotos.length) return '';
+  const tot=b.fotos.reduce((a,f)=>a+f.bytes,0)||1;
+  return '<h2 style="margin-top:16px">📷 Fotos por agencia</h2><table><thead><tr><th>Agencia</th><th>Fotos</th><th>Peso</th><th>Promedio</th><th style="width:30%">Parte del total</th><th>Última</th></tr></thead><tbody>'+
+    b.fotos.map(f=>{ const p=f.bytes/tot*100; return `<tr><td>${f.agencia}</td><td>${f.fotos.toLocaleString('es-MX')}</td><td>${fmtBytes(f.bytes)}</td><td>${fmtBytes(f.fotos?Math.round(f.bytes/f.fotos):0)}</td>
+      <td><div style="background:var(--surf2);border-radius:6px;height:8px;overflow:hidden"><div style="width:${p.toFixed(1)}%;height:8px;background:var(--gold)"></div></div><span class="muted">${p.toFixed(1)}%</span></td>
+      <td class="muted">${f.ultima?new Date(f.ultima).toLocaleDateString('es-MX'):'—'}</td></tr>`; }).join('')+'</tbody></table>';
+}
 function mxParam(v){ return v? v.replace('T',' ') : ''; }
 function detalleOp(dt){ if(dt&&dt.monto!=null){ return fmtMoney(dt.monto)+(dt.cobradoPor?(' · '+dt.cobradoPor):'')+(dt.fromNombre?(' · '+dt.fromNombre+'→'+dt.toNombre):''); } return JSON.stringify(dt||{}).slice(0,80); }
 
