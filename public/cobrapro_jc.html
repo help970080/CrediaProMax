@@ -223,7 +223,7 @@ function pintar(){
     const cs=DATA.porEntregar||[];
     m.innerHTML = _volver + (cs.length ? cs.map(s=>`<div class="card"><div class="top">
       <div><div class="nm">${s.cliente}</div><div class="meta">${s.folio} · 📞 ${s.tel||'—'}<br>📍 ${s.dir||'—'}<br>👤 ${s.cobrador} · 🏪 ${s.sucursal}</div></div>
-      <div class="monto">${money(s.monto)}</div></div>
+      <div style="text-align:right"><div class="monto">${money(s.monto)}</div>${s.plazoTxt?`<div style="font-size:.74rem;color:var(--vio);font-weight:600;margin-top:2px">🗓 ${s.plazoTxt}</div>${s.cuotaVenta?`<div style="font-size:.7rem;color:var(--dim)">cuota ${money(s.cuotaVenta)}</div>`:''}`:''}</div></div>
       <button class="btn full" style="margin-bottom:8px;border-color:var(--blu,#5ab0ff);color:var(--blu,#5ab0ff)" onclick="comoLlegar(${s.id})">🧭 Cómo llegar</button>
       <button class="btn vio full" onclick="abrirEntrega(${s.id},'${(s.cliente||'').replace(/'/g,"\\'")}',${s.monto})">📦 Entregar crédito + evidencia</button></div>`).join('')
       : `<div class="empty">No hay créditos por entregar${DATA.sucursal?` en <b>${DATA.sucursal}</b>`:''}.<br><span style="font-size:.78rem">Los créditos nuevos que capture la sucursal aparecen aquí automáticamente. El admin también puede enviar un crédito existente desde su Estado de cuenta.</span></div>`);
@@ -311,7 +311,7 @@ function abrirEntrega(saleId,cliente,monto){
   const ov=document.createElement('div'); ov.className='ov'; ov.id='ent-ov';
   ov.innerHTML=`<div class="sheet">
     <h3>Entregar crédito</h3>
-    <div class="csub">${cliente} · ${money(monto)}</div>
+    <div class="csub">${cliente} · ${money(monto)}${(()=>{ const s=(DATA.porEntregar||[]).find(x=>x.id===saleId); return s&&s.plazoTxt?' · 🗓 '+s.plazoTxt+(s.cuotaVenta?' · cuota '+money(s.cuotaVenta):''):''; })()}</div>
     <label class="foto-btn" id="fb-casa"><span class="ic">🏠</span><span id="fb-casa-t">Foto de la casa</span>
       <input type="file" accept="image/*" capture="environment" style="display:none" onchange="leerFoto(this,'casa')"></label>
     <label class="foto-btn" id="fb-cli"><span class="ic">🧍</span><span id="fb-cli-t">Foto del cliente</span>
