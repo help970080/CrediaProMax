@@ -412,7 +412,7 @@ function blankTenant(brandNombre, adminUser, adminPass, adminNombre) {
     encuestas: [], encuestasEnvios: [], encuestasResp: [], solicitudesCampo: [],
     gestiones: [], cortes: [], transferencias: [], recolecciones: [], jcEntregas: [], jcCierres: [], asignaciones: [], contactos: [], cierresSemana: [],
     objetivos: { suc: {}, cob: {} },
-    config: { corteAutoHora: '19:00', corteAutoDias: [1, 2, 3, 4, 5, 6], semanaInicio: 4, brand: { nombre: brandNombre || 'CobraPro' }, tarifas: JSON.parse(JSON.stringify(DEFAULT_TARIFAS)), modulosOff: ['inventario', 'encuestas', 'credito14', 'solicitud'], _invSeed: 1, _encSeed: 1, _s14Seed: 1, _solSeed: 1 }, _idem: {}
+    config: { corteAutoHora: '19:00', corteAutoDias: [1, 2, 3, 4, 5, 6], semanaInicio: 4, brand: { nombre: brandNombre || 'CobraPro' }, tarifas: JSON.parse(JSON.stringify(DEFAULT_TARIFAS)), modulosOff: ['inventario', 'encuestas', 'credito14', 'solicitud', 'bajaCredito', 'conteoCreditos'], _invSeed: 1, _encSeed: 1, _s14Seed: 1, _solSeed: 1, _bajaSeed: 1, _ctaSeed: 1 }, _idem: {}
   };
 }
 function normalizeTenant(b) {
@@ -465,6 +465,19 @@ function normalizeTenant(b) {
     b.config.modulosOff = Array.isArray(b.config.modulosOff) ? b.config.modulosOff : [];
     if (!b.config.modulosOff.includes('solicitud')) b.config.modulosOff.push('solicitud');
     b.config._solSeed = 1;
+  }
+  /* Baja por crédito: nace APAGADA (🗑 da de baja al cliente con todos sus créditos, como siempre).
+     Prendida, 🗑 da de baja solo ese crédito y los demás del cliente siguen en cartera. Siembra única. */
+  if (b.config._bajaSeed !== 1) {
+    b.config.modulosOff = Array.isArray(b.config.modulosOff) ? b.config.modulosOff : [];
+    if (!b.config.modulosOff.includes('bajaCredito')) b.config.modulosOff.push('bajaCredito');
+    b.config._bajaSeed = 1;
+  }
+  /* Conteo por crédito: nace APAGADO (se cuenta por cliente, como hoy). Siembra única. */
+  if (b.config._ctaSeed !== 1) {
+    b.config.modulosOff = Array.isArray(b.config.modulosOff) ? b.config.modulosOff : [];
+    if (!b.config.modulosOff.includes('conteoCreditos')) b.config.modulosOff.push('conteoCreditos');
+    b.config._ctaSeed = 1;
   }
   b.solicitudesCampo = b.solicitudesCampo || [];
   b._idem = b._idem || {};
@@ -732,8 +745,18 @@ const MODULOS = [
   { k: 'encuestas', n: 'Encuestas' },
   { k: 'credito14', n: 'Crédito 14 semanas' },
   { k: 'solicitud', n: 'Solicitud de crédito' },
+  { k: 'bajaCredito', n: 'Baja por crédito (conserva los demás créditos del cliente)' },
+  { k: 'conteoCreditos', n: 'Contar por CRÉDITO en cartera, cobradores y reportes (no por cliente)' },
 ];
 const MOD_KEYS = new Set(MODULOS.map(m => m.k));
+/* Llave de conteo: por CLIENTE (default) o por CRÉDITO si la agencia prende 'conteoCreditos'.
+   Un cliente con 2 créditos cuenta 1 por cliente, 2 por crédito. db es el Proxy por agencia
+   (AsyncLocalStorage), así que se lee en cada llamada: sin caché que mezcle agencias. */
+function _ck(s) {
+  const l = db.config && db.config.modulosOff;
+  const on = !(Array.isArray(l) && l.includes('conteoCreditos'));
+  return on ? 'v' + s.id : s.clientId;
+}
 function modulosOffDe(blob) {
   const l = blob && blob.config && blob.config.modulosOff;
   return Array.isArray(l) ? l.filter(k => MOD_KEYS.has(k)) : [];
@@ -2250,8 +2273,17 @@ app.delete('/api/sales/:id/baja', auth, rol('admin', 'supervisor'), (req, res) =
   const b = req.body || {};
   const desp = String(b.despacho || '').trim().slice(0, 120);
   if (!desp) return res.status(400).json({ error: 'Indica a qué despacho o persona se asigna la cobranza' });
-  s.baja = { at: new Date().toISOString(), by: req.user.nombre, despacho: desp, motivo: String(b.motivo || '').trim().slice(0, 300) };
+  const _mot = String(b.motivo || '').trim().slice(0, 300);
   const c = db.clients.find(x => x.id === s.clientId);
+  /* Módulo apagado: comportamiento clásico, sale el CLIENTE con todos sus créditos. */
+  if (modulosOffDe(db).includes('bajaCredito')) {
+    if (!c) return res.status(404).json({ error: 'Cliente no encontrado' });
+    const n = db.sales.filter(x => x.clientId === c.id && !x.baja).length;
+    c.activo = false; c.bajaAt = new Date().toISOString(); c.bajaBy = req.user.nombre; c.bajaDespacho = desp; if (_mot) c.bajaMotivo = _mot;
+    saveDB();
+    return res.json({ ok: true, clienteDadoDeBaja: true, creditosVigentes: 0, creditosBaja: n, modo: 'cliente' });
+  }
+  s.baja = { at: new Date().toISOString(), by: req.user.nombre, despacho: desp, motivo: _mot };
   const quedan = db.sales.filter(x => x.clientId === s.clientId && !x.baja).length;
   if (c && !quedan && c.activo !== false) { c.activo = false; c.bajaAt = s.baja.at; c.bajaBy = req.user.nombre; c.bajaDespacho = desp; if (s.baja.motivo) c.bajaMotivo = s.baja.motivo; }
   saveDB();
@@ -3297,7 +3329,7 @@ app.get('/api/cobradores', auth, (req, res) => {
     db.sales.filter(s => (activos.has(s.clientId) && !s.baja) && saldoDe(s.id) > 0 && s.prom).forEach(s => {
       if (nombresUsuario.has(s.prom)) return;
       promsCartera[s.prom] = promsCartera[s.prom] || { nombre: s.prom, sucursal: sucMap[s.sucursalId] || null, clientes: new Set() };
-      promsCartera[s.prom].clientes.add(s.clientId);
+      promsCartera[s.prom].clientes.add(_ck(s));
     });
     Object.values(promsCartera).forEach(p => lista.push({ nombre: p.nombre, sucursal: p.sucursal, esUsuario: false, nClientes: p.clientes.size }));
   }
@@ -3391,12 +3423,12 @@ app.get('/api/dashboard', auth, (req,res)=>{
     let atraso_monto=0, atraso_clientes=0, esperado_acum=0;
     // Cartera = dinero real (vivo). Créditos y clientes = BASE CONGELADA de la semana.
     let _carteraSuc=0, _creditosVig=0; const _cliVigSuc=new Set();
-    ventas_suc.forEach(s=>{ _carteraSuc+=_saldoAl(s); if(_enBaseSemana(s)){ _creditosVig++; _cliVigSuc.add(s.clientId); } });
+    ventas_suc.forEach(s=>{ _carteraSuc+=_saldoAl(s); if(_enBaseSemana(s)){ _creditosVig++; _cliVigSuc.add(_ck(s)); } });
     ventas_suc.forEach(s=>{ if(!_vivoAl(s))return; const at=atrasoDe(s); esperado_acum+=at.cuotasDebidas*s.cuota; if(at.montoAtraso>0){ atraso_monto+=at.montoAtraso; atraso_clientes++; } });
     // Clientes sin pago en el periodo (riesgo): vigente, no único, no nuevo del periodo, sin abono en el periodo
-    const pagaronSuc=new Set(abonos_suc.map(m=>{const s=sales.find(x=>x.id===m.saleId); return s?s.clientId:null;}).filter(v=>v!=null));
+    const pagaronSuc=new Set(abonos_suc.map(m=>{const s=sales.find(x=>x.id===m.saleId); return s?_ck(s):null;}).filter(v=>v!=null));
     const nopagoSuc=new Set();
-    ventas_suc.forEach(s=>{ if(saldoDe(s.id)<=0||s.tipo==='unico')return; const ct=_diaMxMs(s.createdAt); if(!s.importado && ct>=desde)return; if(!pagaronSuc.has(s.clientId)) nopagoSuc.add(s.clientId); });
+    ventas_suc.forEach(s=>{ if(saldoDe(s.id)<=0||s.tipo==='unico')return; const ct=_diaMxMs(s.createdAt); if(!s.importado && ct>=desde)return; if(!pagaronSuc.has(_ck(s))) nopagoSuc.add(_ck(s)); });
     return {id:suc.id, nombre:suc.nombre, encargada:enc?enc.nombre:'—',
       pagos_recibidos:recuperado, comisionable, npagos:abonos_suc.length, nopago:nopagoSuc.size,
       creditos_captados:nuevos_suc.length, colocado:nuevos_suc.reduce((a,s)=>a+s.monto,0),
@@ -3417,15 +3449,15 @@ app.get('/api/dashboard', auth, (req,res)=>{
     let atraso_monto=0, atraso_clientes=0, esperado_acum=0;
     sus_sales.forEach(s=>{ if(!_vivoAl(s))return; const at=atrasoDe(s); esperado_acum+=at.cuotasDebidas*s.cuota; if(at.montoAtraso>0){ atraso_monto+=at.montoAtraso; atraso_clientes++; } });
     // Clientes sin pago en el periodo (riesgo): vigente, no único, no nuevo del periodo, sin abono en el periodo
-    const pagaronCob=new Set(sus_abonos.map(m=>{const s=sales.find(x=>x.id===m.saleId); return s?s.clientId:null;}).filter(v=>v!=null));
+    const pagaronCob=new Set(sus_abonos.map(m=>{const s=sales.find(x=>x.id===m.saleId); return s?_ck(s):null;}).filter(v=>v!=null));
     const nopagoCob=new Set();
-    sus_sales.forEach(s=>{ if(saldoDe(s.id)<=0||s.tipo==='unico')return; const ct=_diaMxMs(s.createdAt); if(!s.importado && ct>=desde)return; if(!pagaronCob.has(s.clientId)) nopagoCob.add(s.clientId); });
+    sus_sales.forEach(s=>{ if(saldoDe(s.id)<=0||s.tipo==='unico')return; const ct=_diaMxMs(s.createdAt); if(!s.importado && ct>=desde)return; if(!pagaronCob.has(_ck(s))) nopagoCob.add(_ck(s)); });
     // Ranking + objetivos al 100%: unidades nuevas del periodo, débito esperado, clientes vigentes y clientes cobrados
     const unidades = nuevos.filter(s=>s.prom===c.nombre).length;
     // Débito y clientes = BASE CON LA QUE ARRANCÓ LA SEMANA (no se mueve a media semana)
     const baseSem = sus_sales.filter(_enBaseSemana);
     const debito = baseSem.reduce((a,s)=>a+(s.cuota||0),0);
-    const clientes_vigentes = new Set(baseSem.map(s=>s.clientId)).size;
+    const clientes_vigentes = new Set(baseSem.map(_ck)).size;
     const clientes_cobrados = pagaronCob.size;
     const pct_cob = debito>0 ? Math.round(comisionable/debito*100) : 0;
     // Crecimiento de clientes en el periodo: altas (créditos nuevos) − bajas (liquidados en el periodo)
@@ -3587,7 +3619,7 @@ app.get('/api/reports/numeros-diarios', auth, rol('admin','supervisor'), (req,re
   const _avSuc = sid => { const r=contactosPrev.filter(x=>x.sucursalId===sid); return { total:r.length, gestionados:r.filter(x=>x.gestion&&(x.gestion.resultado||x.gestion.tieneEvidencia)).length, validados:r.filter(x=>x.gestion&&x.gestion.validado).length }; };
   const rows = sucursales.map(suc=>{
     const activeVs = sales.filter(s=>s.sucursalId===suc.id && _enBaseND(s));
-    const clientes_totales = new Set(activeVs.map(s=>s.clientId)).size;
+    const clientes_totales = new Set(activeVs.map(_ck)).size;
     const debito_total = activeVs.reduce((a,s)=>a+(s.cuota||0),0);
     let diaColl=0, acumColl=0; const diaCli=new Set(), acumCli=new Set();
     /* Cubiertos por CRÉDITO (saleId), no por cliente: con Sets de clientId, un cliente con 2
@@ -3646,7 +3678,7 @@ app.get('/api/reports/numeros-diarios-suc', auth, rol('admin','supervisor','sucu
   const proms = [...new Set(sales.map(s=>s.prom||'—'))];
   const rows = proms.map(prom=>{
     const vs = sales.filter(s=>(s.prom||'—')===prom && _enBaseND(s));
-    const clientes_totales = new Set(vs.map(s=>s.clientId)).size;
+    const clientes_totales = new Set(vs.map(_ck)).size;
     const debito_total = vs.reduce((a,s)=>a+(s.cuota||0),0);
     let diaColl=0, acumColl=0; const diaCli=new Set(), acumCli=new Set();
     const semCob=new Set(), pagosTs=new Map();   // por CRÉDITO, no por cliente
@@ -5307,7 +5339,7 @@ function _kpisVentas(sales, desde, hasta) {
   sales.forEach(s => {
     ratio[s.id] = _interesFrac(s);
     const saldo = saldoDe(s.id);
-    if (saldo > 0) { cartera += saldo; creditosAct++; cliSet.add(s.clientId); const at = atrasoDe(s); if (at.montoAtraso > 0) { atrasoMonto += at.montoAtraso; atrasoCli++; } }
+    if (saldo > 0) { cartera += saldo; creditosAct++; cliSet.add(_ck(s)); const at = atrasoDe(s); if (at.montoAtraso > 0) { atrasoMonto += at.montoAtraso; atrasoCli++; } }
     if (s.createdAt) { const t = _diaMxMs(s.createdAt); if (t >= desde && t <= hasta) { colocado += s.monto; ncoloc++; } }
   });
   const ids = new Set(sales.map(s => s.id));
@@ -5452,7 +5484,7 @@ function _inicioDatos(nSem) {
        y los % Coll salían disparados contra los de Números diarios (122% donde eran 108%). */
     const sid = s.sucursalId;
     if ((_sIniCiclo[s.id] || 0) > 0.5) {
-      (cliSet[sid] = cliSet[sid] || new Set()).add(s.clientId);
+      (cliSet[sid] = cliSet[sid] || new Set()).add(_ck(s));
       if (s.tipo !== 'unico') espSuc[sid] = (espSuc[sid] || 0) + (s.cuota || 0);
     }
 
@@ -5484,9 +5516,9 @@ function _inicioDatos(nSem) {
       const t = _diaMxMs(s.createdAt); if (t >= ini && t < finCiclo(ini)) m += (s.monto || 0); });
     return { ini: _isoDe(ini), lbl: _lblSemana(ini), monto: Math.round(m), enCurso: k === N - 1 };
   });
-  const cliHoy = new Set(ventas.map(s => s.clientId)).size;
+  const cliHoy = new Set(ventas.map(_ck)).size;
   const hace4 = ciclos[N - 5] || ciclos[0];
-  const cliAntes = new Set(ventas.filter(s => { const t = s.createdAt ? _diaMxMs(s.createdAt) : 0; return t < hace4; }).map(s => s.clientId)).size;
+  const cliAntes = new Set(ventas.filter(s => { const t = s.createdAt ? _diaMxMs(s.createdAt) : 0; return t < hace4; }).map(_ck)).size;
   const espTotal = Object.values(espSuc).reduce((a, b) => a + b, 0);
   const mora = cubetas.slice(1).reduce((a, c) => ({ n: a.n + c.n, monto: a.monto + c.monto }), { n: 0, monto: 0 });
 
@@ -5803,7 +5835,7 @@ app.get('/api/reports/desglose', auth, rol('admin', 'supervisor', 'sucursal'), (
       // vigente: con saldo previo, o venta nueva real, o cartera importada con saldo en la semana
       const vigente = existed && (saldoIni > 0.5 || createdEsta || (esImp && saldoFin > 0.5)) && clienteActivo(s.clientId) && !s.baja;
       if (vigente) {
-        cliVig.add(s.clientId);
+        cliVig.add(_ck(s));
         valorCartera += Math.max(0, saldoFin);   // la cartera sí crece el día que se coloca: el dinero ya salió
         const exp = expSemanal(s);
         // El crédito colocado ESTA semana todavía no tiene cuota que cobrar: su primer pago cae la
@@ -5814,11 +5846,11 @@ app.get('/api/reports/desglose', auth, rol('admin', 'supervisor', 'sucursal'), (
         // sin pago: vigente que NO es venta nueva de la semana, con cobro esperado, y no abonó.
         // Se acumula por CLIENTE: si abonó en cualquiera de sus créditos, no es un cliente sin pago.
         if (!createdEsta && exp > 0) {
-          const d = cliDeuda.get(s.clientId) || { debito: 0, cartera: 0, pago: false };
+          const d = cliDeuda.get(_ck(s)) || { debito: 0, cartera: 0, pago: false };
           d.debito += exp;
           d.cartera += Math.max(0, saldoFin);
           if (abonoSem >= 0.5) d.pago = true;
-          cliDeuda.set(s.clientId, d);
+          cliDeuda.set(_ck(s), d);
         }
       }
       // liquidados: tenía saldo al inicio y quedó en cero esta semana
