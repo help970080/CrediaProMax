@@ -1804,7 +1804,7 @@ app.get('/api/jc/panel', auth, rol('jc'), async (req, res) => {
   // créditos por entregar: de su sucursal, no entregados
   const porEntregar = db.sales.filter(s => s.entregado === false && (!s.tomadoPor || (s.tomadoPor.rol === 'jc' && s.tomadoPor.id === req.user.id))).map(s => {
     const cli = db.clients.find(c => c.id === s.clientId) || {};
-    return { id: s.id, folio: s.folio, cliente: cli.nombre, tel: cli.tel || '', dir: [cli.calle, cli.col].filter(Boolean).join(', '), lat: (typeof cli.lat === 'number' ? cli.lat : null), lng: (typeof cli.lng === 'number' ? cli.lng : null), monto: s.monto, cobrador: s.prom, sucursal: sucMap[s.sucursalId] || '—', createdAt: s.createdAt };
+    return { id: s.id, folio: s.folio, cliente: cli.nombre, tel: cli.tel || '', dir: [cli.calle, cli.col].filter(Boolean).join(', '), lat: (typeof cli.lat === 'number' ? cli.lat : null), lng: (typeof cli.lng === 'number' ? cli.lng : null), monto: s.monto, plazoTxt: plazoVentaTxt(s), cuotaVenta: s.cuota || null, cobrador: s.prom, sucursal: sucMap[s.sucursalId] || '—', createdAt: s.createdAt };
   }).reverse();
   const entregados = db.sales.filter(s => s.entrega && s.entrega.jcId === req.user.id).map(s => {
     const cli = db.clients.find(c => c.id === s.clientId) || {};
@@ -2042,11 +2042,21 @@ app.post('/api/sales/:id/entregar', auth, rol('admin', 'supervisor', 'sucursal',
   res.json({ ok: true, posicion: Math.round(posicionCash(req.user)), caja: req.user.rol === 'jc' ? jcCajaDe(req.user.id) : undefined });
 });
 // ===== BANDEJA DE ENTREGAS (cola común; todos menos el promotor) =====
+/* Plazo de la venta para las pantallas de entrega. Solo en agencias con Solicitud digital. */
+function plazoVentaTxt(s) {
+  if (!solOn() || !s) return null;
+  const p = +s.plazo || 0, t = s.tipo;
+  if (t === 'diario') return p + ' días';
+  if (t === 'unico') return 'pago único a ' + p + ' días';
+  if (t === 'p17') return '17 pagos';
+  const m = /^s(\d+)$/i.exec(String(t || '')); if (m) return m[1] + ' semanas';
+  return p ? p + ' semanas' : null;
+}
 app.get('/api/entregas/bandeja', auth, rol('admin', 'supervisor', 'sucursal', 'jc'), (req, res) => {
   const scope = scopeEntregas(req.user);
   const sucMap = {}; db.sucursales.forEach(s => sucMap[s.id] = s.nombre);
   const map = s => { const c = db.clients.find(x => x.id === s.clientId) || {}; return { saleId: s.id, folio: s.folio, cliente: c.nombre || '—', dir: [c.calle, c.col, c.ciudad].filter(Boolean).join(', '), tel: c.tel || '', prom: s.prom, sucursal: sucMap[s.sucursalId] || '—', tipo: s.tipo, monto: s.monto, entregaMonto: entregaMontoDe(s), createdAt: s.createdAt, tomadoPor: s.tomadoPor || null,
-    esVenta: !!s.productoId, producto: prodSaleLbl(s) || null,
+    esVenta: !!s.productoId, producto: prodSaleLbl(s) || null, plazoTxt: plazoVentaTxt(s), cuota: s.cuota || null,
     stockSuc: s.productoId ? stockDisp(s.productoId, s.sucursalId) : null,
     firmado: !!s.firmaDigital, firmadoEl: s.firmaDigital ? s.firmaDigital.fecha : null,
     linkEnviado: !!s.firmaLink, linkFecha: s.firmaLink ? s.firmaLink.creado : null }; };
