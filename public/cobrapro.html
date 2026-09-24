@@ -1655,7 +1655,11 @@ async function verEvidencia(saleId){
 }
 async function borrarCliente(clientId, nombre, saleId, folio){
   const otros=(_cartera||[]).filter(x=>x.clientId===clientId && x.id!==saleId).length;
-  const desp=prompt(`Dar de baja el crédito ${folio||''} de "${nombre}".\n`+(otros?`(Sus otros ${otros} crédito(s) siguen vigentes en cartera.)\n`:'')+`\n¿A qué despacho o persona se asigna su cobranza?\n(Sus pagos ya no entrarán por la app. El historial queda en ♻️ Eliminados.)`);
+  let porCred=false; try{ const g=JSON.parse(localStorage.getItem('cobrapro_brand')||'{}'); porCred=!(Array.isArray(g.modulosOff)&&g.modulosOff.includes('bajaCredito')); }catch(_){}
+  const encabezado=porCred
+    ? `Dar de baja el crédito ${folio||''} de "${nombre}".\n`+(otros?`(Sus otros ${otros} crédito(s) siguen vigentes en cartera.)\n`:'')
+    : `Eliminar a "${nombre}" de la cartera`+(otros?` junto con TODOS sus créditos (${otros+1}).`:'.')+`\n`;
+  const desp=prompt(encabezado+`\n¿A qué despacho o persona se asigna su cobranza?\n(Sus pagos ya no entrarán por la app. El historial queda en ♻️ Eliminados.)`);
   if(desp===null) return;
   if(!desp.trim()){ alert('Indica a quién se asigna la cobranza.'); return; }
   const motivo=prompt('Motivo / nota (opcional):')||'';
@@ -2902,7 +2906,7 @@ function _bdCard(c, modo){
     <div style="font-size:.74rem;color:var(--dim);margin-top:4px">📍 ${c.dir||'—'}</div>
     <div style="margin-top:6px;font-size:.82rem">${c.esVenta
       ? `Entrega al cliente: <b style="color:var(--vio)">📱 ${_ve(c.producto||'equipo')}</b> <span style="font-size:.74rem;color:${c.stockSuc>0?'var(--grn)':'var(--red)'}">· ${c.stockSuc} en la sucursal</span>`
-      : `Entrega al cliente: <b style="color:var(--grn)">${fmt(c.entregaMonto)}</b>`}</div>${acc}${del}</div>`;
+      : `Entrega al cliente: <b style="color:var(--grn)">${fmt(c.entregaMonto)}</b>`}</div>${c.plazoTxt?`<div style="font-size:.8rem;margin-top:3px">🗓 Plazo: <b>${c.plazoTxt}</b>${c.cuota?' · cuota '+fmt(c.cuota):''}</div>`:''}${acc}${del}</div>`;
 }
 async function eliminarEntrega(id, nombre){
   if(!confirm('¿Eliminar esta venta por entregar de '+nombre+'?\nQuedará registrada como eliminada y NO se entregará al cliente.')) return;
