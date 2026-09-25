@@ -2704,8 +2704,32 @@ app.post('/api/solicitudes-campo', auth, rol('admin', 'supervisor', 'sucursal', 
   db.solicitudesCampo.push(x); saveDB();
   res.status(201).json({ ok: true, id: x.id });
 });
+/* Reparación: solicitudes de campo que quedaron "pendientes" aunque su crédito SÍ se capturó
+   (renovación capturada sin solicitudCampoId). Se vinculan al crédito de la misma CURP creado
+   después de levantar la solicitud y que ninguna otra solicitud tenga ya. Idempotente. */
+function scReconciliar() {
+  const pend = (db.solicitudesCampo || []).filter(x => x.estado === 'pendiente');
+  if (!pend.length) return 0;
+  const usados = new Set((db.solicitudesCampo || []).filter(x => x.saleId).map(x => x.saleId));
+  const cliPorCurp = new Map();
+  db.clients.forEach(c => { const cu = String(c.curp || '').trim().toUpperCase(); if (cu) (cliPorCurp.get(cu) || cliPorCurp.set(cu, []).get(cu)).push(c.id); });
+  let n = 0;
+  pend.forEach(x => {
+    const ids = cliPorCurp.get(String((x.cliente || {}).curp || '').trim().toUpperCase()); if (!ids) return;
+    const t0 = new Date(x.fecha).getTime() - 60000;
+    const s = db.sales.filter(v => ids.includes(v.clientId) && !usados.has(v.id) && new Date(v.createdAt || 0).getTime() >= t0)
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))[0];
+    if (!s) return;
+    x.estado = 'convertida'; x.saleId = s.id; x.folio = s.folio;
+    x.resueltoPor = x.resueltoPor || 'vinculada automáticamente'; x.fechaResuelta = s.createdAt || new Date().toISOString(); x.vinculadaAuto = true;
+    usados.add(s.id); n++;
+  });
+  if (n) saveDB();
+  return n;
+}
 app.get('/api/solicitudes-campo', auth, rol('admin', 'supervisor', 'sucursal', 'jc', 'cobrador'), (req, res) => {
   if (!solOn()) return res.json({ rows: [], pendientes: 0 });
+  try { scReconciliar(); } catch (e) {}
   const estado = String(req.query.estado || '');
   const sucMap = {}; db.sucursales.forEach(x => sucMap[x.id] = x.nombre);
   const fsuc = req.query.sucursalId ? Number(req.query.sucursalId) : null;   // admin/supervisor: filtro opcional
