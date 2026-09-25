@@ -1046,7 +1046,8 @@ function expExcel(){
 let _solPend=[];
 async function solCargarPend(){
   const w=document.getElementById('sol-pend'); if(!w) return;
-  try{ _solPend=await _solApi('GET','/api/solicitudes/verificar'); }catch(e){ _solPend=[]; }
+  /* El cobrador ya no verifica referencias (solo sucursal, supervisor y admin): el aviso no se muestra en ruta. */
+  _solPend=[];
   if(!_solPend.length){ w.style.display='none'; w.innerHTML=''; return; }
   w.style.display='';
   w.innerHTML=`<details style="background:var(--surf-2);border:1px solid #caa23a;border-radius:10px;padding:9px 12px">
