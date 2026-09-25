@@ -845,7 +845,8 @@ function solAcceso(req, s) {
   const u = req.user;
   if (u.rol === 'admin' || u.rol === 'supervisor') return true;
   if (u.rol === 'sucursal' || u.rol === 'jc') return Number(s.sucursalId) === Number(u.sucursalId || 0);
-  if (u.rol === 'cobrador') return s.prom === u.nombre;
+  /* El cobrador NO ve la solicitud de los créditos de su ruta ni verifica referencias: eso es
+     de sucursal, supervisor y admin. Él solo ve sus solicitudes de campo (otro endpoint). */
   return false;
 }
 function solGuard(req, res, next) { return solOn() ? next() : res.status(403).json({ error: 'El módulo de solicitud de crédito no está activo en esta agencia' }); }
@@ -2616,10 +2617,10 @@ app.get('/api/sales/:id/solicitud', auth, (req, res) => {
   res.json({ solicitud: s.solicitud, folio: s.folio, tipo: s.tipo, plazo: s.plazo, monto: s.monto, cuota: s.cuota, prom: s.prom,
     sucursal: suc ? suc.nombre : '', brand: (db.config && db.config.brand && db.config.brand.nombre) || 'CobraPro',
     cliente: { nombre: c.nombre || '', tel: c.tel || '', calle: c.calle || '', col: c.col || '', ciudad: c.ciudad || '', estado: c.estado || '', curp: c.curp || '', ref: c.ref || '' },
-    aval: s.aval || null, puedeVerificar: solOn() && ['admin', 'supervisor', 'sucursal', 'jc', 'cobrador'].includes(req.user.rol),
+    aval: s.aval || null, puedeVerificar: solOn() && ['admin', 'supervisor', 'sucursal'].includes(req.user.rol),
     puedeDocs: solOn() && ['admin', 'supervisor', 'sucursal'].includes(req.user.rol), docs: SOL_DOCS.map(k => ({ tipo: k, lbl: SOL_DOC_LBL[k] })) });
 });
-app.post('/api/sales/:id/solicitud/verificar', auth, rol('admin', 'supervisor', 'sucursal', 'jc', 'cobrador'), solGuard, (req, res) => {
+app.post('/api/sales/:id/solicitud/verificar', auth, rol('admin', 'supervisor', 'sucursal'), solGuard, (req, res) => {
   const s = db.sales.find(x => x.id === +req.params.id);
   if (!s || !s.solicitud) return res.status(404).json({ error: 'Solicitud no encontrada' });
   if (!solAcceso(req, s)) return res.status(403).json({ error: 'Permiso insuficiente' });
@@ -2632,7 +2633,7 @@ app.post('/api/sales/:id/solicitud/verificar', auth, rol('admin', 'supervisor', 
   res.json({ ok: true, referencia: r });
 });
 // Pendientes de verificar para campo: cobrador = sus créditos; jc/sucursal = su sucursal.
-app.get('/api/solicitudes/verificar', auth, rol('admin', 'supervisor', 'sucursal', 'jc', 'cobrador'), (req, res) => {
+app.get('/api/solicitudes/verificar', auth, rol('admin', 'supervisor', 'sucursal'), (req, res) => {
   if (!solOn()) return res.json([]);
   const activos = new Set(db.clients.filter(c => c.activo !== false).map(c => c.id));
   res.json(db.sales.filter(s => s.solicitud && (activos.has(s.clientId) && !s.baja) && solAcceso(req, s)
