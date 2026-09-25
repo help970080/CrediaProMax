@@ -2711,17 +2711,29 @@ function scReconciliar() {
   const pend = (db.solicitudesCampo || []).filter(x => x.estado === 'pendiente');
   if (!pend.length) return 0;
   const usados = new Set((db.solicitudesCampo || []).filter(x => x.saleId).map(x => x.saleId));
-  const cliPorCurp = new Map();
-  db.clients.forEach(c => { const cu = String(c.curp || '').trim().toUpperCase(); if (cu) (cliPorCurp.get(cu) || cliPorCurp.set(cu, []).get(cu)).push(c.id); });
+  /* Se busca al cliente por CURP y, si el cliente quedó sin CURP (renovaciones viejas), por
+     celular de 10 dígitos o por nombre completo idéntico. */
+  const nrm = v => String(v || '').trim().toUpperCase().replace(/\s+/g, ' ');
+  const tel = v => String(v || '').replace(/\D/g, '').slice(-10);
+  const idx = { curp: new Map(), tel: new Map(), nom: new Map() };
+  const put = (m, k, id) => { if (!k) return; (m.get(k) || m.set(k, []).get(k)).push(id); };
+  db.clients.forEach(c => { put(idx.curp, nrm(c.curp), c.id); const t = tel(c.tel); if (t.length === 10) put(idx.tel, t, c.id); put(idx.nom, nrm(c.nombre), c.id); });
   let n = 0;
   pend.forEach(x => {
-    const ids = cliPorCurp.get(String((x.cliente || {}).curp || '').trim().toUpperCase()); if (!ids) return;
+    const cx = x.cliente || {};
+    const t = tel(cx.tel);
+    const ids = idx.curp.get(nrm(cx.curp)) || (t.length === 10 && idx.tel.get(t)) || idx.nom.get(nrm(cx.nombre));
+    if (!ids) return;
     const t0 = new Date(x.fecha).getTime() - 60000;
     const s = db.sales.filter(v => ids.includes(v.clientId) && !usados.has(v.id) && new Date(v.createdAt || 0).getTime() >= t0)
       .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))[0];
     if (!s) return;
     x.estado = 'convertida'; x.saleId = s.id; x.folio = s.folio;
     x.resueltoPor = x.resueltoPor || 'vinculada automáticamente'; x.fechaResuelta = s.createdAt || new Date().toISOString(); x.vinculadaAuto = true;
+    // Si el cliente no tenía CURP, se completa con la de la solicitud (si nadie más activo la usa).
+    const c = db.clients.find(y => y.id === s.clientId);
+    const cu = nrm(cx.curp);
+    if (c && !c.curp && /^[A-Z]{4}\d{6}[A-Z0-9]{8}$/.test(cu) && !db.clients.some(y => y.id !== c.id && y.activo !== false && nrm(y.curp) === cu)) c.curp = cu;
     usados.add(s.id); n++;
   });
   if (n) saveDB();
