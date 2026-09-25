@@ -938,12 +938,17 @@ async function agregarCreditoExistente(clienteId){
   try{
     const _av=leerAval(); if(_av==='ERR') return;
     const _sol=leerSolicitud(); if(_sol==='ERR') return;
-    const d=await api('POST','/api/sales',{clienteExistenteId:clienteId,prom:(prom||EQ_PROM),tipo:t,plazo,monto,dias:plazo,articulos:leerArticulos(),aval:_av,productoId:eqSel(),solicitud:_sol||undefined});
+    /* Si viene de una solicitud de campo, se manda su id para que el servidor la cierre como convertida
+       (antes se perdía aquí y la solicitud quedaba "pendiente" aunque el crédito ya existiera). */
+    const _scIdEx=SC_PEND||undefined, _scConfEx=SC_PEND&&SC_REINC?true:undefined;
+    const d=await api('POST','/api/sales',{clienteExistenteId:clienteId,prom:(prom||EQ_PROM),tipo:t,plazo,monto,dias:plazo,articulos:leerArticulos(),aval:_av,productoId:eqSel(),solicitud:_sol||undefined,solicitudCampoId:_scIdEx,confirmarReincidente:_scConfEx});
     caja.ncred++; caja.coloc+=monto;
     const hora=new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
     movs.unshift({hora,txt:`Crédito ${d.folio} — ${d.cliente} (${prom}) · 2º crédito`,monto:0});
     ['n-cli','n-tel','n-calle','n-col','n-ref','n-curp','n-ciudad','n-estado'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    const _eraSC=!!_scIdEx;
     resetArticulos(); limpiarAval(); eqReset(); if(EQ_ON) eqCargar(); limpiarSolicitud();
+    if(_eraSC){ try{ scCargar(true); }catch(_){} }
     render(); _buscar();
     toast(`✓ ${d.folio} agregado a ${d.cliente} · ahora tiene ${d.totalCreditosCliente} créditos · cuota ${fmt(d.cuota)}`);
   }catch(e){ toast(e.message); }
