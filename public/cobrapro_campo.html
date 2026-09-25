@@ -204,6 +204,7 @@
         <div class="sc-f"><label>CURP (del INE) <span class="sc-req">*</span></label><input id="sc-curp" maxlength="18" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()" placeholder="18 caracteres"></div>
         <div class="sc-row"><div class="sc-f"><label>Celular</label><input id="sc-tel" inputmode="numeric" maxlength="14"></div>
           <div class="sc-f"><label>Fecha nacimiento</label><input id="sc-fnac" readonly placeholder="de la CURP" style="opacity:.75"></div></div>
+        <div id="sc-curp-chk" style="font-size:.78rem;margin:-4px 0 10px;line-height:1.45"></div>
         <div class="sc-f"><label>Calle y número <span class="sc-req">*</span></label><input id="sc-calle"></div>
         <div class="sc-row"><div class="sc-f"><label>No. exterior</label><input id="sc-next"></div>
           <div class="sc-f"><label>Interior</label><input id="sc-nint"></div></div>
@@ -1068,12 +1069,50 @@ const SC_IDS=['sc-nom','sc-appat','sc-apmat','sc-curp','sc-tel','sc-fnac','sc-ca
 /* El nombre va partido igual que en el INE; el sistema lo une para el resto de CobraPro. */
 function scNombreCompleto(){ const g=id=>(document.getElementById(id)?.value||'').trim().toUpperCase().replace(/\s+/g,' ');
   return [g('sc-nom'),g('sc-appat'),g('sc-apmat')].filter(Boolean).join(' '); }
+/* ===== MAYÚSCULAS sin acentos y validación de la CURP contra el nombre (reglas RENAPO) =====
+   Se validan las posiciones que salen del nombre: 1-4 (letras) y 14-16 (consonantes internas).
+   Fecha, sexo y estado se muestran para que el cobrador los compare con el INE. */
+function scMay(v){ return String(v||'').toUpperCase().replace(/[ÁÀÄÂ]/g,'A').replace(/[ÉÈËÊ]/g,'E').replace(/[ÍÌÏÎ]/g,'I').replace(/[ÓÒÖÔ]/g,'O').replace(/[ÚÙÜÛ]/g,'U'); }
+const _CURP_PART=['DA','DAS','DE','DEL','DER','DI','DIE','DD','EL','LA','LOS','LAS','LE','LES','MAC','MC','VAN','VON','Y'];
+const _CURP_MAL='BACA BAKA BUEI BUEY CACA CACO CAGA CAGO CAKA CAKO COGE COGI COJA COJE COJI COJO COLA CULO FALO FETO GETA GUEI GUEY JETA JOTO KACA KACO KAGA KAGO KAKA KAKO KOGE KOGI KOJA KOJE KOJI KOJO KOLA KULO LILO LOCA LOCO LOKA LOKO MAME MAMO MEAR MEAS MEON MIAR MION MOCO MOKO MULA MULO NACA NACO PEDA PEDO PENE PIPI PITO POPO PUTA PUTO QULO RATA ROBA ROBE ROBO RUIN SENO TETA VACA VAGA VAGO VAKA VUEI VUEY WUEI WUEY'.split(' ');
+function _curpLimpia(s){ return scMay(s).replace(/Ñ/g,'X').replace(/[^A-Z ]/g,' ').split(/\s+/).filter(w=>w&&!_CURP_PART.includes(w)); }
+function _vocInt(w){ const m=/[AEIOU]/.exec((w||'').slice(1)); return m?m[0]:'X'; }
+function _consInt(w){ const m=/[B-DF-HJ-NP-TV-Z]/.exec((w||'').slice(1)); return m?m[0]:'X'; }
+const _CURP_EDO={AS:'Aguascalientes',BC:'Baja California',BS:'Baja California Sur',CC:'Campeche',CL:'Coahuila',CM:'Colima',CS:'Chiapas',CH:'Chihuahua',DF:'Ciudad de México',DG:'Durango',GT:'Guanajuato',GR:'Guerrero',HG:'Hidalgo',JC:'Jalisco',MC:'Estado de México',MN:'Michoacán',MS:'Morelos',NT:'Nayarit',NL:'Nuevo León',OC:'Oaxaca',PL:'Puebla',QT:'Querétaro',QR:'Quintana Roo',SP:'San Luis Potosí',SL:'Sinaloa',SR:'Sonora',TC:'Tabasco',TS:'Tamaulipas',TL:'Tlaxcala',VZ:'Veracruz',YN:'Yucatán',ZS:'Zacatecas',NE:'Nacido en el extranjero'};
+function scCurpCheck(){
+  const g=id=>(document.getElementById(id)?.value||'');
+  const curp=scMay(g('sc-curp')).replace(/\s/g,''), box=document.getElementById('sc-curp-chk');
+  const pat=_curpLimpia(g('sc-appat')), mat=_curpLimpia(g('sc-apmat')); let nom=_curpLimpia(g('sc-nom'));
+  if(!box) return null;
+  if(curp.length<18||!pat.length||!nom.length){ box.innerHTML=''; return null; }
+  if(nom.length>1 && ['MARIA','MA','JOSE','J'].includes(nom[0])) nom=nom.slice(1);
+  const P=pat[0]||'', M=mat[0]||'', N=nom[0]||'';
+  let l4=P[0]+_vocInt(P)+(M?M[0]:'X')+N[0]; if(_CURP_MAL.includes(l4)) l4=l4[0]+'X'+l4.slice(2);
+  const c3=_consInt(P)+(M?_consInt(M):'X')+_consInt(N);
+  const exp=l4+'······'+'·'+'··'+c3;
+  const errs=[];
+  if(curp.slice(0,4)!==l4) errs.push(`letras 1-4: la CURP dice ${curp.slice(0,4)}, con el nombre salen ${l4}`);
+  if(curp.slice(13,16)!==c3) errs.push(`letras 14-16: la CURP dice ${curp.slice(13,16)}, con el nombre salen ${c3}`);
+  const f=curp.slice(4,10), sx=curp[10], ed=curp.slice(11,13);
+  const yy=+f.slice(0,2), anio=(/\d/.test(curp[16])?1900:2000)+yy;
+  const info=`Nació ${f.slice(4,6)}/${f.slice(2,4)}/${anio} · ${sx==='H'?'Hombre':sx==='M'?'Mujer':'?'} · ${_CURP_EDO[ed]||('estado '+ed+' ⚠')}`;
+  if(!/^[A-Z]{4}\d{6}[HMX][A-Z]{2}[B-DF-HJ-NP-TV-Z]{3}[A-Z0-9]\d$/.test(curp)) errs.push('formato de CURP inválido');
+  const ok=!errs.length;
+  box.innerHTML=ok?`<span style="color:var(--grn)">✓ La CURP coincide con el nombre.</span> <span style="color:var(--dim)">${info} — compáralo con el INE.</span>`
+    :`<span style="color:var(--red);font-weight:700">⚠ Revisa: la CURP no coincide con el nombre.</span><br><span style="color:var(--red)">${errs.join('<br>')}</span><br><span style="color:var(--dim)">${info}</span>`;
+  return {ok,msg:errs.join('\n')};
+}
 async function scInit(){
   try{ const b=await api('GET','/api/brand'); SC_ON=!(Array.isArray(b.modulosOff)&&b.modulosOff.includes('solicitud')); }catch(e){ SC_ON=false; }
   const t=document.getElementById('tab-sc'); if(t) t.style.display=SC_ON?'':'none';
   if(!SC_ON) return;
   const cu=document.getElementById('sc-curp');
   cu.addEventListener('input',()=>{ const d=scDeCurp(cu.value); document.getElementById('sc-fnac').value=d.fechaNac||''; });
+  /* Todo el texto de la solicitud en MAYÚSCULAS y sin acentos (la Ñ se respeta). */
+  document.querySelectorAll('#sc-nueva input:not([type=file]):not([type=checkbox]):not([inputmode=numeric]):not([type=number]), #sc-nueva textarea').forEach(el=>{
+    el.addEventListener('input',()=>{ const p=el.selectionStart, v=scMay(el.value); if(v!==el.value){ el.value=v; try{ el.setSelectionRange(p,p); }catch(_){} } });
+  });
+  ['sc-nom','sc-appat','sc-apmat','sc-curp'].forEach(id=>{ const e=document.getElementById(id); if(e) e.addEventListener('input',scCurpCheck); });
   scGPS();
 }
 function scDeCurp(c){ const m=/^[A-Z]{4}(\d{2})(\d{2})(\d{2})([HMX])/.exec(String(c||'').toUpperCase());
@@ -1139,6 +1178,7 @@ async function scEnviar(){
   if(!document.getElementById('sc-cons').checked) falta.push('autorización del cliente');
   if(!scFirmaHay()) falta.push('firma del cliente');
   if(falta.length){ toast('Falta: '+falta.join(', ')); return; }
+  { const k=scCurpCheck(); if(k&&!k.ok&&!confirm('⚠ La CURP no coincide con el nombre capturado:\n\n'+k.msg+'\n\nRevisa el INE. ¿Enviar de todos modos?')) return; }
   const btn=document.getElementById('sc-btn'); btn.disabled=true; btn.textContent='Enviando…';
   try{
     if(!SC_FOTOS.firma){ const cv=document.getElementById('sc-firma'); const f=await _solApi('POST','/api/solicitud/foto',{tipo:'firma',imagen:cv.toDataURL('image/jpeg',0.8)}); SC_FOTOS.firma=f.ref; }
